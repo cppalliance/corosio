@@ -125,8 +125,9 @@ protected:
     StreamService* stream_svc_ = nullptr;
 
 private:
-    reactor_acceptor_service(reactor_acceptor_service const&)            = delete;
-    reactor_acceptor_service& operator=(reactor_acceptor_service const&) = delete;
+    reactor_acceptor_service(reactor_acceptor_service const&) = delete;
+    reactor_acceptor_service&
+    operator=(reactor_acceptor_service const&) = delete;
 };
 
 } // namespace boost::corosio::detail

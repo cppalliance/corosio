@@ -27,9 +27,9 @@ using executor_type = asio::io_context::executor_type;
 using tcp_socket    = asio::basic_stream_socket<tcp, executor_type>;
 using tcp_acceptor  = asio::basic_socket_acceptor<tcp, executor_type>;
 using timer_type    = asio::basic_waitable_timer<
-       std::chrono::steady_clock,
-       asio::wait_traits<std::chrono::steady_clock>,
-       executor_type>;
+    std::chrono::steady_clock,
+    asio::wait_traits<std::chrono::steady_clock>,
+    executor_type>;
 
 /** Create a connected pair of TCP sockets for benchmarking. */
 inline std::pair<tcp_socket, tcp_socket>

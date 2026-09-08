@@ -196,8 +196,8 @@ class BOOST_COROSIO_DECL resolver : public io_object
         {
         }
 
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
             return r_.get().resolve(
                 h, ex, host_, service_, flags_, token_, &ec_, &value_);
@@ -205,7 +205,8 @@ class BOOST_COROSIO_DECL resolver : public io_object
     };
 
     struct reverse_resolve_awaitable
-        : detail::value_op_base<reverse_resolve_awaitable, reverse_resolver_result>
+        : detail::
+              value_op_base<reverse_resolve_awaitable, reverse_resolver_result>
     {
         resolver& r_;
         endpoint ep_;
@@ -219,8 +220,8 @@ class BOOST_COROSIO_DECL resolver : public io_object
         {
         }
 
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
             return r_.get().reverse_resolve(
                 h, ex, ep_, flags_, token_, &ec_, &value_);

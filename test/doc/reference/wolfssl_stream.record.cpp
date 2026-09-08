@@ -30,7 +30,7 @@
 #include <utility>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
@@ -39,7 +39,8 @@ namespace {
 // modes; reusing one socket for both would leave tls pointing at sock
 // after it was gutted by the move into tls2 (use-after-move), not a
 // dangling reference -- sock itself stays in scope.
-capy::task<> reference_and_owning_construction(
+capy::task<>
+reference_and_owning_construction(
     corosio::io_context& ioc, corosio::endpoint ep)
 {
     corosio::tls_context ctx;
@@ -47,7 +48,7 @@ capy::task<> reference_and_owning_construction(
     // is unavailable and this call has no effect -- combined with `peer`
     // below, every handshake then fails closed (hec is checked, so this
     // is safe, just never successful on such a build).
-    if (auto ec = ctx.set_default_verify_paths())  // trust the system CAs
+    if (auto ec = ctx.set_default_verify_paths()) // trust the system CAs
         co_return;
     if (auto ec = ctx.set_verify_mode(corosio::tls_verify_mode::peer))
         co_return;

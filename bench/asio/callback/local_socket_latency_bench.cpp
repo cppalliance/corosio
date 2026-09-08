@@ -126,7 +126,7 @@ struct unix_pingpong_op
 void
 bench_pingpong_latency(bench::state& state)
 {
-    auto message_size = static_cast<std::size_t>(state.range(0));
+    auto message_size              = static_cast<std::size_t>(state.range(0));
     state.counters["message_size"] = static_cast<double>(message_size);
 
     asio::io_context ioc;
@@ -154,7 +154,7 @@ bench_pingpong_latency(bench::state& state)
 void
 bench_concurrent_latency(bench::state& state)
 {
-    int num_pairs = static_cast<int>(state.range(0));
+    int num_pairs               = static_cast<int>(state.range(0));
     state.counters["num_pairs"] = num_pairs;
 
     asio::io_context ioc;
@@ -203,7 +203,7 @@ bench_concurrent_latency(bench::state& state)
 void
 bench_pingpong_latency_lockless(bench::state& state)
 {
-    auto message_size = static_cast<std::size_t>(state.range(0));
+    auto message_size              = static_cast<std::size_t>(state.range(0));
     state.counters["message_size"] = static_cast<double>(message_size);
 
     asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
@@ -231,7 +231,7 @@ bench_pingpong_latency_lockless(bench::state& state)
 void
 bench_concurrent_latency_lockless(bench::state& state)
 {
-    int num_pairs = static_cast<int>(state.range(0));
+    int num_pairs               = static_cast<int>(state.range(0));
     state.counters["num_pairs"] = num_pairs;
 
     asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
@@ -285,13 +285,13 @@ make_local_socket_latency_suite()
     using F = bench::bench_flags;
     return bench::benchmark_suite("local_socket_latency", F::none)
         .add("pingpong", bench_pingpong_latency)
-            .args({1, 64, 1024})
+        .args({1, 64, 1024})
         .add("pingpong_lockless", bench_pingpong_latency_lockless)
-            .args({1, 64, 1024})
+        .args({1, 64, 1024})
         .add("concurrent", bench_concurrent_latency)
-            .args({1, 4, 16})
+        .args({1, 4, 16})
         .add("concurrent_lockless", bench_concurrent_latency_lockless)
-            .args({1, 4, 16});
+        .args({1, 4, 16});
 }
 
 } // namespace asio_callback_bench

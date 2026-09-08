@@ -82,10 +82,11 @@ inline constexpr auto one_backend = corosio::select;
 // what the leak assertions need. It moves on its own as the CRT and
 // the thread pool come and go, so only differences taken across a
 // short failing call mean anything.
-inline int open_fds()
+inline int
+open_fds()
 {
     DWORD n = 0;
-    if(!::GetProcessHandleCount(::GetCurrentProcess(), &n))
+    if (!::GetProcessHandleCount(::GetCurrentProcess(), &n))
         return -1;
     return static_cast<int>(n);
 }
@@ -95,7 +96,8 @@ inline int open_fds()
 // signal handlers — therefore have to live in a suite of their own,
 // where nothing else has installed that state first.
 template<class F>
-void in_child(F&& body)
+void
+in_child(F&& body)
 {
     BOOST_TEST(body());
 }
@@ -111,14 +113,15 @@ void in_child(F&& body)
 // enough repetitions that a per-call leak, which grows the count once
 // per call, separates from that ambient noise.
 template<class F>
-void expect_no_handle_leak(F&& fn, int reps, int max_growth)
+void
+expect_no_handle_leak(F&& fn, int reps, int max_growth)
 {
     fn();
     int const before = open_fds();
     // open_fds() answers -1 when the count cannot be read, which would
     // otherwise satisfy the comparison below on its own.
     BOOST_TEST(before >= 0);
-    for(int i = 0; i < reps; ++i)
+    for (int i = 0; i < reps; ++i)
         fn();
     int const after = open_fds();
     // A -1 here would satisfy the growth comparison on its own.
@@ -131,7 +134,8 @@ void expect_no_handle_leak(F&& fn, int reps, int max_growth)
 // exactly one handle should ask for more repetitions than it allows
 // growth, so the two are not decided by a single ambient handle.
 template<class F>
-void expect_no_handle_leak(F&& fn)
+void
+expect_no_handle_leak(F&& fn)
 {
     expect_no_handle_leak(fn, 8, 8);
 }
@@ -140,15 +144,17 @@ void expect_no_handle_leak(F&& fn)
 // equal only to themselves: which of them a toolchain's system_category
 // also matches to a std::errc condition differs between MSVC and MinGW,
 // so a test spells such an expectation as the raw code.
-inline std::error_code win_err(DWORD e)
+inline std::error_code
+win_err(DWORD e)
 {
     return std::error_code(static_cast<int>(e), std::system_category());
 }
 
-inline std::string temp_path(char const* tag)
+inline std::string
+temp_path(char const* tag)
 {
     char dir[MAX_PATH + 1] = {};
-    DWORD const n = ::GetTempPathA(sizeof(dir), dir);
+    DWORD const n          = ::GetTempPathA(sizeof(dir), dir);
     // An unusable TEMP is not worth a fallback that might be
     // unwritable; the test that opens the path reports it.
     std::string base(dir, n);
@@ -160,7 +166,8 @@ inline std::string temp_path(char const* tag)
 
 // Count open descriptors so a test can prove the failure path released
 // what it created.
-inline int open_fds()
+inline int
+open_fds()
 {
 #if defined(__FreeBSD__)
     // FreeBSD mounts neither /proc nor fdescfs by default, and /dev/fd
@@ -169,15 +176,15 @@ inline int open_fds()
     // shadow: a test that samples the count inside a live `fcntl` arm
     // would otherwise spend that arm on the scan.
     static auto const real_fcntl =
-        reinterpret_cast<int(*)(int, int, ...)>(real_symbol("fcntl"));
+        reinterpret_cast<int (*)(int, int, ...)>(real_symbol("fcntl"));
     long const lim = ::sysconf(_SC_OPEN_MAX);
     // 65536 bounds the scan on a host with an enormous rlimit; nothing
     // here opens anywhere near that many descriptors.
     long const stop = (lim < 0 || lim > 65536) ? 65536 : lim;
-    int n = 0;
-    for(long fd = 0; fd < stop; ++fd)
+    int n           = 0;
+    for (long fd = 0; fd < stop; ++fd)
     {
-        if(real_fcntl(static_cast<int>(fd), F_GETFD) != -1)
+        if (real_fcntl(static_cast<int>(fd), F_GETFD) != -1)
             ++n;
     }
     return n;
@@ -190,10 +197,10 @@ inline int open_fds()
 #endif
     // -1 rather than 0: an unreadable /proc/self/fd or /dev/fd must
     // break the leak assertions, not satisfy them.
-    if(!d)
+    if (!d)
         return -1;
     int n = 0;
-    while(::readdir(d))
+    while (::readdir(d))
         ++n;
     ::closedir(d);
     return n;
@@ -214,11 +221,12 @@ inline int open_fds()
 // answers null where there is no libgcov, which is the same thing the
 // weak reference was meant to say. The CMake side is what keeps the
 // symbol in an instrumented binary for this to find.
-inline void flush_coverage_counters()
+inline void
+flush_coverage_counters()
 {
     static auto const dump =
-        reinterpret_cast<void(*)()>(::dlsym(RTLD_DEFAULT, "__gcov_dump"));
-    if(dump)
+        reinterpret_cast<void (*)()>(::dlsym(RTLD_DEFAULT, "__gcov_dump"));
+    if (dump)
         dump();
 }
 
@@ -227,13 +235,14 @@ inline void flush_coverage_counters()
 // handlers — can only be faulted in a fresh process, and installing it
 // in this one would silently disarm every other test that faults it.
 template<class F>
-void in_child(F&& body)
+void
+in_child(F&& body)
 {
     pid_t pid = ::fork();
     BOOST_TEST(pid >= 0);
-    if(pid < 0)
+    if (pid < 0)
         return;
-    if(pid == 0)
+    if (pid == 0)
     {
         bool const ok = body();
         flush_coverage_counters();
@@ -244,13 +253,14 @@ void in_child(F&& body)
     BOOST_TEST(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
-inline std::string temp_path(char const* tag)
+inline std::string
+temp_path(char const* tag)
 {
     // A build that confines the process to its own scratch directory
     // sets TMPDIR; /tmp may not even be writable there.
-    char const* dir = std::getenv("TMPDIR");
+    char const* dir  = std::getenv("TMPDIR");
     std::string base = (dir && *dir) ? dir : "/tmp";
-    if(base.back() != '/')
+    if (base.back() != '/')
         base += '/';
     return base + "corosio_fault_" + tag + "_" + std::to_string(::getpid());
 }
@@ -276,11 +286,12 @@ inline std::string temp_path(char const* tag)
    @param ioc The context to stop if the timeout is reached.
    @param expired Set when the guard fired rather than being cancelled.
 */
-inline capy::task<> stop_guard(io_context& ioc, bool& expired)
+inline capy::task<>
+stop_guard(io_context& ioc, bool& expired)
 {
     auto [ec] = co_await corosio::delay(std::chrono::seconds(2));
     // Cancelled: the test finished and asked the guard to stand down.
-    if(ec)
+    if (ec)
         co_return;
     expired = true;
     ioc.stop();
@@ -291,19 +302,20 @@ inline capy::task<> stop_guard(io_context& ioc, bool& expired)
 // Return true if the process runs under Valgrind. Valgrind always maps
 // its preload library, so scanning the map is enough and does not need
 // valgrind.h on the include path.
-inline bool running_under_valgrind() noexcept
+inline bool
+running_under_valgrind() noexcept
 {
 #if defined(_WIN32)
     return false;
 #else
     std::FILE* f = std::fopen("/proc/self/maps", "re");
-    if(!f)
+    if (!f)
         return false;
     bool found = false;
     char line[4096];
-    while(std::fgets(line, sizeof(line), f))
+    while (std::fgets(line, sizeof(line), f))
     {
-        if(std::strstr(line, "vgpreload"))
+        if (std::strstr(line, "vgpreload"))
         {
             found = true;
             break;
@@ -320,11 +332,13 @@ inline bool running_under_valgrind() noexcept
 // injection is not meaningful there, exactly as it is not under the
 // sanitizers the Jamfile already excludes. Report the reason so the leg
 // passes with a visible cause rather than a silent one.
-inline bool skip_under_valgrind() noexcept
+inline bool
+skip_under_valgrind() noexcept
 {
-    if(!running_under_valgrind())
+    if (!running_under_valgrind())
         return false;
-    std::fprintf(stderr,
+    std::fprintf(
+        stderr,
         "fault harness: running under Valgrind, which redirects the libc "
         "entry points the shadows interpose; skipping this fault suite\n");
     return true;
@@ -333,11 +347,14 @@ inline bool skip_under_valgrind() noexcept
 // Report a hook that has no import to patch in this executable. A
 // silent `return` from a test would read as a pass; name the symbol so
 // the log says which coverage the run did not have.
-inline void skip_dead_hook(char const* name)
+inline void
+skip_dead_hook(char const* name)
 {
-    std::fprintf(stderr,
+    std::fprintf(
+        stderr,
         "fault harness: %s not imported by this executable; skipping the "
-        "test that arms it\n", name);
+        "test that arms it\n",
+        name);
 }
 
 #if !defined(_WIN32)
@@ -347,14 +364,15 @@ inline void skip_dead_hook(char const* name)
 // raise is not undone: the descriptors it permits outlive the call
 // that asked for it, and lowering the limit under them is what would
 // be surprising.
-inline bool raise_fd_limit(rlim_t want)
+inline bool
+raise_fd_limit(rlim_t want)
 {
     rlimit rl{};
-    if(::getrlimit(RLIMIT_NOFILE, &rl) != 0)
+    if (::getrlimit(RLIMIT_NOFILE, &rl) != 0)
         return false;
-    if(rl.rlim_cur >= want)
+    if (rl.rlim_cur >= want)
         return true;
-    if(rl.rlim_max != RLIM_INFINITY && rl.rlim_max < want)
+    if (rl.rlim_max != RLIM_INFINITY && rl.rlim_max < want)
         return false;
     rl.rlim_cur = want;
     return ::setrlimit(RLIMIT_NOFILE, &rl) == 0;
@@ -363,11 +381,14 @@ inline bool raise_fd_limit(rlim_t want)
 // Report a descriptor table this process is not allowed to grow. Reads
 // like skip_dead_hook: the run had a reason not to take the coverage,
 // and the log has to say so rather than pass silently.
-inline void skip_no_high_fd(char const* what)
+inline void
+skip_no_high_fd(char const* what)
 {
-    std::fprintf(stderr,
+    std::fprintf(
+        stderr,
         "fault harness: this process cannot hold a descriptor at or above "
-        "FD_SETSIZE; skipping %s\n", what);
+        "FD_SETSIZE; skipping %s\n",
+        what);
 }
 
 // Duplicate `fd` onto a descriptor number above FD_SETSIZE. Returns -1
@@ -375,12 +396,13 @@ inline void skip_no_high_fd(char const* what)
 // skip_no_high_fd. The select backend rejects such a descriptor rather
 // than letting FD_SET clobber unrelated memory, and that rejection is
 // what the assign tests are after.
-inline int dup_above_fd_setsize(int fd)
+inline int
+dup_above_fd_setsize(int fd)
 {
     constexpr int target = FD_SETSIZE + 8;
-    if(!raise_fd_limit(static_cast<rlim_t>(target) + 8))
+    if (!raise_fd_limit(static_cast<rlim_t>(target) + 8))
         return -1;
-    if(::dup2(fd, target) != target)
+    if (::dup2(fd, target) != target)
         return -1;
     return target;
 }
@@ -401,27 +423,27 @@ class fd_wall
 public:
     ~fd_wall()
     {
-        for(auto it = held_.rbegin(); it != held_.rend(); ++it)
+        for (auto it = held_.rbegin(); it != held_.rend(); ++it)
             ::close(*it);
     }
 
     fd_wall()
     {
-        if(!raise_fd_limit(FD_SETSIZE + 64))
+        if (!raise_fd_limit(FD_SETSIZE + 64))
             return;
         // /dev/null rather than a dup of 0: a test runner may hand the
         // process a closed or non-duplicable stdin.
         int const seed = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
-        if(seed < 0)
+        if (seed < 0)
             return;
         held_.push_back(seed);
-        for(;;)
+        for (;;)
         {
             int const fd = ::fcntl(seed, F_DUPFD_CLOEXEC, 0);
-            if(fd < 0)
+            if (fd < 0)
                 return;
             held_.push_back(fd);
-            if(fd >= FD_SETSIZE - 1)
+            if (fd >= FD_SETSIZE - 1)
                 break;
         }
         raised_ = true;
@@ -433,7 +455,7 @@ public:
         return raised_;
     }
 
-    fd_wall(fd_wall const&) = delete;
+    fd_wall(fd_wall const&)            = delete;
     fd_wall& operator=(fd_wall const&) = delete;
 
 private:
@@ -448,20 +470,21 @@ private:
 // `Expected` is a std::errc where the library normalizes the code and a
 // std::error_code where it hands back the raw platform value.
 template<class F, class Expected>
-void expect_system_error(F&& fn, Expected expected)
+void
+expect_system_error(F&& fn, Expected expected)
 {
     std::error_code caught;
     try
     {
         fn();
     }
-    catch(std::system_error const& e)
+    catch (std::system_error const& e)
     {
         caught = e.code();
     }
     BOOST_TEST(caught == expected);
 }
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault
 
 #endif

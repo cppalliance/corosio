@@ -33,10 +33,22 @@ struct exclusive_address_use
 {
     int value_ = 1;
 
-    static int level() noexcept { return SOL_SOCKET; }
-    static int name() noexcept { return SO_EXCLUSIVEADDRUSE; }
-    void const* data() const noexcept { return &value_; }
-    std::size_t size() const noexcept { return sizeof(value_); }
+    static int level() noexcept
+    {
+        return SOL_SOCKET;
+    }
+    static int name() noexcept
+    {
+        return SO_EXCLUSIVEADDRUSE;
+    }
+    void const* data() const noexcept
+    {
+        return &value_;
+    }
+    std::size_t size() const noexcept
+    {
+        return sizeof(value_);
+    }
 };
 
 } // namespace

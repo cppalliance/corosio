@@ -88,8 +88,8 @@ public:
 
     io_object::implementation* construct() override
     {
-        auto  p   = std::make_shared<Socket>(
-            static_cast<Derived&>(*this), *sched_);
+        auto p =
+            std::make_shared<Socket>(static_cast<Derived&>(*this), *sched_);
         auto* raw = p.get();
         std::lock_guard lk(mutex_);
         impls_.emplace(raw, std::move(p));
@@ -113,7 +113,10 @@ public:
     }
 
     /// Return the scheduler used by sockets created by this service.
-    uring_scheduler& scheduler() noexcept { return *sched_; }
+    uring_scheduler& scheduler() noexcept
+    {
+        return *sched_;
+    }
 
 protected:
     /// Register an externally-built impl (used by adopt_fd on stream
@@ -127,7 +130,7 @@ protected:
     }
 
     uring_scheduler* sched_;
-    std::mutex          mutex_;
+    std::mutex mutex_;
     std::unordered_map<Socket*, std::shared_ptr<Socket>> impls_;
 
 private:

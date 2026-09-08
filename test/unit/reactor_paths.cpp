@@ -69,7 +69,7 @@ struct reactor_paths_test
     void testConcurrentReadWrite()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -95,7 +95,8 @@ struct reactor_paths_test
         };
         auto peer_writer = [&]() -> capy::task<> {
             // Brief delay so the read side parks first.
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(10));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(10));
             [[maybe_unused]] auto [ec, n] = co_await s2.write_some(
                 capy::const_buffer(payload.data(), payload.size()));
         };
@@ -130,8 +131,8 @@ struct reactor_paths_test
         bool wait_done = false;
 
         auto connector = [&]() -> capy::task<> {
-            auto [ec] = co_await sock.connect(
-                endpoint(ipv4_address::loopback(), 1));
+            auto [ec] =
+                co_await sock.connect(endpoint(ipv4_address::loopback(), 1));
             conn_ec   = ec;
             conn_done = true;
         };
@@ -141,7 +142,8 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(500));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(500));
             sock.cancel();
         };
 
@@ -169,9 +171,9 @@ struct reactor_paths_test
         // be listening; the resulting connect will get RST or fail.
         std::error_code conn_ec;
         bool conn_done = false;
-        auto task = [&]() -> capy::task<> {
-            auto [ec] = co_await sock.connect(
-                endpoint(ipv4_address::loopback(), 1));
+        auto task      = [&]() -> capy::task<> {
+            auto [ec] =
+                co_await sock.connect(endpoint(ipv4_address::loopback(), 1));
             conn_ec   = ec;
             conn_done = true;
         };
@@ -189,7 +191,7 @@ struct reactor_paths_test
     void testWaitForError()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -202,11 +204,13 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto closer = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
             s2.close();
             // Bound the wait: cancel s1 after another delay if the peer
             // close did not surface as an error condition.
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(200));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(200));
             s1.cancel();
         };
 
@@ -224,7 +228,7 @@ struct reactor_paths_test
     void testCancelWaitForError()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -237,7 +241,8 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
             s1.cancel();
         };
 
@@ -254,14 +259,14 @@ struct reactor_paths_test
     void testScatterRead()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
         constexpr std::string_view payload = "scatter-gather-payload-data";
-        char buf1[8] = {};
-        char buf2[8] = {};
-        char buf3[32] = {};
+        char buf1[8]                       = {};
+        char buf2[8]                       = {};
+        char buf3[32]                      = {};
 
         std::error_code read_ec;
         std::size_t read_n = 0;
@@ -277,7 +282,8 @@ struct reactor_paths_test
             read_n       = n;
         };
         auto writer = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(10));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(10));
             [[maybe_unused]] auto [ec, n] = co_await s2.write_some(
                 capy::const_buffer(payload.data(), payload.size()));
         };
@@ -296,7 +302,7 @@ struct reactor_paths_test
     void testWriteEAGAIN()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -360,7 +366,7 @@ struct reactor_paths_test
     void testGatherWrite()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -369,8 +375,8 @@ struct reactor_paths_test
         constexpr std::string_view part3 = "world";
 
         std::error_code write_ec;
-        std::size_t write_n = 0;
-        char read_buf[64]   = {};
+        std::size_t write_n    = 0;
+        char read_buf[64]      = {};
         std::size_t total_read = 0;
         std::error_code read_ec;
 
@@ -389,8 +395,9 @@ struct reactor_paths_test
             std::size_t expected = part1.size() + part2.size() + part3.size();
             while (total_read < expected)
             {
-                auto [ec, n] = co_await s2.read_some(capy::mutable_buffer(
-                    read_buf + total_read, sizeof(read_buf) - total_read));
+                auto [ec, n] = co_await s2.read_some(
+                    capy::mutable_buffer(
+                        read_buf + total_read, sizeof(read_buf) - total_read));
                 if (ec)
                 {
                     read_ec = ec;
@@ -468,7 +475,8 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
             acc.cancel();
         };
 
@@ -529,7 +537,8 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
             sock.cancel();
         };
 
@@ -558,8 +567,8 @@ struct reactor_paths_test
         endpoint src;
 
         auto reader = [&]() -> capy::task<> {
-            auto [ec, n] = co_await sock.recv_from(
-                capy::mutable_buffer(nullptr, 0), src);
+            auto [ec, n] =
+                co_await sock.recv_from(capy::mutable_buffer(nullptr, 0), src);
             rf_ec = ec;
             rf_n  = n;
         };
@@ -589,10 +598,10 @@ struct reactor_paths_test
         auto port = s2.local_endpoint().port();
 
         std::error_code conn_ec;
-        bool conn_done = false;
+        bool conn_done    = false;
         auto connect_task = [&]() -> capy::task<> {
-            auto [ec] = co_await s1.connect(
-                endpoint(ipv4_address::loopback(), port));
+            auto [ec] =
+                co_await s1.connect(endpoint(ipv4_address::loopback(), port));
             conn_ec   = ec;
             conn_done = true;
         };
@@ -606,10 +615,9 @@ struct reactor_paths_test
         std::size_t send_n = 1;
 
         auto sender = [&]() -> capy::task<> {
-            auto [ec, n] =
-                co_await s1.send(capy::const_buffer(nullptr, 0));
-            send_ec = ec;
-            send_n  = n;
+            auto [ec, n] = co_await s1.send(capy::const_buffer(nullptr, 0));
+            send_ec      = ec;
+            send_n       = n;
         };
 
         capy::run_async(ex)(sender());
@@ -639,10 +647,10 @@ struct reactor_paths_test
         auto port = s2.local_endpoint().port();
 
         std::error_code conn_ec;
-        bool conn_done = false;
+        bool conn_done    = false;
         auto connect_task = [&]() -> capy::task<> {
-            auto [ec] = co_await s1.connect(
-                endpoint(ipv4_address::loopback(), port));
+            auto [ec] =
+                co_await s1.connect(endpoint(ipv4_address::loopback(), port));
             conn_ec   = ec;
             conn_done = true;
         };
@@ -712,7 +720,7 @@ struct reactor_paths_test
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
-        bool ok = false;
+        bool ok   = false;
         auto task = [&]() -> capy::task<> {
             BOOST_TEST(!s1.shutdown(shutdown_both));
             ok = true;
@@ -730,7 +738,7 @@ struct reactor_paths_test
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
-        bool ok = false;
+        bool ok   = false;
         auto task = [&]() -> capy::task<> {
             BOOST_TEST(!s1.shutdown(shutdown_receive));
             ok = true;
@@ -762,7 +770,8 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto closer = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
             sock.close();
         };
 
@@ -796,7 +805,8 @@ struct reactor_paths_test
             accs.emplace_back(ioc);
             BOOST_TEST(!accs.back().open());
             accs.back().set_option(socket_option::reuse_address(true));
-            BOOST_TEST(!accs.back().bind(endpoint(ipv4_address::loopback(), 0)));
+            BOOST_TEST(
+                !accs.back().bind(endpoint(ipv4_address::loopback(), 0)));
             BOOST_TEST(!accs.back().listen());
             ports.push_back(accs.back().local_endpoint().port());
             peers.emplace_back(ioc);
@@ -810,17 +820,16 @@ struct reactor_paths_test
         for (int i = 0; i < N; ++i)
         {
             capy::run_async(ex)(
-                [](tcp_acceptor& a, tcp_socket& p, bool& done)
-                    -> capy::task<> {
+                [](tcp_acceptor& a, tcp_socket& p, bool& done) -> capy::task<> {
                     [[maybe_unused]] auto [ec] = co_await a.accept(p);
-                    done = true;
+                    done                       = true;
                 }(accs[i], peers[i], accept_done[i]));
             capy::run_async(ex)(
                 [](tcp_socket& c, endpoint ep, bool& done) -> capy::task<> {
                     [[maybe_unused]] auto [ec] = co_await c.connect(ep);
-                    done = true;
+                    done                       = true;
                 }(clients[i], endpoint(ipv4_address::loopback(), ports[i]),
-                                 connect_done[i]));
+                                                           connect_done[i]));
         }
 
         ioc.run();
@@ -838,7 +847,7 @@ struct reactor_paths_test
     void testStopTokenWaitRead()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -852,7 +861,8 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -868,7 +878,7 @@ struct reactor_paths_test
     void testStopTokenWaitError()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -882,7 +892,8 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -912,10 +923,10 @@ struct reactor_paths_test
         auto port = s2.local_endpoint().port();
 
         std::error_code conn_ec;
-        bool conn_done = false;
+        bool conn_done    = false;
         auto connect_task = [&]() -> capy::task<> {
-            auto [ec] = co_await s1.connect(
-                endpoint(ipv4_address::loopback(), port));
+            auto [ec] =
+                co_await s1.connect(endpoint(ipv4_address::loopback(), port));
             conn_ec   = ec;
             conn_done = true;
         };
@@ -937,7 +948,8 @@ struct reactor_paths_test
             recv_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -973,7 +985,8 @@ struct reactor_paths_test
             recv_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -1008,7 +1021,8 @@ struct reactor_paths_test
             accept_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -1081,26 +1095,24 @@ struct reactor_paths_test
         int lst = ::socket(AF_INET, SOCK_STREAM, 0);
         BOOST_TEST(lst >= 0);
         sockaddr_in addr{};
-        addr.sin_family      = AF_INET;
+        addr.sin_family = AF_INET;
         // htonl/ntohs are macros on the BSDs; they must stay unqualified.
         addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         addr.sin_port        = 0;
         BOOST_TEST(
-            ::bind(lst, reinterpret_cast<sockaddr*>(&addr),
-                   sizeof(addr)) == 0);
+            ::bind(lst, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
         BOOST_TEST(::listen(lst, 0) == 0);
         socklen_t alen = sizeof(addr);
         BOOST_TEST(
-            ::getsockname(lst, reinterpret_cast<sockaddr*>(&addr),
-                          &alen) == 0);
+            ::getsockname(lst, reinterpret_cast<sockaddr*>(&addr), &alen) == 0);
 
         // Occupy the queue. Platform variation is tolerated: if the
         // filler is refused, the victim will be refused too, which the
         // assertions below accept — only a false success is a failure.
         int filler = ::socket(AF_INET, SOCK_STREAM, 0);
         BOOST_TEST(filler >= 0);
-        std::ignore = ::connect(
-            filler, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+        std::ignore =
+            ::connect(filler, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
 
         auto port = ntohs(addr.sin_port);
 
@@ -1119,8 +1131,8 @@ struct reactor_paths_test
         // is processed only after the driver has parked.
         auto canceller = [&]() -> capy::task<> {
             char c[2];
-            [[maybe_unused]] auto [ec, n] = co_await t1.read_some(
-                capy::mutable_buffer(c, sizeof(c)));
+            [[maybe_unused]] auto [ec, n] =
+                co_await t1.read_some(capy::mutable_buffer(c, sizeof(c)));
             // Drain the ready queue before cancelling: a falsely
             // completed connect is already posted at this point, and
             // cancelling first would mark the op cancelled and mask
@@ -1135,10 +1147,10 @@ struct reactor_paths_test
             // fresh socket's spurious writable event is dispatched and
             // latched before the connect begins.
             std::ignore = co_await corosio::delay(std::chrono::milliseconds(1));
-            [[maybe_unused]] auto [sec, sn] = co_await t2.write_some(
-                capy::const_buffer("go", 2));
-            auto [ec] = co_await sock.connect(
-                endpoint(ipv4_address::loopback(), port));
+            [[maybe_unused]] auto [sec, sn] =
+                co_await t2.write_some(capy::const_buffer("go", 2));
+            auto [ec] =
+                co_await sock.connect(endpoint(ipv4_address::loopback(), port));
             conn_ec   = ec;
             conn_done = true;
         };
@@ -1167,8 +1179,8 @@ struct reactor_paths_test
             tcp_info ti{};
             socklen_t tlen = sizeof(ti);
             if (::getsockopt(
-                    sock.native_handle(), IPPROTO_TCP, TCP_INFO, &ti,
-                    &tlen) == 0)
+                    sock.native_handle(), IPPROTO_TCP, TCP_INFO, &ti, &tlen) ==
+                0)
             {
                 // TCP_SYN_SENT / TCPS_SYN_SENT on every target; the
                 // enum and macro spellings differ, the value does not.
@@ -1182,14 +1194,13 @@ struct reactor_paths_test
             sockaddr_storage peer{};
             socklen_t plen = sizeof(peer);
             if (::getpeername(
-                    sock.native_handle(),
-                    reinterpret_cast<sockaddr*>(&peer), &plen) != 0)
+                    sock.native_handle(), reinterpret_cast<sockaddr*>(&peer),
+                    &plen) != 0)
             {
                 int soerr       = 0;
                 socklen_t sslen = sizeof(soerr);
-                std::ignore = ::getsockopt(
-                    sock.native_handle(), SOL_SOCKET, SO_ERROR, &soerr,
-                    &sslen);
+                std::ignore     = ::getsockopt(
+                    sock.native_handle(), SOL_SOCKET, SO_ERROR, &soerr, &sslen);
                 false_success = soerr == 0;
             }
 #endif
@@ -1221,8 +1232,8 @@ struct reactor_paths_test
 
         auto waiter = [&]() -> capy::task<> {
             char c;
-            [[maybe_unused]] auto [rec, rn] = co_await s1.read_some(
-                capy::mutable_buffer(&c, 1));
+            [[maybe_unused]] auto [rec, rn] =
+                co_await s1.read_some(capy::mutable_buffer(&c, 1));
             read_ec = rec;
             // Reporting the reset consumed SO_ERROR. Linux keeps
             // POLLHUP visible on the dead socket; on a platform that
@@ -1273,8 +1284,8 @@ struct reactor_paths_test
         BOOST_TEST(!ssock.open(udp::v4()));
 
         std::error_code wait_ec;
-        bool wait_done     = false;
-        bool skipped       = false;
+        bool wait_done = false;
+        bool skipped   = false;
         std::error_code recv_ec;
         std::size_t recv_n = 42;
 
@@ -1290,8 +1301,8 @@ struct reactor_paths_test
                 co_return;
             }
             auto [wec] = co_await rsock.wait(wait_type::read);
-            wait_ec   = wec;
-            wait_done = true;
+            wait_ec    = wec;
+            wait_done  = true;
             char buf[4];
             endpoint source;
             auto [rec, rn] = co_await rsock.recv_from(
@@ -1319,7 +1330,7 @@ struct reactor_paths_test
     {
         io_context_options opts;
         opts.max_events_per_poll = 0;
-        bool threw = false;
+        bool threw               = false;
         try
         {
             [[maybe_unused]] io_context ioc(Backend, opts);
@@ -1342,8 +1353,8 @@ struct reactor_paths_test
         BOOST_TEST(tcp_fd >= 0);
 
         local_stream_socket sock(ioc);
-        BOOST_TEST(sock.assign(tcp_fd)
-                   == std::errc::address_family_not_supported);
+        BOOST_TEST(
+            sock.assign(tcp_fd) == std::errc::address_family_not_supported);
         // rejection leaves ownership with the caller
         if (!sock.is_open())
             ::close(tcp_fd);
@@ -1359,8 +1370,7 @@ struct reactor_paths_test
         BOOST_TEST(fd >= 0);
 
         local_datagram_socket sock(ioc);
-        BOOST_TEST(sock.assign(fd)
-                   == std::errc::wrong_protocol_type);
+        BOOST_TEST(sock.assign(fd) == std::errc::wrong_protocol_type);
         if (!sock.is_open())
             ::close(fd);
     }
@@ -1369,7 +1379,7 @@ struct reactor_paths_test
     void testLocalStreamWaitErrorCancel()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         local_stream_socket s1(ioc), s2(ioc);
         if (auto ec = connect_pair(s1, s2))
             throw std::system_error(ec, "connect_pair");
@@ -1383,7 +1393,8 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
             s1.cancel();
         };
 
@@ -1400,7 +1411,7 @@ struct reactor_paths_test
     void testLocalStreamWaitWrite()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         local_stream_socket s1(ioc), s2(ioc);
         if (auto ec = connect_pair(s1, s2))
             throw std::system_error(ec, "connect_pair");
@@ -1425,15 +1436,15 @@ struct reactor_paths_test
     void testLocalStreamScatterRead()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         local_stream_socket s1(ioc), s2(ioc);
         if (auto ec = connect_pair(s1, s2))
             throw std::system_error(ec, "connect_pair");
 
         constexpr std::string_view payload = "local-scatter-read-payload";
-        char a[6] = {};
-        char b[6] = {};
-        char c[64] = {};
+        char a[6]                          = {};
+        char b[6]                          = {};
+        char c[64]                         = {};
 
         std::error_code read_ec;
         std::size_t read_n = 0;
@@ -1449,7 +1460,8 @@ struct reactor_paths_test
             read_n       = n;
         };
         auto writer = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(10));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(10));
             [[maybe_unused]] auto [ec, n] = co_await s2.write_some(
                 capy::const_buffer(payload.data(), payload.size()));
         };
@@ -1466,7 +1478,7 @@ struct reactor_paths_test
     void testLocalStreamGatherWrite()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         local_stream_socket s1(ioc), s2(ioc);
         if (auto ec = connect_pair(s1, s2))
             throw std::system_error(ec, "connect_pair");
@@ -1506,7 +1518,7 @@ struct reactor_paths_test
     void testLocalDgramWaitErrorCancel()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         local_datagram_socket s1(ioc), s2(ioc);
         if (auto ec = connect_pair(s1, s2))
             throw std::system_error(ec, "connect_pair");
@@ -1520,7 +1532,8 @@ struct reactor_paths_test
             wait_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
             s1.cancel();
         };
 
@@ -1537,7 +1550,7 @@ struct reactor_paths_test
     void testLocalDgramWaitWrite()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         local_datagram_socket s1(ioc), s2(ioc);
         if (auto ec = connect_pair(s1, s2))
             throw std::system_error(ec, "connect_pair");
@@ -1562,7 +1575,7 @@ struct reactor_paths_test
     void testLocalDgramRecvEmpty()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         local_datagram_socket s1(ioc), s2(ioc);
         if (auto ec = connect_pair(s1, s2))
             throw std::system_error(ec, "connect_pair");
@@ -1587,7 +1600,7 @@ struct reactor_paths_test
     void testLocalDgramSendEmpty()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         local_datagram_socket s1(ioc), s2(ioc);
         if (auto ec = connect_pair(s1, s2))
             throw std::system_error(ec, "connect_pair");
@@ -1663,13 +1676,14 @@ struct reactor_paths_test
         char buf[16];
 
         auto reader = [&]() -> capy::task<> {
-            [[maybe_unused]] auto [ec, n] = co_await s1.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            [[maybe_unused]] auto [ec, n] =
+                co_await s1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             read_ec   = ec;
             read_done = true;
         };
         auto canceller = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(20));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
             ss.request_stop();
         };
 
@@ -1774,20 +1788,20 @@ struct reactor_paths_test
         endpoint source;
 
         auto tcp_reader = [&]() -> capy::task<> {
-            std::ignore = co_await t1.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            std::ignore =
+                co_await t1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         };
         auto udp_reader = [&]() -> capy::task<> {
             std::ignore = co_await u1.recv_from(
                 capy::mutable_buffer(buf, sizeof(buf)), source);
         };
         auto ls_reader = [&]() -> capy::task<> {
-            std::ignore = co_await ls1.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            std::ignore =
+                co_await ls1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         };
         auto ld_reader = [&]() -> capy::task<> {
-            std::ignore = co_await ld1.recv(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            std::ignore =
+                co_await ld1.recv(capy::mutable_buffer(buf, sizeof(buf)));
         };
 
         capy::run_async(ex)(tcp_reader());

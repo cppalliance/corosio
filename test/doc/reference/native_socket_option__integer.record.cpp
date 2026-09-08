@@ -30,7 +30,8 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::integer[]
-void limit_how_far_outgoing_packets_can_travel(corosio::udp_socket& sock)
+void
+limit_how_far_outgoing_packets_can_travel(corosio::udp_socket& sock)
 {
     // Precondition: sock is open on udp::v4(). IPPROTO_IP options don't
     // apply to an AF_INET6 socket; set_option compiles either way and

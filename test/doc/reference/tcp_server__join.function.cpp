@@ -21,19 +21,19 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 // tag::correct_usage[]
 // Precondition: srv is bound and has workers.
-void run_server_to_completion(
-    corosio::io_context& ioc, corosio::tcp_server& srv)
+void
+run_server_to_completion(corosio::io_context& ioc, corosio::tcp_server& srv)
 {
     // main thread
     srv.start();
-    ioc.run();      // Blocks until work completes
-    srv.join();     // Safe: called after ioc.run() returns
+    ioc.run();  // Blocks until work completes
+    srv.join(); // Safe: called after ioc.run() returns
 }
 // end::correct_usage[]
 
@@ -44,6 +44,7 @@ class self_joining_worker : public corosio::tcp_server::worker_base
     corosio::io_context& ctx_;
     corosio::tcp_socket sock_;
     corosio::tcp_server& srv_;
+
 public:
     self_joining_worker(corosio::io_context& ctx, corosio::tcp_server& srv)
         : ctx_(ctx)
@@ -52,13 +53,15 @@ public:
     {
     }
 
-    corosio::tcp_socket& socket() override { return sock_; }
+    corosio::tcp_socket& socket() override
+    {
+        return sock_;
+    }
 
     void run(corosio::tcp_server::launcher launch) override
     {
-        launch(ctx_.get_executor(), [this]() -> capy::task<>
-        {
-            srv_.join();  // DEADLOCK: blocks the executor
+        launch(ctx_.get_executor(), [this]() -> capy::task<> {
+            srv_.join(); // DEADLOCK: blocks the executor
             co_return;
         }());
     }

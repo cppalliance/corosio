@@ -22,7 +22,8 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::send_buffer_size[]
-void widen_the_send_buffer(corosio::tcp_socket& sock)
+void
+widen_the_send_buffer(corosio::tcp_socket& sock)
 {
     // Room for the kernel to hold data the peer has not acknowledged yet;
     // worth raising on a high-bandwidth, high-latency path.

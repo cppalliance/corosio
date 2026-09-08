@@ -68,7 +68,6 @@ public:
     */
     explicit local_endpoint(std::string_view path);
 
-
     /** Return the socket path.
 
         For abstract sockets, the returned view includes the
@@ -104,8 +103,7 @@ public:
     friend bool
     operator==(local_endpoint const& a, local_endpoint const& b) noexcept
     {
-        return a.len_ == b.len_ &&
-            std::memcmp(a.path_, b.path_, a.len_) == 0;
+        return a.len_ == b.len_ && std::memcmp(a.path_, b.path_, a.len_) == 0;
     }
 
     /** Format the endpoint for stream output.

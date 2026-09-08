@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 // tag::assume[]
@@ -39,7 +39,7 @@
 #include <boost/capy/read.hpp>
 #include <boost/capy/write.hpp>
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 // end::assume[]
 
 #include <boost/corosio/io_context.hpp>
@@ -84,7 +84,7 @@ construction()
 {
     // tag::construction[]
     corosio::io_context ioc;
-    corosio::resolver r(ioc);  // From execution context
+    corosio::resolver r(ioc); // From execution context
     // end::construction[]
 }
 
@@ -101,9 +101,7 @@ with_flags(corosio::resolver& r)
 {
     // tag::with_flags[]
     auto [ec, results] = co_await r.resolve(
-        "www.example.com",
-        "https",
-        corosio::resolve_flags::address_configured);
+        "www.example.com", "https", corosio::resolve_flags::address_configured);
     // end::with_flags[]
 }
 
@@ -112,8 +110,7 @@ capy::task<>
 combined_flags(corosio::resolver& r)
 {
     // tag::combined_flags[]
-    auto flags =
-        corosio::resolve_flags::numeric_host |
+    auto flags = corosio::resolve_flags::numeric_host |
         corosio::resolve_flags::numeric_service;
 
     auto [ec, results] = co_await r.resolve("127.0.0.1", "8080", flags);
@@ -174,10 +171,9 @@ public:
 } // namespace entry_synopsis
 
 // tag::connect_to_service[]
-capy::task<void> connect_to_service(
-    corosio::io_context& ioc,
-    std::string_view host,
-    std::string_view service)
+capy::task<void>
+connect_to_service(
+    corosio::io_context& ioc, std::string_view host, std::string_view service)
 {
     corosio::resolver r(ioc);
     auto [resolve_ec, results] = co_await r.resolve(host, service);
@@ -197,7 +193,7 @@ capy::task<void> connect_to_service(
     {
         auto [ec] = co_await sock.connect(entry.get_endpoint());
         if (!ec)
-            co_return;  // Connected successfully
+            co_return; // Connected successfully
 
         last_error = ec;
         sock.close();
@@ -256,14 +252,13 @@ concurrent_resolves(corosio::resolver& resolver)
     // tag::single_inflight[]
     // WRONG: Concurrent resolves on same resolver - UNDEFINED BEHAVIOR
     auto f1 = resolver.resolve("host1", "80");
-    auto f2 = resolver.resolve("host2", "80");  // BAD: overlaps with f1
+    auto f2 = resolver.resolve("host2", "80"); // BAD: overlaps with f1
     // end::single_inflight[]
 }
 
 // tag::http_get[]
-capy::task<void> http_get(
-    corosio::io_context& ioc,
-    std::string_view hostname)
+capy::task<void>
+http_get(corosio::io_context& ioc, std::string_view hostname)
 {
     // Resolve hostname
     corosio::resolver r(ioc);
@@ -292,14 +287,16 @@ capy::task<void> http_get(
     }
 
     // Send HTTP request
-    std::string request =
-        "GET / HTTP/1.1\r\n"
-        "Host: " + std::string(hostname) + "\r\n"
+    std::string request = "GET / HTTP/1.1\r\n"
+                          "Host: " +
+        std::string(hostname) +
+        "\r\n"
         "Connection: close\r\n"
         "\r\n";
 
     if (auto [ec, n] = co_await capy::write(
-            sock, capy::const_buffer(request.data(), request.size())); ec)
+            sock, capy::const_buffer(request.data(), request.size()));
+        ec)
         throw std::system_error(ec);
 
     // Read the response until the server closes the connection
@@ -320,15 +317,13 @@ capy::task<void> http_get(
 
 struct resolver_test
 {
-    void
-    testConstruction()
+    void testConstruction()
     {
         construction();
         BOOST_TEST(true);
     }
 
-    void
-    testCombinedFlags()
+    void testCombinedFlags()
     {
         corosio::io_context ioc;
         corosio::resolver r(ioc);
@@ -336,8 +331,7 @@ struct resolver_test
         ioc.run();
     }
 
-    void
-    testIterateResults()
+    void testIterateResults()
     {
         // Synthetic results keep the fragment's loop deterministic:
         // no DNS query is needed to exercise it.
@@ -352,8 +346,7 @@ struct resolver_test
         BOOST_TEST(results.size() == 2);
     }
 
-    void
-    testCancel()
+    void testCancel()
     {
         corosio::io_context ioc;
         corosio::resolver r(ioc);
@@ -362,16 +355,14 @@ struct resolver_test
         BOOST_TEST(true);
     }
 
-    void
-    testMatchCanceled()
+    void testMatchCanceled()
     {
         match_canceled(capy::error::canceled);
         match_canceled({});
         BOOST_TEST(true);
     }
 
-    void
-    testMoveSemantics()
+    void testMoveSemantics()
     {
         // The page's move-semantics block is pseudocode (it shows a
         // deliberate compile error); verify the valid part here.
@@ -382,8 +373,7 @@ struct resolver_test
         BOOST_TEST(true);
     }
 
-    void
-    run()
+    void run()
     {
         testConstruction();
         testCombinedFlags();

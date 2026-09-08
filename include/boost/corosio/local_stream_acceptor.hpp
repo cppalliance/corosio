@@ -69,17 +69,19 @@ enum class bind_option
 */
 class BOOST_COROSIO_DECL local_stream_acceptor : public io_object
 {
-    struct wait_awaitable
-        : detail::void_op_base<wait_awaitable>
+    struct wait_awaitable : detail::void_op_base<wait_awaitable>
     {
         local_stream_acceptor& acc_;
         wait_type w_;
 
         wait_awaitable(local_stream_acceptor& acc, wait_type w) noexcept
-            : acc_(acc), w_(w) {}
+            : acc_(acc)
+            , w_(w)
+        {
+        }
 
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
             return acc_.get().wait(h, ex, w_, token_, &ec_);
         }
@@ -92,8 +94,7 @@ class BOOST_COROSIO_DECL local_stream_acceptor : public io_object
         mutable std::error_code ec_;
         mutable io_object::implementation* peer_impl_ = nullptr;
 
-        explicit move_accept_awaitable(
-            local_stream_acceptor& acc) noexcept
+        explicit move_accept_awaitable(local_stream_acceptor& acc) noexcept
             : acc_(acc)
         {
         }
@@ -105,11 +106,13 @@ class BOOST_COROSIO_DECL local_stream_acceptor : public io_object
             return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
-        [[nodiscard]] capy::io_result<local_stream_socket> await_resume() const noexcept
+        [[nodiscard]] capy::io_result<local_stream_socket>
+        await_resume() const noexcept
         {
             if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled),
-                        local_stream_socket()};
+                return {
+                    make_error_code(std::errc::operation_canceled),
+                    local_stream_socket()};
 
             if (ec_ || !peer_impl_)
                 return {ec_, local_stream_socket()};
@@ -210,9 +213,11 @@ public:
             conversion from move).
     */
     template<class Ex>
-        requires(!std::same_as<std::remove_cvref_t<Ex>, local_stream_acceptor>) &&
+        requires(!std::
+                     same_as<std::remove_cvref_t<Ex>, local_stream_acceptor>) &&
         capy::Executor<Ex>
-    explicit local_stream_acceptor(Ex const& ex) : local_stream_acceptor(ex.context())
+    explicit local_stream_acceptor(Ex const& ex)
+        : local_stream_acceptor(ex.context())
     {
     }
 
@@ -262,7 +267,8 @@ public:
     */
     local_stream_acceptor& operator=(local_stream_acceptor&& other) noexcept
     {
-        assert(&ctx_ == &other.ctx_ &&
+        assert(
+            &ctx_ == &other.ctx_ &&
             "move-assign requires the same execution_context");
         if (this != &other)
         {
@@ -297,9 +303,9 @@ public:
 
         A closed acceptor reports `errc::bad_file_descriptor`.
     */
-    [[nodiscard]] std::error_code
-    bind(corosio::local_endpoint ep,
-         bind_option opt = bind_option::none) noexcept;
+    [[nodiscard]] std::error_code bind(
+        corosio::local_endpoint ep,
+        bind_option opt = bind_option::none) noexcept;
 
     /** Start listening for incoming connections.
 

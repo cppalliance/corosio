@@ -84,8 +84,9 @@ build_alpn_wire(std::vector<std::string> const& protocols)
     std::string wire;
     for (auto const& p : protocols)
     {
-        if (p.empty() || p.size() > 255)    // LCOV_EXCL_LINE set_alpn validates eagerly
-            continue;                       // LCOV_EXCL_LINE set_alpn validates eagerly
+        if (p.empty() ||
+            p.size() > 255) // LCOV_EXCL_LINE set_alpn validates eagerly
+            continue;       // LCOV_EXCL_LINE set_alpn validates eagerly
         wire.push_back(static_cast<char>(p.size()));
         wire.append(p);
     }
@@ -94,14 +95,12 @@ build_alpn_wire(std::vector<std::string> const& protocols)
 
 class openssl_category_impl final : public std::error_category
 {
-    char const*
-    name() const noexcept override
+    char const* name() const noexcept override
     {
         return "corosio.openssl";
     }
 
-    std::string
-    message(int value) const override
+    std::string message(int value) const override
     {
         char buf[256];
         ::ERR_error_string_n(
@@ -158,8 +157,9 @@ static int
 password_callback(char* buf, int size, int rwflag, void* userdata)
 {
     auto* cd = static_cast<tls_context_data const*>(userdata);
-    if (!cd || !cd->password_callback)      // LCOV_EXCL_LINE installed only with a callback
-        return 0;                           // LCOV_EXCL_LINE installed only with a callback
+    if (!cd ||
+        !cd->password_callback) // LCOV_EXCL_LINE installed only with a callback
+        return 0;               // LCOV_EXCL_LINE installed only with a callback
 
     tls_password_purpose purpose = (rwflag == 0)
         ? tls_password_purpose::for_reading
@@ -186,13 +186,13 @@ verify_callback_trampoline(int preverified, X509_STORE_CTX* store_ctx)
 {
     SSL* ssl = static_cast<SSL*>(X509_STORE_CTX_get_ex_data(
         store_ctx, SSL_get_ex_data_X509_STORE_CTX_idx()));
-    if (!ssl)                               // LCOV_EXCL_LINE ex-data set before verify runs
-        return preverified;                 // LCOV_EXCL_LINE ex-data set before verify runs
+    if (!ssl)               // LCOV_EXCL_LINE ex-data set before verify runs
+        return preverified; // LCOV_EXCL_LINE ex-data set before verify runs
 
     auto* cd = static_cast<tls_context_data const*>(
         SSL_CTX_get_ex_data(SSL_get_SSL_CTX(ssl), sni_ctx_data_index));
-    if (!cd)                                // LCOV_EXCL_LINE set at context build
-        return preverified;                 // LCOV_EXCL_LINE set at context build
+    if (!cd)                // LCOV_EXCL_LINE set at context build
+        return preverified; // LCOV_EXCL_LINE set at context build
 
     bool ok = preverified != 0;
 
@@ -242,12 +242,17 @@ verify_callback_trampoline(int preverified, X509_STORE_CTX* store_ctx)
 // valid for the connection) rather than into a local buffer.
 static int
 alpn_select_cb(
-    SSL* /* ssl */, unsigned char const** out, unsigned char* outlen,
-    unsigned char const* in, unsigned int inlen, void* arg)
+    SSL* /* ssl */,
+    unsigned char const** out,
+    unsigned char* outlen,
+    unsigned char const* in,
+    unsigned int inlen,
+    void* arg)
 {
     auto const* prefs = static_cast<std::vector<std::string> const*>(arg);
-    if (!prefs || prefs->empty())           // LCOV_EXCL_LINE installed only with a non-empty list
-        return SSL_TLSEXT_ERR_NOACK;        // LCOV_EXCL_LINE installed only with a non-empty list
+    if (!prefs ||
+        prefs->empty()) // LCOV_EXCL_LINE installed only with a non-empty list
+        return SSL_TLSEXT_ERR_NOACK; // LCOV_EXCL_LINE installed only with a non-empty list
 
     // Server preference order wins: for each server protocol, look for a
     // matching entry in the client's offered list.
@@ -371,8 +376,7 @@ public:
                 SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
         // The trampoline runs the revocation soft-fail downgrade and the
         // user callback, so install it if either is configured.
-        bool const need_trampoline =
-            cd.verify_callback ||
+        bool const need_trampoline = cd.verify_callback ||
             cd.revocation != tls_revocation_policy::disabled;
         SSL_CTX_set_verify(
             ctx_, verify_mode_flag,
@@ -389,8 +393,7 @@ public:
             // verify_mode::peer server. Fail closed like every other setup
             // error.
             BIO* bio = BIO_new_mem_buf(
-                cd.pkcs12_data.data(),
-                static_cast<int>(cd.pkcs12_data.size()));
+                cd.pkcs12_data.data(), static_cast<int>(cd.pkcs12_data.size()));
             if (!bio)
                 setup_failed_ = true;
             else
@@ -707,8 +710,8 @@ engine::init(tls_context const& ctx)
 void
 engine::reset()
 {
-    if (!ssl_)          // LCOV_EXCL_LINE reset() runs only on a used stream
-        return;         // LCOV_EXCL_LINE reset() runs only on a used stream
+    if (!ssl_)  // LCOV_EXCL_LINE reset() runs only on a used stream
+        return; // LCOV_EXCL_LINE reset() runs only on a used stream
 
     // Preserves SSL* and BIO pair, releases session state
     if (SSL_clear(ssl_) != 1)
@@ -760,7 +763,8 @@ engine::check_session() const noexcept
 }
 
 std::error_code
-engine::prepare(tls_context const& ctx, tls_role role, std::string const& hostname)
+engine::prepare(
+    tls_context const& ctx, tls_role role, std::string const& hostname)
 {
     // Session creation is deferred from construction so a setup
     // failure reports through the handshake completion.
@@ -835,7 +839,8 @@ engine::perform(engine_op op, void* data, std::size_t len)
     // report I/O attempted before then instead of crashing on a null
     // SSL handle.
     if (!ssl_)
-        return {engine_want::done,
+        return {
+            engine_want::done,
             std::make_error_code(std::errc::invalid_argument), 0};
 
     ERR_clear_error();
@@ -868,13 +873,15 @@ engine::perform(engine_op op, void* data, std::size_t len)
         return {
             pending_output() > 0 ? engine_want::output_then_retry
                                  : engine_want::input,
-            {}, 0};
+            {},
+            0};
 
     if (transfer ? ret > 0 : ret == 1)
         return {
             pending_output() > 0 ? engine_want::output_then_done
                                  : engine_want::done,
-            {}, transfer ? static_cast<std::size_t>(ret) : 0};
+            {},
+            transfer ? static_cast<std::size_t>(ret) : 0};
 
     int const err = SSL_get_error(ssl_, ret);
 
@@ -885,7 +892,8 @@ engine::perform(engine_op op, void* data, std::size_t len)
         return {
             pending_output() > 0 ? engine_want::output_then_retry
                                  : engine_want::input,
-            {}, 0};
+            {},
+            0};
 
     if (transfer && err == SSL_ERROR_ZERO_RETURN)
     {
@@ -913,9 +921,13 @@ engine::perform(engine_op op, void* data, std::size_t len)
             // and the driver's `map_fill_error` policy.
             // The driver's map_fill_error reports the truncation
             // before a BIO-pair engine can see SYSCALL.
-            ec = received_shutdown()                                // LCOV_EXCL_LINE driver maps truncation first
-                ? std::error_code{}                                 // LCOV_EXCL_LINE driver maps truncation first
-                : make_error_code(capy::error::stream_truncated);   // LCOV_EXCL_LINE driver maps truncation first
+            ec =
+                received_shutdown() // LCOV_EXCL_LINE driver maps truncation first
+                ? std::error_code{}
+                // LCOV_EXCL_LINE driver maps truncation first
+                : make_error_code(
+                      capy::error::
+                          stream_truncated); // LCOV_EXCL_LINE driver maps truncation first
         }
         else
         {

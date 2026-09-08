@@ -180,34 +180,34 @@ public:
     };
 
     /// Represent the awaitable returned by @ref connect.
-    struct connect_awaitable
-        : detail::void_op_base<connect_awaitable>
+    struct connect_awaitable : detail::void_op_base<connect_awaitable>
     {
         tcp_socket& s_;
         endpoint endpoint_;
 
         connect_awaitable(tcp_socket& s, endpoint ep) noexcept
-            : s_(s), endpoint_(ep) {}
+            : s_(s)
+            , endpoint_(ep)
+        {
+        }
 
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
             return s_.get().connect(h, ex, endpoint_, token_, &ec_);
         }
     };
 
     /// Represent the awaitable returned by @ref wait.
-    struct wait_awaitable
-        : detail::void_op_base<wait_awaitable>
+    struct wait_awaitable : detail::void_op_base<wait_awaitable>
     {
         tcp_socket& s_;
         wait_type w_;
 
-        wait_awaitable(tcp_socket& s, wait_type w) noexcept
-            : s_(s), w_(w) {}
+        wait_awaitable(tcp_socket& s, wait_type w) noexcept : s_(s), w_(w) {}
 
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
             return s_.get().wait(h, ex, w_, token_, &ec_);
         }

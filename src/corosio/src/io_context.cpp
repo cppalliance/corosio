@@ -154,8 +154,7 @@ check_options([[maybe_unused]] io_context_options const& opts)
 {
 #if BOOST_COROSIO_POSIX
     if (opts.thread_pool_size < 1)
-        throw std::invalid_argument(
-            "thread_pool_size must be at least 1");
+        throw std::invalid_argument("thread_pool_size must be at least 1");
 #endif
 }
 
@@ -209,11 +208,11 @@ apply_scheduler_options(
 {
     sched.configure_threading(make_threading_config(opts));
 
-#if BOOST_COROSIO_HAS_EPOLL || BOOST_COROSIO_HAS_KQUEUE || BOOST_COROSIO_HAS_SELECT
+#if BOOST_COROSIO_HAS_EPOLL || BOOST_COROSIO_HAS_KQUEUE || \
+    BOOST_COROSIO_HAS_SELECT
     // dynamic_cast — when io_uring is also linked, the runtime probe may
     // have selected uring_scheduler instead of a reactor_scheduler.
-    if (auto* reactor =
-            dynamic_cast<detail::reactor_scheduler*>(&sched))
+    if (auto* reactor = dynamic_cast<detail::reactor_scheduler*>(&sched))
     {
         // Detect "user kept the defaults" by comparing all three to the
         // io_context-options-defined struct defaults.
@@ -235,24 +234,18 @@ apply_scheduler_options(
             ua   = 0;
         }
 
-        reactor->configure_reactor(
-            opts.max_events_per_poll,
-            init,
-            max,
-            ua);
+        reactor->configure_reactor(opts.max_events_per_poll, init, max, ua);
     }
 #endif
 
 #if BOOST_COROSIO_HAS_URING
-    if (auto* uring_sched =
-            dynamic_cast<detail::uring_scheduler*>(&sched))
+    if (auto* uring_sched = dynamic_cast<detail::uring_scheduler*>(&sched))
     {
         if (opts.enable_sqpoll)
             uring_sched->configure_sqpoll(
                 true, opts.sq_thread_idle_ms, opts.sq_thread_cpu);
     }
 #endif
-
 }
 
 // Bring up backend infrastructure whose setup depends on the options
@@ -263,8 +256,7 @@ void
 finish_construction([[maybe_unused]] detail::scheduler& sched)
 {
 #if BOOST_COROSIO_HAS_URING
-    if (auto* uring_sched =
-            dynamic_cast<detail::uring_scheduler*>(&sched))
+    if (auto* uring_sched = dynamic_cast<detail::uring_scheduler*>(&sched))
         uring_sched->init_ring();
 #endif
 }
@@ -300,8 +292,7 @@ io_context::io_context(unsigned concurrency_hint)
 }
 
 io_context::io_context(
-    io_context_options const& opts_in,
-    unsigned concurrency_hint)
+    io_context_options const& opts_in, unsigned concurrency_hint)
     : capy::execution_context(this)
     , sched_(nullptr)
 {
@@ -322,8 +313,7 @@ io_context::apply_options_pre_(io_context_options const& opts)
 
 void
 io_context::apply_options_post_(
-    io_context_options const& opts_in,
-    unsigned concurrency_hint)
+    io_context_options const& opts_in, unsigned concurrency_hint)
 {
     create_thread_pool(*this, opts_in);
     apply_scheduler_options(*sched_, opts_in, concurrency_hint);

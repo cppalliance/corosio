@@ -27,13 +27,14 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::no_delay[]
-void disable_nagle_on_a_connected_socket(corosio::tcp_socket& sock)
+void
+disable_nagle_on_a_connected_socket(corosio::tcp_socket& sock)
 {
     // Send small writes immediately instead of coalescing them.
     sock.set_option(corosio::socket_option::no_delay(true));
 
-    auto nd = sock.get_option<corosio::socket_option::no_delay>();
-    bool disabled = nd.value();  // true: Nagle's algorithm is off
+    auto nd       = sock.get_option<corosio::socket_option::no_delay>();
+    bool disabled = nd.value(); // true: Nagle's algorithm is off
 }
 // end::no_delay[]
 

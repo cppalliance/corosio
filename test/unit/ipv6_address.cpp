@@ -173,8 +173,8 @@ struct ipv6_address_test
         // Exercise each print_hex width branch (4, 3, 2, 1 hex digit).
         // 4 digits: 0xabcd, 3 digits: 0x0bcd, 2 digits: 0x00bc, 1 digit: 0x000b.
         ipv6_address::bytes_type b{
-            {0xab, 0xcd, 0x0b, 0xcd, 0x00, 0xbc, 0x00, 0x0b,
-             0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0}};
+            {0xab, 0xcd, 0x0b, 0xcd, 0x00, 0xbc, 0x00, 0x0b, 0x12, 0x34, 0x56,
+             0x78, 0x9a, 0xbc, 0xde, 0xf0}};
         ipv6_address a(b);
         BOOST_TEST_EQ(a.to_string(), "abcd:bcd:bc:b:1234:5678:9abc:def0");
     }
@@ -323,7 +323,6 @@ struct ipv6_address_test
         BOOST_TEST_THROWS(
             ipv6_address::loopback().to_buffer(exact, 0), std::length_error);
     }
-
 
     void run()
     {

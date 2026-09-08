@@ -178,8 +178,7 @@ public:
     void close_socket() noexcept;
     void set_socket(SOCKET s) noexcept;
     void set_endpoints(
-        corosio::local_endpoint local,
-        corosio::local_endpoint remote) noexcept;
+        corosio::local_endpoint local, corosio::local_endpoint remote) noexcept;
 
 private:
     corosio::local_endpoint local_endpoint_;
@@ -234,8 +233,8 @@ public:
         std::stop_token token,
         std::error_code* ec) override;
 
-    std::error_code shutdown(
-        local_stream_socket::shutdown_type what) noexcept override;
+    std::error_code
+    shutdown(local_stream_socket::shutdown_type what) noexcept override;
 
     native_handle_type native_handle() const noexcept override;
 

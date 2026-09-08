@@ -208,8 +208,7 @@ TEST_SUITE(native_io_context_test_iocp, "boost.corosio.native.io_context.iocp");
 struct native_io_context_test_uring : native_io_context_test<uring>
 {};
 TEST_SUITE(
-    native_io_context_test_uring,
-    "boost.corosio.native.io_context.uring");
+    native_io_context_test_uring, "boost.corosio.native.io_context.uring");
 #endif
 
 } // namespace boost::corosio

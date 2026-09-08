@@ -23,11 +23,12 @@ namespace {
 // tag::set_verify_mode[]
 // Configure before any stream is created from ctx; modifying a context
 // afterwards is undefined behavior.
-void verify_the_peer(corosio::tls_context& ctx)
+void
+verify_the_peer(corosio::tls_context& ctx)
 {
     // Verification needs trust anchors to verify against.
     if (auto ec = ctx.set_default_verify_paths())
-        return;  // report the error
+        return; // report the error
 
     // peer: check the certificate the peer presents, and fail the handshake
     // if the chain does not verify. This is what a client wants, because a
@@ -36,7 +37,7 @@ void verify_the_peer(corosio::tls_context& ctx)
     // presents no certificate at all. The default, tls_verify_mode::none,
     // checks nothing and accepts any peer.
     if (auto ec = ctx.set_verify_mode(corosio::tls_verify_mode::peer))
-        return;  // report the error
+        return; // report the error
 }
 // end::set_verify_mode[]
 

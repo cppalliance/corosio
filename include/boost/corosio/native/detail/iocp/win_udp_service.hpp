@@ -65,8 +65,7 @@ public:
         int type,
         int protocol) override;
     std::error_code assign_socket(
-        udp_socket::implementation& impl,
-        native_handle_type fd) override;
+        udp_socket::implementation& impl, native_handle_type fd) override;
     std::error_code
     bind_datagram(udp_socket::implementation& impl, endpoint ep) override;
 
@@ -1136,8 +1135,8 @@ win_udp_service::assign_socket(
     sockaddr_storage remote_storage{};
     int remote_len = sizeof(remote_storage);
     if (::getpeername(
-            sock, reinterpret_cast<sockaddr*>(&remote_storage),
-            &remote_len) == 0)
+            sock, reinterpret_cast<sockaddr*>(&remote_storage), &remote_len) ==
+        0)
         remote_ep = detail::from_sockaddr(remote_storage);
     internal->local_endpoint_  = local_ep;
     internal->remote_endpoint_ = remote_ep;

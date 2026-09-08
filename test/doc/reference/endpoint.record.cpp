@@ -23,7 +23,8 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::endpoint[]
-void construct_endpoints()
+void
+construct_endpoints()
 {
     // IPv4 endpoint
     corosio::endpoint ep4(corosio::ipv4_address::loopback(), 8080);

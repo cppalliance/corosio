@@ -25,7 +25,8 @@ namespace {
 // Precondition: sock is open (set_option throws bad_file_descriptor
 // otherwise). set_option itself throws rather than returning an error
 // code.
-void configure_low_latency(corosio::tcp_socket& sock)
+void
+configure_low_latency(corosio::tcp_socket& sock)
 {
     sock.set_option(corosio::socket_option::no_delay(true));
     sock.set_option(corosio::socket_option::receive_buffer_size(65536));

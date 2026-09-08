@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 // tag::assume[]
@@ -41,7 +41,7 @@
 #include <boost/capy/cond.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 // end::assume[]
 
 #include <boost/corosio/io_context.hpp>
@@ -69,17 +69,15 @@ namespace capy = boost::capy;
 namespace {
 
 capy::task<>
-stream_read(
-    corosio::io_context& ioc, bool& eof_seen, std::size_t& bytes_read)
+stream_read(corosio::io_context& ioc, bool& eof_seen, std::size_t& bytes_read)
 {
     // tag::stream_read[]
     corosio::stream_file f(ioc);
     if (auto ec = f.open("data.bin", corosio::file_base::read_only))
-        co_return;  // open failed
+        co_return; // open failed
 
     char buf[4096];
-    auto [ec, n] = co_await f.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
+    auto [ec, n] = co_await f.read_some(capy::mutable_buffer(buf, sizeof(buf)));
 
     if (ec == capy::cond::eof)
     {
@@ -97,31 +95,31 @@ stream_write(
 {
     // tag::stream_write[]
     corosio::stream_file f(ioc);
-    if (auto ec = f.open("output.bin",
-            corosio::file_base::write_only
-            | corosio::file_base::create
-            | corosio::file_base::truncate))
-        co_return;  // open failed
+    if (auto ec = f.open(
+            "output.bin",
+            corosio::file_base::write_only | corosio::file_base::create |
+                corosio::file_base::truncate))
+        co_return; // open failed
 
     std::string data = "hello world";
-    auto [ec, n] = co_await f.write_some(
-        capy::const_buffer(data.data(), data.size()));
+    auto [ec, n] =
+        co_await f.write_some(capy::const_buffer(data.data(), data.size()));
     // end::stream_write[]
     ec_out = ec;
-    n_out = n;
+    n_out  = n;
 }
 
 std::uint64_t
 reposition(corosio::stream_file& f)
 {
     // tag::seek[]
-    auto [ec, pos] = f.seek(0, corosio::file_base::seek_set);  // beginning
-    if (! ec)
+    auto [ec, pos] = f.seek(0, corosio::file_base::seek_set); // beginning
+    if (!ec)
         std::tie(ec, pos) =
-            f.seek(100, corosio::file_base::seek_cur);  // forward 100 bytes
-    if (! ec)
+            f.seek(100, corosio::file_base::seek_cur); // forward 100 bytes
+    if (!ec)
         std::tie(ec, pos) =
-            f.seek(-10, corosio::file_base::seek_end);  // 10 before end
+            f.seek(-10, corosio::file_base::seek_end); // 10 before end
     // end::seek[]
     BOOST_TEST(!ec);
     return pos;
@@ -129,49 +127,50 @@ reposition(corosio::stream_file& f)
 
 capy::task<>
 read_at(
-    corosio::io_context& ioc, std::error_code& ec_out,
-    std::size_t& n_out, char& first)
+    corosio::io_context& ioc,
+    std::error_code& ec_out,
+    std::size_t& n_out,
+    char& first)
 {
     // tag::read_at[]
     corosio::random_access_file f(ioc);
     if (auto ec = f.open("data.bin", corosio::file_base::read_only))
-        co_return;  // open failed
+        co_return; // open failed
 
     char buf[256];
     auto [ec, n] = co_await f.read_some_at(
-        1024,  // byte offset
+        1024, // byte offset
         capy::mutable_buffer(buf, sizeof(buf)));
     // end::read_at[]
     ec_out = ec;
-    n_out = n;
-    first = buf[0];
+    n_out  = n;
+    first  = buf[0];
 }
 
 capy::task<>
-write_at(
-    corosio::io_context& ioc, std::error_code& ec_out, std::size_t& n_out)
+write_at(corosio::io_context& ioc, std::error_code& ec_out, std::size_t& n_out)
 {
     // tag::write_at[]
     corosio::random_access_file f(ioc);
     if (auto ec = f.open("data.bin", corosio::file_base::read_write))
-        co_return;  // open failed
+        co_return; // open failed
 
-    auto [ec, n] = co_await f.write_some_at(
-        512, capy::const_buffer("patched", 7));
+    auto [ec, n] =
+        co_await f.write_some_at(512, capy::const_buffer("patched", 7));
     // end::write_at[]
     ec_out = ec;
-    n_out = n;
+    n_out  = n;
 }
 
 void
 open_log(corosio::stream_file& f)
 {
     // tag::open_flags[]
-    if (auto ec = f.open("log.txt",
-            corosio::file_base::write_only
-            | corosio::file_base::create
-            | corosio::file_base::append))
-        return;  // report the error
+    if (auto ec = f.open(
+            "log.txt",
+            corosio::file_base::write_only | corosio::file_base::create |
+                corosio::file_base::append))
+        return; // report the error
     // end::open_flags[]
 }
 
@@ -179,12 +178,12 @@ void
 inspect_metadata(corosio::stream_file& f)
 {
     // tag::metadata[]
-    auto bytes = f.size();                 // file size in bytes
-    if (auto ec = f.resize(1024))          // truncate or extend
+    auto bytes = f.size();        // file size in bytes
+    if (auto ec = f.resize(1024)) // truncate or extend
         return;
-    if (auto ec = f.sync_data())           // flush data to stable storage
+    if (auto ec = f.sync_data()) // flush data to stable storage
         return;
-    if (auto ec = f.sync_all())            // flush data and metadata
+    if (auto ec = f.sync_all()) // flush data and metadata
         return;
     // end::metadata[]
 }
@@ -197,15 +196,14 @@ open_platform_handle(char const* path)
 #if BOOST_COROSIO_POSIX
     return ::open(path, O_RDONLY);
 #else
-    return reinterpret_cast<corosio::native_handle_type>(
-        ::CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, nullptr,
-            OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr));
+    return reinterpret_cast<corosio::native_handle_type>(::CreateFileA(
+        path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+        FILE_FLAG_OVERLAPPED, nullptr));
 #endif
 }
 
 void
-close_platform_handle(
-    corosio::native_handle_type h)
+close_platform_handle(corosio::native_handle_type h)
 {
 #if BOOST_COROSIO_POSIX
     ::close(h);
@@ -243,8 +241,7 @@ adopt_handle(
 
 capy::task<>
 read_at_eof(
-    corosio::stream_file& f, capy::mutable_buffer buf,
-    std::error_code& ec_out)
+    corosio::stream_file& f, capy::mutable_buffer buf, std::error_code& ec_out)
 {
     // tag::error_handling[]
     auto [ec, n] = co_await f.read_some(buf);
@@ -262,8 +259,7 @@ read_at_eof(
 
 struct file_io_test
 {
-    void
-    testStreamRead()
+    void testStreamRead()
     {
         corosio::io_context ioc;
         bool eof_seen = false;
@@ -274,8 +270,7 @@ struct file_io_test
         BOOST_TEST_EQ(n, 2048u);
     }
 
-    void
-    testStreamWrite()
+    void testStreamWrite()
     {
         corosio::io_context ioc;
         std::error_code ec;
@@ -292,8 +287,7 @@ struct file_io_test
         BOOST_TEST(contents == "hello world");
     }
 
-    void
-    testSeek()
+    void testSeek()
     {
         corosio::io_context ioc;
         corosio::stream_file f(ioc);
@@ -302,13 +296,12 @@ struct file_io_test
         BOOST_TEST_EQ(reposition(f), 2038u);
     }
 
-    void
-    testReadAt()
+    void testReadAt()
     {
         corosio::io_context ioc;
         std::error_code ec;
         std::size_t n = 0;
-        char first = 0;
+        char first    = 0;
         capy::run_async(ioc.get_executor())(read_at(ioc, ec, n, first));
         ioc.run();
         BOOST_TEST(!ec);
@@ -316,8 +309,7 @@ struct file_io_test
         BOOST_TEST_EQ(first, 'a');
     }
 
-    void
-    testWriteAt()
+    void testWriteAt()
     {
         corosio::io_context ioc;
         std::error_code ec;
@@ -334,8 +326,7 @@ struct file_io_test
         BOOST_TEST(std::string_view(patched, 7) == "patched");
     }
 
-    void
-    testOpenFlagsAndMetadata()
+    void testOpenFlagsAndMetadata()
     {
         corosio::io_context ioc;
         corosio::stream_file f(ioc);
@@ -345,8 +336,7 @@ struct file_io_test
         BOOST_TEST_EQ(f.size(), 1024u);
     }
 
-    void
-    testNativeHandle()
+    void testNativeHandle()
     {
         corosio::io_context ioc;
         corosio::random_access_file f(ioc);
@@ -358,8 +348,7 @@ struct file_io_test
         BOOST_TEST(adopted);
     }
 
-    void
-    testErrorHandling()
+    void testErrorHandling()
     {
         corosio::io_context ioc;
         corosio::stream_file f(ioc);
@@ -368,14 +357,13 @@ struct file_io_test
         BOOST_TEST(!sec);
         char buf[64];
         std::error_code ec;
-        capy::run_async(ioc.get_executor())(read_at_eof(
-            f, capy::mutable_buffer(buf, sizeof(buf)), ec));
+        capy::run_async(ioc.get_executor())(
+            read_at_eof(f, capy::mutable_buffer(buf, sizeof(buf)), ec));
         ioc.run();
         BOOST_TEST(ec == capy::cond::eof);
     }
 
-    void
-    run()
+    void run()
     {
         namespace fs = std::filesystem;
 
@@ -395,16 +383,15 @@ struct file_io_test
         };
         cwd_guard guard;
         guard.dir = fs::temp_directory_path() /
-            ("corosio_doc_file_io_" +
-                std::to_string(std::random_device{}()));
+            ("corosio_doc_file_io_" + std::to_string(std::random_device{}()));
         fs::create_directories(guard.dir);
         fs::current_path(guard.dir);
 
         {
             std::ofstream out("data.bin", std::ios::binary);
             std::string filler(2048, 'a');
-            out.write(filler.data(),
-                static_cast<std::streamsize>(filler.size()));
+            out.write(
+                filler.data(), static_cast<std::streamsize>(filler.size()));
         }
 
         testStreamRead();

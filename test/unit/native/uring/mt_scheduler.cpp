@@ -40,7 +40,7 @@ struct uring_mt_scheduler_test
     void testForeignPostWakesParkedFollower()
     {
         native_io_context<uring> ioc;
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -56,7 +56,7 @@ struct uring_mt_scheduler_test
                 co_await s1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             std::ignore = ec;
             std::ignore = n;
-            resumed = true;
+            resumed     = true;
         };
         capy::run_async(ex)(reader());
 
@@ -103,9 +103,7 @@ struct uring_mt_scheduler_test
     }
 };
 
-TEST_SUITE(
-    uring_mt_scheduler_test,
-    "boost.corosio.native.uring.mt_scheduler");
+TEST_SUITE(uring_mt_scheduler_test, "boost.corosio.native.uring.mt_scheduler");
 
 } // namespace boost::corosio
 

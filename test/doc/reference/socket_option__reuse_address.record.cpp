@@ -24,10 +24,11 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::reuse_address[]
-void restart_a_listener_on_the_same_port(corosio::tcp_acceptor& acc)
+void
+restart_a_listener_on_the_same_port(corosio::tcp_acceptor& acc)
 {
     if (auto ec = acc.open(corosio::tcp::v4()))
-        return;  // report the error
+        return; // report the error
 
     // Lets bind() succeed while connections from a previous listener are
     // still in TIME_WAIT -- the difference between a server that restarts
@@ -37,9 +38,9 @@ void restart_a_listener_on_the_same_port(corosio::tcp_acceptor& acc)
     acc.set_option(corosio::socket_option::reuse_address(true));
 
     if (auto ec = acc.bind(corosio::endpoint(8080)))
-        return;  // report the error
+        return; // report the error
     if (auto ec = acc.listen())
-        return;  // report the error
+        return; // report the error
 }
 // end::reuse_address[]
 

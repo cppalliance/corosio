@@ -31,15 +31,27 @@ namespace boost::corosio::detail {
 // Acceptor accept() implementation
 // ============================================================
 
-template<class Derived, class Traits, class Service,
-         class SocketFinal, class AccImplBase, class Endpoint>
+template<
+    class Derived,
+    class Traits,
+    class Service,
+    class SocketFinal,
+    class AccImplBase,
+    class Endpoint>
 std::coroutine_handle<>
-reactor_acceptor_impl<Derived, Traits, Service, SocketFinal, AccImplBase, Endpoint>::accept(
-    std::coroutine_handle<> h,
-    capy::executor_ref ex,
-    std::stop_token token,
-    std::error_code* ec,
-    io_object::implementation** impl_out)
+reactor_acceptor_impl<
+    Derived,
+    Traits,
+    Service,
+    SocketFinal,
+    AccImplBase,
+    Endpoint>::
+    accept(
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        std::stop_token token,
+        std::error_code* ec,
+        io_object::implementation** impl_out)
 {
     auto& op = this->acc_;
     op.reset();
@@ -53,8 +65,8 @@ reactor_acceptor_impl<Derived, Traits, Service, SocketFinal, AccImplBase, Endpoi
     sockaddr_storage peer_storage{};
     socklen_t peer_addrlen = 0;
 
-    int accepted = Traits::accept_policy::do_accept(
-        this->fd_, peer_storage, peer_addrlen);
+    int accepted =
+        Traits::accept_policy::do_accept(this->fd_, peer_storage, peer_addrlen);
 
     if (accepted >= 0)
     {

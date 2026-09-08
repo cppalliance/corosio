@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 #include <boost/corosio.hpp>
@@ -46,7 +46,7 @@
 #include "test_suite.hpp"
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
@@ -85,29 +85,26 @@ inspect_endpoint(corosio::resolver_entry const& entry)
 // Numeric flags skip DNS entirely, so this fragment runs for real.
 capy::task<>
 resolve_numeric(
-    corosio::io_context& ioc,
-    std::error_code& out_ec,
-    std::size_t& out_count)
+    corosio::io_context& ioc, std::error_code& out_ec, std::size_t& out_count)
 {
     corosio::resolver r(ioc);
-    std::string_view host = "127.0.0.1";
+    std::string_view host    = "127.0.0.1";
     std::string_view service = "8080";
     // tag::resolve_with_flags[]
     auto [ec, results] = co_await r.resolve(
         host, service,
         corosio::resolve_flags::numeric_host |
-        corosio::resolve_flags::numeric_service);
+            corosio::resolve_flags::numeric_service);
     // end::resolve_with_flags[]
-    out_ec = ec;
+    out_ec    = ec;
     out_count = results.size();
 }
 
 // Connecting to a resolved host needs the network; compiled, never run.
 // tag::connect_to_host[]
-capy::task<void> connect_to_host(
-    corosio::io_context& ioc,
-    std::string_view host,
-    std::string_view service)
+capy::task<void>
+connect_to_host(
+    corosio::io_context& ioc, std::string_view host, std::string_view service)
 {
     corosio::resolver r(ioc);
     auto [resolve_ec, results] = co_await r.resolve(host, service);
@@ -133,14 +130,14 @@ capy::task<void> connect_to_host(
 }
 // end::connect_to_host[]
 
-[[maybe_unused]] capy::task<void> (* const connect_demo)(
-    corosio::io_context&, std::string_view, std::string_view) =
-        &connect_to_host;
+[[maybe_unused]] capy::task<void> (*const connect_demo)(
+    corosio::io_context&,
+    std::string_view,
+    std::string_view) = &connect_to_host;
 
 struct dns_lookup_test
 {
-    void
-    testEntryEndpoint()
+    void testEntryEndpoint()
     {
         corosio::resolver_entry entry(
             corosio::endpoint(corosio::ipv4_address::loopback(), 443),
@@ -148,32 +145,28 @@ struct dns_lookup_test
         BOOST_TEST(inspect_endpoint(entry) == 443);
     }
 
-    void
-    testResolveWithFlags()
+    void testResolveWithFlags()
     {
         corosio::io_context ioc;
         std::error_code ec;
         std::size_t count = 0;
-        capy::run_async(ioc.get_executor())(
-            resolve_numeric(ioc, ec, count));
+        capy::run_async(ioc.get_executor())(resolve_numeric(ioc, ec, count));
         ioc.run();
         BOOST_TEST(!ec);
         BOOST_TEST(count > 0);
     }
 
-    void
-    testCancel()
+    void testCancel()
     {
         corosio::io_context ioc;
         corosio::resolver r(ioc);
         // tag::resolver_cancel[]
-        r.cancel();  // Cancel pending operation
+        r.cancel(); // Cancel pending operation
         // end::resolver_cancel[]
         BOOST_TEST(true);
     }
 
-    void
-    run()
+    void run()
     {
         testEntryEndpoint();
         testResolveWithFlags();

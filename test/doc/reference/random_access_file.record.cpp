@@ -23,22 +23,23 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 // tag::random_access_file[]
 // Every read/write names an explicit byte offset; there is no implicit
 // position to advance, unlike stream_file.
-capy::task<> read_a_file_at_an_offset(corosio::io_context& ioc)
+capy::task<>
+read_a_file_at_an_offset(corosio::io_context& ioc)
 {
     corosio::random_access_file f(ioc);
     if (auto ec = f.open("data.bin", corosio::file_base::read_only))
-        co_return;  // report the error
+        co_return; // report the error
 
     char buf[4096];
-    auto [ec, n] = co_await f.read_some_at(
-        0, capy::mutable_buffer(buf, sizeof(buf)));
+    auto [ec, n] =
+        co_await f.read_some_at(0, capy::mutable_buffer(buf, sizeof(buf)));
     if (ec)
         co_return;
 }

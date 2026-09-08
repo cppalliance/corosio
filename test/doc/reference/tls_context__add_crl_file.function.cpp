@@ -23,24 +23,25 @@ namespace {
 // tag::add_crl_file[]
 // Configure before any stream is created from ctx; modifying a context
 // afterwards is undefined behavior.
-void check_revocation_against_a_crl(corosio::tls_context& ctx)
+void
+check_revocation_against_a_crl(corosio::tls_context& ctx)
 {
     // Revocation is the last of three gates and all three have to be open.
     // First, a trust anchor to build a chain to.
     if (auto ec = ctx.load_verify_file("/etc/pki/internal-ca.pem"))
-        return;  // report the error
+        return; // report the error
 
     // Second, a verify mode. Under the default tls_verify_mode::none the
     // library still reads the CRL and still marks a revoked certificate
     // bad, then completes the handshake anyway -- the verdict is computed
     // and discarded.
     if (auto ec = ctx.set_verify_mode(corosio::tls_verify_mode::peer))
-        return;  // report the error
+        return; // report the error
 
     // Third, the CRL itself and a policy that consults it: a CRL under the
     // default disabled policy is never read.
     if (auto ec = ctx.add_crl_file("issuer.crl"))
-        return;  // report the error
+        return; // report the error
 
     // No error code to check here; the policy is recorded, and a backend
     // that cannot check revocation fails the handshake rather than

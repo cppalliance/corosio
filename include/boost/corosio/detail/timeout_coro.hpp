@@ -74,7 +74,7 @@ struct timeout_coro
             std::stop_token token,
             std::pmr::memory_resource* alloc)
         {
-            owned_ex_ = ex;
+            owned_ex_    = ex;
             env_storage_ = {owned_ex_, std::move(token), alloc};
             set_environment(&env_storage_);
         }

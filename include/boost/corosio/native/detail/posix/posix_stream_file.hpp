@@ -103,7 +103,7 @@ public:
         int iovec_count = 0;
 
         // Result storage (populated by worker thread)
-        int errn                    = 0;
+        int errn                      = 0;
         std::size_t bytes_transferred = 0;
 
         file_op() = default;
@@ -177,15 +177,15 @@ public:
     // -- Internal --
 
     /** Open the file and store the fd. */
-    std::error_code open_file(
-        std::filesystem::path const& path, file_base::flags mode);
+    std::error_code
+    open_file(std::filesystem::path const& path, file_base::flags mode);
 
     /** Close the file descriptor. */
     void close_file() noexcept;
 
 private:
     posix_stream_file_service& svc_;
-    int fd_ = -1;
+    int fd_               = -1;
     std::uint64_t offset_ = 0;
 
     file_op read_op_;
@@ -201,8 +201,8 @@ private:
 // Inline implementation
 // ---------------------------------------------------------------------------
 
-inline
-posix_stream_file::posix_stream_file(posix_stream_file_service& svc) noexcept
+inline posix_stream_file::posix_stream_file(
+    posix_stream_file_service& svc) noexcept
     : svc_(svc)
 {
 }
@@ -300,7 +300,7 @@ posix_stream_file::sync_data() noexcept
 {
 #if BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO
     if (::fdatasync(fd_) < 0)
-#else // BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO
+#else  // BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO
     if (::fsync(fd_) < 0)
 #endif // BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO
         return make_err(errno);
@@ -318,8 +318,8 @@ posix_stream_file::sync_all() noexcept
 inline native_handle_type
 posix_stream_file::release()
 {
-    int fd = fd_;
-    fd_ = -1;
+    int fd  = fd_;
+    fd_     = -1;
     offset_ = 0;
     return fd;
 }
@@ -328,7 +328,7 @@ inline std::error_code
 posix_stream_file::assign(native_handle_type handle) noexcept
 {
     close_file();
-    fd_ = handle;
+    fd_     = handle;
     offset_ = 0;
     return {};
 }

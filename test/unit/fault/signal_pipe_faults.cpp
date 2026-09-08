@@ -55,7 +55,7 @@ struct signal_pipe_faults
         // Three fcntl calls configure each end, read end first: 1-3
         // fail the read end, 4-6 the write end. Either way both ends
         // are closed before the error is reported.
-        for(unsigned nth : {1u, 2u, 3u, 4u, 5u, 6u})
+        for (unsigned nth : {1u, 2u, 3u, 4u, 5u, 6u})
         {
             io_context ioc(one_backend);
             signal_set ss(ioc);
@@ -81,7 +81,7 @@ struct signal_pipe_faults
         io_context ioc(select);
         signal_set ss(ioc);
         fd_wall wall;
-        if(!wall.ok())
+        if (!wall.ok())
         {
             skip_no_high_fd("testSelectReaderRejectsHighFd");
             return;
@@ -161,7 +161,7 @@ struct signal_pipe_faults
 
     void run()
     {
-        if(skip_under_valgrind())
+        if (skip_under_valgrind())
             return;
         testPipeCreateFails();
         testSelectReaderRejectsHighFd();
@@ -175,6 +175,6 @@ struct signal_pipe_faults
 
 TEST_SUITE(signal_pipe_faults, "boost.corosio.fault.signal_pipe");
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault
 
 #endif

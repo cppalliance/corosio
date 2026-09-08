@@ -25,27 +25,29 @@
 #include <string_view>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
-std::string build_request(std::string_view host)
+std::string
+build_request(std::string_view host)
 {
     return "GET / HTTP/1.1\r\n"
-           "Host: " + std::string(host) + "\r\n"
-           "Connection: close\r\n"
-           "\r\n";
+           "Host: " +
+        std::string(host) +
+        "\r\n"
+        "Connection: close\r\n"
+        "\r\n";
 }
 
 // tag::tls_client[]
 // Coroutine that performs the HTTPS GET request
 capy::task<void>
-do_request(
-    corosio::tls_stream& stream,
-    std::string_view host)
+do_request(corosio::tls_stream& stream, std::string_view host)
 {
     // Build and send the request
     std::string request = build_request(host);
     if (auto [ec, n] = co_await capy::write(
-            stream, capy::const_buffer(request.data(), request.size())); ec)
+            stream, capy::const_buffer(request.data(), request.size()));
+        ec)
         throw std::system_error(ec);
 
     // Read the entire response until EOF, one fixed chunk at a time
@@ -112,10 +114,9 @@ main(int argc, char* argv[])
 {
     if (argc < 3 || argc > 4)
     {
-        std::cerr <<
-            "Usage: https_client <ip-address> <port> [hostname]\n"
-            "Example:\n"
-            "    https_client 35.190.118.110 443 www.boost.org\n";
+        std::cerr << "Usage: https_client <ip-address> <port> [hostname]\n"
+                     "Example:\n"
+                     "    https_client 35.190.118.110 443 www.boost.org\n";
         return EXIT_FAILURE;
     }
 
@@ -147,12 +148,12 @@ main(int argc, char* argv[])
             run_client(ioc, addr, port, hostname));
         ioc.run();
     }
-    catch(std::system_error const& e)
+    catch (std::system_error const& e)
     {
         std::cerr << "Error: " << e.what() << "\n";
         return EXIT_FAILURE;
     }
-    catch(std::exception const& e)
+    catch (std::exception const& e)
     {
         std::cerr << "Error: " << e.what() << "\n";
         return EXIT_FAILURE;

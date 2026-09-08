@@ -23,7 +23,7 @@
 #include <vector>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 class echo_worker : public corosio::tcp_server::worker_base
 {
@@ -32,14 +32,15 @@ class echo_worker : public corosio::tcp_server::worker_base
     std::string buf;
 
 public:
-    explicit echo_worker(corosio::io_context& ctx)
-        : ctx_(ctx)
-        , sock_(ctx)
+    explicit echo_worker(corosio::io_context& ctx) : ctx_(ctx), sock_(ctx)
     {
         buf.reserve(4096);
     }
 
-    corosio::tcp_socket& socket() override { return sock_; }
+    corosio::tcp_socket& socket() override
+    {
+        return sock_;
+    }
 
     void run(corosio::tcp_server::launcher launch) override
     {
@@ -69,7 +70,8 @@ public:
     }
 };
 
-auto make_echo_workers(corosio::io_context& ctx, int n)
+auto
+make_echo_workers(corosio::io_context& ctx, int n)
 {
     std::vector<std::unique_ptr<corosio::tcp_server::worker_base>> v;
     v.reserve(n);
@@ -88,7 +90,8 @@ public:
     }
 };
 
-int main()
+int
+main()
 {
     corosio::io_context ioc;
 

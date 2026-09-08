@@ -43,12 +43,13 @@ local_stream_socket::open(local_stream proto) noexcept
 }
 
 std::error_code
-local_stream_socket::open_for_family(int family, int type, int protocol) noexcept
+local_stream_socket::open_for_family(
+    int family, int type, int protocol) noexcept
 {
     auto& svc = static_cast<detail::local_stream_service&>(h_.service());
     std::error_code ec = svc.open_socket(
-        static_cast<local_stream_socket::implementation&>(*h_.get()),
-        family, type, protocol);
+        static_cast<local_stream_socket::implementation&>(*h_.get()), family,
+        type, protocol);
     return ec;
 }
 
@@ -116,19 +117,17 @@ local_stream_socket::available() const
             "local_stream_socket::available");
 #if BOOST_COROSIO_HAS_IOCP
     u_long value = 0;
-    if (::ioctlsocket(
-            static_cast<SOCKET>(native_handle()), FIONREAD, &value) != 0)
+    if (::ioctlsocket(static_cast<SOCKET>(native_handle()), FIONREAD, &value) !=
+        0)
         detail::throw_system_error(
-            detail::make_err(
-                static_cast<unsigned long>(::WSAGetLastError())),
+            detail::make_err(static_cast<unsigned long>(::WSAGetLastError())),
             "local_stream_socket::available");
     return static_cast<std::size_t>(value);
 #else
     int value = 0;
     if (::ioctl(native_handle(), FIONREAD, &value) < 0)
         detail::throw_system_error(
-            detail::make_err(errno),
-            "local_stream_socket::available");
+            detail::make_err(errno), "local_stream_socket::available");
     return static_cast<std::size_t>(value);
 #endif
 }

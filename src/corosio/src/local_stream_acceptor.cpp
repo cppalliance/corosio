@@ -89,13 +89,13 @@ local_stream_acceptor::native_handle() const noexcept
 }
 
 std::error_code
-local_stream_acceptor::bind(corosio::local_endpoint ep, bind_option opt) noexcept
+local_stream_acceptor::bind(
+    corosio::local_endpoint ep, bind_option opt) noexcept
 {
     if (!is_open())
         return make_error_code(std::errc::bad_file_descriptor);
 
-    if (opt == bind_option::unlink_existing &&
-        !ep.empty() && !ep.is_abstract())
+    if (opt == bind_option::unlink_existing && !ep.empty() && !ep.is_abstract())
     {
         // Best-effort removal; missing file is fine.
         auto p = ep.path();
@@ -112,8 +112,7 @@ local_stream_acceptor::bind(corosio::local_endpoint ep, bind_option opt) noexcep
     auto& svc =
         static_cast<detail::local_stream_acceptor_service&>(h_.service());
     return svc.bind_acceptor(
-        static_cast<local_stream_acceptor::implementation&>(*h_.get()),
-        ep);
+        static_cast<local_stream_acceptor::implementation&>(*h_.get()), ep);
 }
 
 std::error_code

@@ -55,7 +55,7 @@ struct precancel_test
     void testTcpSocket()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -67,8 +67,8 @@ struct precancel_test
         int done = 0;
 
         auto reader = [&]() -> capy::task<> {
-            [[maybe_unused]] auto [ec, n] = co_await s1.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            [[maybe_unused]] auto [ec, n] =
+                co_await s1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             read_ec = ec;
             ++done;
         };
@@ -110,8 +110,8 @@ struct precancel_test
         bool done = false;
 
         auto connector = [&]() -> capy::task<> {
-            auto [ec] = co_await sock.connect(
-                endpoint(ipv4_address::loopback(), 1));
+            auto [ec] =
+                co_await sock.connect(endpoint(ipv4_address::loopback(), 1));
             conn_ec = ec;
             done    = true;
         };
@@ -176,8 +176,8 @@ struct precancel_test
         int done = 0;
 
         auto send_to_task = [&]() -> capy::task<> {
-            [[maybe_unused]] auto [ec, n] = co_await s1.send_to(
-                capy::const_buffer("x", 1), peer_ep);
+            [[maybe_unused]] auto [ec, n] =
+                co_await s1.send_to(capy::const_buffer("x", 1), peer_ep);
             send_to_ec = ec;
             ++done;
         };
@@ -213,7 +213,7 @@ struct precancel_test
 
         // send()/recv() require a connected socket, so complete a real
         // connect before initiating them with the stopped token.
-        bool conn_ok_done            = false;
+        bool conn_ok_done = false;
         std::error_code conn_ok_ec;
         auto real_connector = [&]() -> capy::task<> {
             auto [ec]    = co_await s1.connect(peer_ep);
@@ -228,13 +228,14 @@ struct precancel_test
 
         std::error_code send_ec, recv_ec;
         auto send_task = [&]() -> capy::task<> {
-            [[maybe_unused]] auto [ec, n] = co_await s1.send(capy::const_buffer("x", 1));
+            [[maybe_unused]] auto [ec, n] =
+                co_await s1.send(capy::const_buffer("x", 1));
             send_ec = ec;
             ++done;
         };
         auto recv_task = [&]() -> capy::task<> {
-            [[maybe_unused]] auto [ec, n] = co_await s1.recv(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            [[maybe_unused]] auto [ec, n] =
+                co_await s1.recv(capy::mutable_buffer(buf, sizeof(buf)));
             recv_ec = ec;
             ++done;
         };
@@ -266,8 +267,8 @@ struct precancel_test
         int done = 0;
 
         auto reader = [&]() -> capy::task<> {
-            [[maybe_unused]] auto [ec, n] = co_await s1.read_some(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            [[maybe_unused]] auto [ec, n] =
+                co_await s1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             read_ec = ec;
             ++done;
         };
@@ -354,13 +355,14 @@ struct precancel_test
         int done = 0;
 
         auto send_task = [&]() -> capy::task<> {
-            [[maybe_unused]] auto [ec, n] = co_await s1.send(capy::const_buffer("x", 1));
+            [[maybe_unused]] auto [ec, n] =
+                co_await s1.send(capy::const_buffer("x", 1));
             send_ec = ec;
             ++done;
         };
         auto recv_task = [&]() -> capy::task<> {
-            [[maybe_unused]] auto [ec, n] = co_await s1.recv(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            [[maybe_unused]] auto [ec, n] =
+                co_await s1.recv(capy::mutable_buffer(buf, sizeof(buf)));
             recv_ec = ec;
             ++done;
         };

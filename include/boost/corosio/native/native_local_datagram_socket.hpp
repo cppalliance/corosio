@@ -120,8 +120,8 @@ class native_local_datagram_socket : public local_datagram_socket
         {
             token_ = env->stop_token;
             return self_.get_impl().send_to(
-                h, env->executor, buffers_, dest_, flags_,
-                token_, &ec_, &bytes_transferred_);
+                h, env->executor, buffers_, dest_, flags_, token_, &ec_,
+                &bytes_transferred_);
         }
     };
 
@@ -167,8 +167,8 @@ class native_local_datagram_socket : public local_datagram_socket
         {
             token_ = env->stop_token;
             return self_.get_impl().recv_from(
-                h, env->executor, buffers_, &source_, flags_,
-                token_, &ec_, &bytes_transferred_);
+                h, env->executor, buffers_, &source_, flags_, token_, &ec_,
+                &bytes_transferred_);
         }
     };
 
@@ -204,8 +204,7 @@ class native_local_datagram_socket : public local_datagram_socket
             -> std::coroutine_handle<>
         {
             token_ = env->stop_token;
-            return self_.get_impl().wait(
-                h, env->executor, w_, token_, &ec_);
+            return self_.get_impl().wait(h, env->executor, w_, token_, &ec_);
         }
     };
 
@@ -286,8 +285,8 @@ class native_local_datagram_socket : public local_datagram_socket
         {
             token_ = env->stop_token;
             return self_.get_impl().send(
-                h, env->executor, buffers_, flags_,
-                token_, &ec_, &bytes_transferred_);
+                h, env->executor, buffers_, flags_, token_, &ec_,
+                &bytes_transferred_);
         }
     };
 
@@ -330,8 +329,8 @@ class native_local_datagram_socket : public local_datagram_socket
         {
             token_ = env->stop_token;
             return self_.get_impl().recv(
-                h, env->executor, buffers_, flags_,
-                token_, &ec_, &bytes_transferred_);
+                h, env->executor, buffers_, flags_, token_, &ec_,
+                &bytes_transferred_);
         }
     };
 
@@ -351,8 +350,8 @@ public:
     */
     template<class Ex>
         requires(!std::same_as<
-                 std::remove_cvref_t<Ex>,
-                 native_local_datagram_socket>) &&
+                    std::remove_cvref_t<Ex>,
+                    native_local_datagram_socket>) &&
         capy::Executor<Ex>
     explicit native_local_datagram_socket(Ex const& ex)
         : native_local_datagram_socket(ex.context())
@@ -382,7 +381,8 @@ public:
         corosio::local_endpoint dest,
         corosio::message_flags flags)
     {
-        native_send_to_awaitable<CB> aw(*this, buffers, dest, static_cast<int>(flags));
+        native_send_to_awaitable<CB> aw(
+            *this, buffers, dest, static_cast<int>(flags));
         if (!is_open())
             aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
         return aw;
@@ -406,7 +406,8 @@ public:
         corosio::local_endpoint& source,
         corosio::message_flags flags)
     {
-        native_recv_from_awaitable<MB> aw(*this, buffers, source, static_cast<int>(flags));
+        native_recv_from_awaitable<MB> aw(
+            *this, buffers, source, static_cast<int>(flags));
         if (!is_open())
             aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
         return aw;
@@ -414,7 +415,8 @@ public:
 
     /// @overload
     template<capy::MutableBufferSequence MB>
-    [[nodiscard]] auto recv_from(MB const& buffers, corosio::local_endpoint& source)
+    [[nodiscard]] auto
+    recv_from(MB const& buffers, corosio::local_endpoint& source)
     {
         return recv_from(buffers, source, corosio::message_flags::none);
     }

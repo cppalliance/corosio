@@ -24,30 +24,30 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 // tag::udp_socket[]
-capy::task<> connectionless_and_connected_modes(corosio::io_context& ioc)
+capy::task<>
+connectionless_and_connected_modes(corosio::io_context& ioc)
 {
     // Connectionless mode: each send_to/recv_from carries an endpoint --
     // a datagram is a single addressed unit, unlike a stream's byte flow.
     corosio::udp_socket sock(ioc);
     if (auto ec = sock.open(corosio::udp::v4()))
         co_return;
-    if (auto ec = sock.bind(
-            corosio::endpoint(corosio::ipv4_address::any(), 9000)))
+    if (auto ec =
+            sock.bind(corosio::endpoint(corosio::ipv4_address::any(), 9000)))
         co_return;
 
     char buf[1024];
     corosio::endpoint sender;
-    auto [ec, n] = co_await sock.recv_from(
-        capy::mutable_buffer(buf, sizeof(buf)), sender);
+    auto [ec, n] =
+        co_await sock.recv_from(capy::mutable_buffer(buf, sizeof(buf)), sender);
     if (ec)
         co_return;
-    auto [sec, sn] = co_await sock.send_to(
-        capy::const_buffer(buf, n), sender);
+    auto [sec, sn] = co_await sock.send_to(capy::const_buffer(buf, n), sender);
     if (sec)
         co_return;
 

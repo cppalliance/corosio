@@ -61,8 +61,7 @@ public:
         -> std::coroutine_handle<>
     {
         token_ = env->stop_token;
-        return static_cast<Derived const*>(this)->dispatch(
-            h, env->executor);
+        return static_cast<Derived const*>(this)->dispatch(h, env->executor);
     }
 };
 
@@ -107,8 +106,7 @@ public:
         -> std::coroutine_handle<>
     {
         token_ = env->stop_token;
-        return static_cast<Derived const*>(this)->dispatch(
-            h, env->executor);
+        return static_cast<Derived const*>(this)->dispatch(h, env->executor);
     }
 };
 
@@ -151,8 +149,7 @@ public:
         -> std::coroutine_handle<>
     {
         token_ = env->stop_token;
-        return static_cast<Derived const*>(this)->dispatch(
-            h, env->executor);
+        return static_cast<Derived const*>(this)->dispatch(h, env->executor);
     }
 };
 

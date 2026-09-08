@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 // tag::assume[]
@@ -39,7 +39,7 @@
 #include <csignal>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 // end::assume[]
 
 #include <boost/corosio/detail/platform.hpp>
@@ -67,7 +67,8 @@ namespace {
 static_assert(std::is_move_constructible_v<corosio::signal_set>);
 static_assert(!std::is_copy_constructible_v<corosio::signal_set>);
 
-capy::task<> overview_frag(corosio::io_context& ioc, int& out)
+capy::task<>
+overview_frag(corosio::io_context& ioc, int& out)
 {
     // tag::overview[]
     corosio::signal_set signals(ioc, SIGINT, SIGTERM);
@@ -80,13 +81,15 @@ capy::task<> overview_frag(corosio::io_context& ioc, int& out)
     out = signum;
 }
 
-capy::task<> raise_signal(int signum)
+capy::task<>
+raise_signal(int signum)
 {
     std::raise(signum);
     co_return;
 }
 
-capy::task<> wait_switch_frag(corosio::signal_set& signals)
+capy::task<>
+wait_switch_frag(corosio::signal_set& signals)
 {
     // tag::wait_switch[]
     auto [ec, signum] = co_await signals.wait();
@@ -108,8 +111,8 @@ capy::task<> wait_switch_frag(corosio::signal_set& signals)
     BOOST_TEST_EQ(signum, SIGINT);
 }
 
-capy::task<> cancel_result_frag(
-    corosio::signal_set& signals, std::error_code& out)
+capy::task<>
+cancel_result_frag(corosio::signal_set& signals, std::error_code& out)
 {
     // tag::cancel_result[]
     auto [ec, signum] = co_await signals.wait();
@@ -124,9 +127,8 @@ capy::task<> cancel_result_frag(
 // signals or sigaction flags follow the unit tests' platform guard.
 
 // tag::graceful_shutdown[]
-capy::task<void> shutdown_handler(
-    corosio::io_context& ioc,
-    std::atomic<bool>& running)
+capy::task<void>
+shutdown_handler(corosio::io_context& ioc, std::atomic<bool>& running)
 {
     corosio::signal_set signals(ioc, SIGINT, SIGTERM);
 
@@ -143,7 +145,8 @@ capy::task<void> shutdown_handler(
 #if BOOST_COROSIO_POSIX
 
 // tag::signal_loop[]
-capy::task<void> signal_loop(corosio::io_context& ioc)
+capy::task<void>
+signal_loop(corosio::io_context& ioc)
 {
     corosio::signal_set signals(ioc, SIGUSR1);
 
@@ -165,9 +168,8 @@ struct Config
 };
 
 // tag::config_reload[]
-capy::task<void> config_reloader(
-    corosio::io_context& ioc,
-    Config& config)
+capy::task<void>
+config_reloader(corosio::io_context& ioc, Config& config)
 {
     corosio::signal_set signals(ioc, SIGHUP);
 
@@ -184,7 +186,8 @@ capy::task<void> config_reloader(
 // end::config_reload[]
 
 // tag::child_reaper[]
-capy::task<void> child_reaper(corosio::io_context& ioc)
+capy::task<void>
+child_reaper(corosio::io_context& ioc)
 {
     using flags = corosio::signal_set;
 
@@ -210,15 +213,15 @@ capy::task<void> child_reaper(corosio::io_context& ioc)
 #endif // BOOST_COROSIO_POSIX
 
 // tag::server_shutdown[]
-capy::task<void> run_server(corosio::io_context& ioc)
+capy::task<void>
+run_server(corosio::io_context& ioc)
 {
     std::atomic<bool> running{true};
 
     // Start signal handler
     capy::run_async(ioc.get_executor())(
-        [](corosio::io_context& ioc, std::atomic<bool>& running)
-            -> capy::task<void>
-        {
+        [](corosio::io_context& ioc,
+           std::atomic<bool>& running) -> capy::task<void> {
             corosio::signal_set signals(ioc, SIGINT, SIGTERM);
             co_await signals.wait();
             running = false;
@@ -242,8 +245,7 @@ capy::task<void> run_server(corosio::io_context& ioc)
 
 struct signals_test
 {
-    void
-    testOverview()
+    void testOverview()
     {
         corosio::io_context ioc;
         int received = 0;
@@ -253,22 +255,20 @@ struct signals_test
         BOOST_TEST_EQ(received, SIGTERM);
     }
 
-    void
-    testConstructEmpty()
+    void testConstructEmpty()
     {
         corosio::io_context ioc;
         // tag::construct_empty[]
         corosio::signal_set signals(ioc);
         std::error_code ec = signals.add(SIGINT);
-        if (! ec)
+        if (!ec)
             ec = signals.add(SIGTERM);
         // end::construct_empty[]
         BOOST_TEST(!ec);
     }
 
 #if BOOST_COROSIO_POSIX
-    void
-    testConstructInitial()
+    void testConstructInitial()
     {
         corosio::io_context ioc;
         // tag::construct_initial[]
@@ -283,8 +283,7 @@ struct signals_test
         // end::construct_initial[]
     }
 
-    void
-    testAdd()
+    void testAdd()
     {
         corosio::io_context ioc;
         corosio::signal_set signals(ioc);
@@ -294,8 +293,7 @@ struct signals_test
         // end::add_signal[]
     }
 
-    void
-    testAddFlags()
+    void testAddFlags()
     {
         corosio::io_context ioc;
         corosio::signal_set signals(ioc);
@@ -306,15 +304,13 @@ struct signals_test
         std::error_code ec = signals.add(SIGHUP, flags::restart);
 
         // Multiple flags can be combined
-        if (! ec)
-            ec = signals.add(
-                SIGCHLD, flags::restart | flags::no_child_stop);
+        if (!ec)
+            ec = signals.add(SIGCHLD, flags::restart | flags::no_child_stop);
         // end::add_flags[]
         BOOST_TEST(!ec);
     }
 
-    void
-    testFlagCompat()
+    void testFlagCompat()
     {
         corosio::io_context ioc;
         using flags = corosio::signal_set;
@@ -323,9 +319,10 @@ struct signals_test
         corosio::signal_set s2(ioc);
 
         std::error_code ec;
-        ec = s1.add(SIGINT, flags::restart);   // OK - first registration
-        ec = s2.add(SIGINT, flags::restart);   // OK - same flags
-        ec = s2.add(SIGINT, flags::no_defer);  // invalid_argument - different flags
+        ec = s1.add(SIGINT, flags::restart); // OK - first registration
+        ec = s2.add(SIGINT, flags::restart); // OK - same flags
+        ec = s2.add(
+            SIGINT, flags::no_defer); // invalid_argument - different flags
 
         // Use dont_care to accept existing flags
         ec = s2.add(SIGINT, flags::dont_care); // OK - accepts existing flags
@@ -336,8 +333,7 @@ struct signals_test
     }
 #endif // BOOST_COROSIO_POSIX
 
-    void
-    testRemove()
+    void testRemove()
     {
         corosio::io_context ioc;
         corosio::signal_set signals(ioc, SIGINT);
@@ -350,8 +346,7 @@ struct signals_test
         BOOST_TEST(!ec);
     }
 
-    void
-    testClear()
+    void testClear()
     {
         corosio::io_context ioc;
         corosio::signal_set signals(ioc, SIGINT, SIGTERM);
@@ -361,8 +356,7 @@ struct signals_test
         BOOST_TEST(!ec);
     }
 
-    void
-    testWaitSwitch()
+    void testWaitSwitch()
     {
         corosio::io_context ioc;
         corosio::signal_set signals(ioc, SIGINT, SIGTERM);
@@ -371,17 +365,14 @@ struct signals_test
         ioc.run();
     }
 
-    void
-    testCancel()
+    void testCancel()
     {
         corosio::io_context ioc;
         corosio::signal_set signals(ioc, SIGINT);
         std::error_code ec;
+        capy::run_async(ioc.get_executor())(cancel_result_frag(signals, ec));
         capy::run_async(ioc.get_executor())(
-            cancel_result_frag(signals, ec));
-        capy::run_async(ioc.get_executor())(
-            [](corosio::signal_set& signals) -> capy::task<>
-            {
+            [](corosio::signal_set& signals) -> capy::task<> {
                 // tag::cancel_call[]
                 signals.cancel();
                 // end::cancel_call[]
@@ -391,8 +382,7 @@ struct signals_test
         BOOST_TEST(ec == capy::cond::canceled);
     }
 
-    void
-    run()
+    void run()
     {
         testOverview();
         testConstructEmpty();

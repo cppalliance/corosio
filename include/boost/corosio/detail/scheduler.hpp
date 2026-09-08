@@ -109,13 +109,13 @@ struct BOOST_COROSIO_DECL scheduler
     struct threading_config
     {
         /// Scheduler mutex/condvar enabled. Off only in the `unsafe` tier.
-        bool scheduler_locking  = true;
+        bool scheduler_locking = true;
         /// Per-descriptor (reactor) or ring (uring) I/O lock enabled.
         /// Off in the `unsafe_io` and `unsafe` tiers.
         bool reactor_io_locking = true;
         /// A single run thread is guaranteed (a lockless tier): elide
         /// inter-run-thread wakeups.
-        bool one_thread         = false;
+        bool one_thread = false;
     };
 
     /// True in the fully-lockless (`unsafe`) tier. The resolver and POSIX

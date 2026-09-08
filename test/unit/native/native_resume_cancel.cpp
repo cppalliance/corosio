@@ -57,8 +57,7 @@ struct native_resume_cancel_test
         native_io_context<Backend> ioc;
         auto ex       = ioc.get_executor();
         auto [s1, s2] = test::make_socket_pair<
-            native_tcp_socket<Backend>,
-            native_tcp_acceptor<Backend>>(ioc);
+            native_tcp_socket<Backend>, native_tcp_acceptor<Backend>>(ioc);
         auto peer = s1.remote_endpoint();
 
         std::stop_source ss;
@@ -91,8 +90,7 @@ struct native_resume_cancel_test
         native_io_context<Backend> ioc;
         auto ex       = ioc.get_executor();
         auto [s1, s2] = test::make_socket_pair<
-            native_tcp_socket<Backend>,
-            native_tcp_acceptor<Backend>>(ioc);
+            native_tcp_socket<Backend>, native_tcp_acceptor<Backend>>(ioc);
 
         std::error_code pec;
         auto preload = [&]() -> capy::task<> {
@@ -216,7 +214,7 @@ struct native_resume_cancel_test
     void testFileResumeCancel()
     {
         native_io_context<Backend> ioc;
-        auto ex   = ioc.get_executor();
+        auto ex = ioc.get_executor();
         test::temp_file rf("corosio_rc_r_", "hello");
         test::temp_file wf("corosio_rc_w_", "");
         auto const rp = rf.path;
@@ -400,6 +398,7 @@ struct native_resume_cancel_test
     }
 };
 
-COROSIO_BACKEND_TESTS(native_resume_cancel_test, "boost.corosio.native.resume_cancel")
+COROSIO_BACKEND_TESTS(
+    native_resume_cancel_test, "boost.corosio.native.resume_cancel")
 
 } // namespace boost::corosio

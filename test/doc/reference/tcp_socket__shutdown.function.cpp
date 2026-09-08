@@ -25,19 +25,20 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 // tag::shutdown[]
 // Precondition: sock is a connected socket.
-capy::task<> stop_reading_after_peer_shutdown(
+capy::task<>
+stop_reading_after_peer_shutdown(
     corosio::tcp_socket& sock, capy::mutable_buffer buf)
 {
     auto [ec, n] = co_await sock.read_some(buf);
 
     if (ec == capy::cond::eof)
-        co_return;  // Peer closed their send direction
+        co_return; // Peer closed their send direction
 }
 // end::shutdown[]
 

@@ -36,7 +36,8 @@ namespace {
 // Option is always an explicit template argument -- it is never deduced
 // from sock or from any function argument.
 template<class Option>
-Option read_option(corosio::tcp_socket& sock)
+Option
+read_option(corosio::tcp_socket& sock)
 {
     return sock.get_option<Option>();
 }
@@ -44,7 +45,8 @@ Option read_option(corosio::tcp_socket& sock)
 
 // Not part of the rendered page: forces an instantiation of the template
 // above so its body is actually compiled, not merely parsed.
-[[maybe_unused]] void instantiate_read_option(corosio::tcp_socket& sock)
+[[maybe_unused]] void
+instantiate_read_option(corosio::tcp_socket& sock)
 {
     read_option<corosio::socket_option::no_delay>(sock);
 }

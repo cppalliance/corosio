@@ -48,7 +48,7 @@ struct local_connect_pair_test
         char buf[16]     = {};
 
         std::error_code wec, rec;
-        std::size_t     wn = 0, rn = 0;
+        std::size_t wn = 0, rn = 0;
 
         capy::run_async(ex)(
             [](local_stream_socket& s, char const* d, std::size_t len,
@@ -117,24 +117,22 @@ struct local_connect_pair_test
         char buf[16]     = {};
 
         std::error_code sec, rec;
-        std::size_t     sn = 0, rn = 0;
+        std::size_t sn = 0, rn = 0;
 
         capy::run_async(ex)(
             [](local_datagram_socket& s, char const* d, std::size_t len,
                std::error_code& ec_out, std::size_t& n_out) -> capy::task<> {
-                auto [ec, n] =
-                    co_await s.send(capy::const_buffer(d, len));
-                ec_out = ec;
-                n_out  = n;
+                auto [ec, n] = co_await s.send(capy::const_buffer(d, len));
+                ec_out       = ec;
+                n_out        = n;
             }(a, msg, std::strlen(msg), sec, sn));
 
         capy::run_async(ex)(
             [](local_datagram_socket& s, char* d, std::size_t len,
                std::error_code& ec_out, std::size_t& n_out) -> capy::task<> {
-                auto [ec, n] =
-                    co_await s.recv(capy::mutable_buffer(d, len));
-                ec_out = ec;
-                n_out  = n;
+                auto [ec, n] = co_await s.recv(capy::mutable_buffer(d, len));
+                ec_out       = ec;
+                n_out        = n;
             }(b, buf, sizeof(buf), rec, rn));
 
         ioc.run();
@@ -158,6 +156,7 @@ struct local_connect_pair_test
     }
 };
 
-COROSIO_BACKEND_TESTS(local_connect_pair_test, "boost.corosio.local_connect_pair")
+COROSIO_BACKEND_TESTS(
+    local_connect_pair_test, "boost.corosio.local_connect_pair")
 
 } // namespace boost::corosio

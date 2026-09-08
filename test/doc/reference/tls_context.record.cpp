@@ -23,7 +23,7 @@
 #include <system_error>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
@@ -32,7 +32,8 @@ namespace {
 // the default. These two calls are what make a client context safe. A factory
 // has no error code to return alongside the context, so it throws; the
 // members themselves report failure by returning std::error_code.
-corosio::tls_context make_verified_client_context()
+corosio::tls_context
+make_verified_client_context()
 {
     corosio::tls_context ctx;
     if (auto ec = ctx.set_default_verify_paths())
@@ -46,15 +47,15 @@ corosio::tls_context make_verified_client_context()
 // corosio::wolfssl_stream -- over a connected socket and that context, then
 // hand it here: the context's settings are captured when the stream is
 // built, and every backend handshakes through this same interface.
-capy::task<> handshake_as_client(
-    corosio::tls_stream& secure, std::string_view hostname)
+capy::task<>
+handshake_as_client(corosio::tls_stream& secure, std::string_view hostname)
 {
     // Sets SNI and the name the peer certificate must match. A verified
     // chain on its own says nothing about who is on the other end.
     secure.set_hostname(hostname);
 
     if (auto [ec] = co_await secure.handshake(corosio::tls_role::client); ec)
-        co_return;  // report the error
+        co_return; // report the error
 }
 // end::tls_context[]
 

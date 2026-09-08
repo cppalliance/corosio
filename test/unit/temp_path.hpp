@@ -47,7 +47,7 @@ class temp_socket_dir
 public:
     temp_socket_dir()
     {
-        namespace fs = std::filesystem;
+        namespace fs    = std::filesystem;
         auto const base = fs::temp_directory_path();
 
         // 64 bits of mixed entropy: a random seed established once
@@ -55,7 +55,7 @@ public:
         static std::uint64_t const seed = [] {
             std::random_device rd;
             return (static_cast<std::uint64_t>(rd()) << 32) |
-                   static_cast<std::uint64_t>(rd());
+                static_cast<std::uint64_t>(rd());
         }();
         static std::atomic<std::uint64_t> counter{0};
 
@@ -122,7 +122,7 @@ unique_temp_name(std::string_view prefix)
     static std::uint64_t const seed = [] {
         std::random_device rd;
         return (static_cast<std::uint64_t>(rd()) << 32) |
-               static_cast<std::uint64_t>(rd());
+            static_cast<std::uint64_t>(rd());
     }();
     static std::atomic<std::uint64_t> counter{0};
 
@@ -154,8 +154,9 @@ public:
     std::filesystem::path path;
 
     explicit temp_file(std::string_view prefix = "corosio_test_")
-        : path(std::filesystem::temp_directory_path() /
-               detail::unique_temp_name(prefix))
+        : path(
+              std::filesystem::temp_directory_path() /
+              detail::unique_temp_name(prefix))
     {
     }
 
@@ -177,7 +178,10 @@ public:
     temp_file& operator=(temp_file const&) = delete;
 
     /// The path as a string, for APIs taking a filename.
-    std::string str() const { return path.string(); }
+    std::string str() const
+    {
+        return path.string();
+    }
 };
 
 /** RAII unique temp directory, removed recursively on destruction.
@@ -192,8 +196,9 @@ public:
     std::filesystem::path path;
 
     explicit temp_dir(std::string_view prefix = "corosio_test_dir_")
-        : path(std::filesystem::temp_directory_path() /
-               detail::unique_temp_name(prefix))
+        : path(
+              std::filesystem::temp_directory_path() /
+              detail::unique_temp_name(prefix))
     {
         std::filesystem::create_directories(path);
     }

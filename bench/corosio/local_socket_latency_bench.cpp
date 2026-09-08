@@ -82,7 +82,7 @@ bench_unix_pingpong_latency(bench::state& state)
 {
     using socket_type = corosio::native_local_stream_socket<Backend>;
 
-    auto message_size = static_cast<std::size_t>(state.range(0));
+    auto message_size              = static_cast<std::size_t>(state.range(0));
     state.counters["message_size"] = static_cast<double>(message_size);
 
     corosio::native_io_context<Backend> ioc;
@@ -90,8 +90,8 @@ bench_unix_pingpong_latency(bench::state& state)
     if (auto ec = corosio::connect_pair(client, server))
         throw std::system_error(ec, "connect_pair");
 
-    capy::run_async(ioc.get_executor())(
-        unix_pingpong_client_task<Backend>(client, server, message_size, state));
+    capy::run_async(ioc.get_executor())(unix_pingpong_client_task<Backend>(
+        client, server, message_size, state));
 
     std::thread timer([&]() {
         std::this_thread::sleep_for(
@@ -114,7 +114,7 @@ bench_unix_concurrent_latency(bench::state& state)
 {
     using socket_type = corosio::native_local_stream_socket<Backend>;
 
-    int num_pairs = static_cast<int>(state.range(0));
+    int num_pairs               = static_cast<int>(state.range(0));
     state.counters["num_pairs"] = num_pairs;
 
     corosio::native_io_context<Backend> ioc;
@@ -136,8 +136,8 @@ bench_unix_concurrent_latency(bench::state& state)
 
     for (int p = 0; p < num_pairs; ++p)
     {
-        capy::run_async(ioc.get_executor())(
-            unix_pingpong_client_task<Backend>(clients[p], servers[p], 64, state));
+        capy::run_async(ioc.get_executor())(unix_pingpong_client_task<Backend>(
+            clients[p], servers[p], 64, state));
     }
 
     std::thread timer([&]() {
@@ -164,7 +164,7 @@ bench_unix_pingpong_latency_lockless(bench::state& state)
 {
     using socket_type = corosio::native_local_stream_socket<Backend>;
 
-    auto message_size = static_cast<std::size_t>(state.range(0));
+    auto message_size              = static_cast<std::size_t>(state.range(0));
     state.counters["message_size"] = static_cast<double>(message_size);
 
     corosio::io_context_options opts;
@@ -174,8 +174,8 @@ bench_unix_pingpong_latency_lockless(bench::state& state)
     if (auto ec = corosio::connect_pair(client, server))
         throw std::system_error(ec, "connect_pair");
 
-    capy::run_async(ioc.get_executor())(
-        unix_pingpong_client_task<Backend>(client, server, message_size, state));
+    capy::run_async(ioc.get_executor())(unix_pingpong_client_task<Backend>(
+        client, server, message_size, state));
 
     std::thread timer([&]() {
         std::this_thread::sleep_for(
@@ -198,7 +198,7 @@ bench_unix_concurrent_latency_lockless(bench::state& state)
 {
     using socket_type = corosio::native_local_stream_socket<Backend>;
 
-    int num_pairs = static_cast<int>(state.range(0));
+    int num_pairs               = static_cast<int>(state.range(0));
     state.counters["num_pairs"] = num_pairs;
 
     corosio::io_context_options opts;
@@ -222,8 +222,8 @@ bench_unix_concurrent_latency_lockless(bench::state& state)
 
     for (int p = 0; p < num_pairs; ++p)
     {
-        capy::run_async(ioc.get_executor())(
-            unix_pingpong_client_task<Backend>(clients[p], servers[p], 64, state));
+        capy::run_async(ioc.get_executor())(unix_pingpong_client_task<Backend>(
+            clients[p], servers[p], 64, state));
     }
 
     std::thread timer([&]() {
@@ -254,13 +254,15 @@ make_local_socket_latency_suite()
 
     return bench::benchmark_suite("local_socket_latency", F::none)
         .add("pingpong", bench_unix_pingpong_latency<Backend>)
-            .args({1, 64, 1024})
+        .args({1, 64, 1024})
         .add("pingpong_lockless", bench_unix_pingpong_latency_lockless<Backend>)
-            .args({1, 64, 1024})
+        .args({1, 64, 1024})
         .add("concurrent", bench_unix_concurrent_latency<Backend>)
-            .args({1, 4, 16})
-        .add("concurrent_lockless", bench_unix_concurrent_latency_lockless<Backend>)
-            .args({1, 4, 16});
+        .args({1, 4, 16})
+        .add(
+            "concurrent_lockless",
+            bench_unix_concurrent_latency_lockless<Backend>)
+        .args({1, 4, 16});
 }
 
 } // namespace corosio_bench

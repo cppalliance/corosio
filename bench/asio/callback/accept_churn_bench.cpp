@@ -37,35 +37,37 @@ namespace {
 // to avoid TIME_WAIT accumulation. Reducing SO_SNDBUF/SO_RCVBUF from
 // the macOS default of 128 KB each prevents ENOBUFS during rapid
 // socket creation in concurrent/burst workloads.
-static void configure_churn_socket( tcp_socket& s )
+static void
+configure_churn_socket(tcp_socket& s)
 {
-    s.set_option( asio::socket_base::send_buffer_size( 1024 ) );
-    s.set_option( asio::socket_base::receive_buffer_size( 1024 ) );
-    s.set_option( asio::socket_base::linger( true, 0 ) );
+    s.set_option(asio::socket_base::send_buffer_size(1024));
+    s.set_option(asio::socket_base::receive_buffer_size(1024));
+    s.set_option(asio::socket_base::linger(true, 0));
 }
 
 // Creates a listening acceptor with retry. Under rapid socket churn the
 // kernel may temporarily lack buffer space (ENOBUFS); a short back-off
 // lets resources drain from the previous benchmark run.
-static tcp_acceptor make_churn_acceptor( asio::io_context& ioc )
+static tcp_acceptor
+make_churn_acceptor(asio::io_context& ioc)
 {
     boost::system::error_code ec;
-    for( int attempt = 0; attempt < 20; ++attempt )
+    for (int attempt = 0; attempt < 20; ++attempt)
     {
-        if( attempt > 0 )
-            std::this_thread::sleep_for( std::chrono::milliseconds( 50 ) );
-        tcp_acceptor acc( ioc.get_executor() );
-        ec = acc.open( tcp::v4(), ec );
-        if( !ec )
-            ec = acc.set_option( tcp_acceptor::reuse_address( true ), ec );
-        if( !ec )
-            ec = acc.bind( tcp::endpoint( tcp::v4(), 0 ), ec );
-        if( !ec )
-            ec = acc.listen( asio::socket_base::max_listen_connections, ec );
-        if( !ec )
+        if (attempt > 0)
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        tcp_acceptor acc(ioc.get_executor());
+        ec = acc.open(tcp::v4(), ec);
+        if (!ec)
+            ec = acc.set_option(tcp_acceptor::reuse_address(true), ec);
+        if (!ec)
+            ec = acc.bind(tcp::endpoint(tcp::v4(), 0), ec);
+        if (!ec)
+            ec = acc.listen(asio::socket_base::max_listen_connections, ec);
+        if (!ec)
             return acc;
     }
-    throw boost::system::system_error( ec );
+    throw boost::system::system_error(ec);
 }
 
 // Connect+accept+exchange 1 byte+close, repeat
@@ -92,18 +94,18 @@ struct sequential_churn_op
 
         sw.reset();
         connect_done = false;
-        accept_done = false;
-        client = tcp_socket( ioc.get_executor() );
-        server = tcp_socket( ioc.get_executor() );
+        accept_done  = false;
+        client       = tcp_socket(ioc.get_executor());
+        server       = tcp_socket(ioc.get_executor());
 
         boost::system::error_code ec;
-        ec = client.open( tcp::v4(), ec );
-        if( ec )
+        ec = client.open(tcp::v4(), ec);
+        if (ec)
         {
-            asio::post( ioc, [this]() { start(); } );
+            asio::post(ioc, [this]() { start(); });
             return;
         }
-        configure_churn_socket( client );
+        configure_churn_socket(client);
 
         client.async_connect(ep, [this](boost::system::error_code ec) {
             if (ec)
@@ -163,22 +165,30 @@ void
 bench_sequential_churn(bench::state& state)
 {
     asio::io_context ioc;
-    auto acc = make_churn_acceptor( ioc );
-    auto ep = tcp::endpoint( asio::ip::address_v4::loopback(), acc.local_endpoint().port() );
+    auto acc = make_churn_acceptor(ioc);
+    auto ep  = tcp::endpoint(
+        asio::ip::address_v4::loopback(), acc.local_endpoint().port());
 
     std::atomic<bool> running{true};
 
-    sequential_churn_op op{ioc, acc, ep, running, state.latency(),
-                           state.ops(),
-                           tcp_socket(ioc.get_executor()),
-                           tcp_socket(ioc.get_executor()), {}};
+    sequential_churn_op op{
+        ioc,
+        acc,
+        ep,
+        running,
+        state.latency(),
+        state.ops(),
+        tcp_socket(ioc.get_executor()),
+        tcp_socket(ioc.get_executor()),
+        {}};
 
     perf::stopwatch total_sw;
 
     op.start();
 
     std::thread timer([&]() {
-        std::this_thread::sleep_for(std::chrono::duration<double>(state.duration()));
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
         running.store(false, std::memory_order_relaxed);
         ioc.stop();
     });
@@ -194,22 +204,30 @@ void
 bench_sequential_churn_lockless(bench::state& state)
 {
     asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
-    auto acc = make_churn_acceptor( ioc );
-    auto ep = tcp::endpoint( asio::ip::address_v4::loopback(), acc.local_endpoint().port() );
+    auto acc = make_churn_acceptor(ioc);
+    auto ep  = tcp::endpoint(
+        asio::ip::address_v4::loopback(), acc.local_endpoint().port());
 
     std::atomic<bool> running{true};
 
-    sequential_churn_op op{ioc, acc, ep, running, state.latency(),
-                           state.ops(),
-                           tcp_socket(ioc.get_executor()),
-                           tcp_socket(ioc.get_executor()), {}};
+    sequential_churn_op op{
+        ioc,
+        acc,
+        ep,
+        running,
+        state.latency(),
+        state.ops(),
+        tcp_socket(ioc.get_executor()),
+        tcp_socket(ioc.get_executor()),
+        {}};
 
     perf::stopwatch total_sw;
 
     op.start();
 
     std::thread timer([&]() {
-        std::this_thread::sleep_for(std::chrono::duration<double>(state.duration()));
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
         running.store(false, std::memory_order_relaxed);
         ioc.stop();
     });
@@ -226,16 +244,16 @@ bench_sequential_churn_lockless(bench::state& state)
 void
 bench_concurrent_churn(bench::state& state)
 {
-    int num_loops = static_cast<int>(state.range(0));
+    int num_loops               = static_cast<int>(state.range(0));
     state.counters["num_loops"] = num_loops;
 
     asio::io_context ioc;
     std::atomic<bool> running{true};
 
     std::vector<tcp_acceptor> acceptors;
-    acceptors.reserve( num_loops );
-    for( int i = 0; i < num_loops; ++i )
-        acceptors.push_back( make_churn_acceptor( ioc ) );
+    acceptors.reserve(num_loops);
+    for (int i = 0; i < num_loops; ++i)
+        acceptors.push_back(make_churn_acceptor(ioc));
 
     std::vector<std::unique_ptr<sequential_churn_op>> ops;
     ops.reserve(num_loops);
@@ -245,17 +263,25 @@ bench_concurrent_churn(bench::state& state)
     for (int i = 0; i < num_loops; ++i)
     {
         auto ep = tcp::endpoint(
-            asio::ip::address_v4::loopback(), acceptors[i].local_endpoint().port() );
-        ops.push_back( std::make_unique<sequential_churn_op>(
-            sequential_churn_op{ ioc, acceptors[i], ep, running,
-                                 state.latency(), state.ops(),
-                                 tcp_socket(ioc.get_executor()),
-                                 tcp_socket(ioc.get_executor()), {} } ) );
+            asio::ip::address_v4::loopback(),
+            acceptors[i].local_endpoint().port());
+        ops.push_back(
+            std::make_unique<sequential_churn_op>(sequential_churn_op{
+                ioc,
+                acceptors[i],
+                ep,
+                running,
+                state.latency(),
+                state.ops(),
+                tcp_socket(ioc.get_executor()),
+                tcp_socket(ioc.get_executor()),
+                {}}));
         ops.back()->start();
     }
 
     std::thread stopper([&]() {
-        std::this_thread::sleep_for(std::chrono::duration<double>(state.duration()));
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
         running.store(false, std::memory_order_relaxed);
         ioc.stop();
     });
@@ -264,7 +290,7 @@ bench_concurrent_churn(bench::state& state)
     stopper.join();
 
     state.set_elapsed(total_sw.elapsed_seconds());
-    for( auto& a : acceptors )
+    for (auto& a : acceptors)
         a.close();
 }
 
@@ -299,27 +325,26 @@ struct burst_churn_op
 
         // Open all client sockets before issuing async operations so a
         // partial failure doesn't leave dangling async_accept operations.
-        for( int i = 0; i < burst_size; ++i )
+        for (int i = 0; i < burst_size; ++i)
         {
-            clients.emplace_back( ioc.get_executor() );
+            clients.emplace_back(ioc.get_executor());
             boost::system::error_code ec;
-            ec = clients.back().open( tcp::v4(), ec );
-            if( ec )
+            ec = clients.back().open(tcp::v4(), ec);
+            if (ec)
             {
                 clients.clear();
-                asio::post( ioc, [this]() { start(); } );
+                asio::post(ioc, [this]() { start(); });
                 return;
             }
-            configure_churn_socket( clients.back() );
+            configure_churn_socket(clients.back());
         }
 
         // Initiate all connects and accepts
-        for( int i = 0; i < burst_size; ++i )
+        for (int i = 0; i < burst_size; ++i)
         {
-            clients[i].async_connect( ep,
-                [](boost::system::error_code) {} );
+            clients[i].async_connect(ep, [](boost::system::error_code) {});
 
-            servers.emplace_back( ioc.get_executor() );
+            servers.emplace_back(ioc.get_executor());
             acc.async_accept(
                 servers.back(), [this](boost::system::error_code ec) {
                     if (ec)
@@ -350,17 +375,18 @@ struct burst_churn_op
 void
 bench_burst_churn(bench::state& state)
 {
-    int burst_size = static_cast<int>(state.range(0));
+    int burst_size               = static_cast<int>(state.range(0));
     state.counters["burst_size"] = burst_size;
 
     asio::io_context ioc;
-    auto acc = make_churn_acceptor( ioc );
-    auto ep = tcp::endpoint( asio::ip::address_v4::loopback(), acc.local_endpoint().port() );
+    auto acc = make_churn_acceptor(ioc);
+    auto ep  = tcp::endpoint(
+        asio::ip::address_v4::loopback(), acc.local_endpoint().port());
 
     std::atomic<bool> running{true};
 
-    burst_churn_op op{ioc,         acc,            ep, running, state.latency(),
-                      state.ops(), burst_size,     {}, {},      {},
+    burst_churn_op op{ioc,         acc,        ep, running, state.latency(),
+                      state.ops(), burst_size, {}, {},      {},
                       {}};
 
     perf::stopwatch total_sw;
@@ -368,7 +394,8 @@ bench_burst_churn(bench::state& state)
     op.start();
 
     std::thread stopper([&]() {
-        std::this_thread::sleep_for(std::chrono::duration<double>(state.duration()));
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
         running.store(false, std::memory_order_relaxed);
         ioc.stop();
     });
@@ -383,17 +410,18 @@ bench_burst_churn(bench::state& state)
 void
 bench_burst_churn_lockless(bench::state& state)
 {
-    int burst_size = static_cast<int>(state.range(0));
+    int burst_size               = static_cast<int>(state.range(0));
     state.counters["burst_size"] = burst_size;
 
     asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
-    auto acc = make_churn_acceptor( ioc );
-    auto ep = tcp::endpoint( asio::ip::address_v4::loopback(), acc.local_endpoint().port() );
+    auto acc = make_churn_acceptor(ioc);
+    auto ep  = tcp::endpoint(
+        asio::ip::address_v4::loopback(), acc.local_endpoint().port());
 
     std::atomic<bool> running{true};
 
-    burst_churn_op op{ioc,         acc,            ep, running, state.latency(),
-                      state.ops(), burst_size,     {}, {},      {},
+    burst_churn_op op{ioc,         acc,        ep, running, state.latency(),
+                      state.ops(), burst_size, {}, {},      {},
                       {}};
 
     perf::stopwatch total_sw;
@@ -401,7 +429,8 @@ bench_burst_churn_lockless(bench::state& state)
     op.start();
 
     std::thread stopper([&]() {
-        std::this_thread::sleep_for(std::chrono::duration<double>(state.duration()));
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(state.duration()));
         running.store(false, std::memory_order_relaxed);
         ioc.stop();
     });
@@ -423,11 +452,11 @@ make_accept_churn_suite()
         .add("sequential", bench_sequential_churn)
         .add("sequential_lockless", bench_sequential_churn_lockless)
         .add("concurrent", bench_concurrent_churn)
-            .args({1, 4, 16})
+        .args({1, 4, 16})
         .add("burst", bench_burst_churn)
-            .args({10, 100})
+        .args({10, 100})
         .add("burst_lockless", bench_burst_churn_lockless)
-            .args({10, 100});
+        .args({10, 100});
 }
 
 } // namespace asio_callback_bench

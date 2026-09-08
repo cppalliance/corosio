@@ -281,8 +281,7 @@ public:
             @param ep The local endpoint to bind to.
             @return Error code on failure, empty on success.
         */
-        virtual std::error_code
-        bind(corosio::local_endpoint ep) noexcept = 0;
+        virtual std::error_code bind(corosio::local_endpoint ep) noexcept = 0;
     };
 
     /** Represent the awaitable returned by @ref send_to.
@@ -290,8 +289,7 @@ public:
         Captures the destination endpoint and buffer, then dispatches
         to the backend implementation on suspension.
     */
-    struct send_to_awaitable
-        : detail::bytes_op_base<send_to_awaitable>
+    struct send_to_awaitable : detail::bytes_op_base<send_to_awaitable>
     {
         local_datagram_socket& s_;
         buffer_param buf_;
@@ -299,12 +297,19 @@ public:
         int flags_;
 
         send_to_awaitable(
-            local_datagram_socket& s, buffer_param buf,
-            corosio::local_endpoint dest, int flags = 0) noexcept
-            : s_(s), buf_(buf), dest_(dest), flags_(flags) {}
+            local_datagram_socket& s,
+            buffer_param buf,
+            corosio::local_endpoint dest,
+            int flags = 0) noexcept
+            : s_(s)
+            , buf_(buf)
+            , dest_(dest)
+            , flags_(flags)
+        {
+        }
 
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
             return s_.get().send_to(
                 h, ex, buf_, dest_, flags_, token_, &ec_, &bytes_);
@@ -316,8 +321,7 @@ public:
         Captures the source endpoint reference and buffer, then
         dispatches to the backend implementation on suspension.
     */
-    struct recv_from_awaitable
-        : detail::bytes_op_base<recv_from_awaitable>
+    struct recv_from_awaitable : detail::bytes_op_base<recv_from_awaitable>
     {
         local_datagram_socket& s_;
         buffer_param buf_;
@@ -325,12 +329,19 @@ public:
         int flags_;
 
         recv_from_awaitable(
-            local_datagram_socket& s, buffer_param buf,
-            corosio::local_endpoint& source, int flags = 0) noexcept
-            : s_(s), buf_(buf), source_(source), flags_(flags) {}
+            local_datagram_socket& s,
+            buffer_param buf,
+            corosio::local_endpoint& source,
+            int flags = 0) noexcept
+            : s_(s)
+            , buf_(buf)
+            , source_(source)
+            , flags_(flags)
+        {
+        }
 
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
             return s_.get().recv_from(
                 h, ex, buf_, &source_, flags_, token_, &ec_, &bytes_);
@@ -342,37 +353,39 @@ public:
         Captures the target endpoint, then dispatches to the
         backend implementation on suspension.
     */
-    struct connect_awaitable
-        : detail::void_op_base<connect_awaitable>
+    struct connect_awaitable : detail::void_op_base<connect_awaitable>
     {
         local_datagram_socket& s_;
         corosio::local_endpoint endpoint_;
 
         connect_awaitable(
-            local_datagram_socket& s,
-            corosio::local_endpoint ep) noexcept
-            : s_(s), endpoint_(ep) {}
-
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+            local_datagram_socket& s, corosio::local_endpoint ep) noexcept
+            : s_(s)
+            , endpoint_(ep)
         {
-            return s_.get().connect(
-                h, ex, endpoint_, token_, &ec_);
+        }
+
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        {
+            return s_.get().connect(h, ex, endpoint_, token_, &ec_);
         }
     };
 
     /// Represent the awaitable returned by @ref wait.
-    struct wait_awaitable
-        : detail::void_op_base<wait_awaitable>
+    struct wait_awaitable : detail::void_op_base<wait_awaitable>
     {
         local_datagram_socket& s_;
         wait_type w_;
 
         wait_awaitable(local_datagram_socket& s, wait_type w) noexcept
-            : s_(s), w_(w) {}
+            : s_(s)
+            , w_(w)
+        {
+        }
 
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
             return s_.get().wait(h, ex, w_, token_, &ec_);
         }
@@ -383,23 +396,24 @@ public:
         Captures the buffer, then dispatches to the backend
         implementation on suspension. Requires a prior connect().
     */
-    struct send_awaitable
-        : detail::bytes_op_base<send_awaitable>
+    struct send_awaitable : detail::bytes_op_base<send_awaitable>
     {
         local_datagram_socket& s_;
         buffer_param buf_;
         int flags_;
 
         send_awaitable(
-            local_datagram_socket& s, buffer_param buf,
-            int flags = 0) noexcept
-            : s_(s), buf_(buf), flags_(flags) {}
-
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+            local_datagram_socket& s, buffer_param buf, int flags = 0) noexcept
+            : s_(s)
+            , buf_(buf)
+            , flags_(flags)
         {
-            return s_.get().send(
-                h, ex, buf_, flags_, token_, &ec_, &bytes_);
+        }
+
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        {
+            return s_.get().send(h, ex, buf_, flags_, token_, &ec_, &bytes_);
         }
     };
 
@@ -408,23 +422,24 @@ public:
         Captures the buffer, then dispatches to the backend
         implementation on suspension. Requires a prior connect().
     */
-    struct recv_awaitable
-        : detail::bytes_op_base<recv_awaitable>
+    struct recv_awaitable : detail::bytes_op_base<recv_awaitable>
     {
         local_datagram_socket& s_;
         buffer_param buf_;
         int flags_;
 
         recv_awaitable(
-            local_datagram_socket& s, buffer_param buf,
-            int flags = 0) noexcept
-            : s_(s), buf_(buf), flags_(flags) {}
-
-        std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h, capy::executor_ref ex) const
+            local_datagram_socket& s, buffer_param buf, int flags = 0) noexcept
+            : s_(s)
+            , buf_(buf)
+            , flags_(flags)
         {
-            return s_.get().recv(
-                h, ex, buf_, flags_, token_, &ec_, &bytes_);
+        }
+
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        {
+            return s_.get().recv(h, ex, buf_, flags_, token_, &ec_, &bytes_);
         }
     };
 
@@ -448,8 +463,8 @@ public:
         @param ex The executor whose context will own the socket.
     */
     template<class Ex>
-        requires(
-            !std::same_as<std::remove_cvref_t<Ex>, local_datagram_socket>) &&
+        requires(!std::
+                     same_as<std::remove_cvref_t<Ex>, local_datagram_socket>) &&
         capy::Executor<Ex>
     explicit local_datagram_socket(Ex const& ex)
         : local_datagram_socket(ex.context())
@@ -657,7 +672,8 @@ public:
 
     /// @overload
     template<capy::MutableBufferSequence Buffers>
-    [[nodiscard]] auto recv_from(Buffers const& buf, corosio::local_endpoint& source)
+    [[nodiscard]] auto
+    recv_from(Buffers const& buf, corosio::local_endpoint& source)
     {
         return recv_from(buf, source, corosio::message_flags::none);
     }
@@ -793,8 +809,7 @@ public:
         std::error_code ec = get().set_option(
             Option::level(), Option::name(), opt.data(), opt.size());
         if (ec)
-            detail::throw_system_error(
-                ec, "local_datagram_socket::set_option");
+            detail::throw_system_error(ec, "local_datagram_socket::set_option");
     }
 
     /** Get a socket option.
@@ -820,8 +835,7 @@ public:
         std::error_code ec =
             get().get_option(Option::level(), Option::name(), opt.data(), &sz);
         if (ec)
-            detail::throw_system_error(
-                ec, "local_datagram_socket::get_option");
+            detail::throw_system_error(ec, "local_datagram_socket::get_option");
         opt.resize(sz);
         return opt;
     }
@@ -875,8 +889,7 @@ protected:
     local_datagram_socket() noexcept = default;
 
     /// Construct from a pre-built handle.
-    explicit local_datagram_socket(handle h) noexcept
-        : io_object(std::move(h))
+    explicit local_datagram_socket(handle h) noexcept : io_object(std::move(h))
     {
     }
 

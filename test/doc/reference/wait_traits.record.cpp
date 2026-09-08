@@ -32,7 +32,7 @@
 #include <iostream>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
@@ -46,18 +46,18 @@ struct capped_traits
     to_wait_duration(std::chrono::system_clock::duration d)
     {
         return (std::min)(d,
-            std::chrono::system_clock::duration(
-                std::chrono::seconds(1)));
+                          std::chrono::system_clock::duration(
+                              std::chrono::seconds(1)));
     }
 };
 
 // capped_traits satisfies WaitTraits<capped_traits, system_clock>, the same
 // concept the default corosio::wait_traits<system_clock> satisfies -- it is
 // a drop-in replacement for the default, not a different kind of thing.
-static_assert(
-    corosio::WaitTraits<capped_traits, std::chrono::system_clock>);
+static_assert(corosio::WaitTraits<capped_traits, std::chrono::system_clock>);
 
-capy::task<> wait_one_hour_capped()
+capy::task<>
+wait_one_hour_capped()
 {
     auto [ec] = co_await corosio::delay<capped_traits>(
         std::chrono::system_clock::now() + std::chrono::hours(1));

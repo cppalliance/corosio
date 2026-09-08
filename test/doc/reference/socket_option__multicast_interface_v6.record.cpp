@@ -22,7 +22,8 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::multicast_interface_v6[]
-void choose_the_outgoing_interface_v6(
+void
+choose_the_outgoing_interface_v6(
     corosio::udp_socket& sock, unsigned int if_index)
 {
     // Precondition: sock is open on udp::v6(), and if_index is what
@@ -31,8 +32,9 @@ void choose_the_outgoing_interface_v6(
     // IPv6 names an interface by index, where multicast_interface_v4 takes a
     // local address. Zero, the default, leaves the choice to the routing
     // table -- which on a multi-homed host is rarely the interface you meant.
-    sock.set_option(corosio::socket_option::multicast_interface_v6(
-        static_cast<int>(if_index)));
+    sock.set_option(
+        corosio::socket_option::multicast_interface_v6(
+            static_cast<int>(if_index)));
 }
 // end::multicast_interface_v6[]
 

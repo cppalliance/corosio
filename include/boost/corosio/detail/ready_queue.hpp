@@ -64,8 +64,8 @@ ready_as_cont(std::uintptr_t e) noexcept
 */
 class ready_queue
 {
-    std::uintptr_t head_ = 0;   // tagged first entry, 0 when empty
-    std::uintptr_t tail_ = 0;   // tagged last entry, 0 when empty
+    std::uintptr_t head_ = 0; // tagged first entry, 0 when empty
+    std::uintptr_t tail_ = 0; // tagged last entry, 0 when empty
 
     // Read a node's next-link by value. A continuation's link lives in its
     // void* `reserved` slot; bit_cast keeps us from forming a uintptr_t
@@ -76,16 +76,14 @@ class ready_queue
     // branch against the smaller object. Fixed in GCC 14.
     BOOST_COROSIO_GCC_WARNING_PUSH
     BOOST_COROSIO_GCC_WARNING_DISABLE("-Warray-bounds")
-    static std::uintptr_t
-    next_of(std::uintptr_t e) noexcept
+    static std::uintptr_t next_of(std::uintptr_t e) noexcept
     {
         if (ready_is_continuation(e))
             return std::bit_cast<std::uintptr_t>(ready_as_cont(e)->reserved);
         return ready_as_op(e)->q_next_;
     }
 
-    static void
-    set_next(std::uintptr_t e, std::uintptr_t nxt) noexcept
+    static void set_next(std::uintptr_t e, std::uintptr_t nxt) noexcept
     {
         if (ready_is_continuation(e))
             ready_as_cont(e)->reserved = std::bit_cast<void*>(nxt);
@@ -94,8 +92,7 @@ class ready_queue
     }
     BOOST_COROSIO_GCC_WARNING_POP
 
-    void
-    push_entry(std::uintptr_t e) noexcept
+    void push_entry(std::uintptr_t e) noexcept
     {
         set_next(e, 0);
         if (tail_)
@@ -108,9 +105,7 @@ class ready_queue
 public:
     ready_queue() = default;
 
-    ready_queue(ready_queue&& o) noexcept
-        : head_(o.head_)
-        , tail_(o.tail_)
+    ready_queue(ready_queue&& o) noexcept : head_(o.head_), tail_(o.tail_)
     {
         o.head_ = 0;
         o.tail_ = 0;
@@ -121,7 +116,10 @@ public:
     ready_queue& operator=(ready_queue&&)      = delete;
 
     /// Return true if the queue holds no entries.
-    bool empty() const noexcept { return head_ == 0; }
+    bool empty() const noexcept
+    {
+        return head_ == 0;
+    }
 
     /// Append a scheduler_op to the back of the queue.
     void push(scheduler_op* op) noexcept
@@ -144,7 +142,7 @@ public:
             set_next(tail_, other.head_);
         else
             head_ = other.head_;
-        tail_ = other.tail_;
+        tail_       = other.tail_;
         other.head_ = 0;
         other.tail_ = 0;
     }

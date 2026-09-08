@@ -374,7 +374,7 @@ posix_resolver::resolve(
 {
     if (svc_.resolver_unavailable())
     {
-        *ec = std::make_error_code(std::errc::operation_not_supported);
+        *ec        = std::make_error_code(std::errc::operation_not_supported);
         op_.cont.h = h;
         return dispatch_coro(ex, op_.cont);
     }

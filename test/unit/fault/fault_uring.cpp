@@ -31,14 +31,15 @@ namespace {
 // find. The distro's shared object supplies one. Every ring call in
 // the process goes through these shadows, so the ring is still driven
 // by a single implementation.
-void* uring_real_symbol(char const* name) noexcept
+void*
+uring_real_symbol(char const* name) noexcept
 {
-    if(void* p = ::dlsym(RTLD_NEXT, name))
+    if (void* p = ::dlsym(RTLD_NEXT, name))
         return p;
     static void* const lib = ::dlopen("liburing.so.2", RTLD_NOW | RTLD_LOCAL);
-    if(lib)
+    if (lib)
     {
-        if(void* p = ::dlsym(lib, name))
+        if (void* p = ::dlsym(lib, name))
             return p;
     }
     return real_symbol(name);
@@ -48,15 +49,17 @@ void* uring_real_symbol(char const* name) noexcept
     static auto const real = reinterpret_cast<sig>(uring_real_symbol(#name))
 
 // Fail with a negative errno, liburing style.
-bool uring_fail(sys which, int& rc) noexcept
+bool
+uring_fail(sys which, int& rc) noexcept
 {
-    if(!should_fail(which))
+    if (!should_fail(which))
         return false;
     rc = -errno;
     return true;
 }
 
-slot* sqe_full_armed() noexcept
+slot*
+sqe_full_armed() noexcept
 {
     return armed_arm(sys::uring_sqe_full);
 }
@@ -68,36 +71,38 @@ slot* sqe_full_armed() noexcept
 // saved tail; a ring torn down while filled is simply forgotten.
 struct sq_fill_state
 {
-    io_uring* ring = nullptr;
+    io_uring* ring      = nullptr;
     unsigned saved_tail = 0;
-    bool filled = false;
+    bool filled         = false;
 };
 
 thread_local sq_fill_state tls_sq_fill;
 
-void apply_sq_fill(io_uring* ring) noexcept
+void
+apply_sq_fill(io_uring* ring) noexcept
 {
     auto& st = tls_sq_fill;
-    if(auto* s = armed_arm(sys::uring_sq_fill))
+    if (auto* s = armed_arm(sys::uring_sq_fill))
     {
-        if(!st.filled)
+        if (!st.filled)
         {
-            st.ring = ring;
+            st.ring       = ring;
             st.saved_tail = ring->sq.sqe_tail;
             ring->sq.sqe_tail += io_uring_sq_space_left(ring);
             st.filled = true;
-            s->fired = true;
+            s->fired  = true;
         }
         return;
     }
-    if(st.filled && st.ring == ring)
+    if (st.filled && st.ring == ring)
     {
         ring->sq.sqe_tail = st.saved_tail;
-        st = sq_fill_state{};
+        st                = sq_fill_state{};
     }
 }
 
-bool sq_filled(io_uring* ring) noexcept
+bool
+sq_filled(io_uring* ring) noexcept
 {
     return tls_sq_fill.filled && tls_sq_fill.ring == ring &&
         armed_arm(sys::uring_sq_fill) != nullptr;
@@ -105,17 +110,18 @@ bool sq_filled(io_uring* ring) noexcept
 
 // Record the user_data of the first pending SQE matching the armed
 // fd/opcode. The SQ array is user memory, so this is a plain read.
-void scan_pending_sqes(io_uring* ring) noexcept
+void
+scan_pending_sqes(io_uring* ring) noexcept
 {
     auto& c = tls_cqe;
-    if(!c.armed || c.have_user_data)
+    if (!c.armed || c.have_user_data)
         return;
-    for(unsigned i = ring->sq.sqe_head; i != ring->sq.sqe_tail; ++i)
+    for (unsigned i = ring->sq.sqe_head; i != ring->sq.sqe_tail; ++i)
     {
         auto const& sqe = ring->sq.sqes[i & ring->sq.ring_mask];
-        if(int(sqe.opcode) == c.opcode && (c.fd < 0 || sqe.fd == c.fd))
+        if (int(sqe.opcode) == c.opcode && (c.fd < 0 || sqe.fd == c.fd))
         {
-            c.user_data = sqe.user_data;
+            c.user_data      = sqe.user_data;
             c.have_user_data = true;
             return;
         }
@@ -123,16 +129,17 @@ void scan_pending_sqes(io_uring* ring) noexcept
 }
 
 // Overwrite `res` on the visible CQE carrying the recorded user_data.
-void rewrite_visible_cqes(io_uring* ring) noexcept
+void
+rewrite_visible_cqes(io_uring* ring) noexcept
 {
     auto& c = tls_cqe;
-    if(!c.armed || !c.have_user_data)
+    if (!c.armed || !c.have_user_data)
         return;
     unsigned head;
     io_uring_cqe* cqe;
     io_uring_for_each_cqe(ring, head, cqe)
     {
-        if(cqe->user_data == c.user_data)
+        if (cqe->user_data == c.user_data)
         {
             cqe->res = c.res;
             cqe->flags &= ~c.flags_clear;
@@ -145,45 +152,50 @@ void rewrite_visible_cqes(io_uring* ring) noexcept
 
 } // namespace
 
-extern "C" int io_uring_queue_init_params(unsigned entries, io_uring* ring,
-    io_uring_params* p) LIBURING_NOEXCEPT
+extern "C" int
+io_uring_queue_init_params(unsigned entries, io_uring* ring, io_uring_params* p)
+    LIBURING_NOEXCEPT
 {
-    COROSIO_FAULT_REAL(io_uring_queue_init_params, int(*)(unsigned, io_uring*, io_uring_params*));
+    COROSIO_FAULT_REAL(
+        io_uring_queue_init_params,
+        int (*)(unsigned, io_uring*, io_uring_params*));
     int rc;
-    if(uring_fail(sys::io_uring_queue_init_params, rc))
+    if (uring_fail(sys::io_uring_queue_init_params, rc))
         return rc;
-    if(sqe_full_armed())
+    if (sqe_full_armed())
         entries = 1;
     int const r = real(entries, ring, p);
-    if(r == 0)
+    if (r == 0)
         apply_sq_fill(ring);
     return r;
 }
 
-extern "C" void io_uring_queue_exit(io_uring* ring) LIBURING_NOEXCEPT
+extern "C" void
+io_uring_queue_exit(io_uring* ring) LIBURING_NOEXCEPT
 {
-    COROSIO_FAULT_REAL(io_uring_queue_exit, void(*)(io_uring*));
+    COROSIO_FAULT_REAL(io_uring_queue_exit, void (*)(io_uring*));
     // Cannot fail; counted so a test can assert teardown reached it.
     std::ignore = should_fail(sys::io_uring_queue_exit);
-    if(tls_sq_fill.filled && tls_sq_fill.ring == ring)
+    if (tls_sq_fill.filled && tls_sq_fill.ring == ring)
         tls_sq_fill = sq_fill_state{};
     real(ring);
 }
 
-extern "C" int io_uring_submit(io_uring* ring) LIBURING_NOEXCEPT
+extern "C" int
+io_uring_submit(io_uring* ring) LIBURING_NOEXCEPT
 {
-    COROSIO_FAULT_REAL(io_uring_submit, int(*)(io_uring*));
+    COROSIO_FAULT_REAL(io_uring_submit, int (*)(io_uring*));
     int rc;
-    if(uring_fail(sys::io_uring_submit, rc))
+    if (uring_fail(sys::io_uring_submit, rc))
         return rc;
-    if(auto* s = sqe_full_armed())
+    if (auto* s = sqe_full_armed())
     {
         s->fired = true;
         return 0;
     }
     scan_pending_sqes(ring);
     apply_sq_fill(ring);
-    if(sq_filled(ring))
+    if (sq_filled(ring))
     {
         // The queue reads full, but completions already visible must
         // still be rewritten or a composed arm misses its CQE.
@@ -200,17 +212,25 @@ extern "C" int io_uring_submit(io_uring* ring) LIBURING_NOEXCEPT
     return rc;
 }
 
-extern "C" int io_uring_submit_and_wait_timeout(io_uring* ring, io_uring_cqe** cqe,
-    unsigned wait_nr, __kernel_timespec* ts, sigset_t* sigmask) LIBURING_NOEXCEPT
+extern "C" int
+io_uring_submit_and_wait_timeout(
+    io_uring* ring,
+    io_uring_cqe** cqe,
+    unsigned wait_nr,
+    __kernel_timespec* ts,
+    sigset_t* sigmask) LIBURING_NOEXCEPT
 {
-    COROSIO_FAULT_REAL(io_uring_submit_and_wait_timeout,
-        int(*)(io_uring*, io_uring_cqe**, unsigned, __kernel_timespec*, sigset_t*));
+    COROSIO_FAULT_REAL(
+        io_uring_submit_and_wait_timeout,
+        int (*)(
+            io_uring*, io_uring_cqe**, unsigned, __kernel_timespec*,
+            sigset_t*));
     int rc;
-    if(uring_fail(sys::io_uring_submit_and_wait_timeout, rc))
+    if (uring_fail(sys::io_uring_submit_and_wait_timeout, rc))
         return rc;
     scan_pending_sqes(ring);
     apply_sq_fill(ring);
-    if(sq_filled(ring))
+    if (sq_filled(ring))
     {
         rewrite_visible_cqes(ring);
         return 0;
@@ -220,15 +240,16 @@ extern "C" int io_uring_submit_and_wait_timeout(io_uring* ring, io_uring_cqe** c
     return rc;
 }
 
-extern "C" int io_uring_submit_and_get_events(io_uring* ring) LIBURING_NOEXCEPT
+extern "C" int
+io_uring_submit_and_get_events(io_uring* ring) LIBURING_NOEXCEPT
 {
-    COROSIO_FAULT_REAL(io_uring_submit_and_get_events, int(*)(io_uring*));
+    COROSIO_FAULT_REAL(io_uring_submit_and_get_events, int (*)(io_uring*));
     int rc;
-    if(uring_fail(sys::io_uring_submit_and_get_events, rc))
+    if (uring_fail(sys::io_uring_submit_and_get_events, rc))
         return rc;
     scan_pending_sqes(ring);
     apply_sq_fill(ring);
-    if(sq_filled(ring))
+    if (sq_filled(ring))
     {
         // The queue reads full, but completions already visible must
         // still be rewritten or a composed arm misses its CQE.
@@ -240,12 +261,15 @@ extern "C" int io_uring_submit_and_get_events(io_uring* ring) LIBURING_NOEXCEPT
     return rc;
 }
 
-extern "C" int io_uring_wait_cqe_timeout(io_uring* ring, io_uring_cqe** cqe,
-    __kernel_timespec* ts) LIBURING_NOEXCEPT
+extern "C" int
+io_uring_wait_cqe_timeout(
+    io_uring* ring, io_uring_cqe** cqe, __kernel_timespec* ts) LIBURING_NOEXCEPT
 {
-    COROSIO_FAULT_REAL(io_uring_wait_cqe_timeout, int(*)(io_uring*, io_uring_cqe**, __kernel_timespec*));
+    COROSIO_FAULT_REAL(
+        io_uring_wait_cqe_timeout,
+        int (*)(io_uring*, io_uring_cqe**, __kernel_timespec*));
     int rc;
-    if(uring_fail(sys::io_uring_wait_cqe_timeout, rc))
+    if (uring_fail(sys::io_uring_wait_cqe_timeout, rc))
         return rc;
     apply_sq_fill(ring);
     rc = real(ring, cqe, ts);

@@ -92,8 +92,7 @@ native_connect_loopback(native_handle_type h, std::uint16_t port, bool v6)
                static_cast<int>(len)) == 0;
 #else
     return ::connect(
-               static_cast<int>(h),
-               reinterpret_cast<sockaddr const*>(&storage),
+               static_cast<int>(h), reinterpret_cast<sockaddr const*>(&storage),
                static_cast<socklen_t>(len)) == 0;
 #endif
 }
@@ -103,12 +102,11 @@ bool
 native_send(native_handle_type h, char const* data, std::size_t len)
 {
 #if BOOST_COROSIO_HAS_IOCP
-    return ::send(
-               static_cast<SOCKET>(h), data,
-               static_cast<int>(len), 0) == static_cast<int>(len);
+    return ::send(static_cast<SOCKET>(h), data, static_cast<int>(len), 0) ==
+        static_cast<int>(len);
 #else
     return ::send(static_cast<int>(h), data, len, 0) ==
-           static_cast<ssize_t>(len);
+        static_cast<ssize_t>(len);
 #endif
 }
 
@@ -299,8 +297,9 @@ struct tcp_socket_test
         io_context ioc(Backend);
         tcp_socket sock(ioc);
 
-        BOOST_TEST(sock.bind(endpoint(ipv4_address::loopback(), 0))
-                   == std::errc::bad_file_descriptor);
+        BOOST_TEST(
+            sock.bind(endpoint(ipv4_address::loopback(), 0)) ==
+            std::errc::bad_file_descriptor);
     }
 
     void testBindV6()
@@ -586,7 +585,8 @@ struct tcp_socket_test
 
             // Drain the actual data
             char buf[8];
-            std::ignore = co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            std::ignore =
+                co_await b.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         };
         capy::run_async(ioc.get_executor())(task(s1, s2));
 
@@ -719,7 +719,8 @@ struct tcp_socket_test
             b.close();
 
             // Give OS time to process the close
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
 
             // Writing to closed peer should eventually fail.
             // We need to write enough data to fill the tcp_socket buffer and
@@ -770,11 +771,13 @@ struct tcp_socket_test
             capy::run_async(ioc.get_executor())(nested_coro());
 
             // Wait for the read to be underway then cancel it
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
             b.cancel();
 
             // Wait for read to complete
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(read_done);
             BOOST_TEST(read_ec == capy::cond::canceled);
@@ -809,10 +812,12 @@ struct tcp_socket_test
             capy::run_async(ioc.get_executor())(nested_coro());
 
             // Wait then close the tcp_socket
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
             b.close();
 
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(read_done);
             // Close should cancel pending operations
@@ -923,12 +928,12 @@ struct tcp_socket_test
             // as an error condition would park it for good. Stepped,
             // so a backend that reports it pays one step and not the
             // whole bound.
-            for(int i = 0; i < 20 && !wait_done; ++i)
+            for (int i = 0; i < 20 && !wait_done; ++i)
             {
-                std::ignore = co_await corosio::delay(
-                    std::chrono::milliseconds(10));
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(10));
             }
-            if(!wait_done)
+            if (!wait_done)
                 s1.cancel();
         };
 
@@ -940,14 +945,14 @@ struct tcp_socket_test
         // select's exceptional set carries out-of-band data and not a
         // reset, so on that backend the bound above is what ends the
         // wait and there is nothing to insist on.
-        constexpr bool is_select = std::is_same_v<
-            std::remove_const_t<decltype(Backend)>, select_t>;
+        constexpr bool is_select =
+            std::is_same_v<std::remove_const_t<decltype(Backend)>, select_t>;
 #else
         constexpr bool is_select = false;
 #endif
 #if BOOST_COROSIO_HAS_URING
-        constexpr bool is_uring = std::is_same_v<
-            std::remove_const_t<decltype(Backend)>, uring_t>;
+        constexpr bool is_uring =
+            std::is_same_v<std::remove_const_t<decltype(Backend)>, uring_t>;
 #else
         constexpr bool is_uring = false;
 #endif
@@ -969,8 +974,8 @@ struct tcp_socket_test
         ioc.restart();
         std::error_code write_ec;
         bool write_done = false;
-        auto writer = [&]() -> capy::task<> {
-            auto [ec] = co_await s3.wait(wait_type::write);
+        auto writer     = [&]() -> capy::task<> {
+            auto [ec]  = co_await s3.wait(wait_type::write);
             write_ec   = ec;
             write_done = true;
         };
@@ -1137,7 +1142,8 @@ struct tcp_socket_test
             BOOST_TEST(!b.shutdown(shutdown_receive));
 
             // b can still send
-            std::ignore = co_await b.write_some(capy::const_buffer("from_b", 6));
+            std::ignore =
+                co_await b.write_some(capy::const_buffer("from_b", 6));
 
             char buf[32] = {};
             auto [ec, n] =
@@ -1158,12 +1164,12 @@ struct tcp_socket_test
         tcp_socket sock(ioc);
 
         // Closed socket reports bad_file_descriptor
-        BOOST_TEST(sock.shutdown(shutdown_send)
-                   == std::errc::bad_file_descriptor);
-        BOOST_TEST(sock.shutdown(shutdown_receive)
-                   == std::errc::bad_file_descriptor);
-        BOOST_TEST(sock.shutdown(shutdown_both)
-                   == std::errc::bad_file_descriptor);
+        BOOST_TEST(
+            sock.shutdown(shutdown_send) == std::errc::bad_file_descriptor);
+        BOOST_TEST(
+            sock.shutdown(shutdown_receive) == std::errc::bad_file_descriptor);
+        BOOST_TEST(
+            sock.shutdown(shutdown_both) == std::errc::bad_file_descriptor);
     }
 
     void testShutdownBothSendDirection()
@@ -1174,7 +1180,8 @@ struct tcp_socket_test
 
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             // Write data then shutdown both
-            std::ignore = co_await a.write_some(capy::const_buffer("goodbye", 7));
+            std::ignore =
+                co_await a.write_some(capy::const_buffer("goodbye", 7));
             BOOST_TEST(!a.shutdown(shutdown_both));
 
             // Peer should receive the data
@@ -1815,15 +1822,14 @@ struct tcp_socket_test
                 test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
             auto writer = [&](tcp_socket& s) -> capy::task<> {
-                std::ignore =
-                    co_await s.write_some(capy::const_buffer("x", 1));
+                std::ignore = co_await s.write_some(capy::const_buffer("x", 1));
                 ++resumed;
             };
             capy::run_async(ex)(writer(a1));
             capy::run_async(ex)(writer(a2));
-            std::ignore = ioc.run_one();
-            std::ignore = ioc.run_one();
-            std::ignore = ioc.run_one();
+            std::ignore    = ioc.run_one();
+            std::ignore    = ioc.run_one();
+            std::ignore    = ioc.run_one();
             before_destroy = resumed;
         }
         BOOST_TEST_EQ(resumed, before_destroy);
@@ -1843,8 +1849,8 @@ struct tcp_socket_test
             acc.set_option(socket_option::reuse_address(true));
             BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
             BOOST_TEST(!acc.listen());
-            auto const ep = endpoint(
-                ipv4_address::loopback(), acc.local_endpoint().port());
+            auto const ep =
+                endpoint(ipv4_address::loopback(), acc.local_endpoint().port());
 
             tcp_socket c1(ioc), c2(ioc);
             auto client = [&](tcp_socket& s) -> capy::task<> {
@@ -1853,9 +1859,9 @@ struct tcp_socket_test
             };
             capy::run_async(ex)(client(c1));
             capy::run_async(ex)(client(c2));
-            std::ignore = ioc.run_one();
-            std::ignore = ioc.run_one();
-            std::ignore = ioc.run_one();
+            std::ignore    = ioc.run_one();
+            std::ignore    = ioc.run_one();
+            std::ignore    = ioc.run_one();
             before_destroy = resumed;
         }
         BOOST_TEST_EQ(resumed, before_destroy);
@@ -1886,7 +1892,7 @@ struct tcp_socket_test
             BOOST_TEST(::send(b1.native_handle(), "x", 1, 0) == 1);
             BOOST_TEST(::send(b2.native_handle(), "x", 1, 0) == 1);
 
-            std::ignore = ioc.run_one();
+            std::ignore    = ioc.run_one();
             before_destroy = resumed;
         }
         BOOST_TEST_EQ(resumed, before_destroy);
@@ -2365,8 +2371,8 @@ struct tcp_socket_test
             BOOST_TEST(!aec);
 
             char const out[] = "ping";
-            auto [wec, wn]   = co_await adopted.write_some(
-                capy::const_buffer(out, 4));
+            auto [wec, wn] =
+                co_await adopted.write_some(capy::const_buffer(out, 4));
             BOOST_TEST(!wec);
             BOOST_TEST_EQ(wn, std::size_t(4));
 
@@ -2401,11 +2407,12 @@ struct tcp_socket_test
         };
 
 #if BOOST_COROSIO_HAS_IOCP
-        BOOST_TEST(sock.assign(invalid_native_socket)
-                   == std::errc::not_a_socket);
+        BOOST_TEST(
+            sock.assign(invalid_native_socket) == std::errc::not_a_socket);
 #else
-        BOOST_TEST(sock.assign(invalid_native_socket)
-                   == std::errc::bad_file_descriptor);
+        BOOST_TEST(
+            sock.assign(invalid_native_socket) ==
+            std::errc::bad_file_descriptor);
 #endif
 
         expect_error(invalid_native_socket);
@@ -2473,7 +2480,7 @@ struct tcp_socket_test
     void testAssignOverOpenCancelsPending()
     {
         io_context ioc(Backend);
-        auto ex   = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto pair =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
         tcp_socket& s1 = pair.first;
@@ -2488,8 +2495,8 @@ struct tcp_socket_test
 
         auto nfd = make_native_socket(AF_INET, SOCK_STREAM);
         BOOST_TEST(nfd != invalid_native_socket);
-        BOOST_TEST(native_connect_loopback(
-            nfd, acc.local_endpoint().port(), false));
+        BOOST_TEST(
+            native_connect_loopback(nfd, acc.local_endpoint().port(), false));
         make_native_adoptable(nfd);
 
         std::error_code read_ec;
@@ -2508,8 +2515,8 @@ struct tcp_socket_test
             auto [aec, peer] = co_await acc.accept();
             BOOST_TEST(!aec);
             char const out[] = "ping";
-            [[maybe_unused]] auto [wec, wn]   = co_await s1.write_some(
-                capy::const_buffer(out, 4));
+            [[maybe_unused]] auto [wec, wn] =
+                co_await s1.write_some(capy::const_buffer(out, 4));
             BOOST_TEST(!wec);
             char in[8];
             auto [rec, rn] =
@@ -2538,7 +2545,7 @@ struct tcp_socket_test
     void testRelease()
     {
         io_context ioc(Backend);
-        auto ex   = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto pair =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
         tcp_socket& s1 = pair.first;
@@ -2573,7 +2580,7 @@ struct tcp_socket_test
         char const msg[] = "released";
         BOOST_TEST(native_send(released, msg, 8));
 
-        bool got = false;
+        bool got    = false;
         auto peeker = [&]() -> capy::task<> {
             char in[16];
             auto [rec, rn] =
@@ -2642,8 +2649,8 @@ struct tcp_socket_test
             auto [aec, peer] = co_await acc.accept();
             BOOST_TEST(!aec);
             char const out[] = "v6";
-            [[maybe_unused]] auto [wec, wn]   = co_await adopted.write_some(
-                capy::const_buffer(out, 2));
+            [[maybe_unused]] auto [wec, wn] =
+                co_await adopted.write_some(capy::const_buffer(out, 2));
             BOOST_TEST(!wec);
             char in[8];
             auto [rec, rn] =

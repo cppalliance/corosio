@@ -31,8 +31,7 @@ namespace boost::corosio::detail {
 */
 
 template<class Traits, class Socket, class Acceptor, class Endpoint>
-struct reactor_stream_base_op
-    : reactor_op<Socket, Acceptor>
+struct reactor_stream_base_op : reactor_op<Socket, Acceptor>
 {
     void operator()() override;
     void cancel() noexcept override;
@@ -51,16 +50,14 @@ template<class Traits, class Socket, class Acceptor, class Endpoint>
 struct reactor_stream_read_op final
     : reactor_read_op<
           reactor_stream_base_op<Traits, Socket, Acceptor, Endpoint>>
-{
-};
+{};
 
 template<class Traits, class Socket, class Acceptor, class Endpoint>
 struct reactor_stream_write_op final
     : reactor_write_op<
           reactor_stream_base_op<Traits, Socket, Acceptor, Endpoint>,
           typename Traits::write_policy>
-{
-};
+{};
 
 template<class Traits, class Socket, class Acceptor, class Endpoint>
 struct reactor_stream_accept_op final

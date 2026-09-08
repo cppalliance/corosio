@@ -153,15 +153,18 @@ private:
     {
         switch (w)
         {
-        case wait_type::read:  return POLLRDNORM;
-        case wait_type::write: return POLLWRNORM;
+        case wait_type::read:
+            return POLLRDNORM;
+        case wait_type::write:
+            return POLLWRNORM;
         // The Microsoft provider does not implement POLLPRI and
         // refuses the whole call when it is asked for, which would
         // take every other registration in the set with it. The band
         // it does implement carries the same out-of-band meaning, and
         // the error conditions an error wait is really after arrive in
         // revents whether or not they were asked for.
-        default:               return POLLRDBAND;
+        default:
+            return POLLRDBAND;
         }
     }
 
@@ -208,8 +211,7 @@ private:
     std::thread thread_;
 };
 
-inline win_wait_reactor::win_wait_reactor(win_scheduler& sched)
-    : sched_(sched)
+inline win_wait_reactor::win_wait_reactor(win_scheduler& sched) : sched_(sched)
 {
     // The win_wsa_init base is what makes the sockets below legal, and
     // holding the reference rather than borrowing someone else's is
@@ -268,8 +270,7 @@ win_wait_reactor::make_wakeup_pair() noexcept
         return err;
     }
 
-    if (::connect(
-            wakeup_write_, reinterpret_cast<sockaddr*>(&addr), len) ==
+    if (::connect(wakeup_write_, reinterpret_cast<sockaddr*>(&addr), len) ==
         SOCKET_ERROR)
     {
         DWORD const err = last_error();
@@ -341,8 +342,7 @@ win_wait_reactor::wake_self() noexcept
 }
 
 inline void
-win_wait_reactor::register_wait(
-    SOCKET fd, wait_type w, overlapped_op* op)
+win_wait_reactor::register_wait(SOCKET fd, wait_type w, overlapped_op* op)
 {
     // If the op was already cancelled (e.g. pre-cancelled stop_token
     // fired synchronously before this call), complete immediately
@@ -538,8 +538,7 @@ win_wait_reactor::run()
         // its own send fails, so a lost wake costs the wakes already in
         // flight rather than every wake after it.
         int n = ::WSAPoll(
-            pollfds.data(),
-            static_cast<ULONG>(pollfds.size()),
+            pollfds.data(), static_cast<ULONG>(pollfds.size()),
             -1 /* infinite */);
         if (n == SOCKET_ERROR)
         {
@@ -580,7 +579,7 @@ win_wait_reactor::run()
             if (!ready_for_wait(e.w, pfd.revents))
                 continue;
 
-            DWORD err = 0;
+            DWORD err                = 0;
             constexpr SHORT err_bits = POLLERR | POLLHUP | POLLNVAL;
             if (pfd.revents & err_bits)
             {

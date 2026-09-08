@@ -22,14 +22,15 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::receive_buffer_size[]
-void widen_the_receive_buffer(corosio::tcp_socket& sock)
+void
+widen_the_receive_buffer(corosio::tcp_socket& sock)
 {
     sock.set_option(corosio::socket_option::receive_buffer_size(65536));
 
     // The kernel is free to round the request up or clamp it, so read the
     // option back rather than assuming the value took effect verbatim.
     auto opt = sock.get_option<corosio::socket_option::receive_buffer_size>();
-    int sz = opt.value();
+    int sz   = opt.value();
 }
 // end::receive_buffer_size[]
 

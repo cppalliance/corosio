@@ -56,30 +56,34 @@ struct tls_context_test
     void testCopyAndMove()
     {
         tls_context a;
-        BOOST_TEST(!a.use_certificate(test::server_cert_pem,
-                                      tls_file_format::pem));
+        BOOST_TEST(
+            !a.use_certificate(test::server_cert_pem, tls_file_format::pem));
 
         // Copy: shares state
         tls_context b(a);
         auto const& bd = detail::get_tls_context_data(b);
-        BOOST_TEST_EQ(bd.entity_certificate, std::string(test::server_cert_pem));
+        BOOST_TEST_EQ(
+            bd.entity_certificate, std::string(test::server_cert_pem));
 
         // Copy-assign
         tls_context c;
-        c = a;
+        c              = a;
         auto const& cd = detail::get_tls_context_data(c);
-        BOOST_TEST_EQ(cd.entity_certificate, std::string(test::server_cert_pem));
+        BOOST_TEST_EQ(
+            cd.entity_certificate, std::string(test::server_cert_pem));
 
         // Move-construct
         tls_context d(std::move(b));
         auto const& dd = detail::get_tls_context_data(d);
-        BOOST_TEST_EQ(dd.entity_certificate, std::string(test::server_cert_pem));
+        BOOST_TEST_EQ(
+            dd.entity_certificate, std::string(test::server_cert_pem));
 
         // Move-assign
         tls_context e;
-        e = std::move(c);
+        e              = std::move(c);
         auto const& ed = detail::get_tls_context_data(e);
-        BOOST_TEST_EQ(ed.entity_certificate, std::string(test::server_cert_pem));
+        BOOST_TEST_EQ(
+            ed.entity_certificate, std::string(test::server_cert_pem));
     }
 
     //
@@ -89,21 +93,22 @@ struct tls_context_test
     void testUseCertificateInMemory()
     {
         tls_context ctx;
-        auto ec = ctx.use_certificate(
-            test::server_cert_pem, tls_file_format::pem);
+        auto ec =
+            ctx.use_certificate(test::server_cert_pem, tls_file_format::pem);
         BOOST_TEST(!ec);
 
         auto const& data = detail::get_tls_context_data(ctx);
-        BOOST_TEST_EQ(data.entity_certificate,
-                      std::string(test::server_cert_pem));
+        BOOST_TEST_EQ(
+            data.entity_certificate, std::string(test::server_cert_pem));
         BOOST_TEST(data.entity_cert_format == tls_file_format::pem);
 
         // DER format selector should also be stored without parsing
         tls_context der_ctx;
         ec = der_ctx.use_certificate("\x30\x82\x00\x00", tls_file_format::der);
         BOOST_TEST(!ec);
-        BOOST_TEST(detail::get_tls_context_data(der_ctx).entity_cert_format
-                   == tls_file_format::der);
+        BOOST_TEST(
+            detail::get_tls_context_data(der_ctx).entity_cert_format ==
+            tls_file_format::der);
     }
 
     void testUseCertificateChainInMemory()
@@ -113,15 +118,15 @@ struct tls_context_test
         BOOST_TEST(!ec);
 
         auto const& data = detail::get_tls_context_data(ctx);
-        BOOST_TEST_EQ(data.certificate_chain,
-                      std::string(test::server_fullchain_pem));
+        BOOST_TEST_EQ(
+            data.certificate_chain, std::string(test::server_fullchain_pem));
     }
 
     void testUsePrivateKeyInMemory()
     {
         tls_context ctx;
-        auto ec = ctx.use_private_key(
-            test::server_key_pem, tls_file_format::pem);
+        auto ec =
+            ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
         BOOST_TEST(!ec);
 
         auto const& data = detail::get_tls_context_data(ctx);
@@ -148,8 +153,9 @@ struct tls_context_test
             tls_context ctx;
             auto ec = ctx.use_certificate_file(f.str(), tls_file_format::pem);
             BOOST_TEST(!ec);
-            BOOST_TEST_EQ(detail::get_tls_context_data(ctx).entity_certificate,
-                          std::string(test::server_cert_pem));
+            BOOST_TEST_EQ(
+                detail::get_tls_context_data(ctx).entity_certificate,
+                std::string(test::server_cert_pem));
         }
 
         // Failure: nonexistent file -> ENOENT
@@ -170,8 +176,9 @@ struct tls_context_test
             tls_context ctx;
             auto ec = ctx.use_certificate_chain_file(f.str());
             BOOST_TEST(!ec);
-            BOOST_TEST_EQ(detail::get_tls_context_data(ctx).certificate_chain,
-                          std::string(test::server_fullchain_pem));
+            BOOST_TEST_EQ(
+                detail::get_tls_context_data(ctx).certificate_chain,
+                std::string(test::server_fullchain_pem));
         }
 
         // Missing file
@@ -191,8 +198,9 @@ struct tls_context_test
             tls_context ctx;
             auto ec = ctx.use_private_key_file(f.str(), tls_file_format::pem);
             BOOST_TEST(!ec);
-            BOOST_TEST_EQ(detail::get_tls_context_data(ctx).private_key,
-                          std::string(test::server_key_pem));
+            BOOST_TEST_EQ(
+                detail::get_tls_context_data(ctx).private_key,
+                std::string(test::server_key_pem));
         }
 
         // Missing file
@@ -238,8 +246,8 @@ struct tls_context_test
         auto const& data = detail::get_tls_context_data(ctx);
         BOOST_TEST_EQ(data.ca_certificates.size(), 2u);
         BOOST_TEST_EQ(data.ca_certificates[0], std::string(test::ca_cert_pem));
-        BOOST_TEST_EQ(data.ca_certificates[1],
-                      std::string(test::root_ca_cert_pem));
+        BOOST_TEST_EQ(
+            data.ca_certificates[1], std::string(test::root_ca_cert_pem));
     }
 
     void testLoadVerifyFile()
@@ -252,8 +260,8 @@ struct tls_context_test
             BOOST_TEST(!ec);
             auto const& data = detail::get_tls_context_data(ctx);
             BOOST_TEST_EQ(data.ca_certificates.size(), 1u);
-            BOOST_TEST_EQ(data.ca_certificates[0],
-                          std::string(test::root_ca_cert_pem));
+            BOOST_TEST_EQ(
+                data.ca_certificates[0], std::string(test::root_ca_cert_pem));
         }
 
         // Missing file
@@ -299,13 +307,15 @@ struct tls_context_test
 
         auto ec = ctx.set_min_protocol_version(tls_version::tls_1_3);
         BOOST_TEST(!ec);
-        BOOST_TEST(detail::get_tls_context_data(ctx).min_version
-                   == tls_version::tls_1_3);
+        BOOST_TEST(
+            detail::get_tls_context_data(ctx).min_version ==
+            tls_version::tls_1_3);
 
         ec = ctx.set_max_protocol_version(tls_version::tls_1_2);
         BOOST_TEST(!ec);
-        BOOST_TEST(detail::get_tls_context_data(ctx).max_version
-                   == tls_version::tls_1_2);
+        BOOST_TEST(
+            detail::get_tls_context_data(ctx).max_version ==
+            tls_version::tls_1_2);
 
         // Reset min/max
         ec = ctx.set_min_protocol_version(tls_version::tls_1_2);
@@ -319,14 +329,15 @@ struct tls_context_test
         tls_context ctx;
         auto ec = ctx.set_ciphersuites("ECDHE+AESGCM");
         BOOST_TEST(!ec);
-        BOOST_TEST_EQ(detail::get_tls_context_data(ctx).ciphersuites,
-                      std::string("ECDHE+AESGCM"));
+        BOOST_TEST_EQ(
+            detail::get_tls_context_data(ctx).ciphersuites,
+            std::string("ECDHE+AESGCM"));
 
         // Empty string is accepted at storage time
         ec = ctx.set_ciphersuites("");
         BOOST_TEST(!ec);
-        BOOST_TEST_EQ(detail::get_tls_context_data(ctx).ciphersuites,
-                      std::string());
+        BOOST_TEST_EQ(
+            detail::get_tls_context_data(ctx).ciphersuites, std::string());
     }
 
     void testAlpn()
@@ -334,8 +345,8 @@ struct tls_context_test
         tls_context ctx;
 
         // Initially empty
-        BOOST_TEST_EQ(detail::get_tls_context_data(ctx).alpn_protocols.size(),
-                      0u);
+        BOOST_TEST_EQ(
+            detail::get_tls_context_data(ctx).alpn_protocols.size(), 0u);
 
         // Set list
         auto ec = ctx.set_alpn({"h2", "http/1.1"});
@@ -367,13 +378,15 @@ struct tls_context_test
 
         auto ec = ctx.set_verify_mode(tls_verify_mode::peer);
         BOOST_TEST(!ec);
-        BOOST_TEST(detail::get_tls_context_data(ctx).verification_mode
-                   == tls_verify_mode::peer);
+        BOOST_TEST(
+            detail::get_tls_context_data(ctx).verification_mode ==
+            tls_verify_mode::peer);
 
         ec = ctx.set_verify_mode(tls_verify_mode::require_peer);
         BOOST_TEST(!ec);
-        BOOST_TEST(detail::get_tls_context_data(ctx).verification_mode
-                   == tls_verify_mode::require_peer);
+        BOOST_TEST(
+            detail::get_tls_context_data(ctx).verification_mode ==
+            tls_verify_mode::require_peer);
 
         ec = ctx.set_verify_depth(5);
         BOOST_TEST(!ec);
@@ -386,12 +399,11 @@ struct tls_context_test
 
         bool invoked = false;
         std::string saw;
-        ctx.set_servername_callback(
-            [&](std::string_view name) -> bool {
-                invoked = true;
-                saw     = std::string(name);
-                return name == "ok.example.com";
-            });
+        ctx.set_servername_callback([&](std::string_view name) -> bool {
+            invoked = true;
+            saw     = std::string(name);
+            return name == "ok.example.com";
+        });
 
         auto const& cb = detail::get_tls_context_data(ctx).servername_callback;
         BOOST_TEST(static_cast<bool>(cb));
@@ -410,12 +422,13 @@ struct tls_context_test
 
         bool invoked = false;
         ctx.set_password_callback(
-            [&](std::size_t max_len, tls_password_purpose purpose)
-                -> std::string {
+            [&](std::size_t max_len,
+                tls_password_purpose purpose) -> std::string {
                 invoked = true;
                 BOOST_TEST(max_len > 0);
-                BOOST_TEST(purpose == tls_password_purpose::for_reading
-                           || purpose == tls_password_purpose::for_writing);
+                BOOST_TEST(
+                    purpose == tls_password_purpose::for_reading ||
+                    purpose == tls_password_purpose::for_writing);
                 return std::string("secret");
             });
 
@@ -433,7 +446,8 @@ struct tls_context_test
     void testAddCrl()
     {
         tls_context ctx;
-        auto ec = ctx.add_crl("-----BEGIN X509 CRL-----\nABC\n-----END X509 CRL-----\n");
+        auto ec = ctx.add_crl(
+            "-----BEGIN X509 CRL-----\nABC\n-----END X509 CRL-----\n");
         BOOST_TEST(!ec);
         ec = ctx.add_crl("second-crl-data");
         BOOST_TEST(!ec);
@@ -468,16 +482,19 @@ struct tls_context_test
     {
         tls_context ctx;
         ctx.set_revocation_policy(tls_revocation_policy::soft_fail);
-        BOOST_TEST(detail::get_tls_context_data(ctx).revocation
-                   == tls_revocation_policy::soft_fail);
+        BOOST_TEST(
+            detail::get_tls_context_data(ctx).revocation ==
+            tls_revocation_policy::soft_fail);
 
         ctx.set_revocation_policy(tls_revocation_policy::hard_fail);
-        BOOST_TEST(detail::get_tls_context_data(ctx).revocation
-                   == tls_revocation_policy::hard_fail);
+        BOOST_TEST(
+            detail::get_tls_context_data(ctx).revocation ==
+            tls_revocation_policy::hard_fail);
 
         ctx.set_revocation_policy(tls_revocation_policy::disabled);
-        BOOST_TEST(detail::get_tls_context_data(ctx).revocation
-                   == tls_revocation_policy::disabled);
+        BOOST_TEST(
+            detail::get_tls_context_data(ctx).revocation ==
+            tls_revocation_policy::disabled);
     }
 
     void run()

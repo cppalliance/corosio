@@ -45,17 +45,16 @@ namespace boost::corosio::detail {
 */
 struct uring_dgram_send_op : uring_op
 {
-    iovec            iovecs[uring_max_iov];
-    int              iovec_count = 0;
-    msghdr           msg{};
+    iovec iovecs[uring_max_iov];
+    int iovec_count = 0;
+    msghdr msg{};
     sockaddr_storage dest_storage{};
-    socklen_t        dest_len  = 0;
-    int              fd        = -1;
-    int              msg_flags = 0;
+    socklen_t dest_len                    = 0;
+    int fd                                = -1;
+    int msg_flags                         = 0;
     detail::speculative_state* spec_state = nullptr;
 
-    uring_dgram_send_op() noexcept
-        : uring_op(&do_handler, &do_cqe, &do_prep) {}
+    uring_dgram_send_op() noexcept : uring_op(&do_handler, &do_cqe, &do_prep) {}
 
     /** Reset and initialize for a new submission.
 
@@ -64,19 +63,19 @@ struct uring_dgram_send_op : uring_op
         `dest_addr_storage` with the destination address.
     */
     void prepare(
-        std::coroutine_handle<>    handle,
-        capy::executor_ref         executor,
-        std::error_code*           ec,
-        std::size_t*               bytes,
-        int                        file_descriptor,
-        uring_scheduler*        scheduler,
-        std::shared_ptr<void>      impl,
+        std::coroutine_handle<> handle,
+        capy::executor_ref executor,
+        std::error_code* ec,
+        std::size_t* bytes,
+        int file_descriptor,
+        uring_scheduler* scheduler,
+        std::shared_ptr<void> impl,
         detail::speculative_state* spec,
-        buffer_param               buffers,
-        socklen_t                  dest_addr_len,
-        sockaddr_storage const&    dest_addr_storage,
-        int                        flags,
-        std::stop_token const&     token) noexcept
+        buffer_param buffers,
+        socklen_t dest_addr_len,
+        sockaddr_storage const& dest_addr_storage,
+        int flags,
+        std::stop_token const& token) noexcept
     {
         h          = handle;
         ex         = executor;
@@ -92,13 +91,13 @@ struct uring_dgram_send_op : uring_op
 
         iovec_count = copy_to_iovec(buffers, iovecs);
 
-        msg = {};
+        msg            = {};
         msg.msg_iov    = iovecs;
         msg.msg_iovlen = static_cast<decltype(msg.msg_iovlen)>(iovec_count);
         if (dest_addr_len > 0)
         {
-            dest_storage = dest_addr_storage;
-            dest_len     = dest_addr_len;
+            dest_storage    = dest_addr_storage;
+            dest_len        = dest_addr_len;
             msg.msg_name    = &dest_storage;
             msg.msg_namelen = dest_addr_len;
         }
@@ -113,22 +112,23 @@ struct uring_dgram_send_op : uring_op
     {
         auto* self = static_cast<uring_dgram_send_op*>(base);
         ::io_uring_prep_sendmsg(
-            sqe, self->fd, &self->msg,
-            self->msg_flags | MSG_NOSIGNAL);
+            sqe, self->fd, &self->msg, self->msg_flags | MSG_NOSIGNAL);
     }
 
-    static void do_cqe(
-        uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
+    static void
+    do_cqe(uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
     {
-        auto* self = static_cast<uring_dgram_send_op*>(base);
+        auto* self      = static_cast<uring_dgram_send_op*>(base);
         self->res       = res;
         self->cqe_flags = flags;
         local.push(self);
     }
 
     static void do_handler(
-        void* owner, scheduler_op* base,
-        std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t /*bytes*/,
+        std::uint32_t /*error*/) noexcept
     {
         auto* self = static_cast<uring_dgram_send_op*>(base);
         if (coro_drain_if_shutdown(owner, self))
@@ -139,13 +139,12 @@ struct uring_dgram_send_op : uring_op
 
         // Datagram send: no EOF (a 0-byte send is success).
         decode_io_result(
-            self->ec_out,
-            self->cancelled.load(std::memory_order_acquire),
+            self->ec_out, self->cancelled.load(std::memory_order_acquire),
             self->res < 0 ? make_err(-self->res) : std::error_code{},
             /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
         if (self->bytes_out)
-            *self->bytes_out = (self->res >= 0)
-                ? static_cast<std::size_t>(self->res) : 0;
+            *self->bytes_out =
+                (self->res >= 0) ? static_cast<std::size_t>(self->res) : 0;
 
         if (self->res > 0 && self->spec_state)
         {
@@ -171,23 +170,22 @@ struct uring_dgram_send_op : uring_op
 */
 struct uring_dgram_recv_op : uring_op
 {
-    iovec            iovecs[uring_max_iov];
-    int              iovec_count = 0;
-    msghdr           msg{};
+    iovec iovecs[uring_max_iov];
+    int iovec_count = 0;
+    msghdr msg{};
     sockaddr_storage source_storage{};
-    socklen_t        source_len = 0;
-    int              fd         = -1;
-    int              msg_flags  = 0;
+    socklen_t source_len                  = 0;
+    int fd                                = -1;
+    int msg_flags                         = 0;
     detail::speculative_state* spec_state = nullptr;
 
     /// Type-erased translator: writes source_storage into the user's
     /// endpoint output via concrete-class-specific conversion.
     void* source_writer_ctx = nullptr;
-    void (*source_writer)(
-        void*, sockaddr_storage const&, socklen_t) noexcept = nullptr;
+    void (*source_writer)(void*, sockaddr_storage const&, socklen_t) noexcept =
+        nullptr;
 
-    uring_dgram_recv_op() noexcept
-        : uring_op(&do_handler, &do_cqe, &do_prep) {}
+    uring_dgram_recv_op() noexcept : uring_op(&do_handler, &do_cqe, &do_prep) {}
 
     /** Reset and initialize for a new submission.
 
@@ -203,19 +201,19 @@ struct uring_dgram_recv_op : uring_op
         otherwise block forever.
     */
     void prepare(
-        std::coroutine_handle<>    handle,
-        capy::executor_ref         executor,
-        std::error_code*           ec,
-        std::size_t*               bytes,
-        int                        file_descriptor,
-        uring_scheduler*        scheduler,
-        std::shared_ptr<void>      impl,
+        std::coroutine_handle<> handle,
+        capy::executor_ref executor,
+        std::error_code* ec,
+        std::size_t* bytes,
+        int file_descriptor,
+        uring_scheduler* scheduler,
+        std::shared_ptr<void> impl,
         detail::speculative_state* spec,
-        buffer_param               buffers,
-        void*                      source_ctx,
+        buffer_param buffers,
+        void* source_ctx,
         void (*source_fn)(void*, sockaddr_storage const&, socklen_t) noexcept,
-        int                        flags,
-        std::stop_token const&     token) noexcept
+        int flags,
+        std::stop_token const& token) noexcept
     {
         h          = handle;
         ex         = executor;
@@ -240,11 +238,10 @@ struct uring_dgram_recv_op : uring_op
         if (iovec_count > 0 && source_fn)
         {
             msg.msg_iov    = iovecs;
-            msg.msg_iovlen = static_cast<decltype(msg.msg_iovlen)>(
-                iovec_count);
-            source_storage    = {};
-            source_len        = sizeof(source_storage);
-            msg.msg_name      = &source_storage;
+            msg.msg_iovlen = static_cast<decltype(msg.msg_iovlen)>(iovec_count);
+            source_storage = {};
+            source_len     = sizeof(source_storage);
+            msg.msg_name   = &source_storage;
             msg.msg_namelen   = source_len;
             source_writer_ctx = source_ctx;
             source_writer     = source_fn;
@@ -253,9 +250,9 @@ struct uring_dgram_recv_op : uring_op
         {
             if (iovec_count > 0)
             {
-                msg.msg_iov    = iovecs;
-                msg.msg_iovlen = static_cast<decltype(msg.msg_iovlen)>(
-                    iovec_count);
+                msg.msg_iov = iovecs;
+                msg.msg_iovlen =
+                    static_cast<decltype(msg.msg_iovlen)>(iovec_count);
             }
             source_len        = 0;
             source_writer_ctx = nullptr;
@@ -267,14 +264,13 @@ struct uring_dgram_recv_op : uring_op
     static void do_prep(uring_op* base, ::io_uring_sqe* sqe) noexcept
     {
         auto* self = static_cast<uring_dgram_recv_op*>(base);
-        ::io_uring_prep_recvmsg(
-            sqe, self->fd, &self->msg, self->msg_flags);
+        ::io_uring_prep_recvmsg(sqe, self->fd, &self->msg, self->msg_flags);
     }
 
-    static void do_cqe(
-        uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
+    static void
+    do_cqe(uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
     {
-        auto* self = static_cast<uring_dgram_recv_op*>(base);
+        auto* self      = static_cast<uring_dgram_recv_op*>(base);
         self->res       = res;
         self->cqe_flags = flags;
         // recvmsg writes the actual source addrlen back into msg.msg_namelen.
@@ -283,8 +279,10 @@ struct uring_dgram_recv_op : uring_op
     }
 
     static void do_handler(
-        void* owner, scheduler_op* base,
-        std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t /*bytes*/,
+        std::uint32_t /*error*/) noexcept
     {
         auto* self = static_cast<uring_dgram_recv_op*>(base);
         if (coro_drain_if_shutdown(owner, self))
@@ -296,13 +294,12 @@ struct uring_dgram_recv_op : uring_op
         // Datagram recv: a 0-byte datagram is success, not EOF — is_read
         // stays false so the shared decode never maps it to end_of_file.
         decode_io_result(
-            self->ec_out,
-            self->cancelled.load(std::memory_order_acquire),
+            self->ec_out, self->cancelled.load(std::memory_order_acquire),
             self->res < 0 ? make_err(-self->res) : std::error_code{},
             /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
         if (self->bytes_out)
-            *self->bytes_out = (self->res >= 0)
-                ? static_cast<std::size_t>(self->res) : 0;
+            *self->bytes_out =
+                (self->res >= 0) ? static_cast<std::size_t>(self->res) : 0;
 
         if (self->res > 0 && self->spec_state)
         {
@@ -313,8 +310,9 @@ struct uring_dgram_recv_op : uring_op
         // Translate source storage into user's endpoint output (only on
         // success and only when the concrete socket type asked for it).
         if (self->source_writer && self->res >= 0)
-            self->source_writer(self->source_writer_ctx,
-                self->source_storage, self->source_len);
+            self->source_writer(
+                self->source_writer_ctx, self->source_storage,
+                self->source_len);
 
         coro_resume(self);
     }

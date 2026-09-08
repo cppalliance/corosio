@@ -26,14 +26,15 @@
 #include <utility>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 // Resolving and connecting to a public hostname needs the network;
 // compiled, never run.
 // tag::connect[]
-capy::task<> connect_to_first_available(corosio::io_context& ioc)
+capy::task<>
+connect_to_first_available(corosio::io_context& ioc)
 {
     corosio::resolver r(ioc);
     auto [rec, results] = co_await r.resolve("www.boost.org", "80");

@@ -36,8 +36,9 @@ public:
     {
     }
 
-    conditionally_enabled_event(conditionally_enabled_event const&)            = delete;
-    conditionally_enabled_event& operator=(conditionally_enabled_event const&) = delete;
+    conditionally_enabled_event(conditionally_enabled_event const&) = delete;
+    conditionally_enabled_event&
+    operator=(conditionally_enabled_event const&) = delete;
 
     void set_enabled(bool v) noexcept
     {

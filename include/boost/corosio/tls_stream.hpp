@@ -266,7 +266,10 @@ public:
         Safe to call after the handshake completes; not safe to call
         concurrently with a handshake or reset.
     */
-    virtual std::string_view alpn_protocol() const noexcept { return {}; } // LCOV_EXCL_LINE every concrete stream overrides this; the base default is never called
+    virtual std::string_view alpn_protocol() const noexcept
+    {
+        return {};
+    } // LCOV_EXCL_LINE every concrete stream overrides this; the base default is never called
 
 protected:
     tls_stream() = default;
@@ -281,7 +284,8 @@ protected:
         @return An awaitable yielding `(error_code,std::size_t)`.
     */
     virtual capy::io_task<std::size_t> do_read_some(
-        capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers) = 0;
+        capy::detail::mutable_buffer_array<capy::detail::max_iovec_>
+            buffers) = 0;
 
     /** Virtual write implementation.
 

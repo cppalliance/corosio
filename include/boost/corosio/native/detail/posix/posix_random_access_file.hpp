@@ -88,10 +88,10 @@ public:
         , intrusive_list<raf_op>::node
     {
         iovec iovecs[max_buffers];
-        int iovec_count = 0;
+        int iovec_count      = 0;
         std::uint64_t offset = 0;
 
-        int errn                    = 0;
+        int errn                      = 0;
         std::size_t bytes_transferred = 0;
 
         // Raw back-pointer for the typed work; `impl_ptr` is the keepalive.
@@ -147,8 +147,8 @@ public:
     native_handle_type release() override;
     std::error_code assign(native_handle_type handle) noexcept override;
 
-    std::error_code open_file(
-        std::filesystem::path const& path, file_base::flags mode);
+    std::error_code
+    open_file(std::filesystem::path const& path, file_base::flags mode);
     void close_file() noexcept;
 
 private:
@@ -162,8 +162,7 @@ private:
 // Inline implementation
 // ---------------------------------------------------------------------------
 
-inline
-posix_random_access_file::posix_random_access_file(
+inline posix_random_access_file::posix_random_access_file(
     posix_random_access_file_service& svc) noexcept
     : svc_(svc)
 {
@@ -243,7 +242,7 @@ posix_random_access_file::sync_data() noexcept
 {
 #if BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO
     if (::fdatasync(fd_) < 0)
-#else // BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO
+#else  // BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO
     if (::fsync(fd_) < 0)
 #endif // BOOST_COROSIO_HAS_POSIX_SYNCHRONIZED_IO
         return make_err(errno);
@@ -262,7 +261,7 @@ inline native_handle_type
 posix_random_access_file::release()
 {
     int fd = fd_;
-    fd_ = -1;
+    fd_    = -1;
     return fd;
 }
 

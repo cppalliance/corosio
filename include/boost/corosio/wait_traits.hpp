@@ -51,8 +51,7 @@ struct wait_traits
 
         @return The duration the next underlying wait may cover.
     */
-    static typename Clock::duration
-    to_wait_duration(typename Clock::duration d)
+    static typename Clock::duration to_wait_duration(typename Clock::duration d)
     {
         return d;
     }
@@ -65,10 +64,10 @@ struct wait_traits
     `Traits::to_wait_duration` must not throw.
 */
 template<class Traits, class Clock>
-concept WaitTraits = requires(typename Clock::duration d)
-{
-    { Traits::to_wait_duration(d) }
-        -> std::convertible_to<typename Clock::duration>;
+concept WaitTraits = requires(typename Clock::duration d) {
+    {
+        Traits::to_wait_duration(d)
+    } -> std::convertible_to<typename Clock::duration>;
 };
 
 } // namespace boost::corosio

@@ -60,7 +60,18 @@ class reactor_basic_socket
     template<class, class, class, class, class, class, class, class, class>
     friend class reactor_stream_socket;
 
-    template<class, class, class, class, class, class, class, class, class, class, class>
+    template<
+        class,
+        class,
+        class,
+        class,
+        class,
+        class,
+        class,
+        class,
+        class,
+        class,
+        class>
     friend class reactor_datagram_socket;
 
     explicit reactor_basic_socket(Service& svc) noexcept : svc_(svc) {}
@@ -95,7 +106,7 @@ public:
     */
     std::error_code init_and_register(int fd) noexcept
     {
-        fd_ = fd;
+        fd_            = fd;
         desc_state_.fd = fd;
         {
             std::lock_guard lock(desc_state_.mutex);
@@ -107,8 +118,8 @@ public:
         {
             // Undo the partial state so a failed adopt is
             // indistinguishable from a closed implementation.
-            fd_ = -1;
-            desc_state_.fd = -1;
+            fd_                           = -1;
+            desc_state_.fd                = -1;
             desc_state_.registered_events = 0;
             return ec;
         }
@@ -165,14 +176,20 @@ public:
     native_handle_type do_release_socket() noexcept;
 };
 
-template<class Derived, class ImplBase, class Service, class DescState, class Endpoint>
+template<
+    class Derived,
+    class ImplBase,
+    class Service,
+    class DescState,
+    class Endpoint>
 template<class Op>
 void
-reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::register_op(
-    Op& op,
-    reactor_op_base*& desc_slot,
-    bool& ready_flag,
-    bool is_write_direction) noexcept
+reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
+    register_op(
+        Op& op,
+        reactor_op_base*& desc_slot,
+        bool& ready_flag,
+        bool is_write_direction) noexcept
 {
     svc_.work_started();
 
@@ -186,7 +203,6 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::register_
         if (!io_done)
             op.errn = 0;
     }
-
 
     if (io_done || op.cancelled.load(std::memory_order_acquire))
     {
@@ -211,11 +227,16 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::register_
     }
 }
 
-template<class Derived, class ImplBase, class Service, class DescState, class Endpoint>
+template<
+    class Derived,
+    class ImplBase,
+    class Service,
+    class DescState,
+    class Endpoint>
 template<class Op>
 void
-reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::cancel_single_op(
-    Op& op) noexcept
+reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
+    cancel_single_op(Op& op) noexcept
 {
     auto self = this->weak_from_this().lock();
     if (!self)
@@ -248,7 +269,12 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::cancel_si
     }
 }
 
-template<class Derived, class ImplBase, class Service, class DescState, class Endpoint>
+template<
+    class Derived,
+    class ImplBase,
+    class Service,
+    class DescState,
+    class Endpoint>
 void
 reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
     do_cancel() noexcept
@@ -291,7 +317,12 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
     }
 }
 
-template<class Derived, class ImplBase, class Service, class DescState, class Endpoint>
+template<
+    class Derived,
+    class ImplBase,
+    class Service,
+    class DescState,
+    class Endpoint>
 void
 reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
     do_close_socket() noexcept
@@ -321,8 +352,8 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
                         ++count;
                     }
                 });
-            desc_state_.read_ready             = false;
-            desc_state_.write_ready            = false;
+            desc_state_.read_ready  = false;
+            desc_state_.write_ready = false;
 
             if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
                 desc_state_.impl_ref_ = self;
@@ -350,7 +381,12 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
     local_endpoint_ = Endpoint{};
 }
 
-template<class Derived, class ImplBase, class Service, class DescState, class Endpoint>
+template<
+    class Derived,
+    class ImplBase,
+    class Service,
+    class DescState,
+    class Endpoint>
 native_handle_type
 reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
     do_release_socket() noexcept
@@ -381,8 +417,8 @@ reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>::
                         ++count;
                     }
                 });
-            desc_state_.read_ready             = false;
-            desc_state_.write_ready            = false;
+            desc_state_.read_ready  = false;
+            desc_state_.write_ready = false;
 
             if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
                 desc_state_.impl_ref_ = self;

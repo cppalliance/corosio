@@ -67,8 +67,7 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE reactor_scheduler_context
 
     /// Construct a context frame linked to @a n.
     reactor_scheduler_context(
-        reactor_scheduler const* k,
-        reactor_scheduler_context* n);
+        reactor_scheduler const* k, reactor_scheduler_context* n);
 };
 
 /// Thread-local context stack for reactor schedulers.
@@ -85,7 +84,6 @@ reactor_find_context(reactor_scheduler const* self) noexcept
     }
     return nullptr;
 }
-
 
 /** Non-template base for reactor-backed scheduler implementations.
 
@@ -114,9 +112,9 @@ class reactor_scheduler
 public:
     using key_type     = scheduler;
     using context_type = reactor_scheduler_context;
-    using mutex_type = conditionally_enabled_mutex;
-    using lock_type = mutex_type::scoped_lock;
-    using event_type = conditionally_enabled_event;
+    using mutex_type   = conditionally_enabled_mutex;
+    using lock_type    = mutex_type::scoped_lock;
+    using event_type   = conditionally_enabled_event;
 
     /// Post a coroutine for deferred execution.
     void post(std::coroutine_handle<> h) const override;
@@ -181,7 +179,6 @@ public:
     */
     void compensating_work_started() const noexcept;
 
-
     /** Post completed operations for deferred invocation.
 
         If called from a thread running this scheduler, operations
@@ -236,10 +233,10 @@ public:
     }
 
 protected:
-    timer_service* timer_svc_ = nullptr;
+    timer_service* timer_svc_        = nullptr;
     bool scheduler_locking_disabled_ = false;
-    bool reactor_io_locking_ = true;
-    bool one_thread_ = false;
+    bool reactor_io_locking_         = true;
+    bool one_thread_                 = false;
 
     reactor_scheduler() = default;
 
@@ -303,8 +300,7 @@ protected:
         errors it retries rather than reports.
     */
     virtual void
-    run_task(lock_type& lock, context_type& ctx,
-        long timeout_us) = 0;
+    run_task(lock_type& lock, context_type& ctx, long timeout_us) = 0;
 
     /// Wake a blocked reactor (e.g. write to eventfd or pipe).
     virtual void interrupt_reactor() const = 0;
@@ -318,16 +314,14 @@ private:
         ~work_cleanup();
     };
 
-    std::size_t do_one(
-        lock_type& lock, long timeout_us, context_type& ctx);
+    std::size_t do_one(lock_type& lock, long timeout_us, context_type& ctx);
 
     void signal_all(lock_type& lock) const;
     bool maybe_unlock_and_signal_one(lock_type& lock) const;
     bool unlock_and_signal_one(lock_type& lock) const;
     void clear_signal() const;
     void wait_for_signal(lock_type& lock) const;
-    void wait_for_signal_for(
-        lock_type& lock, long timeout_us) const;
+    void wait_for_signal_for(lock_type& lock, long timeout_us) const;
     void wake_one_thread_and_unlock(lock_type& lock) const;
 };
 
@@ -364,16 +358,13 @@ struct reactor_thread_context_guard
 
 // ---- Inline implementations ------------------------------------------------
 
-inline
-reactor_scheduler_context::reactor_scheduler_context(
-    reactor_scheduler const* k,
-    reactor_scheduler_context* n)
+inline reactor_scheduler_context::reactor_scheduler_context(
+    reactor_scheduler const* k, reactor_scheduler_context* n)
     : key(k)
     , next(n)
     , private_outstanding_work(0)
     , inline_budget(0)
-    , inline_budget_max(
-          static_cast<int>(k->inline_budget_initial()))
+    , inline_budget_max(static_cast<int>(k->inline_budget_initial()))
     , unassisted(false)
 {
 }
@@ -387,11 +378,9 @@ reactor_scheduler::configure_reactor(
 {
     if (max_events < 1 ||
         max_events > static_cast<unsigned>(std::numeric_limits<int>::max()))
-        throw std::out_of_range(
-            "max_events_per_poll must be in [1, INT_MAX]");
+        throw std::out_of_range("max_events_per_poll must be in [1, INT_MAX]");
     if (budget_max > static_cast<unsigned>(std::numeric_limits<int>::max()))
-        throw std::out_of_range(
-            "inline_budget_max must be in [0, INT_MAX]");
+        throw std::out_of_range("inline_budget_max must be in [0, INT_MAX]");
 
     // Clamp initial and unassisted to budget_max.
     if (budget_init > budget_max)
@@ -417,21 +406,18 @@ reactor_scheduler::reset_inline_budget() const noexcept
         // Cap when no other thread absorbed queued work
         if (ctx->unassisted)
         {
-            ctx->inline_budget_max =
-                static_cast<int>(unassisted_budget_);
-            ctx->inline_budget =
-                static_cast<int>(unassisted_budget_);
+            ctx->inline_budget_max = static_cast<int>(unassisted_budget_);
+            ctx->inline_budget     = static_cast<int>(unassisted_budget_);
             return;
         }
         // Ramp up when previous cycle fully consumed budget.
         // max(1, ...) ensures the doubling escapes zero.
         if (ctx->inline_budget == 0)
-            ctx->inline_budget_max = (std::min)(
-                (std::max)(1, ctx->inline_budget_max) * 2,
-                static_cast<int>(inline_budget_max_));
-        else if (ctx->inline_budget < ctx->inline_budget_max)
             ctx->inline_budget_max =
-                static_cast<int>(inline_budget_initial_);
+                (std::min)((std::max)(1, ctx->inline_budget_max) * 2,
+                           static_cast<int>(inline_budget_max_));
+        else if (ctx->inline_budget < ctx->inline_budget_max)
+            ctx->inline_budget_max = static_cast<int>(inline_budget_initial_);
         ctx->inline_budget = ctx->inline_budget_max;
     }
 }
@@ -670,7 +656,6 @@ reactor_scheduler::compensating_work_started() const noexcept
         ++ctx->private_outstanding_work;
 }
 
-
 inline void
 reactor_scheduler::post_deferred_completions(ready_queue& ops) const
 {
@@ -724,8 +709,7 @@ reactor_scheduler::signal_all(lock_type&) const
 }
 
 inline bool
-reactor_scheduler::maybe_unlock_and_signal_one(
-    lock_type& lock) const
+reactor_scheduler::maybe_unlock_and_signal_one(lock_type& lock) const
 {
     state_ |= signaled_bit;
     if (state_ > signaled_bit)
@@ -738,8 +722,7 @@ reactor_scheduler::maybe_unlock_and_signal_one(
 }
 
 inline bool
-reactor_scheduler::unlock_and_signal_one(
-    lock_type& lock) const
+reactor_scheduler::unlock_and_signal_one(lock_type& lock) const
 {
     state_ |= signaled_bit;
     bool have_waiters = state_ > signaled_bit;
@@ -756,8 +739,7 @@ reactor_scheduler::clear_signal() const
 }
 
 inline void
-reactor_scheduler::wait_for_signal(
-    lock_type& lock) const
+reactor_scheduler::wait_for_signal(lock_type& lock) const
 {
     while ((state_ & signaled_bit) == 0)
     {
@@ -768,8 +750,7 @@ reactor_scheduler::wait_for_signal(
 }
 
 inline void
-reactor_scheduler::wait_for_signal_for(
-    lock_type& lock, long timeout_us) const
+reactor_scheduler::wait_for_signal_for(lock_type& lock, long timeout_us) const
 {
     if ((state_ & signaled_bit) == 0)
     {
@@ -780,8 +761,7 @@ reactor_scheduler::wait_for_signal_for(
 }
 
 inline void
-reactor_scheduler::wake_one_thread_and_unlock(
-    lock_type& lock) const
+reactor_scheduler::wake_one_thread_and_unlock(lock_type& lock) const
 {
     if (maybe_unlock_and_signal_one(lock))
         return;
@@ -833,8 +813,7 @@ inline reactor_scheduler::task_cleanup::~task_cleanup()
 }
 
 inline std::size_t
-reactor_scheduler::do_one(
-    lock_type& lock, long timeout_us, context_type& ctx)
+reactor_scheduler::do_one(lock_type& lock, long timeout_us, context_type& ctx)
 {
     for (;;)
     {
@@ -858,7 +837,7 @@ reactor_scheduler::do_one(
             }
 
             long task_timeout_us = more_handlers ? 0 : timeout_us;
-            task_interrupted_ = task_timeout_us == 0;
+            task_interrupted_    = task_timeout_us == 0;
             task_running_.store(true, std::memory_order_release);
 
             // Wake a peer to take the pending handlers while this thread

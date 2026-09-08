@@ -108,15 +108,15 @@ operator new[](std::size_t n, std::align_val_t align)
 }
 
 void*
-operator new(std::size_t n, std::align_val_t align,
-    std::nothrow_t const&) noexcept
+operator new(
+    std::size_t n, std::align_val_t align, std::nothrow_t const&) noexcept
 {
     return aligned_alloc_impl(n, static_cast<std::size_t>(align));
 }
 
 void*
-operator new[](std::size_t n, std::align_val_t align,
-    std::nothrow_t const&) noexcept
+operator new[](
+    std::size_t n, std::align_val_t align, std::nothrow_t const&) noexcept
 {
     return aligned_alloc_impl(n, static_cast<std::size_t>(align));
 }

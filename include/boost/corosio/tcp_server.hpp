@@ -325,7 +325,7 @@ private:
                 auto* wait     = self_.waiters_;
                 self_.waiters_ = wait->next;
                 wait->w        = &w_;
-                wait->cont.h = wait->h;
+                wait->cont.h   = wait->h;
                 self_.ex_.post(wait->cont);
             }
             else
@@ -380,9 +380,9 @@ private:
         active_remove(&w);
         if (waiters_)
         {
-            auto* wait = waiters_;
-            waiters_   = wait->next;
-            wait->w    = &w;
+            auto* wait   = waiters_;
+            waiters_     = wait->next;
+            wait->w      = &w;
             wait->cont.h = wait->h;
             ex_.post(wait->cont);
         }

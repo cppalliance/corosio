@@ -185,8 +185,9 @@ connect(Socket& s, Range endpoints, ConnectCondition cond)
     {
         endpoint_type ep = e;
 
-        if (!cond(static_cast<std::error_code const&>(last_ec),
-                  static_cast<endpoint_type const&>(ep)))
+        if (!cond(
+                static_cast<std::error_code const&>(last_ec),
+                static_cast<endpoint_type const&>(ep)))
             continue;
 
         if (s.is_open())
@@ -240,9 +241,7 @@ capy::task<capy::io_result<Iter>>
 connect(Socket& s, Iter begin, Iter end)
 {
     return corosio::connect(
-        s,
-        std::move(begin),
-        std::move(end),
+        s, std::move(begin), std::move(end),
         detail::default_connect_condition{});
 }
 
@@ -280,8 +279,9 @@ connect(Socket& s, Iter begin, Iter end, ConnectCondition cond)
     {
         endpoint_type ep = *it;
 
-        if (!cond(static_cast<std::error_code const&>(last_ec),
-                  static_cast<endpoint_type const&>(ep)))
+        if (!cond(
+                static_cast<std::error_code const&>(last_ec),
+                static_cast<endpoint_type const&>(ep)))
             continue;
 
         if (s.is_open())

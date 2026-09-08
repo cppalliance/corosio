@@ -63,22 +63,24 @@ struct epoll_t
     using tcp_acceptor_type         = detail::epoll_tcp_acceptor;
     using tcp_acceptor_service_type = detail::epoll_tcp_acceptor_service;
 
-    using local_stream_socket_type           = detail::epoll_local_stream_socket;
-    using local_stream_service_type          = detail::epoll_local_stream_service;
-    using local_stream_acceptor_type         = detail::epoll_local_stream_acceptor;
-    using local_stream_acceptor_service_type = detail::epoll_local_stream_acceptor_service;
-    using local_datagram_socket_type         = detail::epoll_local_datagram_socket;
-    using local_datagram_service_type        = detail::epoll_local_datagram_service;
+    using local_stream_socket_type   = detail::epoll_local_stream_socket;
+    using local_stream_service_type  = detail::epoll_local_stream_service;
+    using local_stream_acceptor_type = detail::epoll_local_stream_acceptor;
+    using local_stream_acceptor_service_type =
+        detail::epoll_local_stream_acceptor_service;
+    using local_datagram_socket_type  = detail::epoll_local_datagram_socket;
+    using local_datagram_service_type = detail::epoll_local_datagram_service;
 
     using signal_type           = detail::posix_signal;
     using signal_service_type   = detail::posix_signal_service;
     using resolver_type         = detail::posix_resolver;
     using resolver_service_type = detail::posix_resolver_service;
 
-    using stream_file_type                  = detail::posix_stream_file;
-    using stream_file_service_type          = detail::posix_stream_file_service;
-    using random_access_file_type           = detail::posix_random_access_file;
-    using random_access_file_service_type   = detail::posix_random_access_file_service;
+    using stream_file_type         = detail::posix_stream_file;
+    using stream_file_service_type = detail::posix_stream_file_service;
+    using random_access_file_type  = detail::posix_random_access_file;
+    using random_access_file_service_type =
+        detail::posix_random_access_file_service;
 
     /// Create the scheduler and services for this backend.
     BOOST_COROSIO_DECL static detail::scheduler&
@@ -130,22 +132,24 @@ struct select_t
     using tcp_acceptor_type         = detail::select_tcp_acceptor;
     using tcp_acceptor_service_type = detail::select_tcp_acceptor_service;
 
-    using local_stream_socket_type           = detail::select_local_stream_socket;
-    using local_stream_service_type          = detail::select_local_stream_service;
-    using local_stream_acceptor_type         = detail::select_local_stream_acceptor;
-    using local_stream_acceptor_service_type = detail::select_local_stream_acceptor_service;
-    using local_datagram_socket_type         = detail::select_local_datagram_socket;
-    using local_datagram_service_type        = detail::select_local_datagram_service;
+    using local_stream_socket_type   = detail::select_local_stream_socket;
+    using local_stream_service_type  = detail::select_local_stream_service;
+    using local_stream_acceptor_type = detail::select_local_stream_acceptor;
+    using local_stream_acceptor_service_type =
+        detail::select_local_stream_acceptor_service;
+    using local_datagram_socket_type  = detail::select_local_datagram_socket;
+    using local_datagram_service_type = detail::select_local_datagram_service;
 
     using signal_type           = detail::posix_signal;
     using signal_service_type   = detail::posix_signal_service;
     using resolver_type         = detail::posix_resolver;
     using resolver_service_type = detail::posix_resolver_service;
 
-    using stream_file_type                  = detail::posix_stream_file;
-    using stream_file_service_type          = detail::posix_stream_file_service;
-    using random_access_file_type           = detail::posix_random_access_file;
-    using random_access_file_service_type   = detail::posix_random_access_file_service;
+    using stream_file_type         = detail::posix_stream_file;
+    using stream_file_service_type = detail::posix_stream_file_service;
+    using random_access_file_type  = detail::posix_random_access_file;
+    using random_access_file_service_type =
+        detail::posix_random_access_file_service;
 
     /// Create the scheduler and services for this backend.
     BOOST_COROSIO_DECL static detail::scheduler&
@@ -197,22 +201,24 @@ struct kqueue_t
     using tcp_acceptor_type         = detail::kqueue_tcp_acceptor;
     using tcp_acceptor_service_type = detail::kqueue_tcp_acceptor_service;
 
-    using local_stream_socket_type           = detail::kqueue_local_stream_socket;
-    using local_stream_service_type          = detail::kqueue_local_stream_service;
-    using local_stream_acceptor_type         = detail::kqueue_local_stream_acceptor;
-    using local_stream_acceptor_service_type = detail::kqueue_local_stream_acceptor_service;
-    using local_datagram_socket_type         = detail::kqueue_local_datagram_socket;
-    using local_datagram_service_type        = detail::kqueue_local_datagram_service;
+    using local_stream_socket_type   = detail::kqueue_local_stream_socket;
+    using local_stream_service_type  = detail::kqueue_local_stream_service;
+    using local_stream_acceptor_type = detail::kqueue_local_stream_acceptor;
+    using local_stream_acceptor_service_type =
+        detail::kqueue_local_stream_acceptor_service;
+    using local_datagram_socket_type  = detail::kqueue_local_datagram_socket;
+    using local_datagram_service_type = detail::kqueue_local_datagram_service;
 
     using signal_type           = detail::posix_signal;
     using signal_service_type   = detail::posix_signal_service;
     using resolver_type         = detail::posix_resolver;
     using resolver_service_type = detail::posix_resolver_service;
 
-    using stream_file_type                  = detail::posix_stream_file;
-    using stream_file_service_type          = detail::posix_stream_file_service;
-    using random_access_file_type           = detail::posix_random_access_file;
-    using random_access_file_service_type   = detail::posix_random_access_file_service;
+    using stream_file_type         = detail::posix_stream_file;
+    using stream_file_service_type = detail::posix_stream_file_service;
+    using random_access_file_type  = detail::posix_random_access_file;
+    using random_access_file_service_type =
+        detail::posix_random_access_file_service;
 
     /// Create the scheduler and services for this backend.
     BOOST_COROSIO_DECL static detail::scheduler&
@@ -264,22 +270,24 @@ struct uring_t
     using tcp_acceptor_type         = detail::uring_tcp_acceptor;
     using tcp_acceptor_service_type = detail::uring_tcp_acceptor_service;
 
-    using local_stream_socket_type           = detail::uring_local_stream_socket;
-    using local_stream_service_type          = detail::uring_local_stream_service;
-    using local_stream_acceptor_type         = detail::uring_local_stream_acceptor;
-    using local_stream_acceptor_service_type = detail::uring_local_stream_acceptor_service;
-    using local_datagram_socket_type         = detail::uring_local_datagram_socket;
-    using local_datagram_service_type        = detail::uring_local_datagram_service;
+    using local_stream_socket_type   = detail::uring_local_stream_socket;
+    using local_stream_service_type  = detail::uring_local_stream_service;
+    using local_stream_acceptor_type = detail::uring_local_stream_acceptor;
+    using local_stream_acceptor_service_type =
+        detail::uring_local_stream_acceptor_service;
+    using local_datagram_socket_type  = detail::uring_local_datagram_socket;
+    using local_datagram_service_type = detail::uring_local_datagram_service;
 
     using signal_type           = detail::posix_signal;
     using signal_service_type   = detail::posix_signal_service;
     using resolver_type         = detail::posix_resolver;
     using resolver_service_type = detail::posix_resolver_service;
 
-    using stream_file_type                = detail::uring_stream_file;
-    using stream_file_service_type        = detail::uring_stream_file_service;
-    using random_access_file_type         = detail::uring_random_access_file;
-    using random_access_file_service_type = detail::uring_random_access_file_service;
+    using stream_file_type         = detail::uring_stream_file;
+    using stream_file_service_type = detail::uring_stream_file_service;
+    using random_access_file_type  = detail::uring_random_access_file;
+    using random_access_file_service_type =
+        detail::uring_random_access_file_service;
 
     /// Create the scheduler and services for this backend.
     BOOST_COROSIO_DECL static detail::scheduler&
@@ -339,10 +347,11 @@ struct iocp_t
 
     /// @name Unix domain socket types
     /// @{
-    using local_stream_socket_type           = detail::win_local_stream_socket;
-    using local_stream_service_type          = detail::win_local_stream_service;
-    using local_stream_acceptor_type         = detail::win_local_stream_acceptor;
-    using local_stream_acceptor_service_type = detail::win_local_stream_acceptor_service;
+    using local_stream_socket_type   = detail::win_local_stream_socket;
+    using local_stream_service_type  = detail::win_local_stream_service;
+    using local_stream_acceptor_type = detail::win_local_stream_acceptor;
+    using local_stream_acceptor_service_type =
+        detail::win_local_stream_acceptor_service;
     /// @}
 
     using signal_type           = detail::win_signal;
@@ -350,10 +359,11 @@ struct iocp_t
     using resolver_type         = detail::win_resolver;
     using resolver_service_type = detail::win_resolver_service;
 
-    using stream_file_type                = detail::win_stream_file;
-    using stream_file_service_type        = detail::win_file_service;
-    using random_access_file_type         = detail::win_random_access_file;
-    using random_access_file_service_type = detail::win_random_access_file_service;
+    using stream_file_type         = detail::win_stream_file;
+    using stream_file_service_type = detail::win_file_service;
+    using random_access_file_type  = detail::win_random_access_file;
+    using random_access_file_service_type =
+        detail::win_random_access_file_service;
 
     /** Create the scheduler and services for this backend.
 

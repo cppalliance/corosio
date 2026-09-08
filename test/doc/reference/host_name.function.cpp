@@ -23,7 +23,8 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::host_name[]
-void print_local_host_name()
+void
+print_local_host_name()
 {
     auto [ec, h] = corosio::host_name();
     if (ec)

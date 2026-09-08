@@ -31,13 +31,14 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 #if BOOST_COROSIO_POSIX
 // tag::connectionless_and_connected[]
-capy::task<> connectionless_and_connected(corosio::io_context& ioc)
+capy::task<>
+connectionless_and_connected(corosio::io_context& ioc)
 {
     // Connectionless
     corosio::local_datagram_socket sender(ioc);
@@ -53,11 +54,11 @@ capy::task<> connectionless_and_connected(corosio::io_context& ioc)
 
     // Connected
     corosio::local_datagram_socket sock(ioc);
-    auto [cec] = co_await sock.connect(corosio::local_endpoint("/tmp/peer.sock"));
+    auto [cec] =
+        co_await sock.connect(corosio::local_endpoint("/tmp/peer.sock"));
     if (cec)
         co_return;
-    auto [ec2, n2] = co_await sock.send(
-        capy::const_buffer("hi", 2));
+    auto [ec2, n2] = co_await sock.send(capy::const_buffer("hi", 2));
     if (ec2)
         co_return;
 }

@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 // tag::options_basic_include[]
@@ -49,8 +49,7 @@ namespace {
 
 struct configuration_test
 {
-    void
-    testOptionsBasic()
+    void testOptionsBasic()
     {
         // tag::options_basic[]
         corosio::io_context_options opts;
@@ -63,8 +62,7 @@ struct configuration_test
         BOOST_TEST(opts.max_events_per_poll == 256u);
     }
 
-    void
-    testOptionsNative()
+    void testOptionsNative()
     {
 #if BOOST_COROSIO_HAS_EPOLL
         // tag::options_native[]
@@ -78,21 +76,19 @@ struct configuration_test
 #endif
     }
 
-    void
-    testLockingUnsafe()
+    void testLockingUnsafe()
     {
         // tag::locking_unsafe[]
         corosio::io_context_options opts;
         opts.locking = corosio::locking_mode::unsafe;
 
         corosio::io_context ioc(opts);
-        ioc.run();  // only one thread may call this
+        ioc.run(); // only one thread may call this
         // end::locking_unsafe[]
         BOOST_TEST(opts.locking == corosio::locking_mode::unsafe);
     }
 
-    void
-    run()
+    void run()
     {
         testOptionsBasic();
         testOptionsNative();

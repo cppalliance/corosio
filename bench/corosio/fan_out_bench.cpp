@@ -73,8 +73,7 @@ struct fan_out_latch
 
 template<auto Backend>
 capy::task<>
-sub_request(
-    corosio::native_tcp_socket<Backend>& client, fan_out_latch& latch)
+sub_request(corosio::native_tcp_socket<Backend>& client, fan_out_latch& latch)
 {
     char send_buf[64] = {};
     char recv_buf[64];
@@ -99,7 +98,7 @@ bench_fork_join(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
 
-    int fan_out = static_cast<int>(state.range(0));
+    int fan_out               = static_cast<int>(state.range(0));
     state.counters["fan_out"] = fan_out;
 
     corosio::native_io_context<Backend> ioc;
@@ -322,7 +321,7 @@ bench_fork_join_lockless(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
 
-    int fan_out = static_cast<int>(state.range(0));
+    int fan_out               = static_cast<int>(state.range(0));
     state.counters["fan_out"] = fan_out;
 
     corosio::io_context_options opts;
@@ -552,17 +551,19 @@ make_fan_out_suite()
     using F = bench::bench_flags;
     return bench::benchmark_suite("fan_out", F::needs_conntrack_drain)
         .add("fork_join", bench_fork_join<Backend>)
-            .args({1, 4, 16, 64})
+        .args({1, 4, 16, 64})
         .add("fork_join_lockless", bench_fork_join_lockless<Backend>)
-            .args({1, 4, 16, 64})
+        .args({1, 4, 16, 64})
         .add("nested", bench_nested<Backend>)
-            .args({4, 16})
+        .args({4, 16})
         .add("nested_lockless", bench_nested_lockless<Backend>)
-            .args({4, 16})
+        .args({4, 16})
         .add("concurrent_parents", bench_concurrent_parents<Backend>)
-            .args({1, 4, 16})
-        .add("concurrent_parents_lockless", bench_concurrent_parents_lockless<Backend>)
-            .args({1, 4, 16});
+        .args({1, 4, 16})
+        .add(
+            "concurrent_parents_lockless",
+            bench_concurrent_parents_lockless<Backend>)
+        .args({1, 4, 16});
 }
 
 } // namespace corosio_bench

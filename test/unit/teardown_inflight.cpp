@@ -65,7 +65,8 @@ fill_fd(int fd)
     do
     {
         n = ::send(fd, junk, sizeof(junk), MSG_DONTWAIT | MSG_NOSIGNAL);
-    } while (n > 0);
+    }
+    while (n > 0);
 }
 
 [[maybe_unused]] void
@@ -76,7 +77,8 @@ fill_pipe(int fd)
     do
     {
         n = ::write(fd, junk, sizeof(junk));
-    } while (n > 0);
+    }
+    while (n > 0);
 }
 
 } // namespace
@@ -191,8 +193,8 @@ struct uring_teardown_test
             fill_fd(static_cast<int>(s1.native_handle()));
             auto keeper = [](tcp_socket s, bool& flag) -> capy::task<> {
                 char big[65536] = {};
-                std::ignore     = co_await s.write_some(
-                    capy::const_buffer(big, sizeof(big)));
+                std::ignore =
+                    co_await s.write_some(capy::const_buffer(big, sizeof(big)));
                 flag = true;
             }(std::move(s1), resumed);
             capy::run_async(ioc.get_executor())(std::move(keeper));
@@ -210,8 +212,8 @@ struct uring_teardown_test
             if (auto ec = connect_pair(d1, d2))
                 throw std::system_error(ec, "connect_pair");
             fill_fd(static_cast<int>(d1.native_handle()));
-            auto keeper = [](local_datagram_socket d, bool& flag)
-                -> capy::task<> {
+            auto keeper = [](local_datagram_socket d,
+                             bool& flag) -> capy::task<> {
                 std::ignore = co_await d.send(capy::const_buffer("x", 1));
                 flag        = true;
             }(std::move(d1), resumed);
@@ -245,8 +247,8 @@ struct uring_teardown_test
                 stream_file f(ioc);
                 std::ignore = f.assign(static_cast<native_handle_type>(wp[1]));
                 char big[4096] = {};
-                std::ignore    = co_await f.write_some(
-                    capy::const_buffer(big, sizeof(big)));
+                std::ignore =
+                    co_await f.write_some(capy::const_buffer(big, sizeof(big)));
                 write_resumed = true;
             };
             capy::run_async(ioc.get_executor())(reader());
@@ -266,7 +268,7 @@ struct uring_teardown_test
         // processes the completions before teardown, so the drain path
         // must reclaim them.
         temp_file tmp("corosio_teardown_", "hello world");
-        auto const path = tmp.path;
+        auto const path   = tmp.path;
         bool read_resumed = false, write_resumed = false;
         {
             io_context ioc(uring);
@@ -324,8 +326,8 @@ struct uring_teardown_test
                 stream_file f(ioc);
                 std::ignore = f.assign(static_cast<native_handle_type>(p[1]));
                 char big[4096] = {};
-                std::ignore    = co_await f.write_some(
-                    capy::const_buffer(big, sizeof(big)));
+                std::ignore =
+                    co_await f.write_some(capy::const_buffer(big, sizeof(big)));
                 write_resumed = true;
             };
             capy::run_async(ioc.get_executor())(reader());
@@ -336,7 +338,6 @@ struct uring_teardown_test
         BOOST_TEST(!read_resumed);
         BOOST_TEST(!write_resumed);
     }
-
 
     void testDestroyWithQueuedSocketWrites()
     {
@@ -350,8 +351,8 @@ struct uring_teardown_test
             fill_fd(static_cast<int>(s1.native_handle()));
             fill_fd(static_cast<int>(s3.native_handle()));
             char big[65536] = {};
-            auto writer = [](tcp_socket& s, capy::const_buffer b,
-                              int& count) -> capy::task<> {
+            auto writer     = [](tcp_socket& s, capy::const_buffer b,
+                                 int& count) -> capy::task<> {
                 std::ignore = co_await s.write_some(b);
                 ++count;
             };
@@ -366,7 +367,8 @@ struct uring_teardown_test
             char sink[65536];
             for (auto* peer : {&s2, &s4})
             {
-                while (::recv(static_cast<int>(peer->native_handle()), sink,
+                while (::recv(
+                           static_cast<int>(peer->native_handle()), sink,
                            sizeof(sink), MSG_DONTWAIT) > 0)
                 {
                 }
@@ -388,8 +390,8 @@ struct uring_teardown_test
                 throw std::system_error(ec, "connect_pair");
             fill_fd(static_cast<int>(d1.native_handle()));
             fill_fd(static_cast<int>(d3.native_handle()));
-            auto sender =
-                [](local_datagram_socket& d, int& count) -> capy::task<> {
+            auto sender = [](local_datagram_socket& d,
+                             int& count) -> capy::task<> {
                 std::ignore = co_await d.send(capy::const_buffer("x", 1));
                 ++count;
             };
@@ -400,7 +402,8 @@ struct uring_teardown_test
             char sink[4096];
             for (auto* peer : {&d2, &d4})
             {
-                while (::recv(static_cast<int>(peer->native_handle()), sink,
+                while (::recv(
+                           static_cast<int>(peer->native_handle()), sink,
                            sizeof(sink), MSG_DONTWAIT) > 0)
                 {
                 }
@@ -420,8 +423,8 @@ struct uring_teardown_test
         int resumed = 0;
         {
             io_context ioc(uring);
-            auto reader = [](io_context& ctx, int fd, int& count)
-                -> capy::task<> {
+            auto reader = [](io_context& ctx, int fd,
+                             int& count) -> capy::task<> {
                 stream_file f(ctx);
                 std::ignore = f.assign(static_cast<native_handle_type>(fd));
                 char buf[4];
@@ -432,15 +435,13 @@ struct uring_teardown_test
                     capy::mutable_buffer(buf, sizeof(buf)));
                 ++count;
             };
-            auto writer = [](io_context& ctx, int fd, int& count)
-                -> capy::task<> {
+            auto writer = [](io_context& ctx, int fd,
+                             int& count) -> capy::task<> {
                 stream_file f(ctx);
                 std::ignore = f.assign(static_cast<native_handle_type>(fd));
-                std::ignore =
-                    co_await f.write_some(capy::const_buffer("a", 1));
+                std::ignore = co_await f.write_some(capy::const_buffer("a", 1));
                 ++count;
-                std::ignore =
-                    co_await f.write_some(capy::const_buffer("b", 1));
+                std::ignore = co_await f.write_some(capy::const_buffer("b", 1));
                 ++count;
             };
             capy::run_async(ioc.get_executor())(reader(ioc, rp[0], resumed));
@@ -462,7 +463,7 @@ struct uring_teardown_test
         {
             io_context ioc(uring);
             auto reader = [](io_context& ctx, std::filesystem::path p,
-                              int& count) -> capy::task<> {
+                             int& count) -> capy::task<> {
                 random_access_file f(ctx);
                 std::ignore = f.open(p, file_base::read_write);
                 char buf[4];
@@ -474,7 +475,7 @@ struct uring_teardown_test
                 ++count;
             };
             auto writer = [](io_context& ctx, std::filesystem::path p,
-                              int& count) -> capy::task<> {
+                             int& count) -> capy::task<> {
                 random_access_file f(ctx);
                 std::ignore = f.open(p, file_base::read_write);
                 std::ignore =
@@ -492,7 +493,6 @@ struct uring_teardown_test
         }
         BOOST_TEST_LT(resumed, 4);
     }
-
 
     void testDestroyWithParkedLocalAccept()
     {

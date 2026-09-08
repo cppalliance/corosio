@@ -24,21 +24,21 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 // tag::assume[]
 #include <boost/corosio/test/mocket.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 // end::assume[]
 
 #include <boost/corosio/backend.hpp>
@@ -62,8 +62,7 @@ constexpr auto backend = corosio::iocp;
 
 struct mocket_page_test
 {
-    void
-    testCreating()
+    void testCreating()
     {
         // tag::creating[]
         corosio::io_context ioc;
@@ -78,8 +77,7 @@ struct mocket_page_test
         peer.close();
     }
 
-    void
-    testProvide()
+    void testProvide()
     {
         corosio::io_context ioc;
         auto [m, peer] = corosio::test::make_mocket_pair(ioc);
@@ -103,8 +101,7 @@ struct mocket_page_test
         peer.close();
     }
 
-    void
-    testExpect()
+    void testExpect()
     {
         corosio::io_context ioc;
         auto [m, peer] = corosio::test::make_mocket_pair(ioc);
@@ -128,8 +125,7 @@ struct mocket_page_test
         peer.close();
     }
 
-    void
-    testChunked()
+    void testChunked()
     {
         corosio::io_context ioc;
         // tag::chunked[]
@@ -140,12 +136,12 @@ struct mocket_page_test
         m.expect("abcdef");
 
         auto task = [](corosio::test::mocket& m_ref) -> capy::task<> {
-            char buf[16] = {};
+            char buf[16]   = {};
             auto [rec, rn] = co_await m_ref.read_some(capy::make_buffer(buf));
             // rn == 4 ("0123")
 
-            auto [wec, wn] = co_await m_ref.write_some(
-                capy::const_buffer("abcdef", 6));
+            auto [wec, wn] =
+                co_await m_ref.write_some(capy::const_buffer("abcdef", 6));
             // wn == 3 (matched "abc")
         };
         // end::chunked[]
@@ -156,15 +152,15 @@ struct mocket_page_test
         // Draining the leftovers proves the shown task moved exactly
         // 4 bytes out and matched exactly 3 bytes in.
         auto drain = [](corosio::test::mocket& m_ref) -> capy::task<> {
-            char buf[16] = {};
+            char buf[16]   = {};
             auto [ec1, n1] = co_await m_ref.read_some(capy::make_buffer(buf));
             BOOST_TEST(!ec1);
             BOOST_TEST_EQ(std::string_view(buf, n1), "4567");
             auto [ec2, n2] = co_await m_ref.read_some(capy::make_buffer(buf));
             BOOST_TEST(!ec2);
             BOOST_TEST_EQ(std::string_view(buf, n2), "89");
-            auto [ec3, n3] = co_await m_ref.write_some(
-                capy::const_buffer("def", 3));
+            auto [ec3, n3] =
+                co_await m_ref.write_some(capy::const_buffer("def", 3));
             BOOST_TEST(!ec3);
             BOOST_TEST_EQ(n3, 3u);
         };
@@ -177,8 +173,7 @@ struct mocket_page_test
         peer.close();
     }
 
-    void
-    testCloseCheck()
+    void testCloseCheck()
     {
         corosio::io_context ioc;
         auto [m, peer] = corosio::test::make_mocket_pair(ioc);
@@ -199,8 +194,7 @@ struct mocket_page_test
         peer.close();
     }
 
-    void
-    testNative()
+    void testNative()
     {
         // tag::native[]
         using socket_type   = corosio::native_tcp_socket<backend>;
@@ -220,8 +214,7 @@ struct mocket_page_test
         peer.close();
     }
 
-    void
-    testSocketAccess()
+    void testSocketAccess()
     {
         corosio::io_context ioc;
         // tag::socket_access[]
@@ -238,8 +231,7 @@ struct mocket_page_test
         peer.close();
     }
 
-    void
-    run()
+    void run()
     {
         testCreating();
         testProvide();

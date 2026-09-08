@@ -27,12 +27,13 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 // tag::connect_and_read[]
-capy::task<> connect_and_read(corosio::io_context& ioc)
+capy::task<>
+connect_and_read(corosio::io_context& ioc)
 {
     corosio::local_stream_socket s(ioc);
 
@@ -41,8 +42,8 @@ capy::task<> connect_and_read(corosio::io_context& ioc)
         co_return;
 
     char buf[1024];
-    auto [read_ec, n] = co_await s.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
+    auto [read_ec, n] =
+        co_await s.read_some(capy::mutable_buffer(buf, sizeof(buf)));
     if (read_ec)
         co_return;
 }

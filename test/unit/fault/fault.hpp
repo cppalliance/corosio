@@ -46,37 +46,126 @@ namespace boost::corosio::test::fault {
 */
 enum class sys
 {
-    socket, socketpair, bind, listen, accept, accept4, connect,
-    getsockname, getpeername, getsockopt, setsockopt, shutdown, close,
-    read, write, writev, readv, preadv, pwritev, recv, send, recvmsg,
+    socket,
+    socketpair,
+    bind,
+    listen,
+    accept,
+    accept4,
+    connect,
+    getsockname,
+    getpeername,
+    getsockopt,
+    setsockopt,
+    shutdown,
+    close,
+    read,
+    write,
+    writev,
+    readv,
+    preadv,
+    pwritev,
+    recv,
+    send,
+    recvmsg,
     sendmsg,
-    poll, pipe, fcntl, ioctl, open, fstat, lseek, ftruncate, fsync,
-    fdatasync, posix_fadvise, unlink, sigaction, pthread_create,
-    getaddrinfo, freeaddrinfo, getnameinfo, gethostname,
-    epoll_create1, epoll_ctl, epoll_wait, eventfd, timerfd_create,
-    timerfd_settime, select, kqueue, kevent, kevent_register,
-    io_uring_queue_init_params, io_uring_queue_exit, io_uring_submit,
-    io_uring_submit_and_wait_timeout, io_uring_submit_and_get_events,
-    io_uring_wait_cqe_timeout, uring_sqe_full, uring_sq_fill, cpp_new,
+    poll,
+    pipe,
+    fcntl,
+    ioctl,
+    open,
+    fstat,
+    lseek,
+    ftruncate,
+    fsync,
+    fdatasync,
+    posix_fadvise,
+    unlink,
+    sigaction,
+    pthread_create,
+    getaddrinfo,
+    freeaddrinfo,
+    getnameinfo,
+    gethostname,
+    epoll_create1,
+    epoll_ctl,
+    epoll_wait,
+    eventfd,
+    timerfd_create,
+    timerfd_settime,
+    select,
+    kqueue,
+    kevent,
+    kevent_register,
+    io_uring_queue_init_params,
+    io_uring_queue_exit,
+    io_uring_submit,
+    io_uring_submit_and_wait_timeout,
+    io_uring_submit_and_get_events,
+    io_uring_wait_cqe_timeout,
+    uring_sqe_full,
+    uring_sq_fill,
+    cpp_new,
     // OpenSSL entry points the TLS engine drives; live only when the
     // process loads libssl/libcrypto.
-    BIO_new_mem_buf, BIO_new_bio_pair, BIO_read, BIO_nwrite0,
-    SSL_CTX_new, SSL_new, SSL_clear, SSL_set_session, SSL_get0_param,
-    X509_STORE_add_cert, X509_dup, X509_VERIFY_PARAM_set1_host,
-    WSASocketW, WSAConnect, WSARecv, WSASend, WSARecvFrom, WSASendTo,
-    WSAPoll, WSAIoctl, WSAStartup, WSACleanup, closesocket, ioctlsocket,
-    GetAddrInfoExW, GetAddrInfoExCancel, FreeAddrInfoExW, GetNameInfoW,
-    CreateIoCompletionPort, GetQueuedCompletionStatus,
-    PostQueuedCompletionStatus, CancelIoEx, CloseHandle, CreateFileW,
-    ReadFile, WriteFile, SetFilePointerEx, GetFileSizeEx, SetEndOfFile,
-    FlushFileBuffers, DeleteFileA, CreateWaitableTimerW, SetWaitableTimer,
-    WaitForSingleObject, GetComputerNameExW, GetModuleHandleA,
-    GetModuleHandleW, GetProcAddress, MultiByteToWideChar,
-    WideCharToMultiByte, signal,
+    BIO_new_mem_buf,
+    BIO_new_bio_pair,
+    BIO_read,
+    BIO_nwrite0,
+    SSL_CTX_new,
+    SSL_new,
+    SSL_clear,
+    SSL_set_session,
+    SSL_get0_param,
+    X509_STORE_add_cert,
+    X509_dup,
+    X509_VERIFY_PARAM_set1_host,
+    WSASocketW,
+    WSAConnect,
+    WSARecv,
+    WSASend,
+    WSARecvFrom,
+    WSASendTo,
+    WSAPoll,
+    WSAIoctl,
+    WSAStartup,
+    WSACleanup,
+    closesocket,
+    ioctlsocket,
+    GetAddrInfoExW,
+    GetAddrInfoExCancel,
+    FreeAddrInfoExW,
+    GetNameInfoW,
+    CreateIoCompletionPort,
+    GetQueuedCompletionStatus,
+    PostQueuedCompletionStatus,
+    CancelIoEx,
+    CloseHandle,
+    CreateFileW,
+    ReadFile,
+    WriteFile,
+    SetFilePointerEx,
+    GetFileSizeEx,
+    SetEndOfFile,
+    FlushFileBuffers,
+    DeleteFileA,
+    CreateWaitableTimerW,
+    SetWaitableTimer,
+    WaitForSingleObject,
+    GetComputerNameExW,
+    GetModuleHandleA,
+    GetModuleHandleW,
+    GetProcAddress,
+    MultiByteToWideChar,
+    WideCharToMultiByte,
+    signal,
     // Reached through a pointer the OS hands out rather than through an
     // import: the WSAIoctl and GetProcAddress hooks substitute a wrapper
     // for the pointer the library caches.
-    AcceptEx, ConnectEx, NtSetInformationFile, NtFlushBuffersFileEx,
+    AcceptEx,
+    ConnectEx,
+    NtSetInformationFile,
+    NtFlushBuffersFileEx,
     count_
 };
 
@@ -90,7 +179,9 @@ enum class sys
 
     @see fault_scope
 */
-inline constexpr struct any_thread_t {} any_thread{};
+inline constexpr struct any_thread_t
+{
+} any_thread{};
 
 /** Fail one OS call, by default on the current thread.
 
@@ -160,8 +251,8 @@ public:
         bytes genuinely move. `count == 0` forwards nothing and returns
         0, which reads as EOF on the read side.
     */
-    static fault_scope returning(sys which, std::size_t count,
-        unsigned nth = 1);
+    static fault_scope
+    returning(sys which, std::size_t count, unsigned nth = 1);
 
     /** Create a `returning` scope armed on every thread.
 
@@ -169,8 +260,8 @@ public:
         No other process-wide scope is alive, and at most one call to
         `which` is in flight at a time.
     */
-    static fault_scope returning_any_thread(sys which, std::size_t count,
-        unsigned nth = 1);
+    static fault_scope
+    returning_any_thread(sys which, std::size_t count, unsigned nth = 1);
 
     /// Return true once the armed call has been intercepted.
     bool fired() const noexcept;
@@ -188,13 +279,14 @@ public:
     */
     unsigned count() const noexcept;
 
-    fault_scope(fault_scope const&) = delete;
+    fault_scope(fault_scope const&)            = delete;
     fault_scope& operator=(fault_scope const&) = delete;
 
 private:
-    struct short_tag {};
-    fault_scope(short_tag, sys which, std::size_t count, unsigned nth,
-        bool global);
+    struct short_tag
+    {};
+    fault_scope(
+        short_tag, sys which, std::size_t count, unsigned nth, bool global);
 
     bool global_ = false;
     // Index of the claimed thread-local arm; -1 for a process-wide scope.
@@ -244,7 +336,7 @@ public:
     /// Return true once a CQE has been rewritten.
     bool fired() const noexcept;
 
-    cqe_fault_scope(cqe_fault_scope const&) = delete;
+    cqe_fault_scope(cqe_fault_scope const&)            = delete;
     cqe_fault_scope& operator=(cqe_fault_scope const&) = delete;
 };
 
@@ -276,7 +368,7 @@ public:
     /// Return true once a completion has been failed.
     bool fired() const noexcept;
 
-    completion_fault_scope(completion_fault_scope const&) = delete;
+    completion_fault_scope(completion_fault_scope const&)            = delete;
     completion_fault_scope& operator=(completion_fault_scope const&) = delete;
 };
 
@@ -309,6 +401,6 @@ bool hook_is_live(sys which) noexcept;
 /// Return true if the executable links corosio as a shared library.
 bool corosio_is_shared() noexcept;
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault
 
 #endif

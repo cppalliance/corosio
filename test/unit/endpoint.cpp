@@ -149,8 +149,7 @@ struct endpoint_parse_test
     {
         // Empty input classifies as ipv4_no_port; the parse arm
         // rejects it.
-        BOOST_TEST(
-            detect_endpoint_format("") == endpoint_format::ipv4_no_port);
+        BOOST_TEST(detect_endpoint_format("") == endpoint_format::ipv4_no_port);
         BOOST_TEST(
             detect_endpoint_format("192.168.1.1") ==
             endpoint_format::ipv4_no_port);
@@ -299,8 +298,8 @@ struct endpoint_parse_test
         BOOST_TEST(v6_low > v4_high);
 
         // Within a family, address outranks port.
-        endpoint a(ipv4_address::any(), 65535);     // 0.0.0.0:65535
-        endpoint b(ipv4_address::loopback(), 0);    // 127.0.0.1:0
+        endpoint a(ipv4_address::any(), 65535);  // 0.0.0.0:65535
+        endpoint b(ipv4_address::loopback(), 0); // 127.0.0.1:0
         BOOST_TEST(a < b);
         BOOST_TEST(b > a);
 
@@ -327,8 +326,8 @@ struct endpoint_parse_test
     void testOrderedMapKey()
     {
         std::map<endpoint, int> sessions;
-        sessions[endpoint(ipv4_address::loopback(), 80)] = 1;
-        sessions[endpoint(ipv6_address::loopback(), 80)] = 2;
+        sessions[endpoint(ipv4_address::loopback(), 80)]  = 1;
+        sessions[endpoint(ipv6_address::loopback(), 80)]  = 2;
         sessions[endpoint(ipv4_address::loopback(), 443)] = 3;
 
         BOOST_TEST_EQ(sessions.size(), 3u);

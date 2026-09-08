@@ -24,8 +24,7 @@ namespace boost::corosio::detail {
 */
 
 template<class Traits, class Socket, class DummyAcc, class Endpoint>
-struct reactor_dgram_base_op
-    : reactor_op<Socket, DummyAcc>
+struct reactor_dgram_base_op : reactor_op<Socket, DummyAcc>
 {
     void operator()() override;
     void cancel() noexcept override;
@@ -44,8 +43,7 @@ template<class Traits, class Socket, class DummyAcc, class Endpoint>
 struct reactor_dgram_send_to_op final
     : reactor_send_to_op<
           reactor_dgram_base_op<Traits, Socket, DummyAcc, Endpoint>>
-{
-};
+{};
 
 template<class Traits, class Socket, class DummyAcc, class Endpoint>
 struct reactor_dgram_recv_from_op final
@@ -58,23 +56,19 @@ struct reactor_dgram_recv_from_op final
 
 template<class Traits, class Socket, class DummyAcc, class Endpoint>
 struct reactor_dgram_send_op final
-    : reactor_send_op<
-          reactor_dgram_base_op<Traits, Socket, DummyAcc, Endpoint>>
-{
-};
+    : reactor_send_op<reactor_dgram_base_op<Traits, Socket, DummyAcc, Endpoint>>
+{};
 
 template<class Traits, class Socket, class DummyAcc, class Endpoint>
 struct reactor_dgram_recv_op final
-    : reactor_recv_op<
-          reactor_dgram_base_op<Traits, Socket, DummyAcc, Endpoint>>
+    : reactor_recv_op<reactor_dgram_base_op<Traits, Socket, DummyAcc, Endpoint>>
 {
     void operator()() override;
 };
 
 template<class Traits, class Socket, class DummyAcc, class Endpoint>
 struct reactor_dgram_wait_op final
-    : reactor_wait_op<
-          reactor_dgram_base_op<Traits, Socket, DummyAcc, Endpoint>>
+    : reactor_wait_op<reactor_dgram_base_op<Traits, Socket, DummyAcc, Endpoint>>
 {
     void operator()() override;
 };

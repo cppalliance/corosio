@@ -85,7 +85,8 @@ class native_resolver : public resolver
             return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
-        [[nodiscard]] capy::io_result<resolver_results> await_resume() const noexcept
+        [[nodiscard]] capy::io_result<resolver_results>
+        await_resume() const noexcept
         {
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled), {}};
@@ -126,7 +127,8 @@ class native_resolver : public resolver
             return static_cast<bool>(ec_) || token_.stop_requested();
         }
 
-        [[nodiscard]] capy::io_result<reverse_resolver_result> await_resume() const noexcept
+        [[nodiscard]] capy::io_result<reverse_resolver_result>
+        await_resume() const noexcept
         {
             if (token_.stop_requested())
                 return {make_error_code(std::errc::operation_canceled), {}};

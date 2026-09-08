@@ -71,8 +71,7 @@ public:
         @return Error code on failure, empty on success.
     */
     virtual std::error_code assign_socket(
-        local_datagram_socket::implementation& impl,
-        native_handle_type fd) = 0;
+        local_datagram_socket::implementation& impl, native_handle_type fd) = 0;
 
     /** Bind a datagram socket to a local endpoint.
 
@@ -88,7 +87,7 @@ public:
         corosio::local_endpoint ep) = 0;
 
 protected:
-    local_datagram_service() = default;
+    local_datagram_service()           = default;
     ~local_datagram_service() override = default;
 };
 

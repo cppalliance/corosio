@@ -30,14 +30,15 @@ namespace {
 // a certificate this client will not accept -- one known compromised, whose
 // issuer publishes no CRL you can reach. It is taken by value because the
 // callback outlives this call.
-void reject_a_known_bad_certificate(
+void
+reject_a_known_bad_certificate(
     corosio::tls_context& ctx, std::vector<unsigned char> refused_der)
 {
     // A callback tightens the built-in checks; it does not switch
     // verification on. Under the default tls_verify_mode::none the library
     // never verifies and never calls it.
     if (auto ec = ctx.set_verify_mode(corosio::tls_verify_mode::peer))
-        return;  // report the error
+        return; // report the error
 
     // The callback runs once per certificate in the chain, and nothing here
     // says which one is the leaf -- so the check has to be one that is
@@ -48,8 +49,7 @@ void reject_a_known_bad_certificate(
     // cannot honor it fails the handshake rather than ignoring it.
     ctx.set_verify_callback(
         [refused = std::move(refused_der)](
-            bool preverified, corosio::verify_context& vctx) -> bool
-        {
+            bool preverified, corosio::verify_context& vctx) -> bool {
             // preverified is the verdict the library reached for this
             // certificate, after any soft_fail revocation downgrade has
             // already been applied to it. Returning true when it is false

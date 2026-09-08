@@ -90,7 +90,7 @@ struct native_tcp_acceptor_test
     void testWait()
     {
         native_io_context<Backend> ioc;
-        auto       ex = ioc.get_executor();
+        auto ex = ioc.get_executor();
 
         native_tcp_acceptor<Backend> acc(ioc);
         BOOST_TEST(!acc.open());
@@ -105,7 +105,7 @@ struct native_tcp_acceptor_test
         BOOST_TEST(!client.open());
 
         std::error_code wait_ec;
-        bool            wait_done = false;
+        bool wait_done = false;
 
         auto waiter = [&]() -> capy::task<> {
             auto [ec] = co_await acc.wait(wait_type::read);
@@ -130,7 +130,7 @@ struct native_tcp_acceptor_test
     void testNativeAcceptReturning()
     {
         native_io_context<Backend> ioc;
-        auto       ex = ioc.get_executor();
+        auto ex = ioc.get_executor();
 
         native_tcp_acceptor<Backend> acc(ioc);
         BOOST_TEST(!acc.open());
@@ -145,8 +145,8 @@ struct native_tcp_acceptor_test
         BOOST_TEST(!client.open());
 
         std::error_code accept_ec;
-        bool            accept_done = false;
-        bool            peer_connected = false;
+        bool accept_done    = false;
+        bool peer_connected = false;
 
         auto acceptor = [&]() -> capy::task<> {
             auto [ec, peer] = co_await acc.accept();
@@ -178,8 +178,7 @@ struct native_tcp_acceptor_test
 
         acc.set_option(native_socket_option::reuse_address(true));
         acc.set_option(native_socket_option::reuse_port(true));
-        auto rp =
-            acc.template get_option<native_socket_option::reuse_port>();
+        auto rp = acc.template get_option<native_socket_option::reuse_port>();
         BOOST_TEST(rp.value());
 
         acc.close();
@@ -234,7 +233,7 @@ struct native_tcp_acceptor_test
         native_tcp_acceptor<Backend> acc(ioc);
 
         std::error_code wait_ec;
-        bool            wait_done = false;
+        bool wait_done = false;
 
         auto waiter = [&]() -> capy::task<> {
             auto [ec] = co_await acc.wait(wait_type::read);
@@ -264,6 +263,7 @@ struct native_tcp_acceptor_test
     }
 };
 
-COROSIO_BACKEND_TESTS(native_tcp_acceptor_test, "boost.corosio.native.tcp_acceptor")
+COROSIO_BACKEND_TESTS(
+    native_tcp_acceptor_test, "boost.corosio.native.tcp_acceptor")
 
 } // namespace boost::corosio

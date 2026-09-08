@@ -60,7 +60,7 @@ bench_throughput(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
 
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     corosio::native_io_context<Backend> ioc;
@@ -124,7 +124,7 @@ bench_bidirectional_throughput(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
 
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     corosio::native_io_context<Backend> ioc;
@@ -251,7 +251,7 @@ bench_throughput_lockless(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
 
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     corosio::io_context_options opts;
@@ -317,7 +317,7 @@ bench_bidirectional_throughput_lockless(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
 
-    auto chunk_size = static_cast<std::size_t>(state.range(0));
+    auto chunk_size              = static_cast<std::size_t>(state.range(0));
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     corosio::io_context_options opts;
@@ -498,15 +498,17 @@ make_socket_throughput_suite()
 
     return bench::benchmark_suite("socket_throughput", F::needs_conntrack_drain)
         .add("unidirectional", bench_throughput<Backend>)
-            .range(1024, 1048576, 4)
+        .range(1024, 1048576, 4)
         .add("unidirectional_lockless", bench_throughput_lockless<Backend>)
-            .range(1024, 1048576, 4)
+        .range(1024, 1048576, 4)
         .add("bidirectional", bench_bidirectional_throughput<Backend>)
-            .range(1024, 1048576, 4)
-        .add("bidirectional_lockless", bench_bidirectional_throughput_lockless<Backend>)
-            .range(1024, 1048576, 4)
+        .range(1024, 1048576, 4)
+        .add(
+            "bidirectional_lockless",
+            bench_bidirectional_throughput_lockless<Backend>)
+        .range(1024, 1048576, 4)
         .add("multithread", bench_multithread_throughput<Backend>)
-            .args({2, 4, 8});
+        .args({2, 4, 8});
 }
 
 } // namespace corosio_bench

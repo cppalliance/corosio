@@ -186,8 +186,9 @@ struct stop_token_stress_test
                         else
                         {
                             // Write data so read completes normally, then cancel (race!)
-                            [[maybe_unused]] auto [ec, n] = co_await s1.write_some(
-                                capy::const_buffer("x", 1));
+                            [[maybe_unused]] auto [ec, n] =
+                                co_await s1.write_some(
+                                    capy::const_buffer("x", 1));
                             stop_src.request_stop();
                         }
 
@@ -232,7 +233,8 @@ struct stop_token_stress_test
 
         // Timer to stop the test
         auto stopper = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::seconds(duration));
+            std::ignore =
+                co_await corosio::delay(std::chrono::seconds(duration));
             stop_flag.store(true, std::memory_order_relaxed);
         };
 
@@ -322,7 +324,8 @@ struct sync_completion_stress_test
 
         // Timer to stop the test
         auto stopper = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::seconds(duration));
+            std::ignore =
+                co_await corosio::delay(std::chrono::seconds(duration));
             stop_flag.store(true, std::memory_order_relaxed);
         };
 
@@ -413,8 +416,9 @@ struct cancel_close_stress_test
                         case 1:
                             // Write data to complete the read normally
                             {
-                                [[maybe_unused]] auto [ec, n] = co_await s1.write_some(
-                                    capy::const_buffer("data", 4));
+                                [[maybe_unused]] auto [ec, n] =
+                                    co_await s1.write_some(
+                                        capy::const_buffer("data", 4));
                             }
                             ++writes;
                             break;
@@ -422,8 +426,9 @@ struct cancel_close_stress_test
                             // Cancel then immediately write (race)
                             s2.cancel();
                             {
-                                [[maybe_unused]] auto [ec, n] = co_await s1.write_some(
-                                    capy::const_buffer("data", 4));
+                                [[maybe_unused]] auto [ec, n] =
+                                    co_await s1.write_some(
+                                        capy::const_buffer("data", 4));
                             }
                             ++cancel_writes;
                             break;
@@ -467,7 +472,8 @@ struct cancel_close_stress_test
 
         // Timer to stop the test
         auto stopper = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::seconds(duration));
+            std::ignore =
+                co_await corosio::delay(std::chrono::seconds(duration));
             stop_flag.store(true, std::memory_order_relaxed);
         };
 
@@ -571,7 +577,8 @@ struct concurrent_ops_stress_test
 
         // Timer to stop the test
         auto stopper = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::seconds(duration));
+            std::ignore =
+                co_await corosio::delay(std::chrono::seconds(duration));
             stop_flag.store(true, std::memory_order_relaxed);
 
             // Close all sockets to unblock pending operations
@@ -660,7 +667,8 @@ struct accept_stress_test
                 client.close();
 
                 // Small delay to avoid overwhelming the accept queue
-                std::ignore = co_await corosio::delay(std::chrono::microseconds(100));
+                std::ignore =
+                    co_await corosio::delay(std::chrono::microseconds(100));
             }
         };
 
@@ -669,7 +677,8 @@ struct accept_stress_test
 
         // Timer to stop the test
         auto stopper = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::seconds(duration));
+            std::ignore =
+                co_await corosio::delay(std::chrono::seconds(duration));
             stop_flag.store(true, std::memory_order_relaxed);
             acc.close();
         };

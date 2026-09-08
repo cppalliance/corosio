@@ -35,8 +35,9 @@ public:
     {
     }
 
-    conditionally_enabled_mutex(conditionally_enabled_mutex const&)            = delete;
-    conditionally_enabled_mutex& operator=(conditionally_enabled_mutex const&) = delete;
+    conditionally_enabled_mutex(conditionally_enabled_mutex const&) = delete;
+    conditionally_enabled_mutex&
+    operator=(conditionally_enabled_mutex const&) = delete;
 
     bool enabled() const noexcept
     {
@@ -49,9 +50,20 @@ public:
     }
 
     // Lockable interface — allows std::lock_guard<conditionally_enabled_mutex>
-    void lock() { if (enabled_) mutex_.lock(); }
-    void unlock() { if (enabled_) mutex_.unlock(); }
-    bool try_lock() { return !enabled_ || mutex_.try_lock(); }
+    void lock()
+    {
+        if (enabled_)
+            mutex_.lock();
+    }
+    void unlock()
+    {
+        if (enabled_)
+            mutex_.unlock();
+    }
+    bool try_lock()
+    {
+        return !enabled_ || mutex_.try_lock();
+    }
 
     class scoped_lock
     {

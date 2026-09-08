@@ -22,7 +22,8 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::keep_alive[]
-void detect_a_peer_that_went_away(corosio::tcp_socket& sock)
+void
+detect_a_peer_that_went_away(corosio::tcp_socket& sock)
 {
     // Probe an idle connection so a peer that vanished without closing is
     // eventually reported as an error instead of hanging forever.

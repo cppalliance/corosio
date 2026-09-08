@@ -113,34 +113,31 @@ namespace detail {
     points without the driver knowing the backend's session model.
 */
 template<class Engine>
-concept tls_engine =
-    requires(
-        Engine& e,
-        Engine const& ce,
-        engine_op op,
-        void* buf,
-        unsigned char const* in,
-        unsigned char* out,
-        std::size_t n,
-        tls_context const& ctx,
-        tls_role role,
-        std::string const& hostname,
-        std::string& alpn)
-    {
-        { e.perform(op, buf, n) } -> std::same_as<engine_result>;
-        { e.put_input(in, n) } -> std::same_as<std::size_t>;
-        { e.input_area() }
-            -> std::same_as<std::pair<unsigned char*, std::size_t>>;
-        { e.input_committed(n) };
-        { ce.pending_output() } -> std::same_as<std::size_t>;
-        { e.get_output(out, n) } -> std::same_as<std::size_t>;
-        { ce.received_shutdown() } -> std::same_as<bool>;
-        { ce.capture_alpn(alpn) };
-        { e.reset() };
-        { ce.check_context() } -> std::same_as<std::error_code>;
-        { ce.check_session() } -> std::same_as<std::error_code>;
-        { e.prepare(ctx, role, hostname) } -> std::same_as<std::error_code>;
-    };
+concept tls_engine = requires(
+    Engine& e,
+    Engine const& ce,
+    engine_op op,
+    void* buf,
+    unsigned char const* in,
+    unsigned char* out,
+    std::size_t n,
+    tls_context const& ctx,
+    tls_role role,
+    std::string const& hostname,
+    std::string& alpn) {
+    { e.perform(op, buf, n) } -> std::same_as<engine_result>;
+    { e.put_input(in, n) } -> std::same_as<std::size_t>;
+    { e.input_area() } -> std::same_as<std::pair<unsigned char*, std::size_t>>;
+    { e.input_committed(n) };
+    { ce.pending_output() } -> std::same_as<std::size_t>;
+    { e.get_output(out, n) } -> std::same_as<std::size_t>;
+    { ce.received_shutdown() } -> std::same_as<bool>;
+    { ce.capture_alpn(alpn) };
+    { e.reset() };
+    { ce.check_context() } -> std::same_as<std::error_code>;
+    { ce.check_session() } -> std::same_as<std::error_code>;
+    { e.prepare(ctx, role, hostname) } -> std::same_as<std::error_code>;
+};
 
 /** Coroutine driver shared by every TLS backend.
 
@@ -227,8 +224,10 @@ class engine_driver
             // The loop guard just confirmed pending bytes exist, so a
             // drain failure here is unreachable in practice; fail loudly
             // rather than silently drop already-accepted ciphertext.
-            if (n == 0)                                             // LCOV_EXCL_LINE unreachable: pending bytes confirmed
-                co_return make_error_code(std::errc::no_buffer_space); // LCOV_EXCL_LINE unreachable: transport returned 0 with no error unreachable: pending bytes confirmed
+            if (n == 0) // LCOV_EXCL_LINE unreachable: pending bytes confirmed
+                co_return make_error_code(
+                    std::errc::
+                        no_buffer_space); // LCOV_EXCL_LINE unreachable: transport returned 0 with no error unreachable: pending bytes confirmed
             auto [ec, wn] = co_await capy::write(
                 *s_, capy::const_buffer(out_buf_.data(), n));
             if (ec)
@@ -236,8 +235,7 @@ class engine_driver
                 // wn bytes already reached the peer; keep only the unsent
                 // remainder so a post-cancellation flush retry resends
                 // neither the delivered prefix nor loses the rest.
-                std::memmove(
-                    out_buf_.data(), out_buf_.data() + wn, n - wn);
+                std::memmove(out_buf_.data(), out_buf_.data() + wn, n - wn);
                 out_len_ = n - wn;
                 co_return ec;
             }
@@ -286,8 +284,7 @@ class engine_driver
         if (cap == 0)
             co_return std::error_code{};
 
-        auto [ec, n] =
-            co_await s_->read_some(capy::mutable_buffer(dst, cap));
+        auto [ec, n] = co_await s_->read_some(capy::mutable_buffer(dst, cap));
 
         // ReadStream permits n>0 alongside ec (IOCP forwards
         // bytes_transferred on failed completions; a canceled read can
@@ -307,7 +304,9 @@ class engine_driver
         // The transport delivered nothing without an error, so it cannot
         // make progress: fail loudly rather than spin the engine's input
         // retry against a staging that will never fill.
-        co_return make_error_code(std::errc::no_buffer_space); // LCOV_EXCL_LINE unreachable: staging cannot stay empty
+        co_return make_error_code(
+            std::errc::
+                no_buffer_space); // LCOV_EXCL_LINE unreachable: staging cannot stay empty
     }
 
     // A prior read/write already reported its full transfer as success;
@@ -336,36 +335,31 @@ public:
     }
 
     /// Return the engine for backend-specific setup.
-    Engine&
-    engine() noexcept
+    Engine& engine() noexcept
     {
         return eng_;
     }
 
     /// Return the TLS context this driver was constructed with.
-    tls_context const&
-    context() const noexcept
+    tls_context const& context() const noexcept
     {
         return ctx_;
     }
 
     /// Point the driver at the transport's post-move location.
-    void
-    rebind_stream(capy::any_stream& s) noexcept
+    void rebind_stream(capy::any_stream& s) noexcept
     {
         s_ = &s;
     }
 
     /// Set the hostname applied to the next client handshake.
-    void
-    set_hostname(std::string_view hostname)
+    void set_hostname(std::string_view hostname)
     {
         hostname_ = hostname;
     }
 
     /// Return the ALPN protocol negotiated by the last handshake.
-    std::string_view
-    alpn_protocol() const noexcept
+    std::string_view alpn_protocol() const noexcept
     {
         return alpn_selected_;
     }
@@ -382,8 +376,7 @@ public:
         used_             = false;
     }
 
-    capy::io_task<std::size_t>
-    do_read_some(
+    capy::io_task<std::size_t> do_read_some(
         capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers)
     {
         if (auto ec = take_pending_flush_ec())
@@ -406,8 +399,7 @@ public:
             {
                 auto const gen = read_gen_;
                 auto r         = eng_.perform(
-                    engine_op::read, dest,
-                    static_cast<std::size_t>(remaining));
+                    engine_op::read, dest, static_cast<std::size_t>(remaining));
 
                 if (r.ec)
                 {
@@ -429,8 +421,7 @@ public:
                     // report now rather than loop for more (another
                     // engine call could park on input). out_len_ > 0
                     // covers a retained tail the engine cannot see.
-                    if (r.want == engine_want::output_then_done ||
-                        out_len_ > 0)
+                    if (r.want == engine_want::output_then_done || out_len_ > 0)
                         ec = co_await flush_output();
                     if (ec && total_read == bufs_size)
                     {
@@ -472,8 +463,7 @@ public:
         co_return {std::error_code{}, total_read};
     }
 
-    capy::io_task<std::size_t>
-    do_write_some(
+    capy::io_task<std::size_t> do_write_some(
         capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers)
     {
         if (auto ec = take_pending_flush_ec())
@@ -499,8 +489,7 @@ public:
             {
                 auto const gen = read_gen_;
                 auto r         = eng_.perform(
-                    engine_op::write, src,
-                    static_cast<std::size_t>(remaining));
+                    engine_op::write, src, static_cast<std::size_t>(remaining));
 
                 if (r.ec)
                 {
@@ -521,8 +510,7 @@ public:
                     // least one byte transferred" success condition;
                     // report now rather than loop for more. out_len_ > 0
                     // covers a retained tail the engine cannot see.
-                    if (r.want == engine_want::output_then_done ||
-                        out_len_ > 0)
+                    if (r.want == engine_want::output_then_done || out_len_ > 0)
                         ec = co_await flush_output();
                     if (ec && total_written == bufs_size)
                     {
@@ -589,9 +577,8 @@ public:
         if (auto pec = eng_.prepare(ctx_, role, hostname_))
             co_return {pec};
 
-        auto const op = role == tls_role::client
-            ? engine_op::handshake_client
-            : engine_op::handshake_server;
+        auto const op = role == tls_role::client ? engine_op::handshake_client
+                                                 : engine_op::handshake_server;
 
         std::error_code ec;
 
@@ -652,7 +639,7 @@ public:
         while (true)
         {
             auto const gen = read_gen_;
-            auto r = eng_.perform(engine_op::shutdown, nullptr, 0);
+            auto r         = eng_.perform(engine_op::shutdown, nullptr, 0);
 
             if (r.ec)
             {

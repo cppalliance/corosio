@@ -23,13 +23,14 @@
 #include <iostream>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 // Waits for a real SIGINT/SIGTERM if ever launched; compiled, never run.
 // tag::wait_for_shutdown[]
-capy::task<> wait_for_shutdown(corosio::io_context& ctx)
+capy::task<>
+wait_for_shutdown(corosio::io_context& ctx)
 {
     corosio::signal_set signals(ctx, SIGINT, SIGTERM);
 

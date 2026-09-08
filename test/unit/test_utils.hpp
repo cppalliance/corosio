@@ -81,8 +81,8 @@ inline native_handle_type
 make_native_socket(int family, int type)
 {
 #if BOOST_COROSIO_HAS_IOCP
-    return static_cast<native_handle_type>(::WSASocketW(
-        family, type, 0, nullptr, 0, WSA_FLAG_OVERLAPPED));
+    return static_cast<native_handle_type>(
+        ::WSASocketW(family, type, 0, nullptr, 0, WSA_FLAG_OVERLAPPED));
 #else
     return static_cast<native_handle_type>(::socket(family, type, 0));
 #endif
@@ -753,10 +753,8 @@ inline tls_context
 make_anon_context()
 {
     tls_context ctx;
-    require_ok(ctx.set_verify_mode(
-        tls_verify_mode::none));
-    require_ok(ctx.set_ciphersuites(
-        "aNULL:eNULL:@SECLEVEL=0"));
+    require_ok(ctx.set_verify_mode(tls_verify_mode::none));
+    require_ok(ctx.set_ciphersuites("aNULL:eNULL:@SECLEVEL=0"));
     return ctx;
 }
 
@@ -765,14 +763,9 @@ inline tls_context
 make_server_context()
 {
     tls_context ctx;
-    require_ok(ctx.use_certificate(
-        server_cert_pem,
-        tls_file_format::pem));
-    require_ok(ctx.use_private_key(
-        server_key_pem,
-        tls_file_format::pem));
-    require_ok(ctx.set_verify_mode(
-        tls_verify_mode::none));
+    require_ok(ctx.use_certificate(server_cert_pem, tls_file_format::pem));
+    require_ok(ctx.use_private_key(server_key_pem, tls_file_format::pem));
+    require_ok(ctx.set_verify_mode(tls_verify_mode::none));
     return ctx;
 }
 
@@ -781,10 +774,8 @@ inline tls_context
 make_client_context()
 {
     tls_context ctx;
-    require_ok(ctx.add_certificate_authority(
-        ca_cert_pem));
-    require_ok(ctx.set_verify_mode(
-        tls_verify_mode::peer));
+    require_ok(ctx.add_certificate_authority(ca_cert_pem));
+    require_ok(ctx.set_verify_mode(tls_verify_mode::peer));
     return ctx;
 }
 
@@ -793,10 +784,8 @@ inline tls_context
 make_wrong_ca_context()
 {
     tls_context ctx;
-    require_ok(ctx.add_certificate_authority(
-        wrong_ca_cert_pem));
-    require_ok(ctx.set_verify_mode(
-        tls_verify_mode::peer));
+    require_ok(ctx.add_certificate_authority(wrong_ca_cert_pem));
+    require_ok(ctx.set_verify_mode(tls_verify_mode::peer));
     return ctx;
 }
 
@@ -1451,19 +1440,15 @@ inline tls_context
 make_encrypted_key_server_context(bool& callback_invoked)
 {
     tls_context ctx;
-    require_ok(ctx.use_certificate(
-        server_cert_pem,
-        tls_file_format::pem));
+    require_ok(ctx.use_certificate(server_cert_pem, tls_file_format::pem));
     ctx.set_password_callback(
         [&callback_invoked](std::size_t, tls_password_purpose) {
             callback_invoked = true;
             return std::string(encrypted_key_password);
         });
-    require_ok(ctx.use_private_key(
-        encrypted_server_key_pem,
-        tls_file_format::pem));
-    require_ok(ctx.set_verify_mode(
-        tls_verify_mode::none));
+    require_ok(
+        ctx.use_private_key(encrypted_server_key_pem, tls_file_format::pem));
+    require_ok(ctx.set_verify_mode(tls_verify_mode::none));
     return ctx;
 }
 
@@ -1472,8 +1457,7 @@ inline tls_context
 make_verify_no_cert_context()
 {
     tls_context ctx;
-    require_ok(ctx.set_verify_mode(
-        tls_verify_mode::require_peer));
+    require_ok(ctx.set_verify_mode(tls_verify_mode::require_peer));
     return ctx;
 }
 
@@ -1499,8 +1483,7 @@ make_contexts(context_mode mode)
     case context_mode::shared_cert:
     {
         auto ctx = make_server_context();
-        require_ok(ctx.add_certificate_authority(
-            ca_cert_pem));
+        require_ok(ctx.add_certificate_authority(ca_cert_pem));
         return {ctx, ctx};
     }
     case context_mode::separate_cert:
@@ -1523,8 +1506,8 @@ inline void
 expect_ok(std::error_code const& ec, char const* what)
 {
     if (ec)
-        test_suite::log << what << " failed: [" << ec.category().name()
-            << ":" << ec.value() << "] " << ec.message() << "\n";
+        test_suite::log << what << " failed: [" << ec.category().name() << ":"
+                        << ec.value() << "] " << ec.message() << "\n";
     BOOST_TEST(!ec);
 }
 
@@ -1784,8 +1767,8 @@ run_tls_test_fail(
 
     capy::run_async(ioc.get_executor())(client_task());
     capy::run_async(ioc.get_executor())(server_task());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        timeout_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(timeout_task());
 
     ioc.run();
     BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
@@ -1903,8 +1886,8 @@ run_tls_shutdown_test(
 
     capy::run_async(ioc.get_executor())(client_shutdown());
     capy::run_async(ioc.get_executor())(server_read_then_close());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        failsafe_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
 
     ioc.run();
     BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
@@ -2017,8 +2000,8 @@ run_tls_truncation_test(
 
     capy::run_async(ioc.get_executor())(client_close());
     capy::run_async(ioc.get_executor())(server_read_truncated());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        timeout_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(timeout_task());
 
     ioc.run();
     BOOST_TEST(read_done);
@@ -2037,14 +2020,10 @@ inline tls_context
 make_chain_server_context()
 {
     tls_context ctx;
-    require_ok(ctx.use_certificate(
-        chain_server_cert_pem,
-        tls_file_format::pem));
-    require_ok(ctx.use_private_key(
-        chain_server_key_pem,
-        tls_file_format::pem));
-    require_ok(ctx.set_verify_mode(
-        tls_verify_mode::none));
+    require_ok(
+        ctx.use_certificate(chain_server_cert_pem, tls_file_format::pem));
+    require_ok(ctx.use_private_key(chain_server_key_pem, tls_file_format::pem));
+    require_ok(ctx.set_verify_mode(tls_verify_mode::none));
     return ctx;
 }
 
@@ -2057,13 +2036,9 @@ make_fullchain_server_context()
 {
     tls_context ctx;
     // use_certificate_chain expects entity cert followed by intermediate(s)
-    require_ok(ctx.use_certificate_chain(
-        server_fullchain_pem));
-    require_ok(ctx.use_private_key(
-        chain_server_key_pem,
-        tls_file_format::pem));
-    require_ok(ctx.set_verify_mode(
-        tls_verify_mode::none));
+    require_ok(ctx.use_certificate_chain(server_fullchain_pem));
+    require_ok(ctx.use_private_key(chain_server_key_pem, tls_file_format::pem));
+    require_ok(ctx.set_verify_mode(tls_verify_mode::none));
     return ctx;
 }
 
@@ -2073,10 +2048,8 @@ inline tls_context
 make_rootonly_client_context()
 {
     tls_context ctx;
-    require_ok(ctx.add_certificate_authority(
-        root_ca_cert_pem));
-    require_ok(ctx.set_verify_mode(
-        tls_verify_mode::peer));
+    require_ok(ctx.add_certificate_authority(root_ca_cert_pem));
+    require_ok(ctx.set_verify_mode(tls_verify_mode::peer));
     return ctx;
 }
 
@@ -2086,12 +2059,9 @@ make_chain_client_context()
 {
     tls_context ctx;
     // Trust both root and intermediate CA for chain verification
-    require_ok(ctx.add_certificate_authority(
-        root_ca_cert_pem));
-    require_ok(ctx.add_certificate_authority(
-        intermediate_cert_pem));
-    require_ok(ctx.set_verify_mode(
-        tls_verify_mode::peer));
+    require_ok(ctx.add_certificate_authority(root_ca_cert_pem));
+    require_ok(ctx.add_certificate_authority(intermediate_cert_pem));
+    require_ok(ctx.set_verify_mode(tls_verify_mode::peer));
     return ctx;
 }
 
@@ -2101,12 +2071,8 @@ inline tls_context
 make_expired_server_context()
 {
     tls_context ctx;
-    require_ok(ctx.use_certificate(
-        expired_cert_pem,
-        tls_file_format::pem));
-    require_ok(ctx.use_private_key(
-        expired_key_pem,
-        tls_file_format::pem));
+    require_ok(ctx.use_certificate(expired_cert_pem, tls_file_format::pem));
+    require_ok(ctx.use_private_key(expired_key_pem, tls_file_format::pem));
     return ctx;
 }
 
@@ -2117,10 +2083,8 @@ make_expired_client_context()
 {
     tls_context ctx;
     // Trust the expired cert as its own CA (self-signed)
-    require_ok(ctx.add_certificate_authority(
-        expired_cert_pem));
-    require_ok(ctx.set_verify_mode(
-        tls_verify_mode::peer));
+    require_ok(ctx.add_certificate_authority(expired_cert_pem));
+    require_ok(ctx.set_verify_mode(tls_verify_mode::peer));
     return ctx;
 }
 
@@ -2129,14 +2093,9 @@ inline tls_context
 make_wrong_host_server_context()
 {
     tls_context ctx;
-    require_ok(ctx.use_certificate(
-        wrong_host_cert_pem,
-        tls_file_format::pem));
-    require_ok(ctx.use_private_key(
-        wrong_host_key_pem,
-        tls_file_format::pem));
-    require_ok(ctx.set_verify_mode(
-        tls_verify_mode::none));
+    require_ok(ctx.use_certificate(wrong_host_cert_pem, tls_file_format::pem));
+    require_ok(ctx.use_private_key(wrong_host_key_pem, tls_file_format::pem));
+    require_ok(ctx.set_verify_mode(tls_verify_mode::none));
     return ctx;
 }
 
@@ -2145,19 +2104,12 @@ inline tls_context
 make_mtls_client_context()
 {
     tls_context ctx;
-    require_ok(ctx.use_certificate(
-        client_cert_pem,
-        tls_file_format::pem));
-    require_ok(ctx.use_private_key(
-        client_key_pem,
-        tls_file_format::pem));
+    require_ok(ctx.use_certificate(client_cert_pem, tls_file_format::pem));
+    require_ok(ctx.use_private_key(client_key_pem, tls_file_format::pem));
     // Trust both root and intermediate CA for chain verification
-    require_ok(ctx.add_certificate_authority(
-        root_ca_cert_pem));
-    require_ok(ctx.add_certificate_authority(
-        intermediate_cert_pem));
-    require_ok(ctx.set_verify_mode(
-        tls_verify_mode::peer));
+    require_ok(ctx.add_certificate_authority(root_ca_cert_pem));
+    require_ok(ctx.add_certificate_authority(intermediate_cert_pem));
+    require_ok(ctx.set_verify_mode(tls_verify_mode::peer));
     return ctx;
 }
 
@@ -2166,19 +2118,13 @@ inline tls_context
 make_mtls_server_context()
 {
     tls_context ctx;
-    require_ok(ctx.use_certificate(
-        chain_server_cert_pem,
-        tls_file_format::pem));
-    require_ok(ctx.use_private_key(
-        chain_server_key_pem,
-        tls_file_format::pem));
+    require_ok(
+        ctx.use_certificate(chain_server_cert_pem, tls_file_format::pem));
+    require_ok(ctx.use_private_key(chain_server_key_pem, tls_file_format::pem));
     // Trust both root and intermediate CA for chain verification
-    require_ok(ctx.add_certificate_authority(
-        root_ca_cert_pem));
-    require_ok(ctx.add_certificate_authority(
-        intermediate_cert_pem));
-    require_ok(ctx.set_verify_mode(
-        tls_verify_mode::require_peer));
+    require_ok(ctx.add_certificate_authority(root_ca_cert_pem));
+    require_ok(ctx.add_certificate_authority(intermediate_cert_pem));
+    require_ok(ctx.set_verify_mode(tls_verify_mode::require_peer));
     return ctx;
 }
 
@@ -2187,10 +2133,8 @@ inline tls_context
 make_untrusted_ca_client_context()
 {
     tls_context ctx;
-    require_ok(ctx.add_certificate_authority(
-        untrusted_ca_cert_pem));
-    require_ok(ctx.set_verify_mode(
-        tls_verify_mode::peer));
+    require_ok(ctx.add_certificate_authority(untrusted_ca_cert_pem));
+    require_ok(ctx.set_verify_mode(tls_verify_mode::peer));
     return ctx;
 }
 
@@ -2202,19 +2146,12 @@ make_invalid_mtls_client_context()
 {
     tls_context ctx;
     // Use the self-signed server cert as client cert - server won't trust it
-    require_ok(ctx.use_certificate(
-        server_cert_pem,
-        tls_file_format::pem));
-    require_ok(ctx.use_private_key(
-        server_key_pem,
-        tls_file_format::pem));
+    require_ok(ctx.use_certificate(server_cert_pem, tls_file_format::pem));
+    require_ok(ctx.use_private_key(server_key_pem, tls_file_format::pem));
     // Trust the chain CAs so we can verify server
-    require_ok(ctx.add_certificate_authority(
-        root_ca_cert_pem));
-    require_ok(ctx.add_certificate_authority(
-        intermediate_cert_pem));
-    require_ok(ctx.set_verify_mode(
-        tls_verify_mode::peer));
+    require_ok(ctx.add_certificate_authority(root_ca_cert_pem));
+    require_ok(ctx.add_certificate_authority(intermediate_cert_pem));
+    require_ok(ctx.set_verify_mode(tls_verify_mode::peer));
     return ctx;
 }
 
@@ -2283,8 +2220,8 @@ run_connection_reset_test(
 
     capy::run_async(ioc.get_executor())(client_task());
     capy::run_async(ioc.get_executor())(server_task());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        timeout_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(timeout_task());
 
     ioc.run();
 
@@ -2375,8 +2312,8 @@ run_stop_token_handshake_test(
     };
     capy::run_async(ioc.get_executor(), stop_src.get_token())(client_task());
     capy::run_async(ioc.get_executor())(server_task());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        failsafe_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
     ioc.run();
 
     BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
@@ -2474,8 +2411,8 @@ run_stop_token_read_test(
     };
     capy::run_async(ioc.get_executor(), stop_src.get_token())(client_read());
     capy::run_async(ioc.get_executor())(server_cancel());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        failsafe_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
     ioc.run();
 
     BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
@@ -2605,11 +2542,11 @@ run_shutdown_cancel_test(
 
     // The client task carries the stop token in both modes; only stop_token
     // mode requests a stop, so socket_cancel mode is unaffected by it.
-    capy::run_async(ioc.get_executor(), stop_src.get_token())(
-        client_shutdown());
+    capy::run_async(
+        ioc.get_executor(), stop_src.get_token())(client_shutdown());
     capy::run_async(ioc.get_executor())(server_drain_then_cancel());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        failsafe_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
     ioc.run();
 
     BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
@@ -2718,8 +2655,8 @@ run_stop_token_write_test(
     };
     capy::run_async(ioc.get_executor(), stop_src.get_token())(client_write());
     capy::run_async(ioc.get_executor())(server_cancel());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        failsafe_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
     ioc.run();
 
     BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit
@@ -2801,8 +2738,8 @@ run_socket_cancel_test(
     };
     capy::run_async(ioc.get_executor())(client_task());
     capy::run_async(ioc.get_executor())(server_task());
-    capy::run_async(ioc.get_executor(), failsafe_stop.get_token())(
-        failsafe_task());
+    capy::run_async(
+        ioc.get_executor(), failsafe_stop.get_token())(failsafe_task());
     ioc.run();
 
     BOOST_TEST(!failsafe_hit); // failsafe timeout should not be hit

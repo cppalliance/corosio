@@ -69,11 +69,10 @@ struct claim_paths_test
     // Parks reader+writer+waiter on s1, then runs `disrupt` from a
     // posted coroutine and expects all three to complete canceled.
     template<class Disrupt>
-    void
-    checkStreamClaims(Disrupt disrupt)
+    void checkStreamClaims(Disrupt disrupt)
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -120,20 +119,17 @@ struct claim_paths_test
         BOOST_TEST(wtec == capy::cond::canceled);
     }
 
-    void
-    testCancelClaimsParkedOps()
+    void testCancelClaimsParkedOps()
     {
         checkStreamClaims([](tcp_socket& s) { s.cancel(); });
     }
 
-    void
-    testCloseClaimsParkedOps()
+    void testCloseClaimsParkedOps()
     {
         checkStreamClaims([](tcp_socket& s) { s.close(); });
     }
 
-    void
-    testReleaseClaimsParkedOps()
+    void testReleaseClaimsParkedOps()
     {
         checkStreamClaims([](tcp_socket& s) {
             auto fd = s.release();
@@ -142,11 +138,10 @@ struct claim_paths_test
         });
     }
 
-    void
-    testStopTokenClaimsParkedRead()
+    void testStopTokenClaimsParkedRead()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -174,8 +169,7 @@ struct claim_paths_test
     }
 
     template<class Disrupt>
-    void
-    checkAcceptorClaims(Disrupt disrupt)
+    void checkAcceptorClaims(Disrupt disrupt)
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
@@ -214,20 +208,17 @@ struct claim_paths_test
         BOOST_TEST(!peer.is_open());
     }
 
-    void
-    testAcceptorCancelClaims()
+    void testAcceptorCancelClaims()
     {
         checkAcceptorClaims([](tcp_acceptor& a) { a.cancel(); });
     }
 
-    void
-    testAcceptorCloseClaims()
+    void testAcceptorCloseClaims()
     {
         checkAcceptorClaims([](tcp_acceptor& a) { a.close(); });
     }
 
-    void
-    testAcceptorReleaseClaims()
+    void testAcceptorReleaseClaims()
     {
         checkAcceptorClaims([](tcp_acceptor& a) {
             auto fd = a.release();
@@ -236,8 +227,7 @@ struct claim_paths_test
         });
     }
 
-    void
-    testAcceptorStopTokenClaims()
+    void testAcceptorStopTokenClaims()
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
@@ -269,8 +259,7 @@ struct claim_paths_test
         BOOST_TEST(aec == capy::cond::canceled);
     }
 
-    void
-    testAcceptorCloseWhileEnqueued()
+    void testAcceptorCloseWhileEnqueued()
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
@@ -315,8 +304,9 @@ struct claim_paths_test
                 sa.sin_family      = AF_INET;
                 sa.sin_port        = htons(acc->local_endpoint().port());
                 sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-                BOOST_TEST_EQ(::connect(
-                    fd, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)), 0);
+                BOOST_TEST_EQ(
+                    ::connect(fd, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)),
+                    0);
                 ::close(fd);
             }
             co_return;
@@ -329,12 +319,12 @@ struct claim_paths_test
         BOOST_TEST_EQ(done, 2);
         // One accept wins and closes the other; which one is dispatch
         // order, so only the outcome set is asserted.
-        BOOST_TEST((!aec && bec == capy::cond::canceled) ||
-                   (!bec && aec == capy::cond::canceled) || (!aec && !bec));
+        BOOST_TEST(
+            (!aec && bec == capy::cond::canceled) ||
+            (!bec && aec == capy::cond::canceled) || (!aec && !bec));
     }
 
-    void
-    testAcceptorReleaseWhileEnqueued()
+    void testAcceptorReleaseWhileEnqueued()
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
@@ -381,15 +371,19 @@ struct claim_paths_test
             int ufd = ::socket(AF_INET, SOCK_DGRAM, 0);
             BOOST_TEST_GE(ufd, 0);
             sa.sin_port = htons(trigger.local_endpoint().port());
-            BOOST_TEST_EQ(::sendto(ufd, "x", 1, 0,
-                reinterpret_cast<sockaddr*>(&sa), sizeof(sa)), 1);
+            BOOST_TEST_EQ(
+                ::sendto(
+                    ufd, "x", 1, 0, reinterpret_cast<sockaddr*>(&sa),
+                    sizeof(sa)),
+                1);
             ::close(ufd);
 
             int tfd = ::socket(AF_INET, SOCK_STREAM, 0);
             BOOST_TEST_GE(tfd, 0);
             sa.sin_port = htons(acc.local_endpoint().port());
-            BOOST_TEST_EQ(::connect(
-                tfd, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)), 0);
+            BOOST_TEST_EQ(
+                ::connect(tfd, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)),
+                0);
             ::close(tfd);
             co_return;
         };
@@ -405,8 +399,7 @@ struct claim_paths_test
         BOOST_TEST(aec == capy::cond::canceled || !aec);
     }
 
-    void
-    testDatagramCloseClaims()
+    void testDatagramCloseClaims()
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
@@ -445,8 +438,7 @@ struct claim_paths_test
         BOOST_TEST(wtec == capy::cond::canceled);
     }
 
-    void
-    run()
+    void run()
     {
         testCancelClaimsParkedOps();
         testCloseClaimsParkedOps();

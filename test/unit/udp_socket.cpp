@@ -93,12 +93,10 @@ native_bind_loopback(native_handle_type h, bool v6, std::uint16_t& port_out)
         return false;
     socklen_t name_len = sizeof(storage);
 #endif
-    if (::getsockname(
-            s, reinterpret_cast<sockaddr*>(&storage), &name_len) != 0)
+    if (::getsockname(s, reinterpret_cast<sockaddr*>(&storage), &name_len) != 0)
         return false;
-    port_out = v6
-        ? ntohs(reinterpret_cast<sockaddr_in6*>(&storage)->sin6_port)
-        : ntohs(reinterpret_cast<sockaddr_in*>(&storage)->sin_port);
+    port_out = v6 ? ntohs(reinterpret_cast<sockaddr_in6*>(&storage)->sin6_port)
+                  : ntohs(reinterpret_cast<sockaddr_in*>(&storage)->sin_port);
     return true;
 }
 
@@ -106,10 +104,10 @@ native_bind_loopback(native_handle_type h, bool v6, std::uint16_t& port_out)
 bool
 native_send_to_loopback(
     native_handle_type h,
-    std::uint16_t      port,
-    bool               v6,
-    char const*        data,
-    std::size_t        len)
+    std::uint16_t port,
+    bool v6,
+    char const* data,
+    std::size_t len)
 {
     sockaddr_storage storage{};
     std::size_t addr_len = fill_loopback(storage, port, v6);
@@ -122,8 +120,7 @@ native_send_to_loopback(
     return ::sendto(
                static_cast<int>(h), data, len, 0,
                reinterpret_cast<sockaddr const*>(&storage),
-               static_cast<socklen_t>(addr_len)) ==
-           static_cast<ssize_t>(len);
+               static_cast<socklen_t>(addr_len)) == static_cast<ssize_t>(len);
 #endif
 }
 
@@ -228,8 +225,9 @@ struct udp_socket_test
         io_context ioc(Backend);
         udp_socket sock(ioc);
 
-        BOOST_TEST(sock.bind(endpoint(ipv4_address::loopback(), 0))
-                   == std::errc::bad_file_descriptor);
+        BOOST_TEST(
+            sock.bind(endpoint(ipv4_address::loopback(), 0)) ==
+            std::errc::bad_file_descriptor);
     }
 
     void testSetOptionClosedThrows()
@@ -288,12 +286,12 @@ struct udp_socket_test
                 capy::mutable_buffer(buf, sizeof(buf)), src);
             BOOST_TEST(e2 == std::errc::bad_file_descriptor);
 
-            auto [e3, n3] = co_await sock.send(
-                capy::const_buffer(msg, sizeof(msg)));
+            auto [e3, n3] =
+                co_await sock.send(capy::const_buffer(msg, sizeof(msg)));
             BOOST_TEST(e3 == std::errc::bad_file_descriptor);
 
-            auto [e4, n4] = co_await sock.recv(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [e4, n4] =
+                co_await sock.recv(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(e4 == std::errc::bad_file_descriptor);
             done = true;
         };
@@ -595,8 +593,8 @@ struct udp_socket_test
 
         // Closed socket reports bad_file_descriptor
         udp_socket closed(ioc);
-        BOOST_TEST(closed.shutdown(shutdown_send)
-                   == std::errc::bad_file_descriptor);
+        BOOST_TEST(
+            closed.shutdown(shutdown_send) == std::errc::bad_file_descriptor);
 
         // Open socket: outcome is platform-dependent for an
         // unconnected datagram socket; only the path is exercised.
@@ -629,10 +627,12 @@ struct udp_socket_test
             };
             capy::run_async(ioc.get_executor())(nested());
 
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
             sock.cancel();
 
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST(recv_ec == capy::cond::canceled);
@@ -666,10 +666,12 @@ struct udp_socket_test
             };
             capy::run_async(ioc.get_executor())(nested());
 
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
             sock.close();
 
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST(recv_ec == capy::cond::canceled);
@@ -706,8 +708,8 @@ struct udp_socket_test
         // Reader task: signal ready, then block on recv_from
         auto reader_task = [&]() -> capy::task<> {
             char const msg[] = "R";
-            std::ignore = co_await reader.send_to(
-                capy::const_buffer(msg, 1), signal_ep);
+            std::ignore =
+                co_await reader.send_to(capy::const_buffer(msg, 1), signal_ep);
 
             char buf[64];
             endpoint source;
@@ -810,7 +812,8 @@ struct udp_socket_test
             BOOST_TEST_EQ(ec3, std::error_code{});
 
             // Wait for recv to complete
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST_EQ(recv_ec, std::error_code{});
@@ -1081,10 +1084,12 @@ struct udp_socket_test
             };
             capy::run_async(ioc.get_executor())(nested());
 
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
             a.cancel();
 
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST(recv_ec == capy::cond::canceled);
@@ -1346,8 +1351,8 @@ struct udp_socket_test
             BOOST_TEST_EQ(source.port(), nport);
 
             // Reverse direction through the adopted socket.
-            char const reply[] = "back";
-            [[maybe_unused]] auto [ec3, n3]     = co_await peer.send_to(
+            char const reply[]              = "back";
+            [[maybe_unused]] auto [ec3, n3] = co_await peer.send_to(
                 capy::const_buffer(reply, sizeof(reply)), source);
             BOOST_TEST(!ec3);
 
@@ -1375,11 +1380,12 @@ struct udp_socket_test
         };
 
 #if BOOST_COROSIO_HAS_IOCP
-        BOOST_TEST(sock.assign(invalid_native_socket)
-                   == std::errc::not_a_socket);
+        BOOST_TEST(
+            sock.assign(invalid_native_socket) == std::errc::not_a_socket);
 #else
-        BOOST_TEST(sock.assign(invalid_native_socket)
-                   == std::errc::bad_file_descriptor);
+        BOOST_TEST(
+            sock.assign(invalid_native_socket) ==
+            std::errc::bad_file_descriptor);
 #endif
 
         expect_error(invalid_native_socket);
@@ -1569,7 +1575,7 @@ struct udp_socket_test
         BOOST_TEST(native_send_to_loopback(
             released, peer_port, false, msg, sizeof(msg)));
 
-        bool got = false;
+        bool got    = false;
         auto peeker = [&]() -> capy::task<> {
             char in[64] = {};
             endpoint from;
@@ -1677,8 +1683,8 @@ struct udp_socket_test
             endpoint from1, from2;
             auto reader = [&](udp_socket& s, char* p,
                               endpoint& from) -> capy::task<> {
-                std::ignore = co_await s.recv_from(
-                    capy::mutable_buffer(p, 8), from);
+                std::ignore =
+                    co_await s.recv_from(capy::mutable_buffer(p, 8), from);
                 ++resumed;
             };
             auto writer = [&](udp_socket& s, endpoint dest) -> capy::task<> {
@@ -1712,8 +1718,8 @@ struct udp_socket_test
         BOOST_TEST(!s.open(udp::v4()));
         std::error_code cec, sec;
         auto setup = [&]() -> capy::task<> {
-            auto [c] = co_await s.connect(dead);
-            cec      = c;
+            auto [c]    = co_await s.connect(dead);
+            cec         = c;
             auto [e, n] = co_await s.send(capy::const_buffer("x", 1));
             std::ignore = n;
             sec         = e;
@@ -1743,7 +1749,6 @@ struct udp_socket_test
         ioc.run();
         BOOST_TEST(!!rec);
     }
-
 
     void testConnectedShutdownSendSucceeds()
     {
@@ -1775,7 +1780,7 @@ struct udp_socket_test
         BOOST_TEST(!s.bind(endpoint(ipv4_address::loopback(), 0)));
 
         std::error_code wec = std::make_error_code(std::errc::io_error);
-        auto task = [&]() -> capy::task<> {
+        auto task           = [&]() -> capy::task<> {
             auto [ec] = co_await s.wait(wait_type::write);
             wec       = ec;
         };
@@ -1850,7 +1855,6 @@ struct udp_socket_test
         ioc.run();
         BOOST_TEST(ok);
     }
-
 
     void run()
     {

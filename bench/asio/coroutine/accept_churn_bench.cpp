@@ -207,7 +207,7 @@ bench_sequential_churn_lockless(bench::state& state)
 void
 bench_concurrent_churn(bench::state& state)
 {
-    int num_loops = static_cast<int>(state.range(0));
+    int num_loops               = static_cast<int>(state.range(0));
     state.counters["num_loops"] = num_loops;
 
     asio::io_context ioc;
@@ -288,7 +288,7 @@ bench_concurrent_churn(bench::state& state)
 void
 bench_burst_churn(bench::state& state)
 {
-    int burst_size = static_cast<int>(state.range(0));
+    int burst_size               = static_cast<int>(state.range(0));
     state.counters["burst_size"] = burst_size;
 
     asio::io_context ioc;
@@ -376,7 +376,7 @@ bench_burst_churn(bench::state& state)
 void
 bench_burst_churn_lockless(bench::state& state)
 {
-    int burst_size = static_cast<int>(state.range(0));
+    int burst_size               = static_cast<int>(state.range(0));
     state.counters["burst_size"] = burst_size;
 
     asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
@@ -471,11 +471,11 @@ make_accept_churn_suite()
         .add("sequential", bench_sequential_churn)
         .add("sequential_lockless", bench_sequential_churn_lockless)
         .add("concurrent", bench_concurrent_churn)
-            .args({1, 4, 16})
+        .args({1, 4, 16})
         .add("burst", bench_burst_churn)
-            .args({10, 100})
+        .args({10, 100})
         .add("burst_lockless", bench_burst_churn_lockless)
-            .args({10, 100});
+        .args({10, 100});
 }
 
 } // namespace asio_bench

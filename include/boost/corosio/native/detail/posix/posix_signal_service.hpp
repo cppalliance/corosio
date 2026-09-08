@@ -363,8 +363,8 @@ open_signal_pipe(signal_state* state)
 inline void
 corosio_posix_signal_handler(int signal_number)
 {
-    int saved_errno         = errno;
-    signal_state* state     = get_signal_state();
+    int saved_errno     = errno;
+    signal_state* state = get_signal_state();
     [[maybe_unused]] ssize_t r =
         ::write(state->write_fd, &signal_number, sizeof(int));
     errno = saved_errno;

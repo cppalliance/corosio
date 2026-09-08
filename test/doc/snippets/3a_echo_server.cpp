@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 #include <boost/corosio/tcp_server.hpp>
@@ -50,7 +50,7 @@
 #include "test_suite.hpp"
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
@@ -63,7 +63,7 @@ composed_write_demo(
     {
         // tag::composed_write[]
         // write_some: may write partial data
-        auto [ec, n] = co_await sock.write_some(buf);  // n might be < buf.size()
+        auto [ec, n] = co_await sock.write_some(buf); // n might be < buf.size()
 
         // end::composed_write[]
         BOOST_TEST(!ec);
@@ -71,7 +71,8 @@ composed_write_demo(
     {
         // tag::composed_write[]
         // write: writes all data or fails
-        auto [ec, n] = co_await capy::write(sock, buf);  // n == buf.size() or error
+        auto [ec, n] =
+            co_await capy::write(sock, buf); // n == buf.size() or error
         // end::composed_write[]
         BOOST_TEST(!ec);
         BOOST_TEST(n == buf.size());
@@ -87,10 +88,10 @@ advance_then_check_session(
     {
         // tag::advance_then_check[]
         auto [ec, n] = co_await sock.read_some(buf);
-        auto [wec, wn] = co_await capy::write(
-            sock, capy::const_buffer(buf.data(), n));
+        auto [wec, wn] =
+            co_await capy::write(sock, capy::const_buffer(buf.data(), n));
         if (wec || ec)
-            break;  // Normal termination path
+            break; // Normal termination path
         // end::advance_then_check[]
     }
     done = true;
@@ -101,10 +102,14 @@ exception_style_session(
     corosio::tcp_socket& sock, capy::mutable_buffer buf, bool& done)
 {
     // tag::exceptions_eof[]
-    try {
+    try
+    {
         auto [ec, n] = co_await sock.read_some(buf);
-        if (ec) throw std::system_error(ec);
-    } catch (...) {
+        if (ec)
+            throw std::system_error(ec);
+    }
+    catch (...)
+    {
         // EOF is an exception here
     }
     // end::exceptions_eof[]
@@ -118,8 +123,8 @@ echo_peer(corosio::tcp_socket& sock, std::string& reply, bool& done)
 {
     co_await capy::write(sock, capy::const_buffer("echo", 4));
     char tmp[4] = {};
-    auto [ec, n] = co_await capy::read(
-        sock, capy::mutable_buffer(tmp, sizeof tmp));
+    auto [ec, n] =
+        co_await capy::read(sock, capy::mutable_buffer(tmp, sizeof tmp));
     reply.assign(tmp, n);
     sock.close();
     done = true;
@@ -130,7 +135,7 @@ read_exactly(
     corosio::tcp_socket& sock, capy::mutable_buffer buf, std::size_t& got)
 {
     auto [ec, n] = co_await capy::read(sock, buf);
-    got = n;
+    got          = n;
 }
 
 struct echo_server_test
@@ -144,20 +149,19 @@ struct echo_server_test
             corosio::tcp_socket, corosio::tcp_acceptor, false>(ioc);
     }
 
-    void
-    testComposedWrite()
+    void testComposedWrite()
     {
         corosio::io_context ioc;
-        auto ex = ioc.get_executor();
+        auto ex     = ioc.get_executor();
         auto [a, b] = make_pair(ioc);
 
-        bool done = false;
+        bool done       = false;
         std::size_t got = 0;
-        char rx[4] = {};
-        capy::run_async(ex)(composed_write_demo(
-            a, capy::const_buffer("hi", 2), done));
-        capy::run_async(ex)(read_exactly(
-            b, capy::mutable_buffer(rx, sizeof rx), got));
+        char rx[4]      = {};
+        capy::run_async(ex)(
+            composed_write_demo(a, capy::const_buffer("hi", 2), done));
+        capy::run_async(ex)(
+            read_exactly(b, capy::mutable_buffer(rx, sizeof rx), got));
         ioc.run();
 
         BOOST_TEST(done);
@@ -169,15 +173,14 @@ struct echo_server_test
         ioc.run();
     }
 
-    void
-    testAdvanceThenCheck()
+    void testAdvanceThenCheck()
     {
         corosio::io_context ioc;
-        auto ex = ioc.get_executor();
+        auto ex     = ioc.get_executor();
         auto [a, b] = make_pair(ioc);
 
         bool session_done = false;
-        bool peer_done = false;
+        bool peer_done    = false;
         std::string reply;
         char storage[1024];
         capy::run_async(ex)(advance_then_check_session(
@@ -193,11 +196,10 @@ struct echo_server_test
         ioc.run();
     }
 
-    void
-    testExceptionStyle()
+    void testExceptionStyle()
     {
         corosio::io_context ioc;
-        auto ex = ioc.get_executor();
+        auto ex     = ioc.get_executor();
         auto [a, b] = make_pair(ioc);
 
         // Immediate close: the fragment's read fails with eof, which the
@@ -216,8 +218,7 @@ struct echo_server_test
         ioc.run();
     }
 
-    void
-    run()
+    void run()
     {
         testComposedWrite();
         testAdvanceThenCheck();

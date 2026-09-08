@@ -23,24 +23,25 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 // tag::stream_file[]
 // read_some has an implicit position: it advances automatically after
 // each call, unlike random_access_file's explicit offset.
-capy::task<> read_a_file_until_eof(corosio::io_context& ioc)
+capy::task<>
+read_a_file_until_eof(corosio::io_context& ioc)
 {
     corosio::stream_file f(ioc);
     if (auto ec = f.open("data.bin", corosio::file_base::read_only))
-        co_return;  // report the error
+        co_return; // report the error
 
     char buf[4096];
     for (;;)
     {
-        auto [ec, n] = co_await f.read_some(
-            capy::mutable_buffer(buf, sizeof(buf)));
+        auto [ec, n] =
+            co_await f.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         if (ec == capy::cond::eof)
             break;
         if (ec)

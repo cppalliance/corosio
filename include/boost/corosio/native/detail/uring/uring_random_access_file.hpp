@@ -59,8 +59,8 @@ class BOOST_COROSIO_DECL uring_random_access_file final
 {
     friend class uring_random_access_file_service;
 
-    int                  fd_    = -1;
-    uring_scheduler*  sched_ = nullptr;
+    int fd_                 = -1;
+    uring_scheduler* sched_ = nullptr;
 
     // Random-access files legitimately support concurrent ops at
     // different offsets on the same fd (e.g. parallel reads in
@@ -70,7 +70,8 @@ class BOOST_COROSIO_DECL uring_random_access_file final
 public:
     explicit uring_random_access_file(uring_scheduler& sched) noexcept
         : sched_(&sched)
-    {}
+    {
+    }
 
     ~uring_random_access_file() override
     {
@@ -112,15 +113,14 @@ public:
     {
         struct stat st;
         if (::fstat(fd_, &st) < 0)
-            throw_system_error(
-                make_err(errno), "random_access_file::size");
+            throw_system_error(make_err(errno), "random_access_file::size");
         return static_cast<std::uint64_t>(st.st_size);
     }
 
     std::error_code resize(std::uint64_t new_size) noexcept override
     {
-        if (new_size > static_cast<std::uint64_t>(
-                (std::numeric_limits<off_t>::max)()))
+        if (new_size >
+            static_cast<std::uint64_t>((std::numeric_limits<off_t>::max)()))
             return make_err(EOVERFLOW);
         if (::ftruncate(fd_, static_cast<off_t>(new_size)) < 0)
             return make_err(errno);
@@ -148,7 +148,7 @@ public:
     native_handle_type release() override
     {
         int fd = fd_;
-        fd_ = -1;
+        fd_    = -1;
         return fd;
     }
 
@@ -162,12 +162,12 @@ public:
     // -- Internal --
 
     /// Open the file. Synchronous; sets `fd_`. Caller is the service.
-    std::error_code open_file(
-        std::filesystem::path const& path, file_base::flags mode)
+    std::error_code
+    open_file(std::filesystem::path const& path, file_base::flags mode)
     {
         close_file();
 
-        int oflags = 0;
+        int oflags      = 0;
         unsigned access = static_cast<unsigned>(mode) & 3u;
         if (access == static_cast<unsigned>(file_base::read_write))
             oflags |= O_RDWR;
@@ -220,18 +220,18 @@ public:
 
 inline std::coroutine_handle<>
 uring_random_access_file::read_some_at(
-    std::uint64_t           user_offset,
+    std::uint64_t user_offset,
     std::coroutine_handle<> h,
-    capy::executor_ref      ex,
-    buffer_param            buffers,
-    std::stop_token         token,
-    std::error_code*        ec,
-    std::size_t*            bytes)
+    capy::executor_ref ex,
+    buffer_param buffers,
+    std::stop_token token,
+    std::error_code* ec,
+    std::size_t* bytes)
 {
     auto op_guard = std::make_unique<uring_random_access_read_op>();
-    op_guard->prepare(h, ex, ec, bytes, fd_,
-        static_cast<std::int64_t>(user_offset),
-        sched_, shared_from_this(), buffers, token);
+    op_guard->prepare(
+        h, ex, ec, bytes, fd_, static_cast<std::int64_t>(user_offset), sched_,
+        shared_from_this(), buffers, token);
     sched_->work_started();
 
     // Closed-object contract outranks the zero-length no-op.
@@ -258,18 +258,18 @@ uring_random_access_file::read_some_at(
 
 inline std::coroutine_handle<>
 uring_random_access_file::write_some_at(
-    std::uint64_t           user_offset,
+    std::uint64_t user_offset,
     std::coroutine_handle<> h,
-    capy::executor_ref      ex,
-    buffer_param            buffers,
-    std::stop_token         token,
-    std::error_code*        ec,
-    std::size_t*            bytes)
+    capy::executor_ref ex,
+    buffer_param buffers,
+    std::stop_token token,
+    std::error_code* ec,
+    std::size_t* bytes)
 {
     auto op_guard = std::make_unique<uring_random_access_write_op>();
-    op_guard->prepare(h, ex, ec, bytes, fd_,
-        static_cast<std::int64_t>(user_offset),
-        sched_, shared_from_this(), buffers, token);
+    op_guard->prepare(
+        h, ex, ec, bytes, fd_, static_cast<std::int64_t>(user_offset), sched_,
+        shared_from_this(), buffers, token);
     sched_->work_started();
 
     // Closed-object contract outranks the zero-length no-op.
@@ -316,7 +316,8 @@ public:
     explicit uring_random_access_file_service(
         capy::execution_context& /*ctx*/, uring_scheduler& sched)
         : base_service(sched)
-    {}
+    {
+    }
 
     // construct / destroy / close / shutdown / scheduler() are inherited
     // from uring_file_service_base.

@@ -11,7 +11,8 @@
 // provides libgcov's dump entry point. The test runner supplies main.
 extern "C" void __gcov_dump();
 
-void gcov_dump_check()
+void
+gcov_dump_check()
 {
     __gcov_dump();
 }

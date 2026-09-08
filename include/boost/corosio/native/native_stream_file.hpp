@@ -86,8 +86,7 @@ class native_stream_file : public stream_file
         mutable std::size_t bytes_transferred_ = 0;
 
         native_read_awaitable(
-            native_stream_file& self,
-            MutableBufferSequence buffers) noexcept
+            native_stream_file& self, MutableBufferSequence buffers) noexcept
             : self_(self)
             , buffers_(std::move(buffers))
         {
@@ -126,8 +125,7 @@ class native_stream_file : public stream_file
         mutable std::size_t bytes_transferred_ = 0;
 
         native_write_awaitable(
-            native_stream_file& self,
-            ConstBufferSequence buffers) noexcept
+            native_stream_file& self, ConstBufferSequence buffers) noexcept
             : self_(self)
             , buffers_(std::move(buffers))
         {

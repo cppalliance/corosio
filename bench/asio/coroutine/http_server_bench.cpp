@@ -122,10 +122,8 @@ bench_single_connection(bench::state& state)
     asio::io_context ioc;
     auto [client, server] = make_socket_pair(ioc);
 
-    asio::co_spawn(
-        ioc, server_task(server), asio::detached);
-    asio::co_spawn(
-        ioc, client_task(client, state), asio::detached);
+    asio::co_spawn(ioc, server_task(server), asio::detached);
+    asio::co_spawn(ioc, client_task(client, state), asio::detached);
 
     std::thread timer([&]() {
         std::this_thread::sleep_for(
@@ -148,10 +146,8 @@ bench_single_connection_lockless(bench::state& state)
     asio::io_context ioc(BOOST_ASIO_CONCURRENCY_HINT_UNSAFE);
     auto [client, server] = make_socket_pair(ioc);
 
-    asio::co_spawn(
-        ioc, server_task(server), asio::detached);
-    asio::co_spawn(
-        ioc, client_task(client, state), asio::detached);
+    asio::co_spawn(ioc, server_task(server), asio::detached);
+    asio::co_spawn(ioc, client_task(client, state), asio::detached);
 
     std::thread timer([&]() {
         std::this_thread::sleep_for(
@@ -171,7 +167,7 @@ bench_single_connection_lockless(bench::state& state)
 void
 bench_concurrent_connections(bench::state& state)
 {
-    int num_connections = static_cast<int>(state.range(0));
+    int num_connections           = static_cast<int>(state.range(0));
     state.counters["connections"] = num_connections;
 
     asio::io_context ioc;
@@ -191,10 +187,8 @@ bench_concurrent_connections(bench::state& state)
 
     for (int i = 0; i < num_connections; ++i)
     {
-        asio::co_spawn(
-            ioc, server_task(servers[i]), asio::detached);
-        asio::co_spawn(
-            ioc, client_task(clients[i], state), asio::detached);
+        asio::co_spawn(ioc, server_task(servers[i]), asio::detached);
+        asio::co_spawn(ioc, client_task(clients[i], state), asio::detached);
     }
 
     std::thread timer([&]() {
@@ -241,10 +235,8 @@ bench_multithread(bench::state& state)
 
     for (int i = 0; i < num_connections; ++i)
     {
-        asio::co_spawn(
-            ioc, server_task(servers[i]), asio::detached);
-        asio::co_spawn(
-            ioc, client_task(clients[i], state), asio::detached);
+        asio::co_spawn(ioc, server_task(servers[i]), asio::detached);
+        asio::co_spawn(ioc, client_task(clients[i], state), asio::detached);
     }
 
     perf::stopwatch sw;
@@ -285,9 +277,9 @@ make_http_server_suite()
         .add("single_conn", bench_single_connection)
         .add("single_conn_lockless", bench_single_connection_lockless)
         .add("concurrent", bench_concurrent_connections)
-            .args({1, 4, 16, 32})
+        .args({1, 4, 16, 32})
         .add("multithread", bench_multithread)
-            .args({1, 2, 4, 8, 16});
+        .args({1, 2, 4, 8, 16});
 }
 
 } // namespace asio_bench

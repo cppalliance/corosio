@@ -44,10 +44,10 @@ namespace boost::corosio::detail {
 /// are legitimate).
 struct uring_file_read_op_base : uring_op
 {
-    iovec        iovecs[uring_max_iov];
-    int          iovec_count = 0;
-    int          fd          = -1;
-    std::int64_t offset      = -1;  // -1 means kernel f_pos
+    iovec iovecs[uring_max_iov];
+    int iovec_count     = 0;
+    int fd              = -1;
+    std::int64_t offset = -1; // -1 means kernel f_pos
 
 protected:
     explicit uring_file_read_op_base(func_type handler) noexcept
@@ -64,28 +64,28 @@ public:
         offset for random-access files.
     */
     void prepare(
-        std::coroutine_handle<>  handle,
-        capy::executor_ref       executor,
-        std::error_code*         ec,
-        std::size_t*             bytes,
-        int                      file_descriptor,
-        std::int64_t             file_offset,
-        uring_scheduler*      scheduler,
-        std::shared_ptr<void>    impl,
-        buffer_param             buffers,
-        std::stop_token const&   token) noexcept
+        std::coroutine_handle<> handle,
+        capy::executor_ref executor,
+        std::error_code* ec,
+        std::size_t* bytes,
+        int file_descriptor,
+        std::int64_t file_offset,
+        uring_scheduler* scheduler,
+        std::shared_ptr<void> impl,
+        buffer_param buffers,
+        std::stop_token const& token) noexcept
     {
-        h         = handle;
-        ex        = executor;
-        ec_out    = ec;
-        bytes_out = bytes;
-        fd        = file_descriptor;
-        offset    = file_offset;
-        sched_    = scheduler;
-        impl_ptr  = std::move(impl);
-        res       = 0;
-        cqe_flags = 0;
-        iovec_count = copy_to_iovec(buffers, iovecs);
+        h            = handle;
+        ex           = executor;
+        ec_out       = ec;
+        bytes_out    = bytes;
+        fd           = file_descriptor;
+        offset       = file_offset;
+        sched_       = scheduler;
+        impl_ptr     = std::move(impl);
+        res          = 0;
+        cqe_flags    = 0;
+        iovec_count  = copy_to_iovec(buffers, iovecs);
         empty_buffer = (iovec_count == 0);
         start(token);
     }
@@ -98,9 +98,8 @@ public:
             static_cast<__u64>(self->offset));
     }
 
-    static void do_cqe(
-        uring_op* base, int res, unsigned flags,
-        ready_queue& local) noexcept
+    static void
+    do_cqe(uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_file_read_op_base*>(base);
         self->res       = res;
@@ -127,12 +126,13 @@ public:
 /// the impl owns this slot.
 struct uring_file_read_op : uring_file_read_op_base
 {
-    uring_file_read_op() noexcept
-        : uring_file_read_op_base(&do_handler) {}
+    uring_file_read_op() noexcept : uring_file_read_op_base(&do_handler) {}
 
     static void do_handler(
-        void* owner, scheduler_op* base,
-        std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t /*bytes*/,
+        std::uint32_t /*error*/) noexcept
     {
         auto* self = static_cast<uring_file_read_op*>(base);
         if (coro_drain_if_shutdown(owner, self))
@@ -155,11 +155,15 @@ struct uring_file_read_op : uring_file_read_op_base
 struct uring_random_access_read_op : uring_file_read_op_base
 {
     uring_random_access_read_op() noexcept
-        : uring_file_read_op_base(&do_handler) {}
+        : uring_file_read_op_base(&do_handler)
+    {
+    }
 
     static void do_handler(
-        void* owner, scheduler_op* base,
-        std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t /*bytes*/,
+        std::uint32_t /*error*/) noexcept
     {
         auto* self = static_cast<uring_random_access_read_op*>(base);
         self->stop_cb.reset();
@@ -189,14 +193,16 @@ struct uring_random_access_read_op : uring_file_read_op_base
 /// subclasses pick a `do_handler` matching their storage model.
 struct uring_file_write_op_base : uring_op
 {
-    iovec        iovecs[uring_max_iov];
-    int          iovec_count = 0;
-    int          fd          = -1;
-    std::int64_t offset      = -1;
+    iovec iovecs[uring_max_iov];
+    int iovec_count     = 0;
+    int fd              = -1;
+    std::int64_t offset = -1;
 
 protected:
     explicit uring_file_write_op_base(func_type handler) noexcept
-        : uring_op(handler, &do_cqe, &do_prep) {}
+        : uring_op(handler, &do_cqe, &do_prep)
+    {
+    }
 
 public:
     /** Reset and initialize for a new submission.
@@ -204,28 +210,28 @@ public:
         See uring_file_read_op_base::prepare for the offset convention.
     */
     void prepare(
-        std::coroutine_handle<>  handle,
-        capy::executor_ref       executor,
-        std::error_code*         ec,
-        std::size_t*             bytes,
-        int                      file_descriptor,
-        std::int64_t             file_offset,
-        uring_scheduler*      scheduler,
-        std::shared_ptr<void>    impl,
-        buffer_param             buffers,
-        std::stop_token const&   token) noexcept
+        std::coroutine_handle<> handle,
+        capy::executor_ref executor,
+        std::error_code* ec,
+        std::size_t* bytes,
+        int file_descriptor,
+        std::int64_t file_offset,
+        uring_scheduler* scheduler,
+        std::shared_ptr<void> impl,
+        buffer_param buffers,
+        std::stop_token const& token) noexcept
     {
-        h         = handle;
-        ex        = executor;
-        ec_out    = ec;
-        bytes_out = bytes;
-        fd        = file_descriptor;
-        offset    = file_offset;
-        sched_    = scheduler;
-        impl_ptr  = std::move(impl);
-        res       = 0;
-        cqe_flags = 0;
-        iovec_count = copy_to_iovec(buffers, iovecs);
+        h            = handle;
+        ex           = executor;
+        ec_out       = ec;
+        bytes_out    = bytes;
+        fd           = file_descriptor;
+        offset       = file_offset;
+        sched_       = scheduler;
+        impl_ptr     = std::move(impl);
+        res          = 0;
+        cqe_flags    = 0;
+        iovec_count  = copy_to_iovec(buffers, iovecs);
         empty_buffer = (iovec_count == 0);
         start(token);
     }
@@ -238,9 +244,8 @@ public:
             static_cast<__u64>(self->offset));
     }
 
-    static void do_cqe(
-        uring_op* base, int res, unsigned flags,
-        ready_queue& local) noexcept
+    static void
+    do_cqe(uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_file_write_op_base*>(base);
         self->res       = res;
@@ -263,12 +268,13 @@ public:
 /// Embedded file write op for stream_file.
 struct uring_file_write_op : uring_file_write_op_base
 {
-    uring_file_write_op() noexcept
-        : uring_file_write_op_base(&do_handler) {}
+    uring_file_write_op() noexcept : uring_file_write_op_base(&do_handler) {}
 
     static void do_handler(
-        void* owner, scheduler_op* base,
-        std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t /*bytes*/,
+        std::uint32_t /*error*/) noexcept
     {
         auto* self = static_cast<uring_file_write_op*>(base);
         if (coro_drain_if_shutdown(owner, self))
@@ -289,11 +295,15 @@ struct uring_file_write_op : uring_file_write_op_base
 struct uring_random_access_write_op : uring_file_write_op_base
 {
     uring_random_access_write_op() noexcept
-        : uring_file_write_op_base(&do_handler) {}
+        : uring_file_write_op_base(&do_handler)
+    {
+    }
 
     static void do_handler(
-        void* owner, scheduler_op* base,
-        std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t /*bytes*/,
+        std::uint32_t /*error*/) noexcept
     {
         auto* self = static_cast<uring_random_access_write_op*>(base);
         self->stop_cb.reset();

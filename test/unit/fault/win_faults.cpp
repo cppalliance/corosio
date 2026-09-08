@@ -45,7 +45,8 @@ namespace boost::corosio::test::fault {
 
 namespace {
 
-void remove_file(std::string const& path)
+void
+remove_file(std::string const& path)
 {
     std::error_code ec;
     std::ignore = std::filesystem::remove(std::filesystem::path(path), ec);
@@ -54,10 +55,12 @@ void remove_file(std::string const& path)
 // A file handle the library did not open, in the mode adoption needs.
 // The path is one temp_path built, so widening it a character at a
 // time is enough.
-HANDLE make_native_file(std::string const& path)
+HANDLE
+make_native_file(std::string const& path)
 {
     std::wstring wide(path.begin(), path.end());
-    return ::CreateFileW(wide.c_str(), GENERIC_READ | GENERIC_WRITE,
+    return ::CreateFileW(
+        wide.c_str(), GENERIC_READ | GENERIC_WRITE,
         FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS,
         FILE_FLAG_OVERLAPPED, nullptr);
 }
@@ -73,12 +76,15 @@ connect_pair_bounded(local_stream_socket& a, local_stream_socket& b)
     std::error_code ec;
     std::promise<void> done;
     auto ready = done.get_future();
-    std::thread t([&]{ ec = connect_pair(a, b); done.set_value(); });
-    if(ready.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
+    std::thread t([&] {
+        ec = connect_pair(a, b);
+        done.set_value();
+    });
+    if (ready.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
     {
         BOOST_TEST(false);
-        std::fprintf(stderr,
-            "fault harness: connect_pair did not return within 5s\n");
+        std::fprintf(
+            stderr, "fault harness: connect_pair did not return within 5s\n");
         std::fflush(stderr);
         std::_Exit(1);
     }
@@ -91,10 +97,11 @@ connect_pair_bounded(local_stream_socket& a, local_stream_socket& b)
 // synchronous call or awaits an operation the fault completes on the
 // spot, whereas a post that never reaches the deferred drain leaves
 // run() with work outstanding and nothing to deliver it.
-capy::task<> stop_guard(io_context& ioc, bool& expired)
+capy::task<>
+stop_guard(io_context& ioc, bool& expired)
 {
     std::ignore = co_await corosio::delay(std::chrono::seconds(2));
-    expired = true;
+    expired     = true;
     ioc.stop();
 }
 
@@ -158,39 +165,39 @@ struct win_common_faults
         stream_file sf(ioc);
         {
             fault_scope f(sys::CreateFileW, ERROR_ACCESS_DENIED);
-            auto ec = sf.open(path, file_base::read_write |
-                file_base::create);
+            auto ec = sf.open(path, file_base::read_write | file_base::create);
             BOOST_TEST(f.fired());
             BOOST_TEST(ec == win_err(ERROR_ACCESS_DENIED));
             BOOST_TEST(!sf.is_open());
         }
         // The handle exists when the association fails, so the
         // failure path owns closing it.
-        expect_no_handle_leak([&]{
-            fault_scope f(sys::CreateIoCompletionPort,
-                ERROR_INVALID_PARAMETER);
-            auto ec = sf.open(path, file_base::read_write |
-                file_base::create);
+        expect_no_handle_leak([&] {
+            fault_scope f(sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
+            auto ec = sf.open(path, file_base::read_write | file_base::create);
             BOOST_TEST(f.fired());
             BOOST_TEST(ec == win_err(ERROR_INVALID_PARAMETER));
             BOOST_TEST(!sf.is_open());
         });
         // create|truncate lowers to OPEN_ALWAYS plus an explicit
         // SetEndOfFile; every other mode leaves it to the disposition.
-        expect_no_handle_leak([&]{
+        expect_no_handle_leak([&] {
             fault_scope f(sys::SetEndOfFile, ERROR_DISK_FULL);
-            auto ec = sf.open(path, file_base::read_write |
-                file_base::create | file_base::truncate);
+            auto ec = sf.open(
+                path,
+                file_base::read_write | file_base::create |
+                    file_base::truncate);
             BOOST_TEST(f.fired());
             BOOST_TEST(ec == win_err(ERROR_DISK_FULL));
             BOOST_TEST(!sf.is_open());
         });
         // Only an appending open seeds its own offset from the file
         // size.
-        expect_no_handle_leak([&]{
+        expect_no_handle_leak([&] {
             fault_scope f(sys::GetFileSizeEx, ERROR_INVALID_HANDLE);
-            auto ec = sf.open(path, file_base::write_only |
-                file_base::create | file_base::append);
+            auto ec = sf.open(
+                path,
+                file_base::write_only | file_base::create | file_base::append);
             BOOST_TEST(f.fired());
             BOOST_TEST(ec == win_err(ERROR_INVALID_HANDLE));
             BOOST_TEST(!sf.is_open());
@@ -207,7 +214,7 @@ struct win_common_faults
         {
             fault_scope f(sys::GetFileSizeEx, ERROR_INVALID_HANDLE);
             expect_system_error(
-                [&]{ std::ignore = sf.size(); },
+                [&] { std::ignore = sf.size(); },
                 win_err(ERROR_INVALID_HANDLE));
             BOOST_TEST(f.fired());
         }
@@ -265,53 +272,52 @@ struct win_common_faults
         char buf[8] = "1234567";
         std::error_code wec, rec, cec, eec;
         std::size_t rn = 99, en = 99;
-        auto t = [&]() -> capy::task<>
-        {
+        auto t = [&]() -> capy::task<> {
             {
                 fault_scope f(sys::WriteFile, ERROR_ACCESS_DENIED);
-                auto [ec, n] = co_await sf.write_some(
-                    capy::const_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await sf.write_some(capy::const_buffer(buf, 7));
                 std::ignore = n;
-                wec = ec;
+                wec         = ec;
                 BOOST_TEST(f.fired());
             }
             {
-                auto [ec, n] = co_await sf.write_some(
-                    capy::const_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await sf.write_some(capy::const_buffer(buf, 7));
                 std::ignore = n;
                 BOOST_TEST(!ec);
             }
             {
                 auto [ec, pos] = sf.seek(0, file_base::seek_set);
-                std::ignore = pos;
+                std::ignore    = pos;
                 BOOST_TEST(!ec);
             }
             {
                 fault_scope f(sys::ReadFile, ERROR_ACCESS_DENIED);
-                auto [ec, n] = co_await sf.read_some(
-                    capy::mutable_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await sf.read_some(capy::mutable_buffer(buf, 7));
                 rec = ec;
-                rn = n;
+                rn  = n;
                 BOOST_TEST(f.fired());
             }
             {
                 // The kernel result of a queued read cannot be armed
                 // where it was started; the completion carries it.
                 completion_fault_scope q(ERROR_LOCK_VIOLATION);
-                auto [ec, n] = co_await sf.read_some(
-                    capy::mutable_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await sf.read_some(capy::mutable_buffer(buf, 7));
                 std::ignore = n;
-                cec = ec;
+                cec         = ec;
                 BOOST_TEST(q.fired());
             }
             {
                 // A zero-length ReadFile completes with zero bytes,
                 // which the stream contract reads as end of file.
                 auto f = fault_scope::returning(sys::ReadFile, 0);
-                auto [ec, n] = co_await sf.read_some(
-                    capy::mutable_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await sf.read_some(capy::mutable_buffer(buf, 7));
                 eec = ec;
-                en = n;
+                en  = n;
                 BOOST_TEST(f.fired());
             }
         };
@@ -334,24 +340,27 @@ struct win_common_faults
         random_access_file rf(ioc);
         {
             fault_scope f(sys::CreateFileW, ERROR_ACCESS_DENIED);
-            BOOST_TEST(rf.open(path, file_base::read_write |
-                file_base::create) == win_err(ERROR_ACCESS_DENIED));
+            BOOST_TEST(
+                rf.open(path, file_base::read_write | file_base::create) ==
+                win_err(ERROR_ACCESS_DENIED));
             BOOST_TEST(f.fired());
         }
-        expect_no_handle_leak([&]{
-            fault_scope f(sys::CreateIoCompletionPort,
-                ERROR_INVALID_PARAMETER);
-            BOOST_TEST(rf.open(path, file_base::read_write |
-                file_base::create) == win_err(ERROR_INVALID_PARAMETER));
+        expect_no_handle_leak([&] {
+            fault_scope f(sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
+            BOOST_TEST(
+                rf.open(path, file_base::read_write | file_base::create) ==
+                win_err(ERROR_INVALID_PARAMETER));
             BOOST_TEST(f.fired());
         });
         // create|truncate lowers to OPEN_ALWAYS plus an explicit
         // SetEndOfFile; every other mode leaves it to the disposition.
-        expect_no_handle_leak([&]{
+        expect_no_handle_leak([&] {
             fault_scope f(sys::SetEndOfFile, ERROR_DISK_FULL);
-            BOOST_TEST(rf.open(path, file_base::read_write |
-                file_base::create | file_base::truncate) ==
-                win_err(ERROR_DISK_FULL));
+            BOOST_TEST(
+                rf.open(
+                    path,
+                    file_base::read_write | file_base::create |
+                        file_base::truncate) == win_err(ERROR_DISK_FULL));
             BOOST_TEST(f.fired());
             BOOST_TEST(!rf.is_open());
         });
@@ -359,7 +368,7 @@ struct win_common_faults
         {
             fault_scope f(sys::GetFileSizeEx, ERROR_INVALID_HANDLE);
             expect_system_error(
-                [&]{ std::ignore = rf.size(); },
+                [&] { std::ignore = rf.size(); },
                 win_err(ERROR_INVALID_HANDLE));
             BOOST_TEST(f.fired());
         }
@@ -390,44 +399,43 @@ struct win_common_faults
         }
         char buf[8] = "1234567";
         std::error_code wec, rec, cec, eec;
-        auto t = [&]() -> capy::task<>
-        {
+        auto t = [&]() -> capy::task<> {
             {
                 fault_scope f(sys::WriteFile, ERROR_ACCESS_DENIED);
-                auto [ec, n] = co_await rf.write_some_at(
-                    0, capy::const_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await rf.write_some_at(0, capy::const_buffer(buf, 7));
                 std::ignore = n;
-                wec = ec;
+                wec         = ec;
                 BOOST_TEST(f.fired());
             }
             {
-                auto [ec, n] = co_await rf.write_some_at(
-                    0, capy::const_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await rf.write_some_at(0, capy::const_buffer(buf, 7));
                 std::ignore = n;
                 BOOST_TEST(!ec);
             }
             {
                 fault_scope f(sys::ReadFile, ERROR_ACCESS_DENIED);
-                auto [ec, n] = co_await rf.read_some_at(
-                    0, capy::mutable_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await rf.read_some_at(0, capy::mutable_buffer(buf, 7));
                 std::ignore = n;
-                rec = ec;
+                rec         = ec;
                 BOOST_TEST(f.fired());
             }
             {
                 completion_fault_scope q(ERROR_LOCK_VIOLATION);
-                auto [ec, n] = co_await rf.read_some_at(
-                    0, capy::mutable_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await rf.read_some_at(0, capy::mutable_buffer(buf, 7));
                 std::ignore = n;
-                cec = ec;
+                cec         = ec;
                 BOOST_TEST(q.fired());
             }
             {
                 auto f = fault_scope::returning(sys::ReadFile, 0);
-                auto [ec, n] = co_await rf.read_some_at(
-                    0, capy::mutable_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await rf.read_some_at(0, capy::mutable_buffer(buf, 7));
                 std::ignore = n;
-                eec = ec;
+                eec         = ec;
                 BOOST_TEST(f.fired());
             }
         };
@@ -500,7 +508,7 @@ struct win_common_faults
         // because the call they fail is on the worker thread, and the
         // socket arm is the second WSASocketW because the listener is
         // created first.
-        expect_no_handle_leak([&]{
+        expect_no_handle_leak([&] {
             local_stream_socket a(ioc), b(ioc);
             fault_scope f(sys::WSASocketW, WSAEMFILE, 2u, any_thread);
             auto ec = connect_pair_bounded(a, b);
@@ -508,7 +516,7 @@ struct win_common_faults
             BOOST_TEST(ec == win_err(WSAEMFILE));
             BOOST_TEST(!a.is_open() && !b.is_open());
         });
-        expect_no_handle_leak([&]{
+        expect_no_handle_leak([&] {
             local_stream_socket a(ioc), b(ioc);
             fault_scope f(sys::connect, WSAENETDOWN, 1u, any_thread);
             auto ec = connect_pair_bounded(a, b);
@@ -520,7 +528,7 @@ struct win_common_faults
         // still connecting, so the socket the worker hands back has
         // to be closed here. Process-wide, since the arm has to
         // survive the hop onto the thread the deadline runs it on.
-        expect_no_handle_leak([&]{
+        expect_no_handle_leak([&] {
             local_stream_socket a(ioc), b(ioc);
             fault_scope f(sys::WSAPoll, WSAEINTR, 1u, any_thread);
             auto ec = connect_pair_bounded(a, b);
@@ -531,7 +539,7 @@ struct win_common_faults
         // Restoring the accepted socket's blocking mode is the last
         // thing that can fail, and the only failure with a complete
         // pair in hand: both ends are the library's to close.
-        expect_no_handle_leak([&]{
+        expect_no_handle_leak([&] {
             local_stream_socket a(ioc), b(ioc);
             fault_scope f(sys::ioctlsocket, WSAEINVAL, 2u);
             auto ec = connect_pair(a, b);
@@ -541,7 +549,7 @@ struct win_common_faults
         });
         // Adoption of the first descriptor fails; both are the
         // library's to close.
-        expect_no_handle_leak([&]{
+        expect_no_handle_leak([&] {
             local_stream_socket a(ioc), b(ioc);
             fault_scope f(sys::getsockopt, WSAENOTSOCK);
             auto ec = connect_pair(a, b);
@@ -564,7 +572,7 @@ struct win_common_faults
         // Adoption of the second descriptor fails after the first
         // took: one end is the library's to close and the other is
         // still a bare socket, and both have to go.
-        expect_no_handle_leak([&]{
+        expect_no_handle_leak([&] {
             local_stream_socket a(ioc), b(ioc);
             fault_scope f(sys::getsockopt, WSAENOTSOCK, 2u);
             auto ec = connect_pair(a, b);
@@ -586,7 +594,7 @@ struct win_common_faults
         // available() reports it as the raw Winsock code either way.
         fault_scope f(sys::ioctlsocket, WSAEINVAL);
         expect_system_error(
-            [&]{ std::ignore = a.available(); }, win_err(WSAEINVAL));
+            [&] { std::ignore = a.available(); }, win_err(WSAEINVAL));
         BOOST_TEST(f.fired());
         BOOST_TEST(a.is_open());
     }
@@ -596,26 +604,25 @@ struct win_common_faults
         io_context ioc(iocp);
         resolver r(ioc);
         std::error_code fec, rec;
-        auto t = [&]() -> capy::task<>
-        {
+        auto t = [&]() -> capy::task<> {
             {
                 // GetAddrInfoExW reports a synchronous failure through
                 // its return value and the last-error slot alike.
                 fault_scope f(sys::GetAddrInfoExW, WSAEAFNOSUPPORT);
                 auto [ec, results] = co_await r.resolve("localhost", "80");
-                std::ignore = results;
-                fec = ec;
+                std::ignore        = results;
+                fec                = ec;
                 BOOST_TEST(f.fired());
             }
             {
                 // GetNameInfoW blocks, so it runs on a pool thread
                 // where the thread-local arms are never consulted.
-                fault_scope f(sys::GetNameInfoW, WSAEAFNOSUPPORT, 1,
-                    any_thread);
-                auto [ec, result] = co_await r.resolve(
-                    endpoint(ipv4_address::loopback(), 80));
+                fault_scope f(
+                    sys::GetNameInfoW, WSAEAFNOSUPPORT, 1, any_thread);
+                auto [ec, result] =
+                    co_await r.resolve(endpoint(ipv4_address::loopback(), 80));
                 std::ignore = result;
-                rec = ec;
+                rec         = ec;
                 BOOST_TEST(f.fired());
             }
         };
@@ -638,26 +645,25 @@ struct win_common_faults
         resolver r(ioc);
         std::error_code rec;
         bool armed_fired = false;
-        auto t = [&]() -> capy::task<>
-        {
+        auto t           = [&]() -> capy::task<> {
             // The host conversion is calls 1 and 2 and the service
             // conversion 3 and 4; failing the first probe skips call 2,
             // so nth 2 is the service's own probe.
-            fault_scope host(sys::MultiByteToWideChar,
-                ERROR_INVALID_PARAMETER, 1);
-            fault_scope service(sys::MultiByteToWideChar,
-                ERROR_INVALID_PARAMETER, 2);
+            fault_scope host(
+                sys::MultiByteToWideChar, ERROR_INVALID_PARAMETER, 1);
+            fault_scope service(
+                sys::MultiByteToWideChar, ERROR_INVALID_PARAMETER, 2);
             auto [ec, results] = co_await r.resolve("localhost", "80");
-            std::ignore = results;
-            rec = ec;
-            armed_fired = host.fired() && service.fired();
+            std::ignore        = results;
+            rec                = ec;
+            armed_fired        = host.fired() && service.fired();
         };
         capy::run_async(ioc.get_executor())(t());
         ioc.run();
         BOOST_TEST(armed_fired);
-        if(rec != win_err(WSAHOST_NOT_FOUND))
-            std::fprintf(stderr,
-                "fault harness: name-less lookup reported %d (%s)\n",
+        if (rec != win_err(WSAHOST_NOT_FOUND))
+            std::fprintf(
+                stderr, "fault harness: name-less lookup reported %d (%s)\n",
                 rec.value(), rec.message().c_str());
         BOOST_TEST(rec == win_err(WSAHOST_NOT_FOUND));
     }
@@ -668,15 +674,13 @@ struct win_common_faults
         resolver r(ioc);
         std::error_code rec;
         bool cancel_fired = false;
-        auto body = [&]() -> capy::task<>
-        {
-            auto [ec, results] = co_await r.resolve(
-                "corosio-fault-nonexistent.invalid", "80");
+        auto body         = [&]() -> capy::task<> {
+            auto [ec, results] =
+                co_await r.resolve("corosio-fault-nonexistent.invalid", "80");
             std::ignore = results;
-            rec = ec;
+            rec         = ec;
         };
-        auto canceller = [&]() -> capy::task<>
-        {
+        auto canceller = [&]() -> capy::task<> {
             fault_scope f(sys::GetAddrInfoExCancel, WSAEINVAL);
             r.cancel();
             cancel_fired = f.fired();
@@ -688,7 +692,7 @@ struct win_common_faults
         // A lookup answered from the resolver cache completes before
         // the canceller runs and never records a cancel handle, so the
         // discarded return value is only asserted on the pending path.
-        if(rec == capy::error::canceled)
+        if (rec == capy::error::canceled)
             BOOST_TEST(cancel_fired);
     }
 
@@ -708,8 +712,8 @@ struct win_common_faults
             BOOST_TEST(h != INVALID_HANDLE_VALUE);
             stream_file sf(ioc);
             {
-                fault_scope f(sys::CreateIoCompletionPort,
-                    ERROR_INVALID_PARAMETER);
+                fault_scope f(
+                    sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
                 BOOST_TEST(
                     sf.assign(reinterpret_cast<native_handle_type>(h)) ==
                     win_err(ERROR_INVALID_PARAMETER));
@@ -723,8 +727,8 @@ struct win_common_faults
             BOOST_TEST(h != INVALID_HANDLE_VALUE);
             random_access_file rf(ioc);
             {
-                fault_scope f(sys::CreateIoCompletionPort,
-                    ERROR_INVALID_PARAMETER);
+                fault_scope f(
+                    sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
                 BOOST_TEST(
                     rf.assign(reinterpret_cast<native_handle_type>(h)) ==
                     win_err(ERROR_INVALID_PARAMETER));
@@ -751,15 +755,14 @@ struct win_common_faults
         resolver r(ioc);
         std::error_code fec;
         bool fired = false;
-        auto t = [&]() -> capy::task<>
-        {
+        auto t     = [&]() -> capy::task<> {
             fault_scope g(sys::GetAddrInfoExW, WSAEAFNOSUPPORT);
-            fault_scope p(sys::PostQueuedCompletionStatus,
-                ERROR_NO_SYSTEM_RESOURCES);
+            fault_scope p(
+                sys::PostQueuedCompletionStatus, ERROR_NO_SYSTEM_RESOURCES);
             auto [ec, results] = co_await r.resolve("localhost", "80");
-            std::ignore = results;
-            fec   = ec;
-            fired = g.fired() && p.fired();
+            std::ignore        = results;
+            fec                = ec;
+            fired              = g.fired() && p.fired();
             ioc.stop();
         };
         bool expired = false;
@@ -784,13 +787,13 @@ struct win_common_faults
         resolver r(ioc);
         std::error_code rec;
         std::string host = "unset";
-        bool fired = false;
-        auto t = [&]() -> capy::task<>
-        {
-            fault_scope f(sys::WideCharToMultiByte,
-                ERROR_NO_UNICODE_TRANSLATION, 1, any_thread);
-            auto [ec, result] = co_await r.resolve(
-                endpoint(ipv4_address::loopback(), 80));
+        bool fired       = false;
+        auto t           = [&]() -> capy::task<> {
+            fault_scope f(
+                sys::WideCharToMultiByte, ERROR_NO_UNICODE_TRANSLATION, 1,
+                any_thread);
+            auto [ec, result] =
+                co_await r.resolve(endpoint(ipv4_address::loopback(), 80));
             rec   = ec;
             host  = result.host_name();
             fired = f.fired();
@@ -908,7 +911,7 @@ struct win_wait_reactor_thread_faults
 {
     void testWaitThreadSpawnRefusal()
     {
-        if(!hook_is_live(sys::pthread_create))
+        if (!hook_is_live(sys::pthread_create))
         {
             test_suite::log << "thread-creation hook not live; skipping\n";
             return;
@@ -921,11 +924,11 @@ struct win_wait_reactor_thread_faults
         BOOST_TEST(!u.bind(endpoint(ipv4_address::loopback(), 0)));
 
         std::error_code wec = win_err(WSAEINTR); // sentinel, must change
-        bool done = false;
-        auto waiter = [&]() -> capy::task<> {
+        bool done           = false;
+        auto waiter         = [&]() -> capy::task<> {
             auto [ec] = co_await u.wait(wait_type::read);
-            wec  = ec;
-            done = true;
+            wec       = ec;
+            done      = true;
         };
 
         fault_scope fault(sys::pthread_create, ERROR_MAX_THRDS_REACHED);
@@ -943,9 +946,9 @@ struct win_wait_reactor_thread_faults
     }
 };
 
-TEST_SUITE(win_wait_reactor_thread_faults,
-    "boost.corosio.fault.win.wait_thread");
+TEST_SUITE(
+    win_wait_reactor_thread_faults, "boost.corosio.fault.win.wait_thread");
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault
 
 #endif

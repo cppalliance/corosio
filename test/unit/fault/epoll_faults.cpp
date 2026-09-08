@@ -37,7 +37,8 @@ namespace boost::corosio::test::fault {
 
 namespace {
 
-endpoint loopback()
+endpoint
+loopback()
 {
     return endpoint(ipv4_address::loopback(), 0);
 }
@@ -48,23 +49,19 @@ struct epoll_faults
 {
     void testConstructorFails()
     {
-        auto expect_throw = [](sys s, unsigned nth, int err, std::errc code)
-        {
+        auto expect_throw = [](sys s, unsigned nth, int err, std::errc code) {
             fault_scope f(s, err, nth);
-            expect_system_error([&]{ io_context ioc(epoll); }, code);
+            expect_system_error([&] { io_context ioc(epoll); }, code);
             BOOST_TEST(f.fired());
         };
-        expect_throw(sys::epoll_create1, 1, EMFILE,
-            std::errc::too_many_files_open);
-        expect_throw(sys::eventfd, 1, EMFILE,
-            std::errc::too_many_files_open);
-        expect_throw(sys::timerfd_create, 1, EMFILE,
-            std::errc::too_many_files_open);
+        expect_throw(
+            sys::epoll_create1, 1, EMFILE, std::errc::too_many_files_open);
+        expect_throw(sys::eventfd, 1, EMFILE, std::errc::too_many_files_open);
+        expect_throw(
+            sys::timerfd_create, 1, EMFILE, std::errc::too_many_files_open);
         // 1 registers the eventfd, 2 the timerfd.
-        expect_throw(sys::epoll_ctl, 1, ENOMEM,
-            std::errc::not_enough_memory);
-        expect_throw(sys::epoll_ctl, 2, ENOMEM,
-            std::errc::not_enough_memory);
+        expect_throw(sys::epoll_ctl, 1, ENOMEM, std::errc::not_enough_memory);
+        expect_throw(sys::epoll_ctl, 2, ENOMEM, std::errc::not_enough_memory);
     }
 
     void testOpenFails()
@@ -113,8 +110,7 @@ struct epoll_faults
         tcp_acceptor acc(ioc, loopback());
         tcp_socket client(ioc), server(ioc);
         std::error_code aec, aec2;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body = [&]() -> capy::task<> {
             {
                 auto [ec] = co_await client.connect(acc.local_endpoint());
                 BOOST_TEST(!ec);
@@ -137,7 +133,7 @@ struct epoll_faults
             {
                 fault_scope f(sys::accept4, ECONNABORTED);
                 auto [ec] = co_await acc.accept(server);
-                aec = ec;
+                aec       = ec;
                 BOOST_TEST(f.fired());
             }
             {
@@ -157,7 +153,7 @@ struct epoll_faults
                 int before = open_fds();
                 fault_scope f(sys::epoll_ctl, ENOMEM);
                 auto [ec] = co_await acc.accept(server);
-                aec2 = ec;
+                aec2      = ec;
                 BOOST_TEST(f.fired());
                 BOOST_TEST_EQ(open_fds(), before);
             }
@@ -176,10 +172,9 @@ struct epoll_faults
             io_context ioc(epoll);
             fault_scope f(sys::epoll_wait, EINTR);
             bool done = false;
-            auto body = [&]() -> capy::task<>
-            {
-                std::ignore = co_await corosio::delay(
-                    std::chrono::milliseconds(1));
+            auto body = [&]() -> capy::task<> {
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(1));
                 done = true;
             };
             capy::run_async(ioc.get_executor())(body());
@@ -190,27 +185,25 @@ struct epoll_faults
         {
             io_context ioc(epoll);
             fault_scope f(sys::epoll_wait, EBADF);
-            auto body = [&]() -> capy::task<>
-            {
-                std::ignore = co_await corosio::delay(
-                    std::chrono::milliseconds(1));
+            auto body = [&]() -> capy::task<> {
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(1));
             };
             capy::run_async(ioc.get_executor())(body());
-            expect_system_error([&]{ ioc.run(); },
-                std::errc::bad_file_descriptor);
+            expect_system_error(
+                [&] { ioc.run(); }, std::errc::bad_file_descriptor);
             BOOST_TEST(f.fired());
         }
         {
             io_context ioc(epoll);
             fault_scope f(sys::timerfd_settime, EINVAL);
-            auto body = [&]() -> capy::task<>
-            {
-                std::ignore = co_await corosio::delay(
-                    std::chrono::milliseconds(1));
+            auto body = [&]() -> capy::task<> {
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(1));
             };
             capy::run_async(ioc.get_executor())(body());
-            expect_system_error([&]{ ioc.run(); },
-                std::errc::invalid_argument);
+            expect_system_error(
+                [&] { ioc.run(); }, std::errc::invalid_argument);
             BOOST_TEST(f.fired());
         }
     }
@@ -245,11 +238,9 @@ struct epoll_faults
         // work fires and a stop from inside ends run().
         ioc.restart();
         bool done = false;
-        auto body = [&]() -> capy::task<>
-        {
-            std::ignore = co_await corosio::delay(
-                std::chrono::milliseconds(1));
-            done = true;
+        auto body = [&]() -> capy::task<> {
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(1));
+            done        = true;
             ioc.stop();
         };
         capy::run_async(ioc.get_executor())(body());
@@ -271,10 +262,13 @@ struct epoll_faults
         BOOST_TEST(static_cast<int>(h) >= 0);
         make_native_adoptable(h);
         sockaddr_in sa{};
-        sa.sin_family = AF_INET;
+        sa.sin_family      = AF_INET;
         sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        BOOST_TEST_EQ(::bind(static_cast<int>(h),
-            reinterpret_cast<sockaddr*>(&sa), sizeof(sa)), 0);
+        BOOST_TEST_EQ(
+            ::bind(
+                static_cast<int>(h), reinterpret_cast<sockaddr*>(&sa),
+                sizeof(sa)),
+            0);
         BOOST_TEST_EQ(::listen(static_cast<int>(h), 1), 0);
 
         int const before = open_fds();
@@ -311,13 +305,12 @@ struct epoll_faults
         BOOST_TEST(!client.open(tcp::v4()));
         std::error_code aec;
         std::stop_source guard;
-        auto accept_body = [&]() -> capy::task<>
-        {
+        auto accept_body = [&]() -> capy::task<> {
             {
                 // 1 is the speculative accept, which finds nothing.
                 fault_scope f(sys::accept4, EMFILE, 2);
                 auto [ec] = co_await acc.accept(server);
-                aec = ec;
+                aec       = ec;
                 BOOST_TEST(f.fired());
             }
             // A refused accept dequeues nothing, so the acceptor is
@@ -326,8 +319,7 @@ struct epoll_faults
             BOOST_TEST(!ec);
             guard.request_stop();
         };
-        auto connect_body = [&]() -> capy::task<>
-        {
+        auto connect_body = [&]() -> capy::task<> {
             auto [ec] = co_await client.connect(acc.local_endpoint());
             BOOST_TEST(!ec);
         };
@@ -337,8 +329,8 @@ struct epoll_faults
         bool expired = false;
         capy::run_async(ioc.get_executor())(accept_body());
         capy::run_async(ioc.get_executor())(connect_body());
-        capy::run_async(ioc.get_executor(), guard.get_token())(
-            stop_guard(ioc, expired));
+        capy::run_async(
+            ioc.get_executor(), guard.get_token())(stop_guard(ioc, expired));
         ioc.run();
         BOOST_TEST(!expired);
         BOOST_TEST(aec == std::errc::too_many_files_open);
@@ -352,21 +344,19 @@ struct epoll_faults
         tcp_socket client(ioc), server(ioc);
         BOOST_TEST(!client.open(tcp::v4()));
         std::error_code aec;
-        int leaked = 0;
-        auto accept_body = [&]() -> capy::task<>
-        {
+        int leaked       = 0;
+        auto accept_body = [&]() -> capy::task<> {
             int const before = open_fds();
             fault_scope f(sys::epoll_ctl, ENOMEM);
             auto [ec] = co_await acc.accept(server);
-            aec = ec;
+            aec       = ec;
             BOOST_TEST(f.fired());
             BOOST_TEST_EQ(f.count(), 1u);
             // The peer implementation owns the accepted descriptor by
             // then, so destroying it is what closes it.
             leaked = open_fds() - before;
         };
-        auto connect_body = [&]() -> capy::task<>
-        {
+        auto connect_body = [&]() -> capy::task<> {
             auto [ec] = co_await client.connect(acc.local_endpoint());
             BOOST_TEST(!ec);
         };
@@ -380,7 +370,7 @@ struct epoll_faults
 
     void run()
     {
-        if(skip_under_valgrind())
+        if (skip_under_valgrind())
             return;
         testConstructorFails();
         testOpenFails();
@@ -396,6 +386,6 @@ struct epoll_faults
 
 TEST_SUITE(epoll_faults, "boost.corosio.fault.epoll");
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault
 
 #endif

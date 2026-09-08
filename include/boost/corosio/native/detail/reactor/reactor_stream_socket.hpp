@@ -62,15 +62,18 @@ class reactor_stream_socket
           DescState,
           Endpoint>
 {
-    using base_type = reactor_basic_socket<
-        Derived,
-        ImplBase,
-        Service,
-        DescState,
-        Endpoint>;
+    using base_type =
+        reactor_basic_socket<Derived, ImplBase, Service, DescState, Endpoint>;
     using self_type = reactor_stream_socket<
-        Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp,
-        DescState, ImplBase, Endpoint>;
+        Derived,
+        Service,
+        ConnOp,
+        ReadOp,
+        WriteOp,
+        WaitOp,
+        DescState,
+        ImplBase,
+        Endpoint>;
     friend base_type;
     friend Derived;
 
@@ -152,8 +155,7 @@ public:
         return do_wait(h, ex, w, token, ec);
     }
 
-    std::error_code
-    shutdown(corosio::shutdown_type what) noexcept override
+    std::error_code shutdown(corosio::shutdown_type what) noexcept override
     {
         return do_shutdown(static_cast<int>(what));
     }
@@ -275,7 +277,7 @@ public:
     /// Release ownership of the descriptor and drop the cached peer.
     native_handle_type do_release_socket() noexcept
     {
-        auto fd = base_type::do_release_socket();
+        auto fd          = base_type::do_release_socket();
         remote_endpoint_ = Endpoint{};
         return fd;
     }
@@ -300,7 +302,6 @@ private:
             return &this->desc_state_.wait_error_op;
         return nullptr;
     }
-
 
     template<class Fn>
     void for_each_op(Fn fn) noexcept
@@ -336,7 +337,16 @@ template<
     class ImplBase,
     class Endpoint>
 std::coroutine_handle<>
-reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescState, ImplBase, Endpoint>::
+reactor_stream_socket<
+    Derived,
+    Service,
+    ConnOp,
+    ReadOp,
+    WriteOp,
+    WaitOp,
+    DescState,
+    ImplBase,
+    Endpoint>::
     do_connect(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
@@ -368,7 +378,7 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
         int err = (result < 0) ? errno : 0;
         if (this->svc_.scheduler().try_consume_inline_budget())
         {
-            *ec = err ? make_err(err) : std::error_code{};
+            *ec       = err ? make_err(err) : std::error_code{};
             op.cont.h = h;
             return dispatch_coro(ex, op.cont);
         }
@@ -411,7 +421,16 @@ template<
     class ImplBase,
     class Endpoint>
 std::coroutine_handle<>
-reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescState, ImplBase, Endpoint>::
+reactor_stream_socket<
+    Derived,
+    Service,
+    ConnOp,
+    ReadOp,
+    WriteOp,
+    WaitOp,
+    DescState,
+    ImplBase,
+    Endpoint>::
     do_read_some(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
@@ -495,7 +514,7 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
             else
                 *ec = {};
             *bytes_out = bytes;
-            op.cont.h = h;
+            op.cont.h  = h;
             return dispatch_coro(ex, op.cont);
         }
         op.h         = h;
@@ -534,7 +553,16 @@ template<
     class ImplBase,
     class Endpoint>
 std::coroutine_handle<>
-reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescState, ImplBase, Endpoint>::
+reactor_stream_socket<
+    Derived,
+    Service,
+    ConnOp,
+    ReadOp,
+    WriteOp,
+    WaitOp,
+    DescState,
+    ImplBase,
+    Endpoint>::
     do_write_some(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
@@ -595,8 +623,7 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
     }
     else
     {
-        n = WriteOp::write_policy::write(
-            this->fd_, op.iovecs, op.iovec_count);
+        n = WriteOp::write_policy::write(this->fd_, op.iovecs, op.iovec_count);
     }
 
     if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
@@ -608,7 +635,7 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            op.cont.h = h;
+            op.cont.h  = h;
             return dispatch_coro(ex, op.cont);
         }
         op.h         = h;
@@ -647,7 +674,16 @@ template<
     class ImplBase,
     class Endpoint>
 std::coroutine_handle<>
-reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescState, ImplBase, Endpoint>::
+reactor_stream_socket<
+    Derived,
+    Service,
+    ConnOp,
+    ReadOp,
+    WriteOp,
+    WaitOp,
+    DescState,
+    ImplBase,
+    Endpoint>::
     do_wait(
         std::coroutine_handle<> h,
         capy::executor_ref ex,
@@ -662,21 +698,21 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
 
     if (w == wait_type::read)
     {
-        op_ptr          = &wait_rd_;
-        desc_slot_ptr   = &this->desc_state_.wait_read_op;
-        event           = reactor_event_read;
+        op_ptr        = &wait_rd_;
+        desc_slot_ptr = &this->desc_state_.wait_read_op;
+        event         = reactor_event_read;
     }
     else if (w == wait_type::write)
     {
-        op_ptr          = &wait_wr_;
-        desc_slot_ptr   = &this->desc_state_.wait_write_op;
-        event           = reactor_event_write;
+        op_ptr        = &wait_wr_;
+        desc_slot_ptr = &this->desc_state_.wait_write_op;
+        event         = reactor_event_write;
     }
     else // wait_type::error
     {
-        op_ptr          = &wait_er_;
-        desc_slot_ptr   = &this->desc_state_.wait_error_op;
-        event           = reactor_event_error;
+        op_ptr        = &wait_er_;
+        desc_slot_ptr = &this->desc_state_.wait_error_op;
+        event         = reactor_event_error;
     }
 
     auto& op = *op_ptr;
@@ -722,8 +758,8 @@ reactor_stream_socket<Derived, Service, ConnOp, ReadOp, WriteOp, WaitOp, DescSta
     // read, or an error event dispatched to an empty slot) would
     // otherwise leave the wait parked on a ready socket.
     bool force_probe = true;
-    this->register_op(op, *desc_slot_ptr, force_probe,
-                      event == reactor_event_write);
+    this->register_op(
+        op, *desc_slot_ptr, force_probe, event == reactor_event_write);
     return std::noop_coroutine();
 }
 

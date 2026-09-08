@@ -46,7 +46,8 @@ protected:
 // so win_wsa_init can carry BOOST_COROSIO_DECL: an exported/imported static
 // data member defined in a header is rejected by MSVC and clang-cl
 // ("definition of dllimport static field not allowed").
-inline long& win_wsa_init_count() noexcept
+inline long&
+win_wsa_init_count() noexcept
 {
     static long count = 0;
     return count;

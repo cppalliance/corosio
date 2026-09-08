@@ -54,8 +54,8 @@ struct posix_common_faults
     // writes go through the ring instead of preadv/pwritev, seek uses
     // lseek instead of fstat, and open never stats an appending file.
 #if BOOST_COROSIO_HAS_URING
-    static constexpr bool ring_files = std::is_same_v<
-        std::remove_cvref_t<decltype(Backend)>, uring_t>;
+    static constexpr bool ring_files =
+        std::is_same_v<std::remove_cvref_t<decltype(Backend)>, uring_t>;
 #else
     static constexpr bool ring_files = false;
 #endif
@@ -102,7 +102,7 @@ struct posix_common_faults
         BOOST_TEST(!s.open(tcp::v4()));
         fault_scope f(sys::setsockopt, ENOPROTOOPT);
         expect_system_error(
-            [&]{ s.set_option(socket_option::reuse_address(true)); },
+            [&] { s.set_option(socket_option::reuse_address(true)); },
             std::errc::no_protocol_option);
         BOOST_TEST(f.fired());
         BOOST_TEST(s.is_open());
@@ -115,7 +115,7 @@ struct posix_common_faults
         BOOST_TEST(!s.open(tcp::v4()));
         fault_scope f(sys::getsockopt, ENOPROTOOPT);
         expect_system_error(
-            [&]{ std::ignore = s.get_option<socket_option::reuse_address>(); },
+            [&] { std::ignore = s.get_option<socket_option::reuse_address>(); },
             std::errc::no_protocol_option);
         BOOST_TEST(f.fired());
         BOOST_TEST(s.is_open());
@@ -125,7 +125,7 @@ struct posix_common_faults
     {
         io_context ioc(Backend);
         int before = open_fds();
-        auto h = make_native_socket(AF_INET, SOCK_STREAM);
+        auto h     = make_native_socket(AF_INET, SOCK_STREAM);
         make_native_adoptable(h);
         {
             tcp_socket s(ioc);
@@ -161,7 +161,7 @@ struct posix_common_faults
             BOOST_TEST(!a.is_open() && !b.is_open());
         }
         // 1 is the F_GETFL probe, 2 the F_SETFL that follows it.
-        for(unsigned nth : {1u, 2u})
+        for (unsigned nth : {1u, 2u})
         {
             local_stream_socket a(ioc), b(ioc);
             fault_scope f(sys::fcntl, EINVAL, nth);
@@ -173,7 +173,7 @@ struct posix_common_faults
         // assign() interrogates the descriptor once with
         // getsockopt(SO_TYPE), so the ordinal selects which half of
         // the pair is refused. Either way both descriptors go back.
-        for(unsigned nth : {1u, 2u})
+        for (unsigned nth : {1u, 2u})
         {
             local_stream_socket a(ioc), b(ioc);
             fault_scope f(sys::getsockopt, EBADF, nth);
@@ -205,7 +205,7 @@ struct posix_common_faults
         BOOST_TEST(!connect_pair(a, b));
         fault_scope f(sys::ioctl, EBADF);
         expect_system_error(
-            [&]{ std::ignore = a.available(); },
+            [&] { std::ignore = a.available(); },
             std::errc::bad_file_descriptor);
         BOOST_TEST(f.fired());
         BOOST_TEST(a.is_open());
@@ -223,7 +223,8 @@ struct posix_common_faults
         BOOST_TEST(!s.open());
         {
             fault_scope f(sys::bind, EACCES);
-            BOOST_TEST(s.bind(corosio::local_endpoint(path)) ==
+            BOOST_TEST(
+                s.bind(corosio::local_endpoint(path)) ==
                 std::errc::permission_denied);
             BOOST_TEST(f.fired());
             BOOST_TEST(s.is_open());
@@ -245,7 +246,7 @@ struct posix_common_faults
             int before = open_fds();
             fault_scope f(sys::listen, EADDRINUSE);
             expect_system_error(
-                [&]{
+                [&] {
                     tcp_acceptor acc(
                         ioc, endpoint(ipv4_address::loopback(), 0));
                 },
@@ -259,7 +260,7 @@ struct posix_common_faults
             int before = open_fds();
             fault_scope f(sys::socket, EMFILE);
             expect_system_error(
-                [&]{
+                [&] {
                     local_stream_acceptor acc(
                         ioc, corosio::local_endpoint(path));
                 },
@@ -274,7 +275,7 @@ struct posix_common_faults
             int before = open_fds();
             fault_scope f(sys::listen, EADDRINUSE);
             expect_system_error(
-                [&]{
+                [&] {
                     local_stream_acceptor acc(
                         ioc, corosio::local_endpoint(path));
                 },
@@ -292,7 +293,7 @@ struct posix_common_faults
         BOOST_TEST(!connect_pair(a, b));
         fault_scope f(sys::ioctl, ENOTTY);
         expect_system_error(
-            [&]{ std::ignore = a.available(); },
+            [&] { std::ignore = a.available(); },
             std::errc::inappropriate_io_control_operation);
         BOOST_TEST(f.fired());
         BOOST_TEST(a.is_open());
@@ -333,11 +334,11 @@ struct posix_common_faults
         }
         // Only the POSIX backend seeds its own offset with fstat when
         // opening for append; the ring backend leaves that to O_APPEND.
-        if constexpr(!ring_files)
+        if constexpr (!ring_files)
         {
             // fstat is unshadowed on pre-2.33 glibc (an inline redirect to
             // __fxstat), so the append-offset seed cannot be faulted there.
-            if(!hook_is_live(sys::fstat))
+            if (!hook_is_live(sys::fstat))
             {
                 skip_dead_hook("fstat");
             }
@@ -345,8 +346,10 @@ struct posix_common_faults
             {
                 int before = open_fds();
                 fault_scope f(sys::fstat, EIO);
-                auto ec = sf.open(path, file_base::write_only |
-                    file_base::create | file_base::append);
+                auto ec = sf.open(
+                    path,
+                    file_base::write_only | file_base::create |
+                        file_base::append);
                 BOOST_TEST(f.fired());
                 BOOST_TEST(ec == std::errc::io_error);
                 BOOST_TEST(!sf.is_open());
@@ -362,7 +365,7 @@ struct posix_common_faults
         auto path = temp_path("sf2");
         stream_file sf(ioc);
         BOOST_TEST(!sf.open(path, file_base::read_write | file_base::create));
-        if(!hook_is_live(sys::fstat))
+        if (!hook_is_live(sys::fstat))
         {
             skip_dead_hook("fstat");
         }
@@ -370,7 +373,7 @@ struct posix_common_faults
         {
             fault_scope f(sys::fstat, EIO);
             expect_system_error(
-                [&]{ std::ignore = sf.size(); }, std::errc::io_error);
+                [&] { std::ignore = sf.size(); }, std::errc::io_error);
             BOOST_TEST(f.fired());
         }
         {
@@ -390,7 +393,7 @@ struct posix_common_faults
         }
         {
             constexpr sys seek_end_call = ring_files ? sys::lseek : sys::fstat;
-            if(!hook_is_live(seek_end_call))
+            if (!hook_is_live(seek_end_call))
             {
                 skip_dead_hook(ring_files ? "lseek" : "fstat");
             }
@@ -411,7 +414,7 @@ struct posix_common_faults
     {
         // Ring file I/O never reaches preadv/pwritev; its completion
         // faults belong with the other io_uring coverage.
-        if constexpr(ring_files)
+        if constexpr (ring_files)
             return;
         io_context ioc(Backend);
         auto path = temp_path("sf3");
@@ -420,43 +423,42 @@ struct posix_common_faults
         char buf[8] = "1234567";
         std::error_code rec, wec, eec;
         std::size_t rn = 99, en = 99;
-        auto t = [&]() -> capy::task<>
-        {
+        auto t = [&]() -> capy::task<> {
             // The syscall runs on a pool thread, so the arm has to be
             // visible outside this one.
             {
                 fault_scope f(sys::pwritev, ENOSPC, 1, any_thread);
-                auto [ec, n] = co_await sf.write_some(
-                    capy::const_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await sf.write_some(capy::const_buffer(buf, 7));
                 std::ignore = n;
-                wec = ec;
+                wec         = ec;
                 BOOST_TEST(f.fired());
             }
             {
-                auto [ec, n] = co_await sf.write_some(
-                    capy::const_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await sf.write_some(capy::const_buffer(buf, 7));
                 std::ignore = n;
                 BOOST_TEST(!ec);
             }
             {
                 auto [ec, pos] = sf.seek(0, file_base::seek_set);
-                std::ignore = pos;
+                std::ignore    = pos;
                 BOOST_TEST(!ec);
             }
             {
                 fault_scope f(sys::preadv, EIO, 1, any_thread);
-                auto [ec, n] = co_await sf.read_some(
-                    capy::mutable_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await sf.read_some(capy::mutable_buffer(buf, 7));
                 rec = ec;
-                rn = n;
+                rn  = n;
                 BOOST_TEST(f.fired());
             }
             {
                 auto f = fault_scope::returning_any_thread(sys::preadv, 0);
-                auto [ec, n] = co_await sf.read_some(
-                    capy::mutable_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await sf.read_some(capy::mutable_buffer(buf, 7));
                 eec = ec;
-                en = n;
+                en  = n;
                 BOOST_TEST(f.fired());
             }
         };
@@ -478,12 +480,13 @@ struct posix_common_faults
         random_access_file rf(ioc);
         {
             fault_scope f(sys::open, EACCES);
-            BOOST_TEST(rf.open(path, file_base::read_write |
-                file_base::create) == std::errc::permission_denied);
+            BOOST_TEST(
+                rf.open(path, file_base::read_write | file_base::create) ==
+                std::errc::permission_denied);
             BOOST_TEST(f.fired());
         }
         BOOST_TEST(!rf.open(path, file_base::read_write | file_base::create));
-        if(!hook_is_live(sys::fstat))
+        if (!hook_is_live(sys::fstat))
         {
             skip_dead_hook("fstat");
         }
@@ -491,7 +494,7 @@ struct posix_common_faults
         {
             fault_scope f(sys::fstat, EIO);
             expect_system_error(
-                [&]{ std::ignore = rf.size(); }, std::errc::io_error);
+                [&] { std::ignore = rf.size(); }, std::errc::io_error);
             BOOST_TEST(f.fired());
         }
         {
@@ -511,7 +514,7 @@ struct posix_common_faults
         }
         // Ring file I/O never reaches preadv/pwritev; its completion
         // faults belong with the other io_uring coverage.
-        if constexpr(ring_files)
+        if constexpr (ring_files)
         {
             rf.close();
             ::unlink(path.c_str());
@@ -519,36 +522,35 @@ struct posix_common_faults
         }
         char buf[8] = "1234567";
         std::error_code rec, wec, eec;
-        auto t = [&]() -> capy::task<>
-        {
+        auto t = [&]() -> capy::task<> {
             {
                 fault_scope f(sys::pwritev, ENOSPC, 1, any_thread);
-                auto [ec, n] = co_await rf.write_some_at(
-                    0, capy::const_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await rf.write_some_at(0, capy::const_buffer(buf, 7));
                 std::ignore = n;
-                wec = ec;
+                wec         = ec;
                 BOOST_TEST(f.fired());
             }
             {
-                auto [ec, n] = co_await rf.write_some_at(
-                    0, capy::const_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await rf.write_some_at(0, capy::const_buffer(buf, 7));
                 std::ignore = n;
                 BOOST_TEST(!ec);
             }
             {
                 fault_scope f(sys::preadv, EIO, 1, any_thread);
-                auto [ec, n] = co_await rf.read_some_at(
-                    0, capy::mutable_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await rf.read_some_at(0, capy::mutable_buffer(buf, 7));
                 std::ignore = n;
-                rec = ec;
+                rec         = ec;
                 BOOST_TEST(f.fired());
             }
             {
                 auto f = fault_scope::returning_any_thread(sys::preadv, 0);
-                auto [ec, n] = co_await rf.read_some_at(
-                    0, capy::mutable_buffer(buf, 7));
+                auto [ec, n] =
+                    co_await rf.read_some_at(0, capy::mutable_buffer(buf, 7));
                 std::ignore = n;
-                eec = ec;
+                eec         = ec;
                 BOOST_TEST(f.fired());
             }
         };
@@ -566,21 +568,20 @@ struct posix_common_faults
         io_context ioc(Backend);
         resolver r(ioc);
         std::error_code fec, rec;
-        auto t = [&]() -> capy::task<>
-        {
+        auto t = [&]() -> capy::task<> {
             {
                 fault_scope f(sys::getaddrinfo, EAI_FAIL, 1, any_thread);
                 auto [ec, results] = co_await r.resolve("localhost", "80");
-                std::ignore = results;
-                fec = ec;
+                std::ignore        = results;
+                fec                = ec;
                 BOOST_TEST(f.fired());
             }
             {
                 fault_scope f(sys::getnameinfo, EAI_FAIL, 1, any_thread);
-                auto [ec, result] = co_await r.resolve(
-                    endpoint(ipv4_address::loopback(), 80));
+                auto [ec, result] =
+                    co_await r.resolve(endpoint(ipv4_address::loopback(), 80));
                 std::ignore = result;
-                rec = ec;
+                rec         = ec;
                 BOOST_TEST(f.fired());
             }
         };
@@ -597,24 +598,24 @@ struct posix_common_faults
     // against the suite.
     void testSignalTeardownWalk()
     {
-        in_child([]{
+        in_child([] {
             bool resumed = false;
             {
                 io_context ioc(Backend);
                 auto keeper = [&]() -> capy::task<> {
                     signal_set sig(ioc, SIGINT);
                     std::ignore = co_await sig.wait();
-                    resumed = true;
+                    resumed     = true;
                 };
                 capy::run_async(ioc.get_executor())(keeper());
                 // Exactly one handler, and it has to be the coroutine
                 // start: a zero here would leave nothing parked and the
                 // walk with nothing to reclaim.
-                if(ioc.run_one() != 1)
+                if (ioc.run_one() != 1)
                     return false;
             }
             struct sigaction cur = {};
-            if(::sigaction(SIGINT, nullptr, &cur) < 0)
+            if (::sigaction(SIGINT, nullptr, &cur) < 0)
                 return false;
             return !resumed && cur.sa_handler == SIG_DFL;
         });
@@ -622,7 +623,7 @@ struct posix_common_faults
 
     void run()
     {
-        if(skip_under_valgrind())
+        if (skip_under_valgrind())
             return;
         testSocketOpenFails();
         testBindFails();
@@ -658,7 +659,7 @@ struct reactor_acceptor_option_faults
         {
             fault_scope f(sys::setsockopt, ENOPROTOOPT);
             expect_system_error(
-                [&]{ acc.set_option(socket_option::reuse_address(true)); },
+                [&] { acc.set_option(socket_option::reuse_address(true)); },
                 std::errc::no_protocol_option);
             BOOST_TEST(f.fired());
             BOOST_TEST(acc.is_open());
@@ -666,7 +667,7 @@ struct reactor_acceptor_option_faults
         {
             fault_scope f(sys::getsockopt, ENOPROTOOPT);
             expect_system_error(
-                [&]{
+                [&] {
                     std::ignore =
                         acc.get_option<socket_option::reuse_address>();
                 },
@@ -678,7 +679,7 @@ struct reactor_acceptor_option_faults
 
     void run()
     {
-        if(skip_under_valgrind())
+        if (skip_under_valgrind())
             return;
         testAcceptorOptions();
     }
@@ -694,7 +695,7 @@ struct pool_thread_spawn_faults
 {
     void testSpawnRefusalReachesOperation()
     {
-        if(!hook_is_live(sys::pthread_create))
+        if (!hook_is_live(sys::pthread_create))
         {
             test_suite::log << "pthread_create hook not live; skipping\n";
             return;
@@ -751,5 +752,4 @@ struct pool_thread_spawn_faults
 
 TEST_SUITE(pool_thread_spawn_faults, "boost.corosio.fault.posix.pool_spawn");
 
-
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault

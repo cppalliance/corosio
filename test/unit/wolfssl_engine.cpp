@@ -62,8 +62,7 @@ init_pair(
 
 struct wolfssl_engine_test
 {
-    void
-    testHandshake()
+    void testHandshake()
     {
         auto client_ctx = test::make_client_context();
         auto server_ctx = test::make_server_context();
@@ -88,8 +87,7 @@ struct wolfssl_engine_test
         BOOST_TEST(!server.received_shutdown());
     }
 
-    void
-    testAppDataBothDirections()
+    void testAppDataBothDirections()
     {
         auto client_ctx = test::make_client_context();
         auto server_ctx = test::make_server_context();
@@ -111,8 +109,7 @@ struct wolfssl_engine_test
         BOOST_TEST(got == s2c);
     }
 
-    void
-    testCloseNotifySequence()
+    void testCloseNotifySequence()
     {
         auto client_ctx = test::make_client_context();
         auto server_ctx = test::make_server_context();
@@ -172,8 +169,7 @@ struct wolfssl_engine_test
         BOOST_TEST(server.received_shutdown());
     }
 
-    void
-    testShutdownZeroReturnWithPendingOutput()
+    void testShutdownZeroReturnWithPendingOutput()
     {
         // A close_notify consumed by a parked reader surfaces the
         // shutdown re-query as a zero-return fatal, which is a
@@ -217,8 +213,7 @@ struct wolfssl_engine_test
         BOOST_TEST(server.received_shutdown());
     }
 
-    void
-    testShutdownBeforeInit()
+    void testShutdownBeforeInit()
     {
         // The reachable truthy shutdown terminal: the driver runs
         // shutdown-before-handshake against an engine whose session
@@ -232,8 +227,7 @@ struct wolfssl_engine_test
         BOOST_TEST_EQ(eng.pending_output(), 0u);
     }
 
-    void
-    testRekeyUpdateKeys()
+    void testRekeyUpdateKeys()
     {
         auto client_ctx = test::make_client_context();
         auto server_ctx = test::make_server_context();
@@ -247,7 +241,7 @@ struct wolfssl_engine_test
         BOOST_TEST_EQ(wolfSSL_update_keys(server.native_handle()), 1);
         BOOST_TEST(server.pending_output() > 0);
         std::string const msg = "post-rekey payload";
-        auto r = server.perform(
+        auto r                = server.perform(
             engine_op::write, const_cast<char*>(msg.data()), msg.size());
         BOOST_TEST(!r.ec);
         BOOST_TEST(r.want == engine_want::output_then_done);
@@ -257,7 +251,7 @@ struct wolfssl_engine_test
         // A staged, unprocessed KeyUpdate is transparent to the
         // peer's write: rekeying gates reads, not writes.
         char one = 'x';
-        r = client.perform(engine_op::write, &one, 1);
+        r        = client.perform(engine_op::write, &one, 1);
         BOOST_TEST(!r.ec);
         BOOST_TEST(test::engine_step_done(r.want));
         BOOST_TEST_EQ(r.bytes, 1u);
@@ -284,8 +278,7 @@ struct wolfssl_engine_test
         BOOST_TEST(got == "after");
     }
 
-    void
-    testTruncatedRecordWaitsForInput()
+    void testTruncatedRecordWaitsForInput()
     {
         auto client_ctx = test::make_client_context();
         auto server_ctx = test::make_server_context();
@@ -295,7 +288,7 @@ struct wolfssl_engine_test
         BOOST_TEST(test::run_engine_handshake(client, server));
 
         std::string const msg = "cut mid-record";
-        auto r = server.perform(
+        auto r                = server.perform(
             engine_op::write, const_cast<char*>(msg.data()), msg.size());
         BOOST_TEST(test::engine_step_done(r.want));
         std::vector<unsigned char> wire(server.pending_output());
@@ -315,8 +308,7 @@ struct wolfssl_engine_test
         BOOST_TEST(
             detail::map_fill_error(
                 engine_op::read, make_error_code(capy::error::eof),
-                client.received_shutdown()) ==
-            capy::error::stream_truncated);
+                client.received_shutdown()) == capy::error::stream_truncated);
 
         // The tail completes the record with no byte loss.
         BOOST_TEST_EQ(client.put_input(wire.data() + cut, 5), 5u);
@@ -326,8 +318,7 @@ struct wolfssl_engine_test
         BOOST_TEST(std::string(buf, r.bytes) == msg);
     }
 
-    void
-    testCorruptRecordMapsError()
+    void testCorruptRecordMapsError()
     {
         auto client_ctx = test::make_client_context();
         auto server_ctx = test::make_server_context();
@@ -337,7 +328,7 @@ struct wolfssl_engine_test
         BOOST_TEST(test::run_engine_handshake(client, server));
 
         std::string const msg = "tamper target";
-        auto r = server.perform(
+        auto r                = server.perform(
             engine_op::write, const_cast<char*>(msg.data()), msg.size());
         BOOST_TEST(test::engine_step_done(r.want));
         std::vector<unsigned char> wire(server.pending_output());
@@ -356,8 +347,7 @@ struct wolfssl_engine_test
         BOOST_TEST_EQ(r.bytes, 0u);
     }
 
-    void
-    testPartialPutInputNoLoss()
+    void testPartialPutInputNoLoss()
     {
         auto client_ctx = test::make_client_context();
         auto server_ctx = test::make_server_context();
@@ -424,8 +414,7 @@ struct wolfssl_engine_test
         BOOST_TEST_EQ(fed, wire.size());
     }
 
-    void
-    testWriteImplicitHandshakeNeedsRead()
+    void testWriteImplicitHandshakeNeedsRead()
     {
         // WolfSSL has no renegotiation analog (the OpenSSL suite's
         // testRekeyWriteNeedsRead pins write-needs-input via TLS 1.2
@@ -440,7 +429,7 @@ struct wolfssl_engine_test
         BOOST_TEST(init_pair(client, server, client_ctx, server_ctx));
 
         char one = 'x';
-        auto r = client.perform(engine_op::write, &one, 1);
+        auto r   = client.perform(engine_op::write, &one, 1);
         BOOST_TEST(!r.ec);
         BOOST_TEST(r.want == engine_want::output_then_retry);
         BOOST_TEST(client.pending_output() > 0);
@@ -475,8 +464,7 @@ struct wolfssl_engine_test
         BOOST_TEST(got == "x");
     }
 
-    void
-    testShutdownWantWrite()
+    void testShutdownWantWrite()
     {
         // The raw WANT_WRITE branch, distinct from SHUTDOWN_NOT_DONE's
         // "sent, awaiting the peer's" state: filling the outbound
@@ -503,8 +491,7 @@ struct wolfssl_engine_test
         BOOST_TEST_EQ(client.pending_output(), filled);
     }
 
-    void
-    testShutdownZeroReturnNoOutput()
+    void testShutdownZeroReturnNoOutput()
     {
         // Same zero-return-fatal completion as
         // testShutdownZeroReturnWithPendingOutput, but with our own
@@ -541,8 +528,7 @@ struct wolfssl_engine_test
         BOOST_TEST_EQ(client.pending_output(), 0u);
     }
 
-    void
-    testHandshakeFatalGarbageInput()
+    void testHandshakeFatalGarbageInput()
     {
         // A handshake fed non-TLS bytes hits a fatal decode error,
         // mirroring the OpenSSL suite's twin cell; as there, whether an
@@ -551,8 +537,7 @@ struct wolfssl_engine_test
         // contract is portable, not one specific want.
         auto server_ctx = test::make_server_context();
         wssl_engine server;
-        BOOST_TEST(
-            !server.init(server_ctx, tls_role::server, std::string()));
+        BOOST_TEST(!server.init(server_ctx, tls_role::server, std::string()));
 
         unsigned char garbage[64];
         for (std::size_t i = 0; i < sizeof(garbage); ++i)
@@ -560,8 +545,7 @@ struct wolfssl_engine_test
         BOOST_TEST_EQ(
             server.put_input(garbage, sizeof(garbage)), sizeof(garbage));
 
-        auto const r =
-            server.perform(engine_op::handshake_server, nullptr, 0);
+        auto const r = server.perform(engine_op::handshake_server, nullptr, 0);
         BOOST_TEST(r.ec);
         BOOST_TEST(r.ec.category() == wolfssl_category());
         BOOST_TEST_EQ(r.bytes, 0u);
@@ -571,8 +555,7 @@ struct wolfssl_engine_test
             BOOST_TEST(r.want == engine_want::done);
     }
 
-    void
-    run()
+    void run()
     {
         testHandshake();
         testAppDataBothDirections();
@@ -599,14 +582,15 @@ struct wolfssl_engine_test
 
     // A certificate that does not parse in the declared format must
     // fail context setup instead of handshaking without an identity.
-    void
-    testGarbageDerCertificateFailsSetup()
+    void testGarbageDerCertificateFailsSetup()
     {
         tls_context ctx;
         // Whether the garbage surfaces here or at init() is
         // backend-dependent; the init failure below is what matters.
-        std::ignore = ctx.use_certificate("\x30\x82\x00\x00", tls_file_format::der);
-        std::ignore = ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+        std::ignore =
+            ctx.use_certificate("\x30\x82\x00\x00", tls_file_format::der);
+        std::ignore =
+            ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
 
         wssl_engine eng;
         // Unlike the OpenSSL engine, wolfSSL surfaces setup_error_

@@ -119,8 +119,8 @@ class native_udp_socket : public udp_socket
         {
             token_ = env->stop_token;
             return self_.get_impl().send_to(
-                h, env->executor, buffers_, dest_, flags_,
-                token_, &ec_, &bytes_transferred_);
+                h, env->executor, buffers_, dest_, flags_, token_, &ec_,
+                &bytes_transferred_);
         }
     };
 
@@ -166,8 +166,8 @@ class native_udp_socket : public udp_socket
         {
             token_ = env->stop_token;
             return self_.get_impl().recv_from(
-                h, env->executor, buffers_, &source_, flags_,
-                token_, &ec_, &bytes_transferred_);
+                h, env->executor, buffers_, &source_, flags_, token_, &ec_,
+                &bytes_transferred_);
         }
     };
 
@@ -202,8 +202,7 @@ class native_udp_socket : public udp_socket
             -> std::coroutine_handle<>
         {
             token_ = env->stop_token;
-            return self_.get_impl().wait(
-                h, env->executor, w_, token_, &ec_);
+            return self_.get_impl().wait(h, env->executor, w_, token_, &ec_);
         }
     };
 
@@ -282,8 +281,8 @@ class native_udp_socket : public udp_socket
         {
             token_ = env->stop_token;
             return self_.get_impl().send(
-                h, env->executor, buffers_, flags_,
-                token_, &ec_, &bytes_transferred_);
+                h, env->executor, buffers_, flags_, token_, &ec_,
+                &bytes_transferred_);
         }
     };
 
@@ -326,8 +325,8 @@ class native_udp_socket : public udp_socket
         {
             token_ = env->stop_token;
             return self_.get_impl().recv(
-                h, env->executor, buffers_, flags_,
-                token_, &ec_, &bytes_transferred_);
+                h, env->executor, buffers_, flags_, token_, &ec_,
+                &bytes_transferred_);
         }
     };
 
@@ -375,12 +374,11 @@ public:
         A closed socket reports `errc::bad_file_descriptor`.
     */
     template<capy::ConstBufferSequence CB>
-    [[nodiscard]] auto send_to(
-        CB const& buffers,
-        endpoint dest,
-        corosio::message_flags flags)
+    [[nodiscard]] auto
+    send_to(CB const& buffers, endpoint dest, corosio::message_flags flags)
     {
-        native_send_to_awaitable<CB> aw(*this, buffers, dest, static_cast<int>(flags));
+        native_send_to_awaitable<CB> aw(
+            *this, buffers, dest, static_cast<int>(flags));
         if (!is_open())
             aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
         return aw;
@@ -408,12 +406,11 @@ public:
         A closed socket reports `errc::bad_file_descriptor`.
     */
     template<capy::MutableBufferSequence MB>
-    [[nodiscard]] auto recv_from(
-        MB const& buffers,
-        endpoint& source,
-        corosio::message_flags flags)
+    [[nodiscard]] auto
+    recv_from(MB const& buffers, endpoint& source, corosio::message_flags flags)
     {
-        native_recv_from_awaitable<MB> aw(*this, buffers, source, static_cast<int>(flags));
+        native_recv_from_awaitable<MB> aw(
+            *this, buffers, source, static_cast<int>(flags));
         if (!is_open())
             aw.ec_ = make_error_code(std::errc::bad_file_descriptor);
         return aw;

@@ -130,15 +130,13 @@ public:
     void reset();
 
     /// Nothing can invalidate the cached contexts between handshakes.
-    std::error_code
-    check_context() const noexcept
+    std::error_code check_context() const noexcept
     {
         return {};
     }
 
     /// Session teardown in `reset()` cannot fail.
-    std::error_code
-    check_session() const noexcept
+    std::error_code check_session() const noexcept
     {
         return {};
     }
@@ -233,8 +231,7 @@ public:
     bool received_shutdown() const;
 
     /// Return the underlying session handle (tests only).
-    WOLFSSL*
-    native_handle() const noexcept
+    WOLFSSL* native_handle() const noexcept
     {
         return ssl_;
     }

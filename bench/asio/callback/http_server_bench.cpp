@@ -212,7 +212,7 @@ bench_single_connection_lockless(bench::state& state)
 void
 bench_concurrent_connections(bench::state& state)
 {
-    int num_connections = static_cast<int>(state.range(0));
+    int num_connections           = static_cast<int>(state.range(0));
     state.counters["connections"] = num_connections;
 
     asio::io_context ioc;
@@ -237,11 +237,9 @@ bench_concurrent_connections(bench::state& state)
 
     for (int i = 0; i < num_connections; ++i)
     {
-        sops.push_back(
-            std::make_unique<server_op>(server_op{servers[i], {}}));
+        sops.push_back(std::make_unique<server_op>(server_op{servers[i], {}}));
         cops.push_back(
-            std::make_unique<client_op>(
-                client_op{clients[i], state, {}, {}}));
+            std::make_unique<client_op>(client_op{clients[i], state, {}, {}}));
         sops.back()->start();
         cops.back()->start();
     }
@@ -295,11 +293,9 @@ bench_multithread(bench::state& state)
 
     for (int i = 0; i < num_connections; ++i)
     {
-        sops.push_back(
-            std::make_unique<server_op>(server_op{servers[i], {}}));
+        sops.push_back(std::make_unique<server_op>(server_op{servers[i], {}}));
         cops.push_back(
-            std::make_unique<client_op>(
-                client_op{clients[i], state, {}, {}}));
+            std::make_unique<client_op>(client_op{clients[i], state, {}, {}}));
         sops.back()->start();
         cops.back()->start();
     }
@@ -341,9 +337,9 @@ make_http_server_suite()
         .add("single_conn", bench_single_connection)
         .add("single_conn_lockless", bench_single_connection_lockless)
         .add("concurrent", bench_concurrent_connections)
-            .args({1, 4, 16, 32})
+        .args({1, 4, 16, 32})
         .add("multithread", bench_multithread)
-            .args({1, 2, 4, 8, 16});
+        .args({1, 2, 4, 8, 16});
 }
 
 } // namespace asio_callback_bench

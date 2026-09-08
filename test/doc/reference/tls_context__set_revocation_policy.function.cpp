@@ -23,18 +23,19 @@ namespace {
 // tag::set_revocation_policy[]
 // Configure before any stream is created from ctx; modifying a context
 // afterwards is undefined behavior.
-void require_a_successful_revocation_check(corosio::tls_context& ctx)
+void
+require_a_successful_revocation_check(corosio::tls_context& ctx)
 {
     // A policy on its own enforces nothing. It needs a trust anchor to
     // build a chain to, a verify mode that makes the verdict fatal, and a
     // CRL to check against. With any of the three missing the handshake
     // completes regardless of what the CRL says.
     if (auto ec = ctx.load_verify_file("/etc/pki/internal-ca.pem"))
-        return;  // report the error
+        return; // report the error
     if (auto ec = ctx.set_verify_mode(corosio::tls_verify_mode::peer))
-        return;  // report the error
+        return; // report the error
     if (auto ec = ctx.add_crl_file("issuer.crl"))
-        return;  // report the error
+        return; // report the error
 
     // hard_fail rejects both a revoked certificate and one whose status
     // cannot be determined, so a CRL that expired or was never fetched

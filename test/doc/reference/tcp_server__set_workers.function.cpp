@@ -33,7 +33,7 @@
 #include <vector>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
@@ -44,21 +44,21 @@ class my_worker : public corosio::tcp_server::worker_base
 {
     corosio::io_context& ctx_;
     corosio::tcp_socket sock_;
-public:
-    my_worker(corosio::io_context& ctx)
-        : ctx_(ctx)
-        , sock_(ctx)
-    {
-    }
 
-    corosio::tcp_socket& socket() override { return sock_; }
+public:
+    my_worker(corosio::io_context& ctx) : ctx_(ctx), sock_(ctx) {}
+
+    corosio::tcp_socket& socket() override
+    {
+        return sock_;
+    }
 
     void run(corosio::tcp_server::launcher launch) override
     {
-        launch(ctx_.get_executor(), [](corosio::tcp_socket* sock) -> capy::task<>
-        {
-            co_return;
-        }(&sock_));
+        launch(
+            ctx_.get_executor(), [](corosio::tcp_socket* sock) -> capy::task<> {
+                co_return;
+            }(&sock_));
     }
 };
 
@@ -66,11 +66,11 @@ public:
 // Precondition: none the type system enforces on srv's state, but calling
 // this while srv is running discards any worker mid-connection -- the
 // idle/active lists are cleared before the new pool is populated.
-void configure_the_worker_pool(
-    corosio::io_context& ctx, corosio::tcp_server& srv)
+void
+configure_the_worker_pool(corosio::io_context& ctx, corosio::tcp_server& srv)
 {
     std::vector<std::unique_ptr<my_worker>> workers;
-    for(int i = 0; i < 100; ++i)
+    for (int i = 0; i < 100; ++i)
         workers.push_back(std::make_unique<my_worker>(ctx));
     srv.set_workers(std::move(workers));
 }

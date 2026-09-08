@@ -53,13 +53,11 @@ namespace boost::corosio::detail {
 // await_resume needs to distinguish io_result from other return types.
 template<typename T>
 struct is_io_result : std::false_type
-{
-};
+{};
 
 template<typename... Ts>
 struct is_io_result<capy::io_result<Ts...>> : std::true_type
-{
-};
+{};
 
 template<typename T>
 inline constexpr bool is_io_result_v = is_io_result<T>::value;
@@ -178,11 +176,10 @@ struct timeout_awaitable
         }
         catch (std::logic_error const&)
         {
-            throw_logic_error(
-                "timeout requires an io_context-backed executor");
+            throw_logic_error("timeout requires an io_context-backed executor");
         }
-        auto ex = static_cast<io_context&>(
-            env->executor.context()).get_executor();
+        auto ex =
+            static_cast<io_context&>(env->executor.context()).get_executor();
 
         if (has_deadline_)
             timer_->expires_at(deadline_);
@@ -237,8 +234,7 @@ struct timeout_awaitable
         // inner op (e.g. a socket cancel issued from elsewhere)
         // landing in the same window as the deadline firing is
         // reported as a timeout.
-        if (fired && !parent &&
-            std::get<0>(r) == capy::cond::canceled)
+        if (fired && !parent && std::get<0>(r) == capy::cond::canceled)
         {
             std::remove_cvref_t<decltype(r)> t{};
             std::get<0>(t) = make_error_code(capy::error::timeout);

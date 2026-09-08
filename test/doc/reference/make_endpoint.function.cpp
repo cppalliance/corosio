@@ -23,7 +23,8 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::make_endpoint[]
-void parse_v4_and_v6()
+void
+parse_v4_and_v6()
 {
     auto [ec, ep] = corosio::make_endpoint("192.168.1.1:8080");
     if (ec)

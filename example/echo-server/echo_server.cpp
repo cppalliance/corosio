@@ -19,7 +19,7 @@
 
 // tag::assume[]
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 // end::assume[]
 
 // tag::worker_class[]
@@ -30,11 +30,7 @@ class echo_worker : public corosio::tcp_server::worker_base
     char buf_[4096];
 
 public:
-    explicit echo_worker(corosio::io_context& ctx)
-        : ctx_(ctx)
-        , sock_(ctx)
-    {
-    }
+    explicit echo_worker(corosio::io_context& ctx) : ctx_(ctx), sock_(ctx) {}
 
     corosio::tcp_socket& socket() override
     {
@@ -51,15 +47,16 @@ public:
 // end::worker_class[]
 
 // tag::session[]
-capy::task<> echo_worker::do_session()
+capy::task<>
+echo_worker::do_session()
 {
     for (;;)
     {
-        auto [ec, n] = co_await sock_.read_some(
-            capy::mutable_buffer(buf_, sizeof buf_));
+        auto [ec, n] =
+            co_await sock_.read_some(capy::mutable_buffer(buf_, sizeof buf_));
 
-        auto [wec, wn] = co_await capy::write(
-            sock_, capy::const_buffer(buf_, n));
+        auto [wec, wn] =
+            co_await capy::write(sock_, capy::const_buffer(buf_, n));
 
         if (wec || ec)
             break;
@@ -92,14 +89,14 @@ public:
 // end::server[]
 
 // tag::main[]
-int main(int argc, char* argv[])
+int
+main(int argc, char* argv[])
 {
     if (argc != 3)
     {
-        std::cerr <<
-            "Usage: echo_server <port> <max-workers>\n"
-            "Example:\n"
-            "    echo_server 8080 10\n";
+        std::cerr << "Usage: echo_server <port> <max-workers>\n"
+                     "Example:\n"
+                     "    echo_server 8080 10\n";
         return EXIT_FAILURE;
     }
 
@@ -134,8 +131,8 @@ int main(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
-    std::cout << "Echo server listening on port " << port
-              << " with " << max_workers << " workers\n";
+    std::cout << "Echo server listening on port " << port << " with "
+              << max_workers << " workers\n";
 
     // Start accepting connections
     server.start();

@@ -334,7 +334,7 @@ timer_service::construct()
     timer::implementation* impl = try_pop_tl_cache(this);
     if (impl)
     {
-        impl->svc_    = this;
+        impl->svc_ = this;
         // Reset expiry_ too: a recycled impl must behave like a fresh
         // one, whose default expiry reads as already elapsed
         impl->expiry_ = {};
@@ -349,11 +349,11 @@ timer_service::construct()
     std::lock_guard lock(mutex_);
     if (free_list_)
     {
-        impl              = free_list_;
-        free_list_        = impl->next_free_;
-        impl->next_free_  = nullptr;
-        impl->svc_        = this;
-        impl->expiry_     = {};
+        impl             = free_list_;
+        free_list_       = impl->next_free_;
+        impl->next_free_ = nullptr;
+        impl->svc_       = this;
+        impl->expiry_    = {};
         impl->heap_index_.store(
             (std::numeric_limits<std::size_t>::max)(),
             std::memory_order_relaxed);
@@ -422,8 +422,7 @@ timer_service::insert_waiter(timer::implementation& impl, waiter_node* w)
         if (impl.heap_index_.load(std::memory_order_relaxed) ==
                 (std::numeric_limits<std::size_t>::max)() &&
             heap_.size() == heap_.capacity())
-            heap_.reserve(
-                heap_.capacity() == 0 ? 16 : 2 * heap_.capacity());
+            heap_.reserve(heap_.capacity() == 0 ? 16 : 2 * heap_.capacity());
         // Publish: from here the waiter is visible to the fire path and
         // to its own stop callback (impl_ non-null enables cancel_waiter).
         w->impl_ = &impl;
@@ -433,8 +432,7 @@ timer_service::insert_waiter(timer::implementation& impl, waiter_node* w)
             impl.heap_index_.store(heap_.size(), std::memory_order_relaxed);
             heap_.push_back({impl.expiry_, &impl});
             up_heap(heap_.size() - 1);
-            notify =
-                (impl.heap_index_.load(std::memory_order_relaxed) == 0);
+            notify = (impl.heap_index_.load(std::memory_order_relaxed) == 0);
             refresh_cached_nearest();
         }
         BOOST_COROSIO_ASSERT(impl.waiter_ == nullptr);
@@ -511,8 +509,7 @@ timer_service::cancel_waiter(waiter_node* w)
         w->impl_      = nullptr;
         impl->waiter_ = nullptr;
         remove_timer_impl(*impl);
-        impl->might_have_pending_waits_.store(
-            false, std::memory_order_relaxed);
+        impl->might_have_pending_waits_.store(false, std::memory_order_relaxed);
         refresh_cached_nearest();
     }
 
@@ -623,9 +620,9 @@ timer_service::down_heap(std::size_t index)
 inline void
 timer_service::swap_heap(std::size_t i1, std::size_t i2)
 {
-    heap_entry tmp                = heap_[i1];
-    heap_[i1]                     = heap_[i2];
-    heap_[i2]                     = tmp;
+    heap_entry tmp = heap_[i1];
+    heap_[i1]      = heap_[i2];
+    heap_[i2]      = tmp;
     heap_[i1].timer_->heap_index_.store(i1, std::memory_order_relaxed);
     heap_[i2].timer_->heap_index_.store(i2, std::memory_order_relaxed);
 }

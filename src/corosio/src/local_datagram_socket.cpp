@@ -39,12 +39,13 @@ local_datagram_socket::open(local_datagram proto) noexcept
 }
 
 std::error_code
-local_datagram_socket::open_for_family(int family, int type, int protocol) noexcept
+local_datagram_socket::open_for_family(
+    int family, int type, int protocol) noexcept
 {
     auto& svc = static_cast<detail::local_datagram_service&>(h_.service());
     std::error_code ec = svc.open_socket(
-        static_cast<local_datagram_socket::implementation&>(*h_.get()),
-        family, type, protocol);
+        static_cast<local_datagram_socket::implementation&>(*h_.get()), family,
+        type, protocol);
     return ec;
 }
 
@@ -63,8 +64,7 @@ local_datagram_socket::bind(corosio::local_endpoint ep) noexcept
         return make_error_code(std::errc::bad_file_descriptor);
     auto& svc = static_cast<detail::local_datagram_service&>(h_.service());
     return svc.bind_socket(
-        static_cast<local_datagram_socket::implementation&>(*h_.get()),
-        ep);
+        static_cast<local_datagram_socket::implementation&>(*h_.get()), ep);
 }
 
 void
@@ -120,8 +120,7 @@ local_datagram_socket::available() const
     int value = 0;
     if (::ioctl(native_handle(), FIONREAD, &value) < 0)
         detail::throw_system_error(
-            detail::make_err(errno),
-            "local_datagram_socket::available");
+            detail::make_err(errno), "local_datagram_socket::available");
     return static_cast<std::size_t>(value);
 }
 

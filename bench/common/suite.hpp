@@ -67,9 +67,7 @@ class lap_guard
 
 public:
     lap_guard(
-        perf::statistics& stats,
-        std::atomic<int64_t>& ops,
-        std::mutex& mtx)
+        perf::statistics& stats, std::atomic<int64_t>& ops, std::mutex& mtx)
         : stats_(stats)
         , ops_(ops)
         , mtx_(mtx)
@@ -137,8 +135,7 @@ public:
     void wait()
     {
         perf::stopwatch sw;
-        std::this_thread::sleep_for(
-            std::chrono::duration<double>(duration_s_));
+        std::this_thread::sleep_for(std::chrono::duration<double>(duration_s_));
         running_.store(false, std::memory_order_relaxed);
         elapsed_ = sw.elapsed_seconds();
     }
@@ -287,8 +284,7 @@ public:
 
     /// Add a benchmark with no parameters.
     benchmark_suite&
-    add(std::string name, bench_fn fn,
-        bench_flags flags = bench_flags::none)
+    add(std::string name, bench_fn fn, bench_flags flags = bench_flags::none)
     {
         entries_.push_back({std::move(name), std::move(fn), flags, {}});
         return *this;
@@ -315,12 +311,27 @@ public:
     }
 
     /// Set the library name (called by the runner).
-    void set_library(std::string lib) { library_ = std::move(lib); }
+    void set_library(std::string lib)
+    {
+        library_ = std::move(lib);
+    }
 
-    std::string const& library() const { return library_; }
-    std::string const& category() const { return category_; }
-    bench_flags flags() const { return flags_; }
-    std::vector<suite_entry> const& entries() const { return entries_; }
+    std::string const& library() const
+    {
+        return library_;
+    }
+    std::string const& category() const
+    {
+        return category_;
+    }
+    bench_flags flags() const
+    {
+        return flags_;
+    }
+    std::vector<suite_entry> const& entries() const
+    {
+        return entries_;
+    }
 };
 
 /** Orchestrate benchmark execution, output, and result collection. */
@@ -360,7 +371,10 @@ public:
         warmup_duration_s_ = seconds;
     }
 
-    double warmup_duration() const { return warmup_duration_s_; }
+    double warmup_duration() const
+    {
+        return warmup_duration_s_;
+    }
 
     /// Add a suite to the runner.
     void add_suite(benchmark_suite suite)
@@ -392,8 +406,7 @@ public:
                 else
                 {
                     for (auto v : entry.args)
-                        std::cout << "  " << entry.name
-                                  << "/" << v << "\n";
+                        std::cout << "  " << entry.name << "/" << v << "\n";
                 }
             }
         }
@@ -409,20 +422,20 @@ public:
             `is_microbenchmark` are skipped unless explicitly
             selected by category_filter.
     */
-    void run(
-        char const* category_filter,
+    void
+    run(char const* category_filter,
         char const* bench_filter,
         bool enable_microbenchmarks)
     {
-        bool run_all_cats = !category_filter ||
-            std::strcmp(category_filter, "all") == 0;
+        bool run_all_cats =
+            !category_filter || std::strcmp(category_filter, "all") == 0;
 
         auto want_bench = [&](std::string const& name) {
             if (!bench_filter || std::strcmp(bench_filter, "all") == 0)
                 return true;
             // Prefix match
-            return name.compare(
-                0, std::strlen(bench_filter), bench_filter) == 0;
+            return name.compare(0, std::strlen(bench_filter), bench_filter) ==
+                0;
         };
 
         for (auto const& suite : suites_)
@@ -441,10 +454,9 @@ public:
             for (auto const& entry : suite.entries())
             {
                 bool needs_drain =
-                    has_flag(suite.flags(),
-                        bench_flags::needs_conntrack_drain) ||
-                    has_flag(entry.flags,
-                        bench_flags::needs_conntrack_drain);
+                    has_flag(
+                        suite.flags(), bench_flags::needs_conntrack_drain) ||
+                    has_flag(entry.flags, bench_flags::needs_conntrack_drain);
 
                 if (entry.args.empty())
                 {
@@ -452,8 +464,8 @@ public:
                         continue;
 
                     run_entry(
-                        suite.library(), suite.category(),
-                        entry.name, entry.fn, {}, needs_drain);
+                        suite.library(), suite.category(), entry.name, entry.fn,
+                        {}, needs_drain);
                 }
                 else
                 {
@@ -461,13 +473,12 @@ public:
                     {
                         std::string full_name =
                             entry.name + "/" + std::to_string(v);
-                        if (!want_bench(entry.name) &&
-                            !want_bench(full_name))
+                        if (!want_bench(entry.name) && !want_bench(full_name))
                             continue;
 
                         run_entry(
-                            suite.library(), suite.category(),
-                            full_name, entry.fn, {v}, needs_drain);
+                            suite.library(), suite.category(), full_name,
+                            entry.fn, {v}, needs_drain);
                     }
                 }
             }
@@ -532,8 +543,8 @@ private:
         {
             double ops_per_sec = static_cast<double>(ops) / elapsed;
             std::cout << "  Ops:           " << ops << "\n";
-            std::cout << "  Throughput:    "
-                      << perf::format_rate(ops_per_sec) << "\n";
+            std::cout << "  Throughput:    " << perf::format_rate(ops_per_sec)
+                      << "\n";
         }
 
         int64_t items = st.total_items();
@@ -541,8 +552,8 @@ private:
         {
             double items_per_sec = static_cast<double>(items) / elapsed;
             std::cout << "  Items:         " << items << "\n";
-            std::cout << "  Rate:          "
-                      << perf::format_rate(items_per_sec) << "\n";
+            std::cout << "  Rate:          " << perf::format_rate(items_per_sec)
+                      << "\n";
         }
 
         int64_t bytes = st.total_bytes();
@@ -554,8 +565,8 @@ private:
                       << perf::format_throughput(bytes_per_sec) << "\n";
         }
 
-        std::cout << "  Elapsed:       " << std::fixed
-                  << std::setprecision(3) << elapsed << " s\n";
+        std::cout << "  Elapsed:       " << std::fixed << std::setprecision(3)
+                  << elapsed << " s\n";
 
         if (st.latency().count() > 0)
             perf::print_latency_stats(st.latency(), "Latency");
@@ -585,8 +596,7 @@ private:
                 }
             }
             label += ':';
-            std::cout << "  " << std::left << std::setw(15)
-                      << label;
+            std::cout << "  " << std::left << std::setw(15) << label;
             if (v == static_cast<int64_t>(v))
                 std::cout << static_cast<int64_t>(v);
             else
@@ -614,24 +624,21 @@ private:
         if (ops > 0)
         {
             result.add("ops", static_cast<double>(ops));
-            result.add("ops_per_sec",
-                static_cast<double>(ops) / elapsed);
+            result.add("ops_per_sec", static_cast<double>(ops) / elapsed);
         }
 
         int64_t items = st.total_items();
         if (items > 0)
         {
             result.add("items", static_cast<double>(items));
-            result.add("items_per_sec",
-                static_cast<double>(items) / elapsed);
+            result.add("items_per_sec", static_cast<double>(items) / elapsed);
         }
 
         int64_t bytes = st.total_bytes();
         if (bytes > 0)
         {
             result.add("bytes", static_cast<double>(bytes));
-            result.add("bytes_per_sec",
-                static_cast<double>(bytes) / elapsed);
+            result.add("bytes_per_sec", static_cast<double>(bytes) / elapsed);
         }
 
         if (st.latency().count() > 0)

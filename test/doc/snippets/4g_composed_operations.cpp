@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 #include <boost/corosio/io_context.hpp>
@@ -44,7 +44,7 @@
 #include <boost/capy/buffers.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 // end::assume[]
 
 // tag::slice_helper[]
@@ -74,27 +74,20 @@ namespace synopsis {
 using namespace boost::capy;
 
 // tag::read_signature[]
-auto
-read(
-    ReadStream auto& stream,
-    MutableBufferSequence auto buffers) ->
-        capy::io_task<std::size_t>;
+auto read(ReadStream auto& stream, MutableBufferSequence auto buffers)
+    -> capy::io_task<std::size_t>;
 // end::read_signature[]
 
 // tag::write_signature[]
-auto
-write(
-    WriteStream auto& stream,
-    ConstBufferSequence auto buffers) ->
-        capy::io_task<std::size_t>;
+auto write(WriteStream auto& stream, ConstBufferSequence auto buffers)
+    -> capy::io_task<std::size_t>;
 // end::write_signature[]
 
 // tag::slice_interface[]
 template<class BufferSequence>
-    requires MutableBufferSequence<BufferSequence>
-          || ConstBufferSequence<BufferSequence>
-slice_type<BufferSequence>
-buffer_slice(
+    requires MutableBufferSequence<BufferSequence> ||
+    ConstBufferSequence<BufferSequence>
+slice_type<BufferSequence> buffer_slice(
     BufferSequence const& seq,
     std::size_t offset = 0,
     std::size_t length = (std::numeric_limits<std::size_t>::max)());
@@ -102,24 +95,25 @@ buffer_slice(
 
 } // namespace synopsis
 
-capy::task<> primitives_frag(corosio::tcp_socket& s)
+capy::task<>
+primitives_frag(corosio::tcp_socket& s)
 {
     // tag::primitives[]
     char buf[1024];
-    auto [ec, n] = co_await s.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
+    auto [ec, n] = co_await s.read_some(capy::mutable_buffer(buf, sizeof(buf)));
     // n could be 1, 100, 500, or 1024 - no guarantee
     // end::primitives[]
     BOOST_TEST(!ec);
     BOOST_TEST(n > 0);
 }
 
-capy::task<> read_full_frag(corosio::tcp_socket& stream)
+capy::task<>
+read_full_frag(corosio::tcp_socket& stream)
 {
     // tag::read_full[]
     char buf[1024];
-    auto [ec, n] = co_await capy::read(
-        stream, capy::mutable_buffer(buf, sizeof(buf)));
+    auto [ec, n] =
+        co_await capy::read(stream, capy::mutable_buffer(buf, sizeof(buf)));
 
     // Either:
     // - n == 1024 and ec is default (success)
@@ -130,8 +124,8 @@ capy::task<> read_full_frag(corosio::tcp_socket& stream)
     BOOST_TEST_EQ(n, sizeof(buf));
 }
 
-capy::task<> read_until_eof_frag(
-    corosio::tcp_socket& stream, std::string& out)
+capy::task<>
+read_until_eof_frag(corosio::tcp_socket& stream, std::string& out)
 {
     // tag::read_until_eof[]
     std::string content;
@@ -142,7 +136,7 @@ capy::task<> read_until_eof_frag(
             capy::mutable_buffer(chunk, sizeof(chunk)));
         content.append(chunk, n);
         if (ec == capy::cond::eof)
-            break;  // success: the whole stream was consumed
+            break; // success: the whole stream was consumed
         if (ec)
             throw std::system_error(ec);
     }
@@ -150,11 +144,12 @@ capy::task<> read_until_eof_frag(
     out = content;
 }
 
-capy::task<> write_full_frag(corosio::tcp_socket& stream)
+capy::task<>
+write_full_frag(corosio::tcp_socket& stream)
 {
     // tag::write_full[]
     std::string msg = "Hello, World!";
-    auto [ec, n] = co_await capy::write(
+    auto [ec, n]    = co_await capy::write(
         stream, capy::const_buffer(msg.data(), msg.size()));
 
     // Either:
@@ -165,9 +160,9 @@ capy::task<> write_full_frag(corosio::tcp_socket& stream)
     BOOST_TEST_EQ(n, msg.size());
 }
 
-capy::task<> error_bindings_frag(
-    corosio::tcp_socket& stream, capy::mutable_buffer buf,
-    std::error_code& out)
+capy::task<>
+error_bindings_frag(
+    corosio::tcp_socket& stream, capy::mutable_buffer buf, std::error_code& out)
 {
     // tag::error_bindings[]
     auto [ec, n] = co_await capy::read(stream, buf);
@@ -182,8 +177,8 @@ capy::task<> error_bindings_frag(
     out = ec;
 }
 
-capy::task<> error_exceptions_frag(
-    corosio::tcp_socket& stream, capy::mutable_buffer buf)
+capy::task<>
+error_exceptions_frag(corosio::tcp_socket& stream, capy::mutable_buffer buf)
 {
     // tag::error_exceptions[]
     // For write (EOF doesn't apply)
@@ -199,8 +194,8 @@ capy::task<> error_exceptions_frag(
     BOOST_TEST_EQ(rn, buf.size());
 }
 
-capy::task<> cancellation_frag(
-    corosio::tcp_socket& stream, std::error_code& out)
+capy::task<>
+cancellation_frag(corosio::tcp_socket& stream, std::error_code& out)
 {
     char storage[4096];
     capy::mutable_buffer large_buffer(storage, sizeof(storage));
@@ -214,15 +209,18 @@ capy::task<> cancellation_frag(
 
 // Contrasts call shapes only; issuing these reads needs a peer that
 // sends this much data, so the coroutine is never launched.
-[[maybe_unused]] capy::task<> multiple_buffers_frag(
-    corosio::tcp_socket& stream, char* header, char* body,
-    capy::mutable_buffer buf1, capy::mutable_buffer buf2)
+[[maybe_unused]] capy::task<>
+multiple_buffers_frag(
+    corosio::tcp_socket& stream,
+    char* header,
+    char* body,
+    capy::mutable_buffer buf1,
+    capy::mutable_buffer buf2)
 {
     // tag::multiple_buffers[]
     // Efficient: single system call per read_some()
     std::array<capy::mutable_buffer, 2> bufs = {
-        capy::mutable_buffer(header, 16),
-        capy::mutable_buffer(body, 1024)};
+        capy::mutable_buffer(header, 16), capy::mutable_buffer(body, 1024)};
     std::ignore = co_await capy::read(stream, bufs);
 
     // Less efficient: may require more system calls
@@ -232,7 +230,8 @@ capy::task<> cancellation_frag(
 }
 
 // tag::http_response[]
-capy::task<std::string> read_http_response(corosio::io_stream& stream)
+capy::task<std::string>
+read_http_response(corosio::io_stream& stream)
 {
     std::string response;
     char chunk[2048];
@@ -250,26 +249,23 @@ capy::task<std::string> read_http_response(corosio::io_stream& stream)
 }
 // end::http_response[]
 
-capy::task<> send_and_close(
-    corosio::tcp_socket& s, std::string_view text)
+capy::task<>
+send_and_close(corosio::tcp_socket& s, std::string_view text)
 {
-    auto [ec, n] = co_await capy::write(
-        s, capy::const_buffer(text.data(), text.size()));
+    auto [ec, n] =
+        co_await capy::write(s, capy::const_buffer(text.data(), text.size()));
     BOOST_TEST(!ec);
     BOOST_TEST(!s.shutdown(corosio::shutdown_send));
 }
 
 struct composed_operations_test
 {
-    void
-    testPrimitives()
+    void testPrimitives()
     {
         corosio::io_context ioc;
         auto [s1, s2] = corosio::test::make_socket_pair(ioc);
         capy::run_async(ioc.get_executor())(
-            [](corosio::tcp_socket& a, corosio::tcp_socket& b)
-                -> capy::task<>
-            {
+            [](corosio::tcp_socket& a, corosio::tcp_socket& b) -> capy::task<> {
                 std::string_view text = "hi";
                 co_await capy::write(
                     b, capy::const_buffer(text.data(), text.size()));
@@ -278,15 +274,12 @@ struct composed_operations_test
         ioc.run();
     }
 
-    void
-    testReadFull()
+    void testReadFull()
     {
         corosio::io_context ioc;
         auto [s1, s2] = corosio::test::make_socket_pair(ioc);
         capy::run_async(ioc.get_executor())(
-            [](corosio::tcp_socket& a, corosio::tcp_socket& b)
-                -> capy::task<>
-            {
+            [](corosio::tcp_socket& a, corosio::tcp_socket& b) -> capy::task<> {
                 std::string big(1024, 'x');
                 co_await capy::write(
                     b, capy::const_buffer(big.data(), big.size()));
@@ -295,22 +288,19 @@ struct composed_operations_test
         ioc.run();
     }
 
-    void
-    testReadUntilEof()
+    void testReadUntilEof()
     {
         corosio::io_context ioc;
         auto [s1, s2] = corosio::test::make_socket_pair(ioc);
         std::string content;
         capy::run_async(ioc.get_executor())(
             send_and_close(s2, "the whole stream"));
-        capy::run_async(ioc.get_executor())(
-            read_until_eof_frag(s1, content));
+        capy::run_async(ioc.get_executor())(read_until_eof_frag(s1, content));
         ioc.run();
         BOOST_TEST_EQ(content, "the whole stream");
     }
 
-    void
-    testWriteFull()
+    void testWriteFull()
     {
         corosio::io_context ioc;
         auto [s1, s2] = corosio::test::make_socket_pair(ioc);
@@ -318,17 +308,14 @@ struct composed_operations_test
         ioc.run();
     }
 
-    void
-    testBufferSlice()
+    void testBufferSlice()
     {
         char header[16];
         char body[1024];
         // tag::slice_helper[]
 
         std::array<capy::mutable_buffer, 2> bufs = {
-            capy::mutable_buffer(header, 16),
-            capy::mutable_buffer(body, 1024)
-        };
+            capy::mutable_buffer(header, 16), capy::mutable_buffer(body, 1024)};
 
         // After reading 20 bytes, slice off what was consumed:
         auto rest = capy::buffer_slice(bufs, 20);
@@ -337,8 +324,7 @@ struct composed_operations_test
         BOOST_TEST_EQ(capy::buffer_size(rest), 1020u);
     }
 
-    void
-    testErrorBindings()
+    void testErrorBindings()
     {
         corosio::io_context ioc;
         auto [s1, s2] = corosio::test::make_socket_pair(ioc);
@@ -351,11 +337,10 @@ struct composed_operations_test
         BOOST_TEST(ec == capy::cond::eof);
     }
 
-    void
-    testErrorExceptions()
+    void testErrorExceptions()
     {
         corosio::io_context ioc;
-        auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+        auto [s1, s2]    = corosio::test::make_socket_pair(ioc);
         char storage[16] = {};
         capy::run_async(ioc.get_executor())(
             send_and_close(s2, std::string_view("0123456789abcdef", 16)));
@@ -364,22 +349,20 @@ struct composed_operations_test
         ioc.run();
     }
 
-    void
-    testCancellation()
+    void testCancellation()
     {
         corosio::io_context ioc;
         auto [s1, s2] = corosio::test::make_socket_pair(ioc);
         std::error_code ec;
         std::stop_source source;
         source.request_stop();
-        capy::run_async(ioc.get_executor(), source.get_token())(
-            cancellation_frag(s1, ec));
+        capy::run_async(
+            ioc.get_executor(), source.get_token())(cancellation_frag(s1, ec));
         ioc.run();
         BOOST_TEST(ec == capy::cond::canceled);
     }
 
-    void
-    testHttpResponse()
+    void testHttpResponse()
     {
         corosio::io_context ioc;
         auto [s1, s2] = corosio::test::make_socket_pair(ioc);
@@ -387,16 +370,14 @@ struct composed_operations_test
         capy::run_async(ioc.get_executor())(
             send_and_close(s2, "HTTP/1.1 200 OK\r\n\r\n"));
         capy::run_async(ioc.get_executor())(
-            [](corosio::tcp_socket& s, std::string& out) -> capy::task<>
-            {
+            [](corosio::tcp_socket& s, std::string& out) -> capy::task<> {
                 out = co_await read_http_response(s);
             }(s1, response));
         ioc.run();
         BOOST_TEST_EQ(response, "HTTP/1.1 200 OK\r\n\r\n");
     }
 
-    void
-    run()
+    void run()
     {
         testPrimitives();
         testReadFull();
@@ -413,5 +394,4 @@ struct composed_operations_test
 } // namespace
 
 TEST_SUITE(
-    composed_operations_test,
-    "boost.corosio.doc.4g_composed_operations");
+    composed_operations_test, "boost.corosio.doc.4g_composed_operations");

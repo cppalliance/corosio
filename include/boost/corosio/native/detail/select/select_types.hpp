@@ -46,16 +46,27 @@ class select_local_datagram_service;
 
 class select_tcp_socket final
     : public reactor_stream_socket_impl<
-          select_tcp_socket, select_traits, select_tcp_service,
-          select_tcp_acceptor, tcp_socket::implementation, endpoint>
+          select_tcp_socket,
+          select_traits,
+          select_tcp_service,
+          select_tcp_acceptor,
+          tcp_socket::implementation,
+          endpoint>
 {
     using base_type = reactor_stream_socket_impl<
-        select_tcp_socket, select_traits, select_tcp_service,
-        select_tcp_acceptor, tcp_socket::implementation, endpoint>;
+        select_tcp_socket,
+        select_traits,
+        select_tcp_service,
+        select_tcp_acceptor,
+        tcp_socket::implementation,
+        endpoint>;
     friend select_tcp_service;
+
 public:
     explicit select_tcp_socket(select_tcp_service& svc) noexcept
-        : base_type(svc) {}
+        : base_type(svc)
+    {
+    }
 
     native_handle_type release_socket() noexcept override
     {
@@ -66,18 +77,28 @@ public:
 
 class select_local_stream_socket final
     : public reactor_stream_socket_impl<
-          select_local_stream_socket, select_traits,
-          select_local_stream_service, select_local_stream_acceptor,
-          local_stream_socket::implementation, corosio::local_endpoint>
+          select_local_stream_socket,
+          select_traits,
+          select_local_stream_service,
+          select_local_stream_acceptor,
+          local_stream_socket::implementation,
+          corosio::local_endpoint>
 {
     using base_type = reactor_stream_socket_impl<
-        select_local_stream_socket, select_traits,
-        select_local_stream_service, select_local_stream_acceptor,
-        local_stream_socket::implementation, corosio::local_endpoint>;
+        select_local_stream_socket,
+        select_traits,
+        select_local_stream_service,
+        select_local_stream_acceptor,
+        local_stream_socket::implementation,
+        corosio::local_endpoint>;
     friend select_local_stream_service;
+
 public:
-    explicit select_local_stream_socket(select_local_stream_service& svc) noexcept
-        : base_type(svc) {}
+    explicit select_local_stream_socket(
+        select_local_stream_service& svc) noexcept
+        : base_type(svc)
+    {
+    }
 
     native_handle_type release_socket() noexcept override
     {
@@ -90,16 +111,27 @@ public:
 
 class select_udp_socket final
     : public reactor_dgram_socket_impl<
-          select_udp_socket, select_traits, select_udp_service,
-          select_tcp_acceptor, udp_socket::implementation, endpoint>
+          select_udp_socket,
+          select_traits,
+          select_udp_service,
+          select_tcp_acceptor,
+          udp_socket::implementation,
+          endpoint>
 {
     using base_type = reactor_dgram_socket_impl<
-        select_udp_socket, select_traits, select_udp_service,
-        select_tcp_acceptor, udp_socket::implementation, endpoint>;
+        select_udp_socket,
+        select_traits,
+        select_udp_service,
+        select_tcp_acceptor,
+        udp_socket::implementation,
+        endpoint>;
     friend select_udp_service;
+
 public:
     explicit select_udp_socket(select_udp_service& svc) noexcept
-        : base_type(svc) {}
+        : base_type(svc)
+    {
+    }
 
     std::error_code shutdown(corosio::shutdown_type what) noexcept override
     {
@@ -114,18 +146,28 @@ public:
 
 class select_local_datagram_socket final
     : public reactor_dgram_socket_impl<
-          select_local_datagram_socket, select_traits,
-          select_local_datagram_service, select_tcp_acceptor,
-          local_datagram_socket::implementation, corosio::local_endpoint>
+          select_local_datagram_socket,
+          select_traits,
+          select_local_datagram_service,
+          select_tcp_acceptor,
+          local_datagram_socket::implementation,
+          corosio::local_endpoint>
 {
     using base_type = reactor_dgram_socket_impl<
-        select_local_datagram_socket, select_traits,
-        select_local_datagram_service, select_tcp_acceptor,
-        local_datagram_socket::implementation, corosio::local_endpoint>;
+        select_local_datagram_socket,
+        select_traits,
+        select_local_datagram_service,
+        select_tcp_acceptor,
+        local_datagram_socket::implementation,
+        corosio::local_endpoint>;
     friend select_local_datagram_service;
+
 public:
-    explicit select_local_datagram_socket(select_local_datagram_service& svc) noexcept
-        : base_type(svc) {}
+    explicit select_local_datagram_socket(
+        select_local_datagram_service& svc) noexcept
+        : base_type(svc)
+    {
+    }
 
     std::error_code shutdown(corosio::shutdown_type what) noexcept override
     {
@@ -147,119 +189,173 @@ public:
 
 class select_tcp_acceptor final
     : public reactor_acceptor_impl<
-          select_tcp_acceptor, select_traits,
-          select_tcp_acceptor_service, select_tcp_socket,
-          tcp_acceptor::implementation, endpoint>
+          select_tcp_acceptor,
+          select_traits,
+          select_tcp_acceptor_service,
+          select_tcp_socket,
+          tcp_acceptor::implementation,
+          endpoint>
 {
     using base_type = reactor_acceptor_impl<
-        select_tcp_acceptor, select_traits,
-        select_tcp_acceptor_service, select_tcp_socket,
-        tcp_acceptor::implementation, endpoint>;
+        select_tcp_acceptor,
+        select_traits,
+        select_tcp_acceptor_service,
+        select_tcp_socket,
+        tcp_acceptor::implementation,
+        endpoint>;
     friend select_tcp_acceptor_service;
+
 public:
     explicit select_tcp_acceptor(select_tcp_acceptor_service& svc) noexcept
-        : base_type(svc) {}
+        : base_type(svc)
+    {
+    }
 };
 
 class select_local_stream_acceptor final
     : public reactor_acceptor_impl<
-          select_local_stream_acceptor, select_traits,
+          select_local_stream_acceptor,
+          select_traits,
           select_local_stream_acceptor_service,
           select_local_stream_socket,
-          local_stream_acceptor::implementation, corosio::local_endpoint>
+          local_stream_acceptor::implementation,
+          corosio::local_endpoint>
 {
     using base_type = reactor_acceptor_impl<
-        select_local_stream_acceptor, select_traits,
+        select_local_stream_acceptor,
+        select_traits,
         select_local_stream_acceptor_service,
         select_local_stream_socket,
-        local_stream_acceptor::implementation, corosio::local_endpoint>;
+        local_stream_acceptor::implementation,
+        corosio::local_endpoint>;
     friend select_local_stream_acceptor_service;
+
 public:
     explicit select_local_stream_acceptor(
         select_local_stream_acceptor_service& svc) noexcept
-        : base_type(svc) {}
+        : base_type(svc)
+    {
+    }
 };
 
 // --- Services ---
 
 class BOOST_COROSIO_DECL select_tcp_service final
     : public reactor_tcp_service_impl<
-          select_tcp_service, select_traits, select_tcp_socket>
+          select_tcp_service,
+          select_traits,
+          select_tcp_socket>
 {
     using base_type = reactor_tcp_service_impl<
-        select_tcp_service, select_traits, select_tcp_socket>;
+        select_tcp_service,
+        select_traits,
+        select_tcp_socket>;
+
 public:
-    explicit select_tcp_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+    explicit select_tcp_service(capy::execution_context& ctx) : base_type(ctx)
+    {
+    }
 };
 
 class BOOST_COROSIO_DECL select_local_stream_service final
     : public reactor_local_stream_service_impl<
-          select_local_stream_service, select_traits,
+          select_local_stream_service,
+          select_traits,
           select_local_stream_socket>
 {
     using base_type = reactor_local_stream_service_impl<
-        select_local_stream_service, select_traits,
+        select_local_stream_service,
+        select_traits,
         select_local_stream_socket>;
+
 public:
     explicit select_local_stream_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+        : base_type(ctx)
+    {
+    }
 };
 
 class BOOST_COROSIO_DECL select_udp_service final
     : public reactor_udp_service_impl<
-          select_udp_service, select_traits, select_udp_socket>
+          select_udp_service,
+          select_traits,
+          select_udp_socket>
 {
     using base_type = reactor_udp_service_impl<
-        select_udp_service, select_traits, select_udp_socket>;
+        select_udp_service,
+        select_traits,
+        select_udp_socket>;
+
 public:
-    explicit select_udp_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+    explicit select_udp_service(capy::execution_context& ctx) : base_type(ctx)
+    {
+    }
 };
 
 class BOOST_COROSIO_DECL select_local_datagram_service final
     : public reactor_local_dgram_service_impl<
-          select_local_datagram_service, select_traits,
+          select_local_datagram_service,
+          select_traits,
           select_local_datagram_socket>
 {
     using base_type = reactor_local_dgram_service_impl<
-        select_local_datagram_service, select_traits,
+        select_local_datagram_service,
+        select_traits,
         select_local_datagram_socket>;
+
 public:
     explicit select_local_datagram_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+        : base_type(ctx)
+    {
+    }
 };
 
 class BOOST_COROSIO_DECL select_tcp_acceptor_service final
     : public reactor_acceptor_service_impl<
-          select_tcp_acceptor_service, select_traits,
-          tcp_acceptor_service, select_tcp_acceptor,
-          select_tcp_service, endpoint>
+          select_tcp_acceptor_service,
+          select_traits,
+          tcp_acceptor_service,
+          select_tcp_acceptor,
+          select_tcp_service,
+          endpoint>
 {
     using base_type = reactor_acceptor_service_impl<
-        select_tcp_acceptor_service, select_traits,
-        tcp_acceptor_service, select_tcp_acceptor,
-        select_tcp_service, endpoint>;
+        select_tcp_acceptor_service,
+        select_traits,
+        tcp_acceptor_service,
+        select_tcp_acceptor,
+        select_tcp_service,
+        endpoint>;
+
 public:
     explicit select_tcp_acceptor_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+        : base_type(ctx)
+    {
+    }
 };
 
 class BOOST_COROSIO_DECL select_local_stream_acceptor_service final
     : public reactor_acceptor_service_impl<
-          select_local_stream_acceptor_service, select_traits,
+          select_local_stream_acceptor_service,
+          select_traits,
           local_stream_acceptor_service,
           select_local_stream_acceptor,
-          select_local_stream_service, corosio::local_endpoint>
+          select_local_stream_service,
+          corosio::local_endpoint>
 {
     using base_type = reactor_acceptor_service_impl<
-        select_local_stream_acceptor_service, select_traits,
+        select_local_stream_acceptor_service,
+        select_traits,
         local_stream_acceptor_service,
         select_local_stream_acceptor,
-        select_local_stream_service, corosio::local_endpoint>;
+        select_local_stream_service,
+        corosio::local_endpoint>;
+
 public:
     explicit select_local_stream_acceptor_service(capy::execution_context& ctx)
-        : base_type(ctx) {}
+        : base_type(ctx)
+    {
+    }
 };
 
 } // namespace boost::corosio::detail

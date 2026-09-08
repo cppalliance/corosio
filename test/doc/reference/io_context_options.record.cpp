@@ -21,7 +21,8 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::configure[]
-void configure_for_high_throughput()
+void
+configure_for_high_throughput()
 {
     corosio::io_context_options opts;
 

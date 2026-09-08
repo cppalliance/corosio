@@ -193,7 +193,7 @@ public:
         typename Clock::time_point now = Clock::now();
         for (;;)
         {
-            auto rel_time = abs_time - now;
+            auto rel_time  = abs_time - now;
             using rel_type = decltype(rel_time);
             if (rel_time < rel_type::zero())
                 rel_time = rel_type::zero();

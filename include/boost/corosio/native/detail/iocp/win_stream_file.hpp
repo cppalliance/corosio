@@ -34,8 +34,8 @@ class win_stream_file_internal;
 /** Read operation state for stream file IOCP I/O. */
 struct file_read_op : overlapped_op
 {
-    void* buf      = nullptr;
-    DWORD buf_len  = 0;
+    void* buf     = nullptr;
+    DWORD buf_len = 0;
     win_stream_file_internal& file_;
     std::shared_ptr<win_stream_file_internal> file_ptr;
 
@@ -52,8 +52,8 @@ struct file_read_op : overlapped_op
 /** Write operation state for stream file IOCP I/O. */
 struct file_write_op : overlapped_op
 {
-    void* buf      = nullptr;
-    DWORD buf_len  = 0;
+    void* buf     = nullptr;
+    DWORD buf_len = 0;
     win_stream_file_internal& file_;
     std::shared_ptr<win_stream_file_internal> file_ptr;
 
@@ -86,7 +86,7 @@ class win_stream_file_internal
     win_file_service& svc_;
     file_read_op rd_;
     file_write_op wr_;
-    HANDLE handle_ = INVALID_HANDLE_VALUE;
+    HANDLE handle_        = INVALID_HANDLE_VALUE;
     std::uint64_t offset_ = 0;
 
 public:

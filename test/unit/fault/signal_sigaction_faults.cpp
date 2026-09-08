@@ -84,7 +84,7 @@ struct signal_sigaction_faults
 
     void run()
     {
-        if(skip_under_valgrind())
+        if (skip_under_valgrind())
             return;
         testAddFails();
         testRemoveFails();
@@ -94,6 +94,6 @@ struct signal_sigaction_faults
 
 TEST_SUITE(signal_sigaction_faults, "boost.corosio.fault.signal_sigaction");
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault
 
 #endif

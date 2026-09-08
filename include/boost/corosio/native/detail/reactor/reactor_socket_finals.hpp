@@ -52,8 +52,13 @@ namespace boost::corosio::detail {
     @tparam ImplBase     The public vtable base.
     @tparam Endpoint     endpoint or local_endpoint.
 */
-template<class Derived, class Traits, class Service,
-         class AcceptorType, class ImplBase, class Endpoint>
+template<
+    class Derived,
+    class Traits,
+    class Service,
+    class AcceptorType,
+    class ImplBase,
+    class Endpoint>
 class reactor_stream_socket_impl
     : public reactor_stream_socket<
           Derived,
@@ -83,8 +88,10 @@ public:
     ~reactor_stream_socket_impl() override = default;
 
     std::error_code set_option(
-        int level, int optname,
-        void const* data, std::size_t size) noexcept override
+        int level,
+        int optname,
+        void const* data,
+        std::size_t size) noexcept override
     {
         return hook_.on_set_option(this->fd_, level, optname, data, size);
     }
@@ -111,8 +118,13 @@ public:
     @tparam ImplBase     The public vtable base.
     @tparam Endpoint     endpoint or local_endpoint.
 */
-template<class Derived, class Traits, class Service,
-         class AcceptorType, class ImplBase, class Endpoint>
+template<
+    class Derived,
+    class Traits,
+    class Service,
+    class AcceptorType,
+    class ImplBase,
+    class Endpoint>
 class reactor_dgram_socket_impl
     : public reactor_datagram_socket<
           Derived,
@@ -154,8 +166,13 @@ public:
     @tparam AccImplBase  The public vtable base.
     @tparam Endpoint     endpoint or local_endpoint.
 */
-template<class Derived, class Traits, class Service,
-         class SocketFinal, class AccImplBase, class Endpoint>
+template<
+    class Derived,
+    class Traits,
+    class Service,
+    class SocketFinal,
+    class AccImplBase,
+    class Endpoint>
 class reactor_acceptor_impl
     : public reactor_acceptor<
           Derived,

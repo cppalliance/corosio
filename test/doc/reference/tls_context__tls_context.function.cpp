@@ -21,7 +21,8 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::tls_context[]
-void construct_a_context()
+void
+construct_a_context()
 {
     // TLS 1.2 and TLS 1.3 are allowed, no credentials and no trust anchors
     // are loaded, and the verification mode is tls_verify_mode::none -- a

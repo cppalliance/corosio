@@ -85,7 +85,7 @@ timer::rearm_wait(waiter_node& w, duration d) noexcept
     {
         impl.svc_->insert_waiter(impl, &w);
     }
-    catch(std::bad_alloc const&)
+    catch (std::bad_alloc const&)
     {
         // insert_waiter grows the heap before publishing anything,
         // so the waiter is untouched and the caller can complete

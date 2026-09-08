@@ -79,7 +79,7 @@ bench_pingpong_latency(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
 
-    auto message_size = static_cast<std::size_t>(state.range(0));
+    auto message_size              = static_cast<std::size_t>(state.range(0));
     state.counters["message_size"] = static_cast<double>(message_size);
 
     corosio::native_io_context<Backend> ioc;
@@ -113,7 +113,7 @@ bench_concurrent_latency(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
 
-    int num_pairs = static_cast<int>(state.range(0));
+    int num_pairs               = static_cast<int>(state.range(0));
     state.counters["num_pairs"] = num_pairs;
 
     corosio::native_io_context<Backend> ioc;
@@ -164,7 +164,7 @@ bench_pingpong_latency_lockless(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
 
-    auto message_size = static_cast<std::size_t>(state.range(0));
+    auto message_size              = static_cast<std::size_t>(state.range(0));
     state.counters["message_size"] = static_cast<double>(message_size);
 
     corosio::io_context_options opts;
@@ -200,7 +200,7 @@ bench_concurrent_latency_lockless(bench::state& state)
 {
     using socket_type = corosio::native_tcp_socket<Backend>;
 
-    int num_pairs = static_cast<int>(state.range(0));
+    int num_pairs               = static_cast<int>(state.range(0));
     state.counters["num_pairs"] = num_pairs;
 
     corosio::io_context_options opts;
@@ -257,13 +257,13 @@ make_socket_latency_suite()
 
     return bench::benchmark_suite("socket_latency", F::needs_conntrack_drain)
         .add("pingpong", bench_pingpong_latency<Backend>)
-            .args({1, 64, 1024})
+        .args({1, 64, 1024})
         .add("pingpong_lockless", bench_pingpong_latency_lockless<Backend>)
-            .args({1, 64, 1024})
+        .args({1, 64, 1024})
         .add("concurrent", bench_concurrent_latency<Backend>)
-            .args({1, 4, 16})
+        .args({1, 4, 16})
         .add("concurrent_lockless", bench_concurrent_latency_lockless<Backend>)
-            .args({1, 4, 16});
+        .args({1, 4, 16});
 }
 
 } // namespace corosio_bench

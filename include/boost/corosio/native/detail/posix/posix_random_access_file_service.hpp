@@ -39,10 +39,10 @@ public:
 
     ~posix_random_access_file_service() override = default;
 
-    posix_random_access_file_service(
-        posix_random_access_file_service const&)            = delete;
-    posix_random_access_file_service& operator=(
-        posix_random_access_file_service const&) = delete;
+    posix_random_access_file_service(posix_random_access_file_service const&) =
+        delete;
+    posix_random_access_file_service&
+    operator=(posix_random_access_file_service const&) = delete;
 
     io_object::implementation* construct() override
     {
@@ -191,7 +191,7 @@ posix_random_access_file::read_some_at(
         return h;
     }
 
-    auto* op = new raf_op();
+    auto* op    = new raf_op();
     op->is_read = true;
     op->offset  = offset;
 
@@ -262,7 +262,7 @@ posix_random_access_file::write_some_at(
         return h;
     }
 
-    auto* op = new raf_op();
+    auto* op    = new raf_op();
     op->is_read = false;
     op->offset  = offset;
 
@@ -318,8 +318,9 @@ posix_random_access_file::raf_op::do_work(pool_work_item* w) noexcept
         op->errn              = ECANCELED;
         op->bytes_transferred = 0;
     }
-    else if (op->offset >
-             static_cast<std::uint64_t>(std::numeric_limits<off_t>::max()))
+    else if (
+        op->offset >
+        static_cast<std::uint64_t>(std::numeric_limits<off_t>::max()))
     {
         op->errn              = EOVERFLOW;
         op->bytes_transferred = 0;
@@ -331,8 +332,9 @@ posix_random_access_file::raf_op::do_work(pool_work_item* w) noexcept
         {
             do
             {
-                n = ::preadv(self->fd_, op->iovecs, op->iovec_count,
-                             static_cast<off_t>(op->offset));
+                n = ::preadv(
+                    self->fd_, op->iovecs, op->iovec_count,
+                    static_cast<off_t>(op->offset));
             }
             while (n < 0 && errno == EINTR);
         }
@@ -340,8 +342,9 @@ posix_random_access_file::raf_op::do_work(pool_work_item* w) noexcept
         {
             do
             {
-                n = ::pwritev(self->fd_, op->iovecs, op->iovec_count,
-                              static_cast<off_t>(op->offset));
+                n = ::pwritev(
+                    self->fd_, op->iovecs, op->iovec_count,
+                    static_cast<off_t>(op->offset));
             }
             while (n < 0 && errno == EINTR);
         }

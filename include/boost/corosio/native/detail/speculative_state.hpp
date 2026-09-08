@@ -31,8 +31,8 @@ namespace boost::corosio::detail {
 */
 class speculative_state
 {
-    std::atomic< bool > try_read_ { true };
-    std::atomic< bool > try_write_{ true };
+    std::atomic<bool> try_read_{true};
+    std::atomic<bool> try_write_{true};
 
     // Failure-streak counter for the read path. Increments on every
     // speculative-read EAGAIN; resets to 0 whenever a speculative read
@@ -47,21 +47,21 @@ class speculative_state
     // pattern" (e.g. fan_out:nested/16: every speculation EAGAINs ->
     // streak hits max_read_failures and we stop wasting syscalls).
     static constexpr int max_read_failures = 4;
-    std::atomic< int >  read_eagain_streak_ { 0 };
-    std::atomic< bool > perma_off_read_     { false };
+    std::atomic<int> read_eagain_streak_{0};
+    std::atomic<bool> perma_off_read_{false};
 
 public:
     /// Return true when speculative read is currently worth trying.
     bool may_speculate_read() const noexcept
     {
-        return try_read_.load( std::memory_order_relaxed )
-            && !perma_off_read_.load( std::memory_order_relaxed );
+        return try_read_.load(std::memory_order_relaxed) &&
+            !perma_off_read_.load(std::memory_order_relaxed);
     }
 
     /// Return true when speculative write is currently worth trying.
     bool may_speculate_write() const noexcept
     {
-        return try_write_.load( std::memory_order_relaxed );
+        return try_write_.load(std::memory_order_relaxed);
     }
 
     /// Disable speculative reads (kernel buffer is empty).
@@ -69,14 +69,14 @@ public:
     /// for this socket once the streak hits max_read_failures.
     void on_read_exhausted() noexcept
     {
-        try_read_.store( false, std::memory_order_relaxed );
-        int s = read_eagain_streak_.load( std::memory_order_relaxed );
-        if ( s < max_read_failures )
+        try_read_.store(false, std::memory_order_relaxed);
+        int s = read_eagain_streak_.load(std::memory_order_relaxed);
+        if (s < max_read_failures)
         {
             ++s;
-            read_eagain_streak_.store( s, std::memory_order_relaxed );
-            if ( s >= max_read_failures )
-                perma_off_read_.store( true, std::memory_order_relaxed );
+            read_eagain_streak_.store(s, std::memory_order_relaxed);
+            if (s >= max_read_failures)
+                perma_off_read_.store(true, std::memory_order_relaxed);
         }
     }
 
@@ -85,14 +85,14 @@ public:
     /// hit speculation often enough to be worth the occasional EAGAIN.
     void on_read_success() noexcept
     {
-        if ( read_eagain_streak_.load( std::memory_order_relaxed ) != 0 )
-            read_eagain_streak_.store( 0, std::memory_order_relaxed );
+        if (read_eagain_streak_.load(std::memory_order_relaxed) != 0)
+            read_eagain_streak_.store(0, std::memory_order_relaxed);
     }
 
     /// Disable speculative writes (kernel buffer is full).
     void on_write_exhausted() noexcept
     {
-        try_write_.store( false, std::memory_order_relaxed );
+        try_write_.store(false, std::memory_order_relaxed);
     }
 
     /// Restore speculative reads (kernel signalled readiness via CQE).
@@ -100,14 +100,14 @@ public:
     /// — the strike-counter / perma-off latch overrides this signal.
     void on_async_read_ready() noexcept
     {
-        if ( !perma_off_read_.load( std::memory_order_relaxed ) )
-            try_read_.store( true, std::memory_order_relaxed );
+        if (!perma_off_read_.load(std::memory_order_relaxed))
+            try_read_.store(true, std::memory_order_relaxed);
     }
 
     /// Restore speculative writes (kernel signalled readiness via CQE).
     void on_async_write_ready() noexcept
     {
-        try_write_.store( true, std::memory_order_relaxed );
+        try_write_.store(true, std::memory_order_relaxed);
     }
 };
 

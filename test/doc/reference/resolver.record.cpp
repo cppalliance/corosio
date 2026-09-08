@@ -23,13 +23,14 @@
 #include <system_error>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 // Resolving a public hostname needs the network; compiled, never run.
 // tag::resolver[]
-capy::task<> resolve_and_print(corosio::io_context& ioc)
+capy::task<>
+resolve_and_print(corosio::io_context& ioc)
 {
     corosio::resolver r(ioc);
 

@@ -23,10 +23,11 @@ namespace {
 // tag::use_private_key_file[]
 // Configure before any stream is created from ctx; modifying a context
 // afterwards is undefined behavior.
-void load_the_private_key(corosio::tls_context& ctx)
+void
+load_the_private_key(corosio::tls_context& ctx)
 {
     if (auto ec = ctx.use_certificate_chain_file("fullchain.pem"))
-        return;  // report the error
+        return; // report the error
 
     // Must be the key the certificate above was issued for. If the file is
     // encrypted, install a password callback with set_password_callback
@@ -34,7 +35,7 @@ void load_the_private_key(corosio::tls_context& ctx)
     // passphrase surfaces as a handshake failure rather than an error here.
     if (auto ec = ctx.use_private_key_file(
             "privkey.pem", corosio::tls_file_format::pem))
-        return;  // report the error
+        return; // report the error
 }
 // end::use_private_key_file[]
 

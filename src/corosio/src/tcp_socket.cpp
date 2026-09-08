@@ -49,8 +49,8 @@ tcp_socket::open_for_family(int family, int type, int protocol) noexcept
     auto& svc          = static_cast<detail::win_tcp_service&>(h_.service());
     auto& wrapper      = static_cast<tcp_socket::implementation&>(*h_.get());
     std::error_code ec = svc.open_socket(
-        *static_cast<detail::win_tcp_socket&>(wrapper).get_internal(), family, type,
-        protocol);
+        *static_cast<detail::win_tcp_socket&>(wrapper).get_internal(), family,
+        type, protocol);
 #else
     auto& svc          = static_cast<detail::tcp_service&>(h_.service());
     std::error_code ec = svc.open_socket(

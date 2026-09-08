@@ -307,9 +307,8 @@ await_conntrack_drain()
     // TIME_WAIT sockets from previous benchmark runs can exhaust
     // ephemeral ports. Poll the TCP PCB count and wait for it to
     // drop below 75% of the ephemeral port range.
-    auto sysctl_int = [](char const* name) -> long
-    {
-        int val = 0;
+    auto sysctl_int = [](char const* name) -> long {
+        int val         = 0;
         std::size_t len = sizeof(val);
         if (sysctlbyname(name, &val, &len, nullptr, 0) == 0)
             return static_cast<long>(val);
@@ -322,15 +321,15 @@ await_conntrack_drain()
         return;
 
     long threshold = (last - first + 1) * 3 / 4;
-    long count = sysctl_int("net.inet.tcp.pcbcount");
+    long count     = sysctl_int("net.inet.tcp.pcbcount");
     if (count < 0 || count <= threshold)
         return;
 
     std::cout << "  [tcp] " << count << " PCBs, waiting to drain below "
               << threshold << " ..." << std::flush;
 
-    using clock = std::chrono::steady_clock;
-    auto deadline = clock::now() + std::chrono::seconds( 30 );
+    using clock   = std::chrono::steady_clock;
+    auto deadline = clock::now() + std::chrono::seconds(30);
 
     while (clock::now() < deadline)
     {

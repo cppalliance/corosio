@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 #include <boost/corosio/io_context.hpp>
@@ -50,7 +50,7 @@
 #include "test_suite.hpp"
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
@@ -102,26 +102,22 @@ read_partial_right(
 
 struct tcp_networking_test
 {
-    void
-    testNoDelay()
+    void testNoDelay()
     {
         corosio::io_context ioc;
         auto [s1, s2] = corosio::test::make_socket_pair(ioc);
         set_no_delay(s1);
-        BOOST_TEST(
-            s1.get_option<corosio::socket_option::no_delay>().value());
+        BOOST_TEST(s1.get_option<corosio::socket_option::no_delay>().value());
     }
 
-    void
-    testPartialReads()
+    void testPartialReads()
     {
         corosio::io_context ioc;
-        auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+        auto [s1, s2]   = corosio::test::make_socket_pair(ioc);
         std::size_t got = 0;
         capy::run_async(ioc.get_executor())(
             [](corosio::tcp_socket& r, corosio::tcp_socket& w,
-               std::size_t& out) -> capy::task<>
-            {
+               std::size_t& out) -> capy::task<> {
                 // Eight bytes ready up front: read_some may take any
                 // prefix through its four-byte buffer, leaving at
                 // least four for capy::read to fill completely.
@@ -138,8 +134,7 @@ struct tcp_networking_test
         BOOST_TEST(got == 4u);
     }
 
-    void
-    run()
+    void run()
     {
         testNoDelay();
         testPartialReads();

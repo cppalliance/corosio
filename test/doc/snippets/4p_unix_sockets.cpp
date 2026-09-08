@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 // tag::assume[]
@@ -43,7 +43,7 @@
 #include <boost/capy/buffers.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 // end::assume[]
 
 #include <boost/corosio/detail/platform.hpp>
@@ -75,7 +75,8 @@ remove_stale(char const* path)
 }
 
 // tag::server[]
-capy::task<> server(corosio::io_context& ioc)
+capy::task<>
+server(corosio::io_context& ioc)
 {
     corosio::local_stream_acceptor acc(ioc);
     if (auto ec = acc.open())
@@ -89,28 +90,29 @@ capy::task<> server(corosio::io_context& ioc)
 
     corosio::local_stream_socket peer(ioc);
     auto [accept_ec] = co_await acc.accept(peer);
-    if (accept_ec) co_return;
+    if (accept_ec)
+        co_return;
 
     // peer is now connected — read and write as with tcp_socket
     char buf[1024];
-    auto [read_ec, n] = co_await peer.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
+    auto [read_ec, n] =
+        co_await peer.read_some(capy::mutable_buffer(buf, sizeof(buf)));
 }
 // end::server[]
 
 // tag::client[]
-capy::task<> client(corosio::io_context& ioc)
+capy::task<>
+client(corosio::io_context& ioc)
 {
     corosio::local_stream_socket s(ioc);
 
     // connect() opens the socket automatically
-    auto [ec] = co_await s.connect(
-        corosio::local_endpoint("/tmp/my_app.sock"));
-    if (ec) co_return;
+    auto [ec] = co_await s.connect(corosio::local_endpoint("/tmp/my_app.sock"));
+    if (ec)
+        co_return;
 
     char const msg[] = "hello";
-    auto [wec, n] = co_await s.write_some(
-        capy::const_buffer(msg, sizeof(msg)));
+    auto [wec, n] = co_await s.write_some(capy::const_buffer(msg, sizeof(msg)));
 }
 // end::client[]
 
@@ -121,9 +123,9 @@ unlink_then_bind(corosio::io_context& ioc, bool& bound)
     corosio::local_stream_acceptor acc(ioc);
     BOOST_TEST(!acc.open());
     // tag::unlink_bind[]
-    ::unlink("/tmp/my_app.sock");  // remove stale socket
+    ::unlink("/tmp/my_app.sock"); // remove stale socket
     if (auto ec = acc.bind(corosio::local_endpoint("/tmp/my_app.sock")))
-        return;  // report the error
+        return; // report the error
     // end::unlink_bind[]
     bound = std::filesystem::exists("/tmp/my_app.sock");
     acc.close();
@@ -132,8 +134,7 @@ unlink_then_bind(corosio::io_context& ioc, bool& bound)
 #endif
 
 capy::task<>
-stream_pair(
-    corosio::io_context& ioc, std::size_t& n_out, bool& matched)
+stream_pair(corosio::io_context& ioc, std::size_t& n_out, bool& matched)
 {
     // tag::stream_pair[]
     corosio::local_stream_socket s1(ioc), s2(ioc);
@@ -141,16 +142,16 @@ stream_pair(
         throw std::system_error(ec, "connect_pair");
 
     // Data written to s1 can be read from s2, and vice versa.
-    if (auto [ec, n] = co_await s1.write_some(
-            capy::const_buffer("ping", 4)); ec)
+    if (auto [ec, n] = co_await s1.write_some(capy::const_buffer("ping", 4));
+        ec)
         co_return;
 
     char buf[16];
-    auto [ec, n] = co_await s2.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
+    auto [ec, n] =
+        co_await s2.read_some(capy::mutable_buffer(buf, sizeof(buf)));
     // buf contains "ping"
     // end::stream_pair[]
-    n_out = n;
+    n_out   = n;
     matched = std::memcmp(buf, "ping", 4) == 0;
 }
 
@@ -171,21 +172,21 @@ datagram_connectionless(
     // Send to a specific peer
     if (auto [ec, n] = co_await s.send_to(
             capy::const_buffer("hello", 5),
-            corosio::local_endpoint("/tmp/peer.sock")); ec)
+            corosio::local_endpoint("/tmp/peer.sock"));
+        ec)
         co_return;
 
     // Receive from any sender
     corosio::local_endpoint sender;
-    auto [ec, n] = co_await s.recv_from(
-        capy::mutable_buffer(buf, sizeof(buf)), sender);
+    auto [ec, n] =
+        co_await s.recv_from(capy::mutable_buffer(buf, sizeof(buf)), sender);
     // end::datagram_connectionless[]
     ec_out = ec;
-    n_out = n;
+    n_out  = n;
 }
 
 capy::task<>
-datagram_pair(
-    corosio::io_context& ioc, std::size_t& n_out, bool& matched)
+datagram_pair(corosio::io_context& ioc, std::size_t& n_out, bool& matched)
 {
     char buf[64];
     // tag::datagram_pair[]
@@ -193,14 +194,12 @@ datagram_pair(
     if (auto ec = corosio::connect_pair(s1, s2))
         throw std::system_error(ec, "connect_pair");
 
-    if (auto [ec, n] = co_await s1.send(
-            capy::const_buffer("msg", 3)); ec)
+    if (auto [ec, n] = co_await s1.send(capy::const_buffer("msg", 3)); ec)
         co_return;
 
-    auto [ec, n] = co_await s2.recv(
-        capy::mutable_buffer(buf, sizeof(buf)));
+    auto [ec, n] = co_await s2.recv(capy::mutable_buffer(buf, sizeof(buf)));
     // end::datagram_pair[]
-    n_out = n;
+    n_out   = n;
     matched = !ec && std::memcmp(buf, "msg", 3) == 0;
 }
 
@@ -208,18 +207,16 @@ datagram_pair(
 
 struct unix_sockets_test
 {
-    void
-    testStreamClientServer()
+    void testStreamClientServer()
     {
         remove_stale("/tmp/my_app.sock");
 
         corosio::io_context ioc;
-        auto ex = ioc.get_executor();
+        auto ex          = ioc.get_executor();
         bool server_done = false;
         bool client_done = false;
 
-        auto track = [](capy::task<> t, bool& done) -> capy::task<>
-        {
+        auto track = [](capy::task<> t, bool& done) -> capy::task<> {
             co_await std::move(t);
             done = true;
         };
@@ -236,8 +233,7 @@ struct unix_sockets_test
     }
 
 #if BOOST_COROSIO_POSIX
-    void
-    testUnlinkBind()
+    void testUnlinkBind()
     {
         corosio::io_context ioc;
         bool bound = false;
@@ -246,12 +242,11 @@ struct unix_sockets_test
     }
 #endif
 
-    void
-    testStreamPair()
+    void testStreamPair()
     {
         corosio::io_context ioc;
         std::size_t n = 0;
-        bool matched = false;
+        bool matched  = false;
         capy::run_async(ioc.get_executor())(stream_pair(ioc, n, matched));
         ioc.run();
         BOOST_TEST_EQ(n, 4u);
@@ -259,8 +254,7 @@ struct unix_sockets_test
     }
 
 #if BOOST_COROSIO_POSIX
-    void
-    testDatagramConnectionless()
+    void testDatagramConnectionless()
     {
         remove_stale("/tmp/my_dgram.sock");
         remove_stale("/tmp/peer.sock");
@@ -279,8 +273,7 @@ struct unix_sockets_test
         std::size_t n = 0;
         capy::run_async(ex)(datagram_connectionless(ioc, ec, n));
 
-        auto responder = [&peer]() -> capy::task<>
-        {
+        auto responder = [&peer]() -> capy::task<> {
             char buf[64];
             corosio::local_endpoint from;
             auto [rec, rn] = co_await peer.recv_from(
@@ -301,12 +294,11 @@ struct unix_sockets_test
         remove_stale("/tmp/peer.sock");
     }
 
-    void
-    testDatagramPair()
+    void testDatagramPair()
     {
         corosio::io_context ioc;
         std::size_t n = 0;
-        bool matched = false;
+        bool matched  = false;
         capy::run_async(ioc.get_executor())(datagram_pair(ioc, n, matched));
         ioc.run();
         BOOST_TEST_EQ(n, 3u);
@@ -314,8 +306,7 @@ struct unix_sockets_test
     }
 #endif
 
-    void
-    testEndpoints()
+    void testEndpoints()
     {
         // tag::endpoints[]
         // Create from a path
@@ -331,8 +322,7 @@ struct unix_sockets_test
         BOOST_TEST(bound);
     }
 
-    void
-    testAbstract()
+    void testAbstract()
     {
         // tag::abstract[]
         // Abstract socket — no file created
@@ -342,8 +332,7 @@ struct unix_sockets_test
         BOOST_TEST(ep.is_abstract());
     }
 
-    void
-    run()
+    void run()
     {
 #if BOOST_COROSIO_POSIX
         testStreamClientServer();

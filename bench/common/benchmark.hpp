@@ -39,10 +39,7 @@ struct benchmark_result
     std::string name;
     std::vector<metric> metrics;
 
-    benchmark_result(
-        std::string lib,
-        std::string cat,
-        std::string n)
+    benchmark_result(std::string lib, std::string cat, std::string n)
         : library(std::move(lib))
         , category(std::move(cat))
         , name(std::move(n))
@@ -169,10 +166,10 @@ public:
             auto const& r = results_[i];
             oss << "    {\n";
             if (!r.library.empty())
-                oss << "      \"library\": \""
-                    << escape_json(r.library) << "\",\n";
-            oss << "      \"category\": \""
-                << escape_json(r.category) << "\",\n";
+                oss << "      \"library\": \"" << escape_json(r.library)
+                    << "\",\n";
+            oss << "      \"category\": \"" << escape_json(r.category)
+                << "\",\n";
             oss << "      \"name\": \"" << escape_json(r.name) << "\"";
 
             for (auto const& m : r.metrics)

@@ -45,7 +45,7 @@ public:
         file_base::flags mode) = 0;
 
 protected:
-    random_access_file_service() = default;
+    random_access_file_service()           = default;
     ~random_access_file_service() override = default;
 };
 

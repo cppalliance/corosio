@@ -45,12 +45,12 @@ struct uring_multi_accept_op : uring_op
 {
     /// Filled by the kernel for each accept. Address of this struct
     /// is registered with the SQE; kernel writes peer address here.
-    sockaddr_storage  peer_storage{};
-    socklen_t         peer_len    = sizeof(peer_storage);
-    int               listen_fd  = -1;
+    sockaddr_storage peer_storage{};
+    socklen_t peer_len = sizeof(peer_storage);
+    int listen_fd      = -1;
 
     /// Owning acceptor; raw because the op IS owned by the acceptor.
-    void*             acceptor_impl = nullptr;
+    void* acceptor_impl = nullptr;
 
     /** Callback into the acceptor for each accept CQE.
 
@@ -60,20 +60,19 @@ struct uring_multi_accept_op : uring_op
         @param more     True unless this is the terminating CQE
                         (e.g. kernel dropped multishot on -ENOMEM).
     */
-    void (*on_cqe)(void* acceptor, int new_fd, int err,
-                   bool more) noexcept = nullptr;
+    void (*on_cqe)(void* acceptor, int new_fd, int err, bool more) noexcept =
+        nullptr;
 
-    uring_multi_accept_op() noexcept
-        : uring_op(&do_handler, &do_cqe, &do_prep)
-    {}
+    uring_multi_accept_op() noexcept : uring_op(&do_handler, &do_cqe, &do_prep)
+    {
+    }
 
     static void do_prep(uring_op* base, ::io_uring_sqe* sqe) noexcept
     {
         auto* self = static_cast<uring_multi_accept_op*>(base);
         ::io_uring_prep_multishot_accept(
             sqe, self->listen_fd,
-            reinterpret_cast<sockaddr*>(&self->peer_storage),
-            &self->peer_len,
+            reinterpret_cast<sockaddr*>(&self->peer_storage), &self->peer_len,
             SOCK_NONBLOCK | SOCK_CLOEXEC);
     }
 
@@ -85,20 +84,23 @@ struct uring_multi_accept_op : uring_op
         already installed in the process table — dropping the CQE
         without closing it leaks it for the life of the process.
     */
-    static void do_retired_cqe(
-        uring_op* /*base*/, int res, unsigned /*flags*/) noexcept
+    static void
+    do_retired_cqe(uring_op* /*base*/, int res, unsigned /*flags*/) noexcept
     {
-        if (res >= 0)           // LCOV_EXCL_LINE adopt-over-armed race leak guard
-            ::close(res);       // LCOV_EXCL_LINE adopt-over-armed race leak guard
+        if (res >= 0)     // LCOV_EXCL_LINE adopt-over-armed race leak guard
+            ::close(res); // LCOV_EXCL_LINE adopt-over-armed race leak guard
     }
 
-    static void do_cqe(uring_op* base, int res, unsigned flags,
-                       ready_queue& /*local*/) noexcept
+    static void do_cqe(
+        uring_op* base,
+        int res,
+        unsigned flags,
+        ready_queue& /*local*/) noexcept
     {
-        auto* self  = static_cast<uring_multi_accept_op*>(base);
-        bool  more  = (flags & IORING_CQE_F_MORE) != 0;
-        int   err   = (res < 0) ? -res : 0;
-        int   new_fd = (res >= 0) ? res : -1;
+        auto* self = static_cast<uring_multi_accept_op*>(base);
+        bool more  = (flags & IORING_CQE_F_MORE) != 0;
+        int err    = (res < 0) ? -res : 0;
+        int new_fd = (res >= 0) ? res : -1;
         if (self->on_cqe)
             self->on_cqe(self->acceptor_impl, new_fd, err, more);
         // Intentionally NOT pushed into local: the acceptor decides
@@ -109,8 +111,10 @@ struct uring_multi_accept_op : uring_op
     // the acceptor and never queued for handler dispatch. Provided so
     // the vtable is complete.
     static void do_handler(
-        void* /*owner*/, scheduler_op* /*base*/,
-        std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
+        void* /*owner*/,
+        scheduler_op* /*base*/,
+        std::uint32_t /*bytes*/,
+        std::uint32_t /*error*/) noexcept
     {
     }
     // LCOV_EXCL_STOP
@@ -128,42 +132,40 @@ struct uring_multi_accept_op : uring_op
 */
 struct uring_accept_op : uring_op
 {
-    int                          accepted_fd          = -1;
-    int                          err                  = 0;
-    sockaddr_storage             peer_storage{};
-    socklen_t                    peer_len             = 0;
+    int accepted_fd = -1;
+    int err         = 0;
+    sockaddr_storage peer_storage{};
+    socklen_t peer_len = 0;
 
     /// Set by the acceptor's `async_accept` entry point; filled by
     /// `do_handler` with the new socket impl.
-    io_object::implementation**  impl_out             = nullptr;
+    io_object::implementation** impl_out = nullptr;
 
     /// Optional output for the peer endpoint.
-    endpoint*                    peer_endpoint_out    = nullptr;
+    endpoint* peer_endpoint_out = nullptr;
 
     /// The peer service used to wrap the accepted fd.
-    void*                        peer_service         = nullptr;
+    void* peer_service = nullptr;
 
     /// Acceptor-supplied wrapper: adopts `fd` into the right impl type.
-    io_object::implementation*
-        (*adopt_fn)(void* peer_service, int fd,
-                    sockaddr_storage const& peer,
-                    socklen_t peer_len) noexcept = nullptr;
+    io_object::implementation* (*adopt_fn)(
+        void* peer_service,
+        int fd,
+        sockaddr_storage const& peer,
+        socklen_t peer_len) noexcept = nullptr;
 
-    uring_accept_op() noexcept
-        : uring_op(&do_handler, &do_cqe)
-    {}
+    uring_accept_op() noexcept : uring_op(&do_handler, &do_cqe) {}
 
     // LCOV_EXCL_START: never receives a CQE; present for vtable
     // completeness.
-    static void do_cqe(uring_op*, int, unsigned,
-                       ready_queue&) noexcept
-    {
-    }
+    static void do_cqe(uring_op*, int, unsigned, ready_queue&) noexcept {}
     // LCOV_EXCL_STOP
 
     static void do_handler(
-        void* owner, scheduler_op* base,
-        std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
+        void* owner,
+        scheduler_op* base,
+        std::uint32_t /*bytes*/,
+        std::uint32_t /*error*/) noexcept
     {
         auto* self = static_cast<uring_accept_op*>(base);
         self->stop_cb.reset();
@@ -174,8 +176,7 @@ struct uring_accept_op : uring_op
             return;
         }
 
-        bool was_cancelled =
-            self->cancelled.load(std::memory_order_acquire);
+        bool was_cancelled = self->cancelled.load(std::memory_order_acquire);
 
         if (was_cancelled || self->err)
         {
@@ -184,7 +185,7 @@ struct uring_accept_op : uring_op
                     ? std::error_code(capy::error::canceled)
                     : make_err(self->err);
             self->cont.h = self->h;
-            auto next = dispatch_coro(self->ex, self->cont);
+            auto next    = dispatch_coro(self->ex, self->cont);
             delete self;
             next.resume();
             return;
@@ -192,21 +193,20 @@ struct uring_accept_op : uring_op
 
         if (self->adopt_fn && self->impl_out)
             *self->impl_out = self->adopt_fn(
-                self->peer_service, self->accepted_fd,
-                self->peer_storage, self->peer_len);
+                self->peer_service, self->accepted_fd, self->peer_storage,
+                self->peer_len);
 
         // LCOV_EXCL_START: no public accept overload reports the peer
         // endpoint on this backend yet.
         if (self->peer_endpoint_out)
-            *self->peer_endpoint_out =
-                sockaddr_to_endpoint(self->peer_storage);
+            *self->peer_endpoint_out = sockaddr_to_endpoint(self->peer_storage);
         // LCOV_EXCL_STOP
 
         if (self->ec_out)
             *self->ec_out = {};
 
         self->cont.h = self->h;
-        auto next = dispatch_coro(self->ex, self->cont);
+        auto next    = dispatch_coro(self->ex, self->cont);
         delete self;
         next.resume();
     }

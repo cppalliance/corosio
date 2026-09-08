@@ -76,12 +76,12 @@ make_local_pair(io_context& ioc, test::temp_socket_dir const& tmp)
 
     auto ex        = ioc.get_executor();
     auto connector = [](local_stream_socket& c,
-                         corosio::local_endpoint ep) -> capy::task<> {
+                        corosio::local_endpoint ep) -> capy::task<> {
         auto [ec] = co_await c.connect(ep);
         BOOST_TEST(!ec);
     };
     auto accepter = [](local_stream_acceptor& a,
-                        local_stream_socket& s) -> capy::task<> {
+                       local_stream_socket& s) -> capy::task<> {
         auto [ec] = co_await a.accept(s);
         BOOST_TEST(!ec);
     };
@@ -107,8 +107,7 @@ struct iocp_paths_test
         // SO_SNDBUF of zero makes every overlapped send pend until the
         // peer reads, so the write is reliably in flight when the stop
         // arrives.
-        BOOST_TEST_NO_THROW(
-            s1.set_option(socket_option::send_buffer_size(0)));
+        BOOST_TEST_NO_THROW(s1.set_option(socket_option::send_buffer_size(0)));
 
         std::stop_source ss;
         char big[65536] = {};
@@ -275,13 +274,13 @@ struct iocp_paths_test
         bool done = false;
         std::error_code rec;
         std::size_t rn = 99;
-        auto task = [&]() -> capy::task<> {
-            auto [cec] = co_await u1.connect(u2.local_endpoint());
-            std::ignore = cec;
+        auto task      = [&]() -> capy::task<> {
+            auto [cec]   = co_await u1.connect(u2.local_endpoint());
+            std::ignore  = cec;
             auto [ec, n] = co_await u1.recv(capy::mutable_buffer(nullptr, 0));
-            rec  = ec;
-            rn   = n;
-            done = true;
+            rec          = ec;
+            rn           = n;
+            done         = true;
         };
         capy::run_async(ex)(task());
         ioc.run();
@@ -406,8 +405,8 @@ struct iocp_paths_test
             std::ignore = lacc.bind(local_endpoint(tmp2.path()));
             std::ignore = lacc.listen();
 
-            auto reader = [](local_stream_socket s, int& count)
-                -> capy::task<> {
+            auto reader = [](local_stream_socket s,
+                             int& count) -> capy::task<> {
                 char b[8];
                 std::ignore =
                     co_await s.read_some(capy::mutable_buffer(b, sizeof(b)));

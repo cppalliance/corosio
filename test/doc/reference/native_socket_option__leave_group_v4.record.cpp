@@ -24,7 +24,8 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::leave_group_v4[]
-void stop_receiving_an_ipv4_multicast_group(corosio::udp_socket& sock)
+void
+stop_receiving_an_ipv4_multicast_group(corosio::udp_socket& sock)
 {
     // Precondition: sock is open on udp::v4() and joined this group.
     //
@@ -33,8 +34,9 @@ void stop_receiving_an_ipv4_multicast_group(corosio::udp_socket& sock)
     // attempting to leave a (group, interface) pair the kernel has no
     // membership for fails with EADDRNOTAVAIL, which set_option reports by
     // throwing.
-    sock.set_option(corosio::native_socket_option::leave_group_v4(
-        corosio::ipv4_address("239.255.0.1")));
+    sock.set_option(
+        corosio::native_socket_option::leave_group_v4(
+            corosio::ipv4_address("239.255.0.1")));
 }
 // end::leave_group_v4[]
 

@@ -62,11 +62,11 @@ server_handshake_ec(tls_context const& server_ctx)
     auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
 
     auto client = openssl_stream(&m1, warm_client_ctx());
-    auto server     = openssl_stream(&m2, server_ctx);
+    auto server = openssl_stream(&m2, server_ctx);
 
     std::error_code server_ec;
     auto client_hs = [&]() -> capy::task<> {
-        auto [ec] = co_await client.handshake(tls_role::client);
+        auto [ec]   = co_await client.handshake(tls_role::client);
         std::ignore = ec;
         m1.close();
     };
@@ -119,39 +119,39 @@ struct tls_engine_faults
         };
         site const sites[] = {
             {"pkcs12", 1,
-                [] {
-                    tls_context c;
-                    require_ok(c.use_pkcs12(
-                        std::string_view(
-                            reinterpret_cast<char const*>(server_p12),
-                            sizeof(server_p12)),
-                        p12_password));
-                    require_ok(c.set_verify_mode(tls_verify_mode::none));
-                    return c;
-                }},
+             [] {
+                 tls_context c;
+                 require_ok(c.use_pkcs12(
+                     std::string_view(
+                         reinterpret_cast<char const*>(server_p12),
+                         sizeof(server_p12)),
+                     p12_password));
+                 require_ok(c.set_verify_mode(tls_verify_mode::none));
+                 return c;
+             }},
             {"certificate", 1, [] { return make_server_context(); }},
             {"key", 2, [] { return make_server_context(); }},
             {"ca", 3,
-                [] {
-                    auto c = make_server_context();
-                    require_ok(c.add_certificate_authority(ca_cert_pem));
-                    return c;
-                }},
+             [] {
+                 auto c = make_server_context();
+                 require_ok(c.add_certificate_authority(ca_cert_pem));
+                 return c;
+             }},
             {"crl", 3,
-                [] {
-                    auto c = make_server_context();
-                    require_ok(c.add_crl(revoked_crl_pem));
-                    c.set_revocation_policy(tls_revocation_policy::soft_fail);
-                    return c;
-                }},
+             [] {
+                 auto c = make_server_context();
+                 require_ok(c.add_crl(revoked_crl_pem));
+                 c.set_revocation_policy(tls_revocation_policy::soft_fail);
+                 return c;
+             }},
         };
         for (auto const& st : sites)
         {
             auto ctx = st.make();
             fault_scope f(sys::BIO_new_mem_buf, 0, st.nth);
             auto ec = server_handshake_ec(ctx);
-            test_suite::log << "bio site " << st.name << ": fired="
-                            << f.fired() << " ec=" << ec.message() << "\n";
+            test_suite::log << "bio site " << st.name << ": fired=" << f.fired()
+                            << " ec=" << ec.message() << "\n";
             BOOST_TEST(f.fired());
             BOOST_TEST(!!ec);
         }
@@ -165,7 +165,8 @@ struct tls_engine_faults
             return;
         tls_context c;
         require_ok(c.use_pkcs12(
-            std::string_view(reinterpret_cast<char const*>(server_chain_p12),
+            std::string_view(
+                reinterpret_cast<char const*>(server_chain_p12),
                 sizeof(server_chain_p12)),
             p12_password));
         require_ok(c.set_verify_mode(tls_verify_mode::none));
@@ -262,8 +263,8 @@ struct tls_engine_faults
     {
         if (skip())
             return;
-        for (sys which : {sys::SSL_get0_param,
-                 sys::X509_VERIFY_PARAM_set1_host})
+        for (sys which :
+             {sys::SSL_get0_param, sys::X509_VERIFY_PARAM_set1_host})
         {
             io_context ioc;
             auto [m1, m2]   = corosio::test::make_mocket_pair(ioc);
@@ -281,7 +282,7 @@ struct tls_engine_faults
                 m1.close();
             };
             auto server_hs = [&]() -> capy::task<> {
-                auto [ec] = co_await server.handshake(tls_role::server);
+                auto [ec]   = co_await server.handshake(tls_role::server);
                 std::ignore = ec;
                 m2.close();
             };
@@ -354,7 +355,6 @@ struct tls_engine_faults
             BOOST_TEST(!rec);
         }
     }
-
 
     void run()
     {

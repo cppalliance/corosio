@@ -37,8 +37,8 @@ class epoll_scheduler;
 
 struct epoll_traits
 {
-    using scheduler_type    = epoll_scheduler;
-    using desc_state_type   = reactor_descriptor_state;
+    using scheduler_type  = epoll_scheduler;
+    using desc_state_type = reactor_descriptor_state;
 
     static constexpr bool needs_write_notification = false;
 
@@ -46,12 +46,15 @@ struct epoll_traits
     struct stream_socket_hook
     {
         std::error_code on_set_option(
-            int fd, int level, int optname,
-            void const* data, std::size_t size) noexcept
+            int fd,
+            int level,
+            int optname,
+            void const* data,
+            std::size_t size) noexcept
         {
             if (::setsockopt(
-                    fd, level, optname, data,
-                    static_cast<socklen_t>(size)) != 0)
+                    fd, level, optname, data, static_cast<socklen_t>(size)) !=
+                0)
                 return make_err(errno);
             return {};
         }
@@ -76,8 +79,8 @@ struct epoll_traits
             return n;
         }
 
-        static ssize_t write_one(
-            int fd, void const* data, std::size_t size) noexcept
+        static ssize_t
+        write_one(int fd, void const* data, std::size_t size) noexcept
         {
             ssize_t n;
             do
@@ -91,8 +94,8 @@ struct epoll_traits
 
     struct accept_policy
     {
-        static int do_accept(
-            int fd, sockaddr_storage& peer, socklen_t& addrlen) noexcept
+        static int
+        do_accept(int fd, sockaddr_storage& peer, socklen_t& addrlen) noexcept
         {
             addrlen = sizeof(peer);
             int new_fd;
@@ -115,43 +118,39 @@ struct epoll_traits
 
     // Apply protocol-specific options after socket creation.
     // For IP sockets, sets IPV6_V6ONLY on AF_INET6 (best-effort).
-    static std::error_code
-    configure_ip_socket(int fd, int family) noexcept
+    static std::error_code configure_ip_socket(int fd, int family) noexcept
     {
         if (family == AF_INET6)
         {
             int one = 1;
-            std::ignore = ::setsockopt(
-                fd, IPPROTO_IPV6, IPV6_V6ONLY, &one, sizeof(one));
+            std::ignore =
+                ::setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &one, sizeof(one));
         }
         return {};
     }
 
     // Apply protocol-specific options for acceptor sockets.
     // For IP acceptors, sets IPV6_V6ONLY=0 (dual-stack, best-effort).
-    static std::error_code
-    configure_ip_acceptor(int fd, int family) noexcept
+    static std::error_code configure_ip_acceptor(int fd, int family) noexcept
     {
         if (family == AF_INET6)
         {
             int val = 0;
-            std::ignore = ::setsockopt(
-                fd, IPPROTO_IPV6, IPV6_V6ONLY, &val, sizeof(val));
+            std::ignore =
+                ::setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &val, sizeof(val));
         }
         return {};
     }
 
     // No extra configuration needed for local (unix) sockets on epoll.
-    static std::error_code
-    configure_local_socket(int /*fd*/) noexcept
+    static std::error_code configure_local_socket(int /*fd*/) noexcept
     {
         return {};
     }
 
     // Non-mutating validation for fds adopted via assign(). Used when
     // the caller retains fd ownership responsibility.
-    static std::error_code
-    validate_assigned_fd(int /*fd*/) noexcept
+    static std::error_code validate_assigned_fd(int /*fd*/) noexcept
     {
         return {};
     }

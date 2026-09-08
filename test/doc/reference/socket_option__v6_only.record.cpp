@@ -25,10 +25,11 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::v6_only[]
-void accept_ipv6_peers_only(corosio::tcp_acceptor& acc)
+void
+accept_ipv6_peers_only(corosio::tcp_acceptor& acc)
 {
     if (auto ec = acc.open(corosio::tcp::v6()))
-        return;  // report the error
+        return; // report the error
 
     // Set between open() and bind(): once bound, the option no longer moves.
     // Disabled, an IPv6 acceptor also accepts IPv4 peers and reports them as
@@ -40,11 +41,11 @@ void accept_ipv6_peers_only(corosio::tcp_acceptor& acc)
     // not by returning a code.
     acc.set_option(corosio::socket_option::v6_only(true));
 
-    if (auto ec = acc.bind(
-            corosio::endpoint(corosio::ipv6_address::any(), 8080)))
-        return;  // report the error
+    if (auto ec =
+            acc.bind(corosio::endpoint(corosio::ipv6_address::any(), 8080)))
+        return; // report the error
     if (auto ec = acc.listen())
-        return;  // report the error
+        return; // report the error
 }
 // end::v6_only[]
 

@@ -174,8 +174,8 @@ struct alloc_fault_test
             to_wait_duration(std::chrono::system_clock::duration d)
             {
                 return (std::min)(d,
-                    std::chrono::system_clock::duration(
-                        std::chrono::milliseconds(2)));
+                                  std::chrono::system_clock::duration(
+                                      std::chrono::milliseconds(2)));
             }
         };
 
@@ -192,8 +192,8 @@ struct alloc_fault_test
             };
             auto churn = [&]() -> capy::task<> {
                 for (int i = 0; i < 16; ++i)
-                    std::ignore = co_await corosio::delay(
-                        std::chrono::milliseconds(1));
+                    std::ignore =
+                        co_await corosio::delay(std::chrono::milliseconds(1));
             };
             for (int i = 0; i < 3; ++i)
                 capy::run_async(ex)(repeater());
@@ -301,16 +301,22 @@ struct alloc_fault_test
                 std::atomic<int>* count = nullptr;
 
                 echo_worker(io_context& ctx, std::atomic<int>* c)
-                    : ctx_(ctx), sock_(ctx), count(c)
+                    : ctx_(ctx)
+                    , sock_(ctx)
+                    , count(c)
                 {
                 }
 
-                corosio::tcp_socket& socket() override { return sock_; }
+                corosio::tcp_socket& socket() override
+                {
+                    return sock_;
+                }
 
                 void run(tcp_server::launcher launch) override
                 {
                     count->fetch_add(1);
-                    launch(ctx_.get_executor(),
+                    launch(
+                        ctx_.get_executor(),
                         [](corosio::tcp_socket* s) -> capy::task<> {
                             s->close();
                             co_return;
@@ -338,27 +344,27 @@ struct alloc_fault_test
             auto port = srv.local_endpoint().port();
             srv.start();
 
-            auto driver = [](io_context* ctx, std::uint16_t p,
-                              one_server* s, unsigned nth) -> capy::task<> {
+            auto driver = [](io_context* ctx, std::uint16_t p, one_server* s,
+                             unsigned nth) -> capy::task<> {
                 {
                     tcp_socket c(*ctx);
-                    std::ignore = c.open();
+                    std::ignore                = c.open();
                     [[maybe_unused]] auto [ec] = co_await c.connect(
                         endpoint(ipv4_address::loopback(), p));
                     c.close();
-                    std::ignore = co_await corosio::delay(
-                        std::chrono::milliseconds(10));
+                    std::ignore =
+                        co_await corosio::delay(std::chrono::milliseconds(10));
                 }
                 {
                     // The dispatch of this connection allocates the
                     // session frame inside the armed window.
                     maybe_arm arm(nth);
                     tcp_socket c(*ctx);
-                    std::ignore = c.open();
+                    std::ignore                = c.open();
                     [[maybe_unused]] auto [ec] = co_await c.connect(
                         endpoint(ipv4_address::loopback(), p));
-                    std::ignore = co_await corosio::delay(
-                        std::chrono::milliseconds(10));
+                    std::ignore =
+                        co_await corosio::delay(std::chrono::milliseconds(10));
                     c.close();
                 }
                 s->stop();

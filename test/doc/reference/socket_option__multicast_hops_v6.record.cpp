@@ -22,7 +22,8 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::multicast_hops_v6[]
-void limit_how_far_multicast_travels_v6(corosio::udp_socket& sock)
+void
+limit_how_far_multicast_travels_v6(corosio::udp_socket& sock)
 {
     // Precondition: sock is open on udp::v6().
     //

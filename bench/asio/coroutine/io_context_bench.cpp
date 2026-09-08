@@ -250,10 +250,10 @@ make_io_context_suite()
     return bench::benchmark_suite("io_context", F::is_microbenchmark)
         .add("single_threaded", bench_single_threaded_post)
         .add("multithreaded", bench_multithreaded_scaling)
-            .args({8})
+        .args({8})
         .add("interleaved", bench_interleaved_post_run)
         .add("concurrent", bench_concurrent_post_run)
-            .args({4})
+        .args({4})
         .add("single_threaded_lockless", bench_single_threaded_lockless)
         .add("interleaved_lockless", bench_interleaved_lockless);
 }

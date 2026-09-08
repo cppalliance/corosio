@@ -18,9 +18,10 @@
 #include <iostream>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
-capy::task<void> connect_example(corosio::io_context& ioc)
+capy::task<void>
+connect_example(corosio::io_context& ioc)
 {
     // connect() opens the socket automatically
     corosio::tcp_socket s(ioc);
@@ -37,14 +38,15 @@ capy::task<void> connect_example(corosio::io_context& ioc)
 
     // Read some data
     char buf[1024];
-    auto [read_ec, n] = co_await s.read_some(
-        capy::mutable_buffer(buf, sizeof(buf)));
+    auto [read_ec, n] =
+        co_await s.read_some(capy::mutable_buffer(buf, sizeof(buf)));
 
     if (!read_ec)
         std::cout << "Received " << n << " bytes\n";
 }
 
-int main()
+int
+main()
 {
     corosio::io_context ioc;
     capy::run_async(ioc.get_executor())(connect_example(ioc));

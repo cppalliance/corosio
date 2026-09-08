@@ -14,4 +14,4 @@ namespace boost::corosio::test::fault {
 COROSIO_REACTOR_BACKEND_TESTS(
     reactor_common_faults, "boost.corosio.fault.reactor");
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault

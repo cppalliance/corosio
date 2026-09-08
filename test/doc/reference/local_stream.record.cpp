@@ -29,7 +29,8 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::open_with_protocol[]
-void open_with_protocol(corosio::io_context& ctx)
+void
+open_with_protocol(corosio::io_context& ctx)
 {
     corosio::local_stream_socket sock(ctx);
     if (auto ec = sock.open(corosio::local_stream{}))

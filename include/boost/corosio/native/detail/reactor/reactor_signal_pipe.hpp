@@ -55,7 +55,7 @@ struct reactor_signal_pipe_reader
     };
 
     reactor_descriptor_state desc;
-    drain_op                 op;
+    drain_op op;
 
     // Park the drain op and return the descriptor to hand to
     // scheduler::register_descriptor(read_fd, ...).

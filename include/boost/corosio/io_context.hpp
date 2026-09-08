@@ -240,8 +240,7 @@ class BOOST_COROSIO_DECL io_context : public capy::execution_context
         these options is created here, so a failure to create it throws
         from the constructor. */
     void apply_options_post_(
-        io_context_options const& opts,
-        unsigned concurrency_hint);
+        io_context_options const& opts, unsigned concurrency_hint);
 
     /** Create the blocking-I/O thread pool and apply only the decomposed
         threading configuration (locking tiers), then finish bringing the
@@ -511,7 +510,7 @@ public:
         typename Clock::time_point now = Clock::now();
         for (;;)
         {
-            auto rel_time = abs_time - now;
+            auto rel_time  = abs_time - now;
             using rel_type = decltype(rel_time);
             if (rel_time < rel_type::zero())
                 rel_time = rel_type::zero();

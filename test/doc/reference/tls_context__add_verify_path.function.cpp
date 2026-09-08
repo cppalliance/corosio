@@ -23,7 +23,8 @@ namespace {
 // tag::add_verify_path[]
 // Configure before any stream is created from ctx; modifying a context
 // afterwards is undefined behavior.
-void trust_a_directory_of_cas(corosio::tls_context& ctx)
+void
+trust_a_directory_of_cas(corosio::tls_context& ctx)
 {
     // OpenSSL looks certificates up by subject-name hash, so the directory
     // must have been prepared with `openssl rehash`; WolfSSL loads every
@@ -31,10 +32,10 @@ void trust_a_directory_of_cas(corosio::tls_context& ctx)
     // native context is built, not reported here -- so the verify mode
     // below is what keeps an empty trust store from passing silently.
     if (auto ec = ctx.add_verify_path("/etc/ssl/certs"))
-        return;  // report the error
+        return; // report the error
 
     if (auto ec = ctx.set_verify_mode(corosio::tls_verify_mode::peer))
-        return;  // report the error
+        return; // report the error
 }
 // end::add_verify_path[]
 

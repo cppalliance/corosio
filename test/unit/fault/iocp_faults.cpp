@@ -51,7 +51,8 @@ namespace boost::corosio::test::fault {
 
 namespace {
 
-endpoint loopback()
+endpoint
+loopback()
 {
     return endpoint(ipv4_address::loopback(), 0);
 }
@@ -63,10 +64,13 @@ struct post_awaitable
 {
     capy::continuation* cont;
 
-    bool await_ready() const noexcept { return false; }
+    bool await_ready() const noexcept
+    {
+        return false;
+    }
 
-    void await_suspend(
-        std::coroutine_handle<> h, capy::io_env const* env) noexcept
+    void
+    await_suspend(std::coroutine_handle<> h, capy::io_env const* env) noexcept
     {
         cont->h = h;
         env->executor.post(*cont);
@@ -87,10 +91,11 @@ struct wakeup_arm
 // An operation the wait reactor can no longer complete parks forever,
 // and a run loop that never returns reads as a job timeout on CI
 // rather than as a failure. This turns that into an assertion.
-capy::task<> stop_guard(io_context& ioc, bool& expired)
+capy::task<>
+stop_guard(io_context& ioc, bool& expired)
 {
     std::ignore = co_await corosio::delay(std::chrono::seconds(2));
-    expired = true;
+    expired     = true;
     ioc.stop();
 }
 
@@ -100,16 +105,17 @@ capy::task<> stop_guard(io_context& ioc, bool& expired)
 // rather than a failure of the code under test. `events` is what the
 // reactor would have asked for, since whether the error bits come back
 // at all is the provider's answer to that question and not to another.
-bool wait_for_poll_error(tcp_socket& s, SHORT events)
+bool
+wait_for_poll_error(tcp_socket& s, SHORT events)
 {
     constexpr SHORT err_bits = POLLERR | POLLHUP | POLLNVAL;
     WSAPOLLFD pfd{};
     pfd.fd     = static_cast<SOCKET>(s.native_handle());
     pfd.events = events;
-    for(int i = 0; i < 200; ++i)
+    for (int i = 0; i < 200; ++i)
     {
         pfd.revents = 0;
-        if(::WSAPoll(&pfd, 1, 10) > 0 && (pfd.revents & err_bits) != 0)
+        if (::WSAPoll(&pfd, 1, 10) > 0 && (pfd.revents & err_bits) != 0)
             return true;
     }
     return false;
@@ -119,16 +125,17 @@ bool wait_for_poll_error(tcp_socket& s, SHORT events)
 // could register with. Only reached where the mask the reactor uses
 // carried no error condition, so a round that has to choose another
 // one is not blind.
-void report_poll_masks(tcp_socket& s)
+void
+report_poll_masks(tcp_socket& s)
 {
     SHORT const masks[] = {0, POLLRDNORM, POLLWRNORM, POLLRDBAND};
-    for(SHORT m : masks)
+    for (SHORT m : masks)
     {
         WSAPOLLFD pfd{static_cast<SOCKET>(s.native_handle()), m, 0};
         ::WSASetLastError(0);
         int const n = ::WSAPoll(&pfd, 1, 0);
-        std::fprintf(stderr,
-            "fault harness: events %d -> %d, revents %d, error %d\n",
+        std::fprintf(
+            stderr, "fault harness: events %d -> %d, revents %d, error %d\n",
             static_cast<int>(m), n, static_cast<int>(pfd.revents),
             ::WSAGetLastError());
     }
@@ -138,11 +145,12 @@ void report_poll_masks(tcp_socket& s)
 // SO_ERROR will report it. A connection the provider has flagged
 // through the poll does not necessarily have an error waiting there
 // for anyone who has not touched it since.
-void touch_after_reset(tcp_socket& s)
+void
+touch_after_reset(tcp_socket& s)
 {
     auto const fd = static_cast<SOCKET>(s.native_handle());
-    char byte = '!';
-    for(int i = 0; i < 2; ++i)
+    char byte     = '!';
+    for (int i = 0; i < 2; ++i)
         std::ignore = ::send(fd, &byte, 1, 0);
 }
 
@@ -166,19 +174,21 @@ struct iocp_faults
         // twice as long as the growth it allows: sixteen attempts have
         // to stay under the eight handles of ambient drift the default
         // shape tolerates.
-        expect_no_handle_leak([]{
-            fault_scope f(sys::WSAStartup, WSAEAFNOSUPPORT);
-            expect_system_error([]{ io_context ioc(iocp); },
-                std::errc::address_family_not_supported);
-            BOOST_TEST(f.fired());
-        }, 16, 8);
+        expect_no_handle_leak(
+            [] {
+                fault_scope f(sys::WSAStartup, WSAEAFNOSUPPORT);
+                expect_system_error(
+                    [] { io_context ioc(iocp); },
+                    std::errc::address_family_not_supported);
+                BOOST_TEST(f.fired());
+            },
+            16, 8);
         {
             // The scheduler's own port: CreateIoCompletionPort with
             // INVALID_HANDLE_VALUE.
-            fault_scope f(sys::CreateIoCompletionPort,
-                ERROR_INVALID_PARAMETER);
-            expect_system_error([]{ io_context ioc(iocp); },
-                win_err(ERROR_INVALID_PARAMETER));
+            fault_scope f(sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
+            expect_system_error(
+                [] { io_context ioc(iocp); }, win_err(ERROR_INVALID_PARAMETER));
             BOOST_TEST(f.fired());
         }
     }
@@ -193,10 +203,8 @@ struct iocp_faults
         BOOST_TEST(f.fired());
 
         bool fired_timer = false;
-        auto body = [&]() -> capy::task<>
-        {
-            std::ignore = co_await corosio::delay(
-                std::chrono::milliseconds(1));
+        auto body        = [&]() -> capy::task<> {
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(1));
             fired_timer = true;
         };
         capy::run_async(ioc.get_executor())(body());
@@ -233,13 +241,14 @@ struct iocp_faults
         // for the timer thread, the only other one this context
         // starts: the blocking-I/O pool holds no worker until
         // something posts blocking work, and this test posts none.
-        fault_scope shield(sys::WaitForSingleObject, ERROR_INVALID_HANDLE,
+        fault_scope shield(
+            sys::WaitForSingleObject, ERROR_INVALID_HANDLE,
             (std::numeric_limits<unsigned>::max)());
-        fault_scope f(sys::WaitForSingleObject, ERROR_INVALID_HANDLE, 1,
-            any_thread);
+        fault_scope f(
+            sys::WaitForSingleObject, ERROR_INVALID_HANDLE, 1, any_thread);
         {
             io_context ioc(iocp);
-            for(int i = 0; i < 2000 && !f.fired(); ++i)
+            for (int i = 0; i < 2000 && !f.fired(); ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         BOOST_TEST(f.fired());
@@ -251,10 +260,10 @@ struct iocp_faults
         io_context ioc(iocp);
         // The shutdown packet is the only thing that wakes a blocked
         // run(), so a failed post is fatal rather than reported.
-        fault_scope f(sys::PostQueuedCompletionStatus,
-            ERROR_NO_SYSTEM_RESOURCES);
-        expect_system_error([&]{ ioc.stop(); },
-            win_err(ERROR_NO_SYSTEM_RESOURCES));
+        fault_scope f(
+            sys::PostQueuedCompletionStatus, ERROR_NO_SYSTEM_RESOURCES);
+        expect_system_error(
+            [&] { ioc.stop(); }, win_err(ERROR_NO_SYSTEM_RESOURCES));
         BOOST_TEST(f.fired());
     }
 
@@ -262,15 +271,14 @@ struct iocp_faults
     {
         io_context ioc(iocp);
         capy::continuation cont{};
-        bool ran = false;
+        bool ran   = false;
         bool fired = false;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body  = [&]() -> capy::task<> {
             {
                 // A failed post falls back to the allocating handle
                 // path, so the work still runs.
-                fault_scope f(sys::PostQueuedCompletionStatus,
-                    ERROR_NO_SYSTEM_RESOURCES);
+                fault_scope f(
+                    sys::PostQueuedCompletionStatus, ERROR_NO_SYSTEM_RESOURCES);
                 co_await post_awaitable{&cont};
                 fired = f.fired();
             }
@@ -288,14 +296,11 @@ struct iocp_faults
         // A dequeue that reports failure with no OVERLAPPED is not a
         // timeout, so the run loop throws.
         fault_scope f(sys::GetQueuedCompletionStatus, ERROR_INVALID_HANDLE);
-        auto body = [&]() -> capy::task<>
-        {
-            std::ignore = co_await corosio::delay(
-                std::chrono::milliseconds(1));
+        auto body = [&]() -> capy::task<> {
+            std::ignore = co_await corosio::delay(std::chrono::milliseconds(1));
         };
         capy::run_async(ioc.get_executor())(body());
-        expect_system_error([&]{ ioc.run(); },
-            win_err(ERROR_INVALID_HANDLE));
+        expect_system_error([&] { ioc.run(); }, win_err(ERROR_INVALID_HANDLE));
         BOOST_TEST(f.fired());
     }
 
@@ -312,10 +317,9 @@ struct iocp_faults
         }
         // The socket exists when the association fails, so the
         // failure path owns closing it.
-        expect_no_handle_leak([&]{
+        expect_no_handle_leak([&] {
             tcp_socket s(ioc);
-            fault_scope f(sys::CreateIoCompletionPort,
-                ERROR_INVALID_PARAMETER);
+            fault_scope f(sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
             auto ec = s.open(tcp::v4());
             BOOST_TEST(f.fired());
             BOOST_TEST(ec == win_err(ERROR_INVALID_PARAMETER));
@@ -328,7 +332,7 @@ struct iocp_faults
         io_context ioc(iocp);
         auto h = make_native_socket(AF_INET, SOCK_STREAM);
         make_native_adoptable(h);
-        expect_no_handle_leak([&]{
+        expect_no_handle_leak([&] {
             {
                 // SO_PROTOCOL_INFOW is how adoption learns the
                 // family and type.
@@ -341,8 +345,8 @@ struct iocp_faults
             }
             {
                 tcp_socket s(ioc);
-                fault_scope f(sys::CreateIoCompletionPort,
-                    ERROR_INVALID_PARAMETER);
+                fault_scope f(
+                    sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
                 auto ec = s.assign(h);
                 BOOST_TEST(f.fired());
                 BOOST_TEST(ec == win_err(ERROR_INVALID_PARAMETER));
@@ -374,7 +378,7 @@ struct iocp_faults
         {
             fault_scope f(sys::setsockopt, WSAENOTSOCK);
             expect_system_error(
-                [&]{ s.set_option(socket_option::reuse_address(true)); },
+                [&] { s.set_option(socket_option::reuse_address(true)); },
                 std::errc::not_a_socket);
             BOOST_TEST(f.fired());
             BOOST_TEST(s.is_open());
@@ -382,7 +386,7 @@ struct iocp_faults
         {
             fault_scope f(sys::getsockopt, WSAENOTSOCK);
             expect_system_error(
-                [&]{
+                [&] {
                     std::ignore = s.get_option<socket_option::reuse_address>();
                 },
                 std::errc::not_a_socket);
@@ -391,7 +395,8 @@ struct iocp_faults
         }
         {
             fault_scope f(sys::shutdown, WSAENOTSOCK);
-            BOOST_TEST(s.shutdown(tcp_socket::shutdown_both) ==
+            BOOST_TEST(
+                s.shutdown(tcp_socket::shutdown_both) ==
                 std::errc::not_a_socket);
             BOOST_TEST(f.fired());
         }
@@ -399,7 +404,7 @@ struct iocp_faults
 
     void testTcpReleaseIgnoresDissociate()
     {
-        if(!hook_is_live(sys::NtSetInformationFile))
+        if (!hook_is_live(sys::NtSetInformationFile))
         {
             skip_dead_hook("NtSetInformationFile");
             return;
@@ -430,10 +435,9 @@ struct iocp_faults
         tcp_socket s(ioc);
         BOOST_TEST(!s.open(tcp::v4()));
         std::error_code cec;
-        auto body = [&]() -> capy::task<>
-        {
-            auto [ec] = co_await s.connect(
-                endpoint(ipv4_address::loopback(), port));
+        auto body = [&]() -> capy::task<> {
+            auto [ec] =
+                co_await s.connect(endpoint(ipv4_address::loopback(), port));
             cec = ec;
         };
         capy::run_async(ioc.get_executor())(body());
@@ -445,12 +449,11 @@ struct iocp_faults
     {
         io_context ioc(iocp);
         tcp_acceptor acc(ioc, loopback());
-        auto const ep = endpoint(
-            ipv4_address::loopback(), acc.local_endpoint().port());
+        auto const ep =
+            endpoint(ipv4_address::loopback(), acc.local_endpoint().port());
         std::error_code bec, sec, cec;
         bool expired = false;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body    = [&]() -> capy::task<> {
             {
                 // ConnectEx needs a bound socket, so an unbound one
                 // is bound to the wildcard first.
@@ -458,16 +461,16 @@ struct iocp_faults
                 BOOST_TEST(!s.open(tcp::v4()));
                 fault_scope f(sys::bind, WSAEADDRNOTAVAIL);
                 auto [ec] = co_await s.connect(ep);
-                bec = ec;
+                bec       = ec;
                 BOOST_TEST(f.fired());
             }
-            if(hook_is_live(sys::ConnectEx))
+            if (hook_is_live(sys::ConnectEx))
             {
                 tcp_socket s(ioc);
                 BOOST_TEST(!s.open(tcp::v4()));
                 fault_scope f(sys::ConnectEx, WSAECONNREFUSED);
                 auto [ec] = co_await s.connect(ep);
-                sec = ec;
+                sec       = ec;
                 BOOST_TEST(f.fired());
             }
             else
@@ -481,7 +484,7 @@ struct iocp_faults
                 BOOST_TEST(!s.open(tcp::v4()));
                 completion_fault_scope q(ERROR_CONNECTION_REFUSED);
                 auto [ec] = co_await s.connect(ep);
-                cec = ec;
+                cec       = ec;
                 BOOST_TEST(q.fired());
             }
             ioc.stop();
@@ -491,7 +494,7 @@ struct iocp_faults
         ioc.run();
         BOOST_TEST(!expired);
         BOOST_TEST(bec == std::errc::address_not_available);
-        if(hook_is_live(sys::ConnectEx))
+        if (hook_is_live(sys::ConnectEx))
             BOOST_TEST(sec == std::errc::connection_refused);
         BOOST_TEST(cec == std::errc::connection_refused);
     }
@@ -499,42 +502,41 @@ struct iocp_faults
     void testTcpReadWriteFails()
     {
         io_context ioc(iocp);
-        auto pair = make_socket_pair(ioc);
-        auto& a = pair.first;
-        auto& b = pair.second;
+        auto pair   = make_socket_pair(ioc);
+        auto& a     = pair.first;
+        auto& b     = pair.second;
         char buf[8] = {};
         char out[4] = "abc";
         std::error_code rec, wec, rcec, wcec, eec, wtec;
         std::size_t en = 99;
-        bool expired = false;
-        auto body = [&]() -> capy::task<>
-        {
+        bool expired   = false;
+        auto body      = [&]() -> capy::task<> {
             {
                 fault_scope f(sys::WSARecv, WSAENOTSOCK);
                 auto [ec, n] = co_await a.read_some(
                     capy::mutable_buffer(buf, sizeof(buf)));
                 std::ignore = n;
-                rec = ec;
+                rec         = ec;
                 BOOST_TEST(f.fired());
             }
             {
                 fault_scope f(sys::WSASend, WSAENOTSOCK);
-                auto [ec, n] = co_await a.write_some(
-                    capy::const_buffer(out, 3));
+                auto [ec, n] =
+                    co_await a.write_some(capy::const_buffer(out, 3));
                 std::ignore = n;
-                wec = ec;
+                wec         = ec;
                 BOOST_TEST(f.fired());
             }
             {
                 // A wait for readability is a zero-byte WSARecv.
                 fault_scope f(sys::WSARecv, WSAENOTSOCK);
                 auto [ec] = co_await a.wait(wait_type::read);
-                wtec = ec;
+                wtec      = ec;
                 BOOST_TEST(f.fired());
             }
             {
-                auto [ec, n] = co_await b.write_some(
-                    capy::const_buffer(out, 3));
+                auto [ec, n] =
+                    co_await b.write_some(capy::const_buffer(out, 3));
                 std::ignore = n;
                 BOOST_TEST(!ec);
             }
@@ -546,20 +548,20 @@ struct iocp_faults
                 auto [ec, n] = co_await a.read_some(
                     capy::mutable_buffer(buf, sizeof(buf)));
                 std::ignore = n;
-                rcec = ec;
+                rcec        = ec;
                 BOOST_TEST(q.fired());
             }
             {
                 completion_fault_scope q(ERROR_NETNAME_DELETED);
-                auto [ec, n] = co_await a.write_some(
-                    capy::const_buffer(out, 3));
+                auto [ec, n] =
+                    co_await a.write_some(capy::const_buffer(out, 3));
                 std::ignore = n;
-                wcec = ec;
+                wcec        = ec;
                 BOOST_TEST(q.fired());
             }
             {
-                auto [ec, n] = co_await b.write_some(
-                    capy::const_buffer(out, 3));
+                auto [ec, n] =
+                    co_await b.write_some(capy::const_buffer(out, 3));
                 std::ignore = n;
                 BOOST_TEST(!ec);
             }
@@ -567,11 +569,11 @@ struct iocp_faults
                 // A receive shortened to nothing completes with zero
                 // bytes even with data waiting, which the stream
                 // contract reads as end of file.
-                auto f = fault_scope::returning(sys::WSARecv, 0);
+                auto f       = fault_scope::returning(sys::WSARecv, 0);
                 auto [ec, n] = co_await a.read_some(
                     capy::mutable_buffer(buf, sizeof(buf)));
                 eec = ec;
-                en = n;
+                en  = n;
                 BOOST_TEST(f.fired());
             }
             a.cancel();
@@ -602,10 +604,9 @@ struct iocp_faults
             BOOST_TEST(ec == std::errc::address_family_not_supported);
             BOOST_TEST(!acc.is_open());
         }
-        expect_no_handle_leak([&]{
+        expect_no_handle_leak([&] {
             tcp_acceptor acc(ioc);
-            fault_scope f(sys::CreateIoCompletionPort,
-                ERROR_INVALID_PARAMETER);
+            fault_scope f(sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
             auto ec = acc.open();
             BOOST_TEST(f.fired());
             BOOST_TEST(ec == win_err(ERROR_INVALID_PARAMETER));
@@ -630,13 +631,15 @@ struct iocp_faults
             // The convenience constructor reports the same codes by
             // throwing, once per leg it walks.
             fault_scope f(sys::WSASocketW, WSAEAFNOSUPPORT);
-            expect_system_error([&]{ tcp_acceptor acc(ioc, loopback()); },
+            expect_system_error(
+                [&] { tcp_acceptor acc(ioc, loopback()); },
                 std::errc::address_family_not_supported);
             BOOST_TEST(f.fired());
         }
         {
             fault_scope f(sys::listen, WSAEOPNOTSUPP);
-            expect_system_error([&]{ tcp_acceptor acc(ioc, loopback()); },
+            expect_system_error(
+                [&] { tcp_acceptor acc(ioc, loopback()); },
                 std::errc::operation_not_supported);
             BOOST_TEST(f.fired());
         }
@@ -646,18 +649,17 @@ struct iocp_faults
     {
         io_context ioc(iocp);
         tcp_acceptor acc(ioc, loopback());
-        auto const ep = endpoint(
-            ipv4_address::loopback(), acc.local_endpoint().port());
+        auto const ep =
+            endpoint(ipv4_address::loopback(), acc.local_endpoint().port());
         std::error_code sockec, portec, syncec, compec, waitec;
         bool expired = false;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body    = [&]() -> capy::task<> {
             tcp_socket server(ioc);
             {
                 // Writability carries no meaning for a listening
                 // socket and reaches no syscall.
                 auto [ec] = co_await acc.wait(wait_type::write);
-                waitec = ec;
+                waitec    = ec;
             }
             {
                 tcp_socket client(ioc);
@@ -665,7 +667,7 @@ struct iocp_faults
                 BOOST_TEST(!cec);
                 fault_scope f(sys::WSASocketW, WSAEAFNOSUPPORT);
                 auto [ec] = co_await acc.accept(server);
-                sockec = ec;
+                sockec    = ec;
                 BOOST_TEST(f.fired());
                 BOOST_TEST(!server.is_open());
                 client.cancel();
@@ -679,23 +681,23 @@ struct iocp_faults
                 // this accept needs is created inside the same window,
                 // so the count carries more than the accept's own
                 // bookkeeping.
-                fault_scope f(sys::CreateIoCompletionPort,
-                    ERROR_INVALID_PARAMETER);
+                fault_scope f(
+                    sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
                 auto [ec] = co_await acc.accept(server);
-                portec = ec;
+                portec    = ec;
                 BOOST_TEST(f.fired());
                 BOOST_TEST(!server.is_open());
                 client.cancel();
                 client.close();
             }
-            if(hook_is_live(sys::AcceptEx))
+            if (hook_is_live(sys::AcceptEx))
             {
                 tcp_socket client(ioc);
                 auto [cec] = co_await client.connect(ep);
                 BOOST_TEST(!cec);
                 fault_scope f(sys::AcceptEx, WSAENOTSOCK);
                 auto [ec] = co_await acc.accept(server);
-                syncec = ec;
+                syncec    = ec;
                 BOOST_TEST(f.fired());
                 BOOST_TEST(!server.is_open());
                 client.cancel();
@@ -713,7 +715,7 @@ struct iocp_faults
                 // half-open connection died, not a reset stream.
                 completion_fault_scope q(ERROR_NETNAME_DELETED);
                 auto [ec] = co_await acc.accept(server);
-                compec = ec;
+                compec    = ec;
                 BOOST_TEST(q.fired());
                 BOOST_TEST(!server.is_open());
                 client.cancel();
@@ -728,7 +730,7 @@ struct iocp_faults
         BOOST_TEST(waitec == std::errc::operation_not_supported);
         BOOST_TEST(sockec == std::errc::address_family_not_supported);
         BOOST_TEST(portec == win_err(ERROR_INVALID_PARAMETER));
-        if(hook_is_live(sys::AcceptEx))
+        if (hook_is_live(sys::AcceptEx))
             BOOST_TEST(syncec == std::errc::not_a_socket);
         BOOST_TEST(compec == std::errc::connection_aborted);
     }
@@ -744,10 +746,9 @@ struct iocp_faults
             BOOST_TEST(ec == std::errc::address_family_not_supported);
             BOOST_TEST(!u.is_open());
         }
-        expect_no_handle_leak([&]{
+        expect_no_handle_leak([&] {
             udp_socket u(ioc);
-            fault_scope f(sys::CreateIoCompletionPort,
-                ERROR_INVALID_PARAMETER);
+            fault_scope f(sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
             auto ec = u.open(udp::v4());
             BOOST_TEST(f.fired());
             BOOST_TEST(ec == win_err(ERROR_INVALID_PARAMETER));
@@ -764,7 +765,7 @@ struct iocp_faults
         {
             auto h = make_native_socket(AF_INET, SOCK_DGRAM);
             make_native_adoptable(h);
-            expect_no_handle_leak([&]{
+            expect_no_handle_leak([&] {
                 {
                     udp_socket u(ioc);
                     fault_scope f(sys::getsockopt, WSAENOTSOCK);
@@ -774,10 +775,9 @@ struct iocp_faults
                 }
                 {
                     udp_socket u(ioc);
-                    fault_scope f(sys::CreateIoCompletionPort,
-                        ERROR_INVALID_PARAMETER);
-                    BOOST_TEST(
-                        u.assign(h) == win_err(ERROR_INVALID_PARAMETER));
+                    fault_scope f(
+                        sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
+                    BOOST_TEST(u.assign(h) == win_err(ERROR_INVALID_PARAMETER));
                     BOOST_TEST(f.fired());
                     BOOST_TEST(!u.is_open());
                 }
@@ -791,14 +791,14 @@ struct iocp_faults
             {
                 fault_scope f(sys::setsockopt, WSAENOTSOCK);
                 expect_system_error(
-                    [&]{ u.set_option(socket_option::reuse_address(true)); },
+                    [&] { u.set_option(socket_option::reuse_address(true)); },
                     std::errc::not_a_socket);
                 BOOST_TEST(f.fired());
             }
             {
                 fault_scope f(sys::getsockopt, WSAENOTSOCK);
                 expect_system_error(
-                    [&]{
+                    [&] {
                         std::ignore =
                             u.get_option<socket_option::reuse_address>();
                     },
@@ -807,7 +807,8 @@ struct iocp_faults
             }
             {
                 fault_scope f(sys::shutdown, WSAENOTSOCK);
-                BOOST_TEST(u.shutdown(udp_socket::shutdown_both) ==
+                BOOST_TEST(
+                    u.shutdown(udp_socket::shutdown_both) ==
                     std::errc::not_a_socket);
                 BOOST_TEST(f.fired());
             }
@@ -822,22 +823,21 @@ struct iocp_faults
         BOOST_TEST(!a.bind(loopback()));
         BOOST_TEST(!b.open(udp::v4()));
         BOOST_TEST(!b.bind(loopback()));
-        auto const a_ep = endpoint(
-            ipv4_address::loopback(), a.local_endpoint().port());
-        auto const b_ep = endpoint(
-            ipv4_address::loopback(), b.local_endpoint().port());
+        auto const a_ep =
+            endpoint(ipv4_address::loopback(), a.local_endpoint().port());
+        auto const b_ep =
+            endpoint(ipv4_address::loopback(), b.local_endpoint().port());
         char buf[8] = {};
         char out[4] = "abc";
         std::error_code stec, rfec, stcec, rfcec, conec, sec, rec, scec, rcec;
         bool expired = false;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body    = [&]() -> capy::task<> {
             {
                 fault_scope f(sys::WSASendTo, WSAENOTSOCK);
-                auto [ec, n] = co_await a.send_to(
-                    capy::const_buffer(out, 3), b_ep);
+                auto [ec, n] =
+                    co_await a.send_to(capy::const_buffer(out, 3), b_ep);
                 std::ignore = n;
-                stec = ec;
+                stec        = ec;
                 BOOST_TEST(f.fired());
             }
             {
@@ -846,7 +846,7 @@ struct iocp_faults
                 auto [ec, n] = co_await b.recv_from(
                     capy::mutable_buffer(buf, sizeof(buf)), src);
                 std::ignore = n;
-                rfec = ec;
+                rfec        = ec;
                 BOOST_TEST(f.fired());
             }
             {
@@ -854,10 +854,10 @@ struct iocp_faults
                 // on the completion, so the unconnected send has its
                 // own completion fault.
                 completion_fault_scope q(ERROR_NETNAME_DELETED);
-                auto [ec, n] = co_await a.send_to(
-                    capy::const_buffer(out, 3), b_ep);
+                auto [ec, n] =
+                    co_await a.send_to(capy::const_buffer(out, 3), b_ep);
                 std::ignore = n;
-                stcec = ec;
+                stcec       = ec;
                 BOOST_TEST(q.fired());
             }
             {
@@ -869,7 +869,7 @@ struct iocp_faults
                 auto [ec, n] = co_await b.recv_from(
                     capy::mutable_buffer(buf, sizeof(buf)), src);
                 std::ignore = n;
-                rfcec = ec;
+                rfcec       = ec;
                 BOOST_TEST(q.fired());
             }
             {
@@ -877,7 +877,7 @@ struct iocp_faults
                 // either names the peer or reports why not.
                 fault_scope f(sys::WSAConnect, WSAEAFNOSUPPORT);
                 auto [ec] = co_await a.connect(b_ep);
-                conec = ec;
+                conec     = ec;
                 BOOST_TEST(f.fired());
             }
             {
@@ -891,33 +891,33 @@ struct iocp_faults
             {
                 fault_scope f(sys::WSASend, WSAENOTSOCK);
                 auto [ec, n] = co_await a.send(capy::const_buffer(out, 3));
-                std::ignore = n;
-                sec = ec;
+                std::ignore  = n;
+                sec          = ec;
                 BOOST_TEST(f.fired());
             }
             {
                 fault_scope f(sys::WSARecv, WSAENOTSOCK);
-                auto [ec, n] = co_await b.recv(
-                    capy::mutable_buffer(buf, sizeof(buf)));
+                auto [ec, n] =
+                    co_await b.recv(capy::mutable_buffer(buf, sizeof(buf)));
                 std::ignore = n;
-                rec = ec;
+                rec         = ec;
                 BOOST_TEST(f.fired());
             }
             {
                 completion_fault_scope q(ERROR_NETNAME_DELETED);
                 auto [ec, n] = co_await a.send(capy::const_buffer(out, 3));
-                std::ignore = n;
-                scec = ec;
+                std::ignore  = n;
+                scec         = ec;
                 BOOST_TEST(q.fired());
             }
             {
                 // The datagram sent above is already queued, so the
                 // receive has a real completion to fail.
                 completion_fault_scope q(ERROR_NETNAME_DELETED);
-                auto [ec, n] = co_await b.recv(
-                    capy::mutable_buffer(buf, sizeof(buf)));
+                auto [ec, n] =
+                    co_await b.recv(capy::mutable_buffer(buf, sizeof(buf)));
                 std::ignore = n;
-                rcec = ec;
+                rcec        = ec;
                 BOOST_TEST(q.fired());
             }
             ioc.stop();
@@ -967,14 +967,16 @@ struct iocp_faults
         // to release. A leak of one handle per attempt has to separate
         // from the ambient drift, so each arm runs sixteen times
         // against a growth budget of eight.
-        for(auto const& arm : arms)
+        for (auto const& arm : arms)
         {
-            expect_no_handle_leak([&]{
-                fault_scope f(arm.which, arm.err, arm.nth);
-                expect_system_error([]{ io_context ioc(iocp); },
-                    win_err(arm.err));
-                BOOST_TEST(f.fired());
-            }, 16, 8);
+            expect_no_handle_leak(
+                [&] {
+                    fault_scope f(arm.which, arm.err, arm.nth);
+                    expect_system_error(
+                        [] { io_context ioc(iocp); }, win_err(arm.err));
+                    BOOST_TEST(f.fired());
+                },
+                16, 8);
         }
     }
 
@@ -985,7 +987,7 @@ struct iocp_faults
     // context that never waits leaves the arm below unspent.
     void testWaitReactorStartsOnFirstWait()
     {
-        if(!hook_is_live(sys::WSAPoll))
+        if (!hook_is_live(sys::WSAPoll))
         {
             skip_dead_hook("WSAPoll");
         }
@@ -1007,16 +1009,15 @@ struct iocp_faults
 
         io_context ioc(iocp);
         auto pair = make_socket_pair(ioc);
-        auto& s1 = pair.first;
-        auto& s2 = pair.second;
+        auto& s1  = pair.first;
+        auto& s2  = pair.second;
         std::error_code wec;
         bool done    = false;
         bool expired = false;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body    = [&]() -> capy::task<> {
             auto [ec] = co_await s1.wait(wait_type::write);
-            wec  = ec;
-            done = true;
+            wec       = ec;
+            done      = true;
             ioc.stop();
         };
         capy::run_async(ioc.get_executor())(body());
@@ -1048,7 +1049,7 @@ struct iocp_faults
     */
     void testWakeSendFails()
     {
-        if(!hook_is_live(sys::send))
+        if (!hook_is_live(sys::send))
         {
             skip_dead_hook("send");
             return;
@@ -1075,18 +1076,16 @@ struct iocp_faults
         // swallowed would leave it parked.
         io_context ioc(iocp);
         auto pair = make_socket_pair(ioc);
-        auto& s1 = pair.first;
-        auto& s2 = pair.second;
+        auto& s1  = pair.first;
+        auto& s2  = pair.second;
         std::error_code parked_ec;
         bool expired = false;
-        auto parked = [&]() -> capy::task<>
-        {
+        auto parked  = [&]() -> capy::task<> {
             auto [ec] = co_await s1.wait(wait_type::error);
             parked_ec = ec;
             ioc.stop();
         };
-        auto breaker = [&]() -> capy::task<>
-        {
+        auto breaker = [&]() -> capy::task<> {
             s1.cancel();
             co_return;
         };
@@ -1104,13 +1103,12 @@ struct iocp_faults
     {
         io_context ioc(iocp);
         auto pair = make_socket_pair(ioc);
-        auto& s1 = pair.first;
-        auto& s2 = pair.second;
+        auto& s1  = pair.first;
+        auto& s2  = pair.second;
         std::optional<fault_scope> arm;
         std::error_code parked_ec;
         bool expired = false;
-        auto parked = [&]() -> capy::task<>
-        {
+        auto parked  = [&]() -> capy::task<> {
             // An error wait on a quiet socket never becomes ready, so
             // the only thing that can complete it is the reactor
             // leaving its loop.
@@ -1118,8 +1116,7 @@ struct iocp_faults
             parked_ec = ec;
             ioc.stop();
         };
-        auto breaker = [&]() -> capy::task<>
-        {
+        auto breaker = [&]() -> capy::task<> {
             // Armed after the wait above is queued, so whichever poll
             // fails first already has that op in hand: the drain on
             // the way out covers registered_ and pending_register_
@@ -1152,10 +1149,9 @@ struct iocp_faults
         ioc.restart();
         std::error_code late_ec;
         bool late_expired = false;
-        auto late = [&]() -> capy::task<>
-        {
+        auto late         = [&]() -> capy::task<> {
             auto [ec] = co_await s1.wait(wait_type::error);
-            late_ec = ec;
+            late_ec   = ec;
             ioc.stop();
         };
         capy::run_async(ioc.get_executor())(late());
@@ -1178,10 +1174,9 @@ struct iocp_faults
             BOOST_TEST(ec == std::errc::address_family_not_supported);
             BOOST_TEST(!s.is_open());
         }
-        expect_no_handle_leak([&]{
+        expect_no_handle_leak([&] {
             local_stream_socket s(ioc);
-            fault_scope f(sys::CreateIoCompletionPort,
-                ERROR_INVALID_PARAMETER);
+            fault_scope f(sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
             auto ec = s.open();
             BOOST_TEST(f.fired());
             BOOST_TEST(ec == win_err(ERROR_INVALID_PARAMETER));
@@ -1195,10 +1190,9 @@ struct iocp_faults
             BOOST_TEST(ec == std::errc::address_family_not_supported);
             BOOST_TEST(!acc.is_open());
         }
-        expect_no_handle_leak([&]{
+        expect_no_handle_leak([&] {
             local_stream_acceptor acc(ioc);
-            fault_scope f(sys::CreateIoCompletionPort,
-                ERROR_INVALID_PARAMETER);
+            fault_scope f(sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
             auto ec = acc.open();
             BOOST_TEST(f.fired());
             BOOST_TEST(ec == win_err(ERROR_INVALID_PARAMETER));
@@ -1207,7 +1201,7 @@ struct iocp_faults
         {
             auto h = make_native_socket(AF_UNIX, SOCK_STREAM);
             make_native_adoptable(h);
-            expect_no_handle_leak([&]{
+            expect_no_handle_leak([&] {
                 {
                     // Adoption learns the family and type from
                     // SO_PROTOCOL_INFOW here too.
@@ -1219,10 +1213,9 @@ struct iocp_faults
                 }
                 {
                     local_stream_socket s(ioc);
-                    fault_scope f(sys::CreateIoCompletionPort,
-                        ERROR_INVALID_PARAMETER);
-                    BOOST_TEST(
-                        s.assign(h) == win_err(ERROR_INVALID_PARAMETER));
+                    fault_scope f(
+                        sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
+                    BOOST_TEST(s.assign(h) == win_err(ERROR_INVALID_PARAMETER));
                     BOOST_TEST(f.fired());
                     BOOST_TEST(!s.is_open());
                 }
@@ -1272,7 +1265,7 @@ struct iocp_faults
             temp_socket_dir odir;
             fault_scope f(sys::WSASocketW, WSAEAFNOSUPPORT);
             expect_system_error(
-                [&]{
+                [&] {
                     local_stream_acceptor a(
                         ioc, corosio::local_endpoint(odir.path()));
                 },
@@ -1283,7 +1276,7 @@ struct iocp_faults
             temp_socket_dir ldir;
             fault_scope f(sys::listen, WSAEOPNOTSUPP);
             expect_system_error(
-                [&]{
+                [&] {
                     local_stream_acceptor a(
                         ioc, corosio::local_endpoint(ldir.path()));
                 },
@@ -1303,8 +1296,7 @@ struct iocp_faults
         BOOST_TEST(!acc.listen());
         std::error_code bec, sockec, portec, syncec, compec;
         bool expired = false;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body    = [&]() -> capy::task<> {
             {
                 // AF_UNIX ConnectEx also needs a bound socket, which
                 // it satisfies with a family-only sockaddr_un.
@@ -1312,7 +1304,7 @@ struct iocp_faults
                 BOOST_TEST(!s.open());
                 fault_scope f(sys::bind, WSAEADDRNOTAVAIL);
                 auto [ec] = co_await s.connect(ep);
-                bec = ec;
+                bec       = ec;
                 BOOST_TEST(f.fired());
             }
             local_stream_socket peer(ioc);
@@ -1323,7 +1315,7 @@ struct iocp_faults
                 BOOST_TEST(!cec);
                 fault_scope f(sys::WSASocketW, WSAEAFNOSUPPORT);
                 auto [ec] = co_await acc.accept(peer);
-                sockec = ec;
+                sockec    = ec;
                 BOOST_TEST(f.fired());
                 BOOST_TEST(!peer.is_open());
                 c.cancel();
@@ -1334,16 +1326,16 @@ struct iocp_faults
                 BOOST_TEST(!c.open());
                 auto [cec] = co_await c.connect(ep);
                 BOOST_TEST(!cec);
-                fault_scope f(sys::CreateIoCompletionPort,
-                    ERROR_INVALID_PARAMETER);
+                fault_scope f(
+                    sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
                 auto [ec] = co_await acc.accept(peer);
-                portec = ec;
+                portec    = ec;
                 BOOST_TEST(f.fired());
                 BOOST_TEST(!peer.is_open());
                 c.cancel();
                 c.close();
             }
-            if(hook_is_live(sys::AcceptEx))
+            if (hook_is_live(sys::AcceptEx))
             {
                 // The AF_UNIX accept reaches the same substituted
                 // pointer as the tcp one.
@@ -1353,7 +1345,7 @@ struct iocp_faults
                 BOOST_TEST(!cec);
                 fault_scope f(sys::AcceptEx, WSAENOTSOCK);
                 auto [ec] = co_await acc.accept(peer);
-                syncec = ec;
+                syncec    = ec;
                 BOOST_TEST(f.fired());
                 BOOST_TEST(!peer.is_open());
                 c.cancel();
@@ -1370,7 +1362,7 @@ struct iocp_faults
                 BOOST_TEST(!cec);
                 completion_fault_scope q(ERROR_NETNAME_DELETED);
                 auto [ec] = co_await acc.accept(peer);
-                compec = ec;
+                compec    = ec;
                 BOOST_TEST(q.fired());
                 BOOST_TEST(!peer.is_open());
                 c.cancel();
@@ -1385,7 +1377,7 @@ struct iocp_faults
         BOOST_TEST(bec == std::errc::address_not_available);
         BOOST_TEST(sockec == std::errc::address_family_not_supported);
         BOOST_TEST(portec == win_err(ERROR_INVALID_PARAMETER));
-        if(hook_is_live(sys::AcceptEx))
+        if (hook_is_live(sys::AcceptEx))
             BOOST_TEST(syncec == std::errc::not_a_socket);
         BOOST_TEST(compec == std::errc::connection_aborted);
     }
@@ -1407,30 +1399,31 @@ struct iocp_faults
         bool ran     = false;
         bool fired   = false;
         bool expired = false;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body    = [&]() -> capy::task<> {
             {
                 // 1 is the continuation post, 2 the allocating handle
                 // post it falls back to -- the one that reaches the
                 // deferred queue -- and 3 the drain's own re-post.
-                fault_scope f1(sys::PostQueuedCompletionStatus,
-                    ERROR_NO_SYSTEM_RESOURCES, 1);
-                fault_scope f2(sys::PostQueuedCompletionStatus,
-                    ERROR_NO_SYSTEM_RESOURCES, 2);
-                fault_scope f3(sys::PostQueuedCompletionStatus,
-                    ERROR_NO_SYSTEM_RESOURCES, 3);
+                fault_scope f1(
+                    sys::PostQueuedCompletionStatus, ERROR_NO_SYSTEM_RESOURCES,
+                    1);
+                fault_scope f2(
+                    sys::PostQueuedCompletionStatus, ERROR_NO_SYSTEM_RESOURCES,
+                    2);
+                fault_scope f3(
+                    sys::PostQueuedCompletionStatus, ERROR_NO_SYSTEM_RESOURCES,
+                    3);
                 co_await post_awaitable{&cont};
                 fired = f1.fired() && f2.fired() && f3.fired();
             }
             ran = true;
             ioc.stop();
         };
-        auto pump = [&]() -> capy::task<>
-        {
-            while(!ran)
+        auto pump = [&]() -> capy::task<> {
+            while (!ran)
             {
-                std::ignore = co_await corosio::delay(
-                    std::chrono::milliseconds(5));
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(5));
             }
         };
         capy::run_async(ioc.get_executor())(body());
@@ -1454,24 +1447,23 @@ struct iocp_faults
     void testInlineCompletionPostFails()
     {
         io_context ioc(iocp);
-        auto pair = make_socket_pair(ioc);
-        auto& a = pair.first;
-        auto& b = pair.second;
+        auto pair   = make_socket_pair(ioc);
+        auto& a     = pair.first;
+        auto& b     = pair.second;
         char buf[8] = {};
         std::error_code rec;
         bool fired   = false;
         bool expired = false;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body    = [&]() -> capy::task<> {
             {
                 fault_scope r(sys::WSARecv, WSAENOTSOCK);
-                fault_scope p(sys::PostQueuedCompletionStatus,
-                    ERROR_NO_SYSTEM_RESOURCES);
+                fault_scope p(
+                    sys::PostQueuedCompletionStatus, ERROR_NO_SYSTEM_RESOURCES);
                 auto [ec, n] = co_await a.read_some(
                     capy::mutable_buffer(buf, sizeof(buf)));
                 std::ignore = n;
-                rec   = ec;
-                fired = r.fired() && p.fired();
+                rec         = ec;
+                fired       = r.fired() && p.fired();
             }
             a.cancel();
             b.cancel();
@@ -1504,13 +1496,12 @@ struct iocp_faults
         {
             io_context ioc(iocp);
             auto pair = make_socket_pair(ioc);
-            auto& s1 = pair.first;
-            auto& s2 = pair.second;
+            auto& s1  = pair.first;
+            auto& s2  = pair.second;
             std::error_code wec;
             bool premise = false;
             bool expired = false;
-            auto body = [&]() -> capy::task<>
-            {
+            auto body    = [&]() -> capy::task<> {
                 // make_socket_pair leaves both ends on a zero linger,
                 // so this is a reset rather than an orderly shutdown
                 // and it leaves SO_ERROR set on the survivor.
@@ -1518,7 +1509,7 @@ struct iocp_faults
                 premise = wait_for_poll_error(s1, POLLWRNORM);
                 touch_after_reset(s1);
                 auto [ec] = co_await s1.wait(wait_type::write);
-                wec = ec;
+                wec       = ec;
                 ioc.stop();
             };
             capy::run_async(ioc.get_executor())(body());
@@ -1530,9 +1521,10 @@ struct iocp_faults
             // SO_ERROR is the provider's to decide; what the wait owes
             // its caller is the probe's answer either way. Named in
             // the log so a run that gives neither is legible.
-            if(wec != std::errc::connection_reset)
+            if (wec != std::errc::connection_reset)
             {
-                std::fprintf(stderr,
+                std::fprintf(
+                    stderr,
                     "fault harness: the reset the poll reported left "
                     "SO_ERROR reading %d (%s)\n",
                     wec.value(), wec.message().c_str());
@@ -1544,15 +1536,14 @@ struct iocp_faults
 
         io_context ioc(iocp);
         auto pair = make_socket_pair(ioc);
-        auto& s1 = pair.first;
-        auto& s2 = pair.second;
+        auto& s1  = pair.first;
+        auto& s2  = pair.second;
         std::optional<fault_scope> probe;
         std::error_code wec;
         bool probed  = false;
         bool premise = false;
         bool expired = false;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body    = [&]() -> capy::task<> {
             s2.close();
             premise = wait_for_poll_error(s1, POLLWRNORM);
             // The probe runs on the reactor's polling thread, so the
@@ -1560,8 +1551,8 @@ struct iocp_faults
             // getsockopt while it is up.
             probe.emplace(sys::getsockopt, WSAENOTSOCK, 1u, any_thread);
             auto [ec] = co_await s1.wait(wait_type::write);
-            wec    = ec;
-            probed = probe->fired();
+            wec       = ec;
+            probed    = probe->fired();
             probe.reset();
             ioc.stop();
         };
@@ -1597,14 +1588,13 @@ struct iocp_faults
         {
             // The provider on its own, with none of the library in it.
             io_context ioc(iocp);
-            auto pair = make_socket_pair(ioc);
-            auto const fd =
-                static_cast<SOCKET>(pair.first.native_handle());
+            auto pair     = make_socket_pair(ioc);
+            auto const fd = static_cast<SOCKET>(pair.first.native_handle());
             WSAPOLLFD pfd{fd, POLLRDBAND, 0};
             ::WSASetLastError(0);
             int const n   = ::WSAPoll(&pfd, 1, 0);
             int const err = ::WSAGetLastError();
-            if(n == SOCKET_ERROR)
+            if (n == SOCKET_ERROR)
             {
                 // The other bit an error wait could register with,
                 // named here so a round that has to choose again is
@@ -1612,7 +1602,8 @@ struct iocp_faults
                 WSAPOLLFD quiet{fd, 0, 0};
                 ::WSASetLastError(0);
                 int const qn = ::WSAPoll(&quiet, 1, 0);
-                std::fprintf(stderr,
+                std::fprintf(
+                    stderr,
                     "fault harness: WSAPoll refuses POLLRDBAND with "
                     "%d; asked for nothing it answers %d, revents %d, "
                     "error %d\n",
@@ -1633,27 +1624,26 @@ struct iocp_faults
         io_context ioc(iocp);
         auto pair    = make_socket_pair(ioc);
         auto healthy = make_socket_pair(ioc);
-        auto& s1 = pair.first;
-        auto& s2 = pair.second;
+        auto& s1     = pair.first;
+        auto& s2     = pair.second;
         std::error_code eec, wec;
         bool premise = false;
         bool expired = false;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body    = [&]() -> capy::task<> {
             // Zero linger on both ends, so this is a reset and not an
             // orderly shutdown.
             s2.close();
             premise = wait_for_poll_error(s1, POLLRDBAND);
-            if(!premise)
+            if (!premise)
             {
                 report_poll_masks(s1);
                 ioc.stop();
                 co_return;
             }
             auto [ec] = co_await s1.wait(wait_type::error);
-            eec = ec;
+            eec       = ec;
             auto [wc] = co_await healthy.first.wait(wait_type::write);
-            wec = wc;
+            wec       = wc;
             ioc.stop();
         };
         capy::run_async(ioc.get_executor())(body());
@@ -1696,35 +1686,33 @@ struct iocp_faults
         // freed below can come back as one of these.
         auto pair    = make_socket_pair(ioc);
         auto healthy = make_socket_pair(ioc);
-        auto& s1 = pair.first;
-        auto& s2 = pair.second;
+        auto& s1     = pair.first;
+        auto& s2     = pair.second;
         std::error_code eec, wec, lec;
         bool done_err  = false;
         bool done_late = false;
         bool expired   = false;
-        auto parked = [&]() -> capy::task<>
-        {
+        auto parked    = [&]() -> capy::task<> {
             // Nothing raises the error condition on a healthy pair, so
             // this wait stays parked while the handle under it goes.
             auto [ec] = co_await s1.wait(wait_type::error);
-            eec      = ec;
-            done_err = true;
-            if(done_late)
+            eec       = ec;
+            done_err  = true;
+            if (done_late)
                 ioc.stop();
         };
-        auto breaker = [&]() -> capy::task<>
-        {
+        auto breaker = [&]() -> capy::task<> {
             ::closesocket(static_cast<SOCKET>(s1.native_handle()));
             // A register is what makes the reactor rebuild its poll
             // set around the entry that is now gone.
             auto [wc] = co_await healthy.first.wait(wait_type::write);
-            wec = wc;
+            wec       = wc;
             // And one more afterwards: a reactor that survived the
             // refusal still takes registrations.
             auto [lc] = co_await healthy.second.wait(wait_type::write);
             lec       = lc;
             done_late = true;
-            if(done_err)
+            if (done_err)
                 ioc.stop();
         };
         capy::run_async(ioc.get_executor())(parked());
@@ -1778,27 +1766,26 @@ struct iocp_faults
         BOOST_TEST(!lacc.listen());
         std::error_code tec, lec, cec;
         bool expired = false;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body    = [&]() -> capy::task<> {
             {
                 // The accepted socket is created before the pointer is
                 // consulted, so the refusal owns closing it.
                 tcp_socket server(ioc);
                 auto [ec] = co_await acc.accept(server);
-                tec = ec;
+                tec       = ec;
                 BOOST_TEST(!server.is_open());
             }
             {
                 local_stream_socket peer(ioc);
                 auto [ec] = co_await lacc.accept(peer);
-                lec = ec;
+                lec       = ec;
                 BOOST_TEST(!peer.is_open());
             }
             {
                 local_stream_socket c(ioc);
                 BOOST_TEST(!c.open());
                 auto [ec] = co_await c.connect(ep);
-                cec = ec;
+                cec       = ec;
                 BOOST_TEST(c.is_open());
             }
             ioc.stop();
@@ -1821,7 +1808,7 @@ struct iocp_faults
         {
             auto h = make_native_socket(AF_INET, SOCK_STREAM);
             make_native_adoptable(h);
-            expect_no_handle_leak([&]{
+            expect_no_handle_leak([&] {
                 {
                     tcp_acceptor acc(ioc);
                     fault_scope f(sys::getsockopt, WSAENOTSOCK);
@@ -1831,10 +1818,10 @@ struct iocp_faults
                 }
                 {
                     tcp_acceptor acc(ioc);
-                    fault_scope f(sys::CreateIoCompletionPort,
-                        ERROR_INVALID_PARAMETER);
-                    BOOST_TEST(acc.assign(h) ==
-                        win_err(ERROR_INVALID_PARAMETER));
+                    fault_scope f(
+                        sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
+                    BOOST_TEST(
+                        acc.assign(h) == win_err(ERROR_INVALID_PARAMETER));
                     BOOST_TEST(f.fired());
                     BOOST_TEST(!acc.is_open());
                 }
@@ -1845,7 +1832,7 @@ struct iocp_faults
         {
             auto h = make_native_socket(AF_UNIX, SOCK_STREAM);
             make_native_adoptable(h);
-            expect_no_handle_leak([&]{
+            expect_no_handle_leak([&] {
                 {
                     local_stream_acceptor acc(ioc);
                     fault_scope f(sys::getsockopt, WSAENOTSOCK);
@@ -1855,10 +1842,10 @@ struct iocp_faults
                 }
                 {
                     local_stream_acceptor acc(ioc);
-                    fault_scope f(sys::CreateIoCompletionPort,
-                        ERROR_INVALID_PARAMETER);
-                    BOOST_TEST(acc.assign(h) ==
-                        win_err(ERROR_INVALID_PARAMETER));
+                    fault_scope f(
+                        sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
+                    BOOST_TEST(
+                        acc.assign(h) == win_err(ERROR_INVALID_PARAMETER));
                     BOOST_TEST(f.fired());
                     BOOST_TEST(!acc.is_open());
                 }
@@ -1878,14 +1865,14 @@ struct iocp_faults
         {
             fault_scope f(sys::setsockopt, WSAENOTSOCK);
             expect_system_error(
-                [&]{ acc.set_option(socket_option::reuse_address(true)); },
+                [&] { acc.set_option(socket_option::reuse_address(true)); },
                 std::errc::not_a_socket);
             BOOST_TEST(f.fired());
         }
         {
             fault_scope f(sys::getsockopt, WSAENOTSOCK);
             expect_system_error(
-                [&]{
+                [&] {
                     std::ignore =
                         acc.get_option<socket_option::reuse_address>();
                 },
@@ -1915,8 +1902,7 @@ struct iocp_faults
         char out[4] = "abc";
         std::error_code rec, wec, wtec, sdec;
         bool expired = false;
-        auto body = [&]() -> capy::task<>
-        {
+        auto body    = [&]() -> capy::task<> {
             local_stream_socket c(ioc), peer(ioc);
             BOOST_TEST(!c.open());
             {
@@ -1932,15 +1918,15 @@ struct iocp_faults
                 auto [ec, n] = co_await c.read_some(
                     capy::mutable_buffer(buf, sizeof(buf)));
                 std::ignore = n;
-                rec = ec;
+                rec         = ec;
                 BOOST_TEST(f.fired());
             }
             {
                 fault_scope f(sys::WSASend, WSAENOBUFS);
-                auto [ec, n] = co_await c.write_some(
-                    capy::const_buffer(out, 3));
+                auto [ec, n] =
+                    co_await c.write_some(capy::const_buffer(out, 3));
                 std::ignore = n;
-                wec = ec;
+                wec         = ec;
                 BOOST_TEST(f.fired());
             }
             {
@@ -1948,7 +1934,7 @@ struct iocp_faults
                 // too.
                 fault_scope f(sys::WSARecv, WSAENOTSOCK);
                 auto [ec] = co_await c.wait(wait_type::read);
-                wtec = ec;
+                wtec      = ec;
                 BOOST_TEST(f.fired());
             }
             {
@@ -2012,6 +1998,6 @@ struct iocp_faults
 
 TEST_SUITE(iocp_faults, "boost.corosio.fault.iocp");
 
-} // boost::corosio::test::fault
+} // namespace boost::corosio::test::fault
 
 #endif

@@ -62,16 +62,14 @@ namespace {
 template<auto Backend>
 struct budget_disabled_test
 {
-    static io_context
-    make_ioc()
+    static io_context make_ioc()
     {
         io_context_options opts;
         opts.inline_budget_max = 0;
         return io_context(Backend, opts);
     }
 
-    void
-    testStreamSyncOpsDefer()
+    void testStreamSyncOpsDefer()
     {
         auto ioc = make_ioc();
         auto ex  = ioc.get_executor();
@@ -80,8 +78,9 @@ struct budget_disabled_test
 
         std::error_code wec;
         std::size_t wn = 0;
-        auto writer = [&]() -> capy::task<> {
-            auto [ec, n] = co_await s1.write_some(capy::const_buffer("abcd", 4));
+        auto writer    = [&]() -> capy::task<> {
+            auto [ec, n] =
+                co_await s1.write_some(capy::const_buffer("abcd", 4));
             wec = ec;
             wn  = n;
         };
@@ -94,7 +93,7 @@ struct budget_disabled_test
         char buf[16];
         std::error_code rec, wtec;
         std::size_t rn = 0;
-        auto reader = [&]() -> capy::task<> {
+        auto reader    = [&]() -> capy::task<> {
             auto [wt_ec] = co_await s2.wait(wait_type::read);
             wtec         = wt_ec;
             auto [ec, n] =
@@ -109,8 +108,7 @@ struct budget_disabled_test
         BOOST_TEST_EQ(rn, 4u);
     }
 
-    void
-    testDatagramSyncOpsDefer()
+    void testDatagramSyncOpsDefer()
     {
         auto ioc = make_ioc();
         auto ex  = ioc.get_executor();
@@ -123,11 +121,12 @@ struct budget_disabled_test
         auto ep1 = s1.local_endpoint();
         auto ep2 = s2.local_endpoint();
 
-        int ok = 0;
+        int ok      = 0;
         auto sender = [&]() -> capy::task<> {
             // send_to before connect: BSD rejects an explicit
             // destination on a connected datagram socket.
-            auto [tec, tn] = co_await s2.send_to(capy::const_buffer("y", 1), ep1);
+            auto [tec, tn] =
+                co_await s2.send_to(capy::const_buffer("y", 1), ep1);
             if (!tec && tn == 1)
                 ++ok;
             auto [cec] = co_await s2.connect(ep1);
@@ -144,7 +143,7 @@ struct budget_disabled_test
 
         char buf[8];
         endpoint source;
-        ok = 0;
+        ok            = 0;
         auto receiver = [&]() -> capy::task<> {
             auto [wec] = co_await s1.wait(wait_type::read);
             if (!wec)
@@ -165,8 +164,7 @@ struct budget_disabled_test
     }
 
 #if BOOST_COROSIO_POSIX
-    void
-    testLocalSyncOpsDefer()
+    void testLocalSyncOpsDefer()
     {
         auto ioc = make_ioc();
         auto ex  = ioc.get_executor();
@@ -179,7 +177,7 @@ struct budget_disabled_test
             throw std::system_error(ec, "connect_pair");
 
         char buf[8];
-        int ok = 0;
+        int ok      = 0;
         auto driver = [&]() -> capy::task<> {
             auto [wec, wn] = co_await a.write_some(capy::const_buffer("hi", 2));
             if (!wec && wn == 2)
@@ -202,8 +200,7 @@ struct budget_disabled_test
     }
 #endif
 
-    void
-    run()
+    void run()
     {
         testStreamSyncOpsDefer();
         testDatagramSyncOpsDefer();
@@ -213,7 +210,8 @@ struct budget_disabled_test
     }
 };
 
-COROSIO_REACTOR_BACKEND_TESTS(budget_disabled_test, "boost.corosio.budget_disabled")
+COROSIO_REACTOR_BACKEND_TESTS(
+    budget_disabled_test, "boost.corosio.budget_disabled")
 
 #if BOOST_COROSIO_HAS_URING
 
@@ -222,11 +220,10 @@ struct uring_budget_test
     // Interleaved cycles: wherever the deferral boundary lands, every op
     // kind in the cycle crosses it at some iteration.
 
-    void
-    testStreamStoppedOpsDefer()
+    void testStreamStoppedOpsDefer()
     {
         io_context ioc(uring);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
         auto peer = s1.remote_endpoint();
@@ -259,11 +256,10 @@ struct uring_budget_test
         BOOST_TEST_EQ(canceled, 3 * budget_cycles);
     }
 
-    void
-    testStreamSuccessOpsDefer()
+    void testStreamSuccessOpsDefer()
     {
         io_context ioc(uring);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -300,8 +296,7 @@ struct uring_budget_test
         BOOST_TEST_EQ(ok, 2 * budget_cycles);
     }
 
-    void
-    testUdpStoppedOpsDefer()
+    void testUdpStoppedOpsDefer()
     {
         io_context ioc(uring);
         auto ex = ioc.get_executor();
@@ -361,8 +356,7 @@ struct uring_budget_test
         BOOST_TEST_EQ(canceled, 5 * budget_cycles);
     }
 
-    void
-    testUdpSuccessOpsDefer()
+    void testUdpSuccessOpsDefer()
     {
         io_context ioc(uring);
         auto ex = ioc.get_executor();
@@ -380,7 +374,7 @@ struct uring_budget_test
 
         int preloaded = 0;
         auto preload  = [&]() -> capy::task<> {
-            auto [cec] = co_await s2.connect(ep1);
+            auto [cec]  = co_await s2.connect(ep1);
             std::ignore = cec;
             for (int i = 0; i < 5 * budget_cycles; ++i)
             {
@@ -444,8 +438,7 @@ struct uring_budget_test
     }
 
 #if BOOST_COROSIO_POSIX
-    void
-    testLocalStreamStoppedOpsDefer()
+    void testLocalStreamStoppedOpsDefer()
     {
         io_context ioc(uring);
         auto ex = ioc.get_executor();
@@ -485,8 +478,7 @@ struct uring_budget_test
         BOOST_TEST_EQ(canceled, 3 * budget_cycles);
     }
 
-    void
-    testLocalStreamSuccessOpsDefer()
+    void testLocalStreamSuccessOpsDefer()
     {
         io_context ioc(uring);
         auto ex = ioc.get_executor();
@@ -528,8 +520,7 @@ struct uring_budget_test
         BOOST_TEST_EQ(ok, 2 * budget_cycles);
     }
 
-    void
-    testLocalDatagramStoppedOpsDefer()
+    void testLocalDatagramStoppedOpsDefer()
     {
         io_context ioc(uring);
         auto ex = ioc.get_executor();
@@ -591,8 +582,7 @@ struct uring_budget_test
         BOOST_TEST_EQ(canceled, 5 * budget_cycles);
     }
 
-    void
-    testLocalDatagramSuccessOpsDefer()
+    void testLocalDatagramSuccessOpsDefer()
     {
         io_context ioc(uring);
         auto ex = ioc.get_executor();
@@ -674,8 +664,7 @@ struct uring_budget_test
     }
 #endif // BOOST_COROSIO_POSIX
 
-    void
-    run()
+    void run()
     {
         testStreamStoppedOpsDefer();
         testStreamSuccessOpsDefer();

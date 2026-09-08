@@ -19,7 +19,7 @@
 #include <boost/capy/write.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 // end::assume[]
 
 #include <iostream>
@@ -35,14 +35,15 @@ class worker : public corosio::tcp_server::worker_base
     std::string buf_;
 
 public:
-    worker(corosio::io_context& ctx)
-        : ctx_(ctx)
-        , sock_(ctx)
+    worker(corosio::io_context& ctx) : ctx_(ctx), sock_(ctx)
     {
         buf_.reserve(4096);
     }
 
-    corosio::tcp_socket& socket() override { return sock_; }
+    corosio::tcp_socket& socket() override
+    {
+        return sock_;
+    }
 
     void run(corosio::tcp_server::launcher launch) override
     {
@@ -75,7 +76,8 @@ public:
 // end::server_class[]
 
 // tag::session[]
-capy::task<> worker::do_session()
+capy::task<>
+worker::do_session()
 {
     for (;;)
     {
@@ -86,7 +88,7 @@ capy::task<> worker::do_session()
             capy::mutable_buffer(buf_.data(), buf_.size()));
 
         if (ec || n == 0)
-            break;  // Connection closed or error
+            break; // Connection closed or error
 
         buf_.resize(n);
 
@@ -95,7 +97,7 @@ capy::task<> worker::do_session()
             sock_, capy::const_buffer(buf_.data(), buf_.size()));
 
         if (wec)
-            break;  // Write error
+            break; // Write error
     }
 
     sock_.close();
@@ -103,7 +105,8 @@ capy::task<> worker::do_session()
 // end::session[]
 
 // tag::main[]
-int main()
+int
+main()
 {
     corosio::io_context ioc;
 

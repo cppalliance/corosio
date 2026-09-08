@@ -84,7 +84,7 @@ struct wolfssl_stream_test
 
         [[maybe_unused]] capy::any_stream& mutable_next = stream.next_layer();
 
-        wolfssl_stream const& cref = stream;
+        wolfssl_stream const& cref                          = stream;
         [[maybe_unused]] capy::any_stream const& const_next = cref.next_layer();
 
         BOOST_TEST(&mutable_next == &const_next);
@@ -99,8 +99,8 @@ struct wolfssl_stream_test
     {
         using namespace test;
 
-        BOOST_TEST(wolfssl_category().name() ==
-            std::string_view("corosio.wolfssl"));
+        BOOST_TEST(
+            wolfssl_category().name() == std::string_view("corosio.wolfssl"));
 
         // End-to-end: a certificate-validation failure surfaces an error
         // in the WolfSSL category with a non-empty, decoded message.
@@ -109,8 +109,9 @@ struct wolfssl_stream_test
             auto client_ctx = make_untrusted_ca_client_context();
             auto server_ctx = make_server_context();
             std::error_code client_ec;
-            run_tls_test_fail(ioc, client_ctx, server_ctx, make_stream,
-                make_stream, &client_ec);
+            run_tls_test_fail(
+                ioc, client_ctx, server_ctx, make_stream, make_stream,
+                &client_ec);
             BOOST_TEST(client_ec);
             BOOST_TEST(client_ec.category() == wolfssl_category());
             BOOST_TEST(!client_ec.message().empty());
@@ -133,7 +134,7 @@ struct wolfssl_stream_test
         // failing the handshake as ASN_NO_SIGNER_E.
         temp_dir capath("corosio_wolfssl_capath_");
         auto const& dir = capath.path;
-        auto ca_file = dir / "test_ca.pem";
+        auto ca_file    = dir / "test_ca.pem";
         {
             std::ofstream out(ca_file, std::ios::binary);
             out << ca_cert_pem;
@@ -210,8 +211,7 @@ struct wolfssl_stream_test
         test::testAlpnNoOverlap(make_stream, wolfssl_supports_alpn());
         test::testProtocolVersion(make_stream);
         test::testCiphersuitesTls13(
-            make_stream, "TLS13-AES128-GCM-SHA256",
-            "TLS13-AES256-GCM-SHA384");
+            make_stream, "TLS13-AES128-GCM-SHA256", "TLS13-AES256-GCM-SHA384");
         test::testPkcs12(make_stream);
         test::testPkcs12Chain(make_stream);
         test::testCertificateChain(make_stream);

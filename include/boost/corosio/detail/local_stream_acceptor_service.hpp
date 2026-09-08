@@ -66,8 +66,7 @@ public:
         @return Error code on failure, empty on success.
     */
     virtual std::error_code assign_socket(
-        local_stream_acceptor::implementation& impl,
-        native_handle_type fd) = 0;
+        local_stream_acceptor::implementation& impl, native_handle_type fd) = 0;
 
     /** Bind an open acceptor to a local endpoint.
 
@@ -78,8 +77,7 @@ public:
         @return Error code on failure, empty on success.
     */
     virtual std::error_code bind_acceptor(
-        local_stream_acceptor::implementation& impl,
-        local_endpoint ep) = 0;
+        local_stream_acceptor::implementation& impl, local_endpoint ep) = 0;
 
     /** Start listening for incoming connections.
 
@@ -89,11 +87,10 @@ public:
         @return Error code on failure, empty on success.
     */
     virtual std::error_code listen_acceptor(
-        local_stream_acceptor::implementation& impl,
-        int backlog) = 0;
+        local_stream_acceptor::implementation& impl, int backlog) = 0;
 
 protected:
-    local_stream_acceptor_service() = default;
+    local_stream_acceptor_service()           = default;
     ~local_stream_acceptor_service() override = default;
 };
 

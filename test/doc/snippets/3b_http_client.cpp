@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 #include <boost/corosio.hpp>
@@ -48,13 +48,12 @@
 #include "test_suite.hpp"
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 capy::task<>
-bindings_pattern(
-    corosio::tcp_socket& s, corosio::endpoint ep, bool& done)
+bindings_pattern(corosio::tcp_socket& s, corosio::endpoint ep, bool& done)
 {
     // tag::error_bindings[]
     auto [ec] = co_await s.connect(ep);
@@ -68,11 +67,10 @@ bindings_pattern(
 }
 
 capy::task<>
-exceptions_pattern(
-    corosio::tcp_socket& s, corosio::endpoint ep, bool& done)
+exceptions_pattern(corosio::tcp_socket& s, corosio::endpoint ep, bool& done)
 {
     // tag::error_exceptions[]
-    if (auto [ec] = co_await s.connect(ep); ec)  // Throw on error
+    if (auto [ec] = co_await s.connect(ep); ec) // Throw on error
         throw std::system_error(ec);
     // end::error_exceptions[]
     done = true;
@@ -88,16 +86,15 @@ struct http_client_test
 {
     // Both fragments connect for real against a loopback listener.
     template<class Fragment>
-    void
-    testConnectPattern(Fragment fragment)
+    void testConnectPattern(Fragment fragment)
     {
         corosio::io_context ioc;
         auto ex = ioc.get_executor();
 
         corosio::tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        BOOST_TEST(!acc.bind(
-            corosio::endpoint(corosio::ipv4_address::loopback(), 0)));
+        BOOST_TEST(
+            !acc.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
         auto ep = acc.local_endpoint();
 
@@ -118,8 +115,7 @@ struct http_client_test
         ioc.run();
     }
 
-    void
-    run()
+    void run()
     {
         testConnectPattern(&bindings_pattern);
         testConnectPattern(&exceptions_pattern);

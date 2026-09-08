@@ -47,11 +47,10 @@ namespace boost::corosio {
 template<auto Backend>
 struct mt_reactor_test
 {
-    void
-    testEventCompletesBatchedOps()
+    void testEventCompletesBatchedOps()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -75,7 +74,7 @@ struct mt_reactor_test
             ++done;
         };
         auto trip = [&]() -> capy::task<> {
-            char cc[2] = {'z', 'z'};
+            char cc[2]  = {'z', 'z'};
             std::ignore = ::send(
                 static_cast<int>(s2.native_handle()), cc, 2, MSG_NOSIGNAL);
             co_return;
@@ -90,11 +89,10 @@ struct mt_reactor_test
         BOOST_TEST(!wec);
     }
 
-    void
-    testForeignPostWakesParkedFollower()
+    void testForeignPostWakesParkedFollower()
     {
         io_context ioc(Backend);
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
@@ -145,8 +143,7 @@ struct mt_reactor_test
         BOOST_TEST(resumed);
     }
 
-    void
-    run()
+    void run()
     {
         testEventCompletesBatchedOps();
         testForeignPostWakesParkedFollower();

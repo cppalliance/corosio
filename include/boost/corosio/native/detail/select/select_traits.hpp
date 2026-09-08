@@ -42,8 +42,8 @@ class select_scheduler;
 
 struct select_traits
 {
-    using scheduler_type    = select_scheduler;
-    using desc_state_type   = reactor_descriptor_state;
+    using scheduler_type  = select_scheduler;
+    using desc_state_type = reactor_descriptor_state;
 
     static constexpr bool needs_write_notification = true;
 
@@ -51,12 +51,15 @@ struct select_traits
     struct stream_socket_hook
     {
         std::error_code on_set_option(
-            int fd, int level, int optname,
-            void const* data, std::size_t size) noexcept
+            int fd,
+            int level,
+            int optname,
+            void const* data,
+            std::size_t size) noexcept
         {
             if (::setsockopt(
-                    fd, level, optname, data,
-                    static_cast<socklen_t>(size)) != 0)
+                    fd, level, optname, data, static_cast<socklen_t>(size)) !=
+                0)
                 return make_err(errno);
             return {};
         }
@@ -91,8 +94,8 @@ struct select_traits
         // send() to suppress SIGPIPE inline; otherwise fall back to
         // write() and rely on the SO_NOSIGPIPE set in accept_policy
         // and set_fd_options.
-        static ssize_t write_one(
-            int fd, void const* data, std::size_t size) noexcept
+        static ssize_t
+        write_one(int fd, void const* data, std::size_t size) noexcept
         {
             ssize_t n;
             do
@@ -110,15 +113,15 @@ struct select_traits
 
     struct accept_policy
     {
-        static int do_accept(
-            int fd, sockaddr_storage& peer, socklen_t& addrlen) noexcept
+        static int
+        do_accept(int fd, sockaddr_storage& peer, socklen_t& addrlen) noexcept
         {
             addrlen = sizeof(peer);
             int new_fd;
             do
             {
-                new_fd = ::accept(
-                    fd, reinterpret_cast<sockaddr*>(&peer), &addrlen);
+                new_fd =
+                    ::accept(fd, reinterpret_cast<sockaddr*>(&peer), &addrlen);
             }
             while (new_fd < 0 && errno == EINTR);
 
@@ -165,8 +168,7 @@ struct select_traits
             // as fatal, matching the kqueue backend.
             int one = 1;
             if (::setsockopt(
-                    new_fd, SOL_SOCKET, SO_NOSIGPIPE,
-                    &one, sizeof(one)) != 0)
+                    new_fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one)) != 0)
             {
                 int err = errno;
                 ::close(new_fd);
@@ -208,8 +210,8 @@ struct select_traits
         // matching the kqueue backend. Caller closes fd on error.
         {
             int one = 1;
-            if (::setsockopt(
-                    fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one)) != 0)
+            if (::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one)) !=
+                0)
                 return make_err(errno);
         }
 #endif
@@ -219,14 +221,13 @@ struct select_traits
 
     // Apply protocol-specific options after socket creation.
     // For IP sockets, sets IPV6_V6ONLY on AF_INET6 (best-effort).
-    static std::error_code
-    configure_ip_socket(int fd, int family) noexcept
+    static std::error_code configure_ip_socket(int fd, int family) noexcept
     {
         if (family == AF_INET6)
         {
             int one = 1;
-            std::ignore = ::setsockopt(
-                fd, IPPROTO_IPV6, IPV6_V6ONLY, &one, sizeof(one));
+            std::ignore =
+                ::setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &one, sizeof(one));
         }
 
         return set_fd_options(fd);
@@ -234,22 +235,20 @@ struct select_traits
 
     // Apply protocol-specific options for acceptor sockets.
     // For IP acceptors, sets IPV6_V6ONLY=0 (dual-stack, best-effort).
-    static std::error_code
-    configure_ip_acceptor(int fd, int family) noexcept
+    static std::error_code configure_ip_acceptor(int fd, int family) noexcept
     {
         if (family == AF_INET6)
         {
             int val = 0;
-            std::ignore = ::setsockopt(
-                fd, IPPROTO_IPV6, IPV6_V6ONLY, &val, sizeof(val));
+            std::ignore =
+                ::setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &val, sizeof(val));
         }
 
         return set_fd_options(fd);
     }
 
     // Apply options for local (unix) sockets.
-    static std::error_code
-    configure_local_socket(int fd) noexcept
+    static std::error_code configure_local_socket(int fd) noexcept
     {
         return set_fd_options(fd);
     }
@@ -257,8 +256,7 @@ struct select_traits
     // Non-mutating validation for fds adopted via assign(). Select's
     // reactor cannot handle fds above FD_SETSIZE, so reject them up
     // front instead of letting FD_SET clobber unrelated memory.
-    static std::error_code
-    validate_assigned_fd(int fd) noexcept
+    static std::error_code validate_assigned_fd(int fd) noexcept
     {
         if (fd >= FD_SETSIZE)
             return make_err(EMFILE);

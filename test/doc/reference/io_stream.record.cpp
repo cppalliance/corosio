@@ -25,13 +25,14 @@
 #include <system_error>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 
 namespace {
 
 // tag::io_stream[]
 // Read until buffer full or EOF
-capy::task<> read_all(corosio::io_stream& stream, std::span<char> buf)
+capy::task<>
+read_all(corosio::io_stream& stream, std::span<char> buf)
 {
     std::size_t total = 0;
     while (total < buf.size())

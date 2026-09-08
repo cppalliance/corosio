@@ -23,7 +23,8 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::to_string[]
-void print_as_dotted_decimal()
+void
+print_as_dotted_decimal()
 {
     assert(corosio::ipv4_address(0x01020304).to_string() == "1.2.3.4");
 }

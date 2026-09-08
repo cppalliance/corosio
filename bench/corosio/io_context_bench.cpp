@@ -332,13 +332,14 @@ make_io_context_suite()
     return bench::benchmark_suite("io_context", F::is_microbenchmark)
         .add("single_threaded", bench_single_threaded_post<Backend>)
         .add("multithreaded", bench_multithreaded_scaling<Backend>)
-            .args({8})
+        .args({8})
         .add("interleaved", bench_interleaved_post_run<Backend>)
         .add("concurrent", bench_concurrent_post_run<Backend>)
-            .args({4})
+        .args({4})
         .add("high_inline_budget", bench_high_inline_budget<Backend>)
         .add("large_event_buffer", bench_large_event_buffer<Backend>)
-        .add("single_threaded_lockless", bench_single_threaded_lockless<Backend>)
+        .add(
+            "single_threaded_lockless", bench_single_threaded_lockless<Backend>)
         .add("interleaved_lockless", bench_interleaved_lockless<Backend>);
 }
 

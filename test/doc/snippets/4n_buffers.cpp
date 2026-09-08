@@ -24,14 +24,14 @@
 #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
 #if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
+#pragma warning(disable : 4834) // discarding [[nodiscard]] return value
+#pragma warning(disable : 4189) // local variable initialized but not referenced
+#pragma warning(disable : 4100) // unreferenced formal parameter
+#pragma warning(disable : 4101) // unreferenced local variable
+#pragma warning(disable : 4456) // declaration hides previous local declaration
+#pragma warning(disable : 4457) // declaration hides function parameter
+#pragma warning(disable : 4458) // declaration hides class member
+#pragma warning(disable : 4459) // declaration hides global declaration
 #endif
 
 // tag::assume[]
@@ -42,7 +42,7 @@
 #include <boost/capy/task.hpp>
 
 namespace corosio = boost::corosio;
-namespace capy = boost::capy;
+namespace capy    = boost::capy;
 // end::assume[]
 
 // tag::buffer_slice_include[]
@@ -91,27 +91,27 @@ auto read_some(MutableBufferSequence const& buffers);
 } // namespace concept_sketch
 
 capy::task<>
-single_buffer_read(
-    corosio::tcp_socket& sock, char* data, std::size_t size)
+single_buffer_read(corosio::tcp_socket& sock, char* data, std::size_t size)
 {
     // tag::single_buffer[]
     capy::mutable_buffer buf(data, size);
-    auto [ec, n] = co_await sock.read_some(buf);  // Works directly
+    auto [ec, n] = co_await sock.read_some(buf); // Works directly
     // end::single_buffer[]
 }
 
 capy::task<>
 multi_buffer_read(
     corosio::tcp_socket& sock,
-    char* header, std::size_t header_size,
-    char* body, std::size_t body_size)
+    char* header,
+    std::size_t header_size,
+    char* body,
+    std::size_t body_size)
 {
     // tag::multi_buffer[]
     // Array of buffers
     std::array<capy::mutable_buffer, 2> bufs = {
         capy::mutable_buffer(header, header_size),
-        capy::mutable_buffer(body, body_size)
-    };
+        capy::mutable_buffer(body, body_size)};
     auto [ec, n] = co_await sock.read_some(bufs);
 
     // end::multi_buffer[]
@@ -134,18 +134,16 @@ multi_buffer_write(
 
 capy::task<>
 slice_writes(
-    corosio::tcp_socket& sock,
-    std::array<capy::const_buffer, 2> const& bufs)
+    corosio::tcp_socket& sock, std::array<capy::const_buffer, 2> const& bufs)
 {
     // tag::buffer_slice[]
     // Send only the first 16 bytes of the sequence
-    auto [ec, n] = co_await capy::write(
-        sock, capy::buffer_slice(bufs, 0, 16));
+    auto [ec, n] = co_await capy::write(sock, capy::buffer_slice(bufs, 0, 16));
     if (ec)
         co_return;
 
     // Everything after the first 16 bytes, as a value
-    auto rest = capy::buffer_slice(bufs, 16);
+    auto rest       = capy::buffer_slice(bufs, 16);
     std::tie(ec, n) = co_await capy::write(sock, rest);
     // end::buffer_slice[]
     sock.shutdown(corosio::shutdown_send);
@@ -162,7 +160,7 @@ consume_reads(
 
     // After reading n bytes:
     auto [ec, n] = co_await sock.read_some(consuming.data());
-    consuming.consume(n);  // Advance past the bytes read
+    consuming.consume(n); // Advance past the bytes read
 
     // consuming.data() now spans the remaining unread bytes
     // end::consuming_buffers[]
@@ -170,7 +168,8 @@ consume_reads(
 }
 
 // tag::buffer_param[]
-void accept_any_buffer(corosio::buffer_param buffers)
+void
+accept_any_buffer(corosio::buffer_param buffers)
 {
     capy::mutable_buffer temp[8];
     std::size_t n = buffers.copy_to(temp, 8);
@@ -181,23 +180,25 @@ void accept_any_buffer(corosio::buffer_param buffers)
 
 // tag::lifetime[]
 // WRONG: buffer outlives string
-capy::task<void> bad_example(corosio::tcp_socket& sock)
+capy::task<void>
+bad_example(corosio::tcp_socket& sock)
 {
     capy::const_buffer buf;
     {
         std::string temp = "Hello";
-        buf = capy::const_buffer(temp.data(), temp.size());
-    }  // temp destroyed here!
+        buf              = capy::const_buffer(temp.data(), temp.size());
+    } // temp destroyed here!
 
-    std::ignore = co_await sock.write_some(buf);  // Undefined behavior
+    std::ignore = co_await sock.write_some(buf); // Undefined behavior
 }
 
 // CORRECT: keep storage alive
-capy::task<void> good_example(corosio::tcp_socket& sock)
+capy::task<void>
+good_example(corosio::tcp_socket& sock)
 {
     std::string msg = "Hello";
-    std::ignore = co_await sock.write_some(
-        capy::const_buffer(msg.data(), msg.size()));
+    std::ignore =
+        co_await sock.write_some(capy::const_buffer(msg.data(), msg.size()));
 }
 // end::lifetime[]
 
@@ -219,8 +220,7 @@ scatter_read(corosio::tcp_socket& sock, std::size_t& out_n)
 
     std::array<capy::mutable_buffer, 2> read_bufs = {
         capy::mutable_buffer(&header, sizeof(header)),
-        capy::mutable_buffer(body, sizeof(body))
-    };
+        capy::mutable_buffer(body, sizeof(body))};
 
     auto [ec, n] = co_await sock.read_some(read_bufs);
     // Data fills header first, then body
@@ -233,12 +233,11 @@ gather_write(corosio::tcp_socket& sock, std::size_t& out_n)
 {
     // tag::gather_write[]
     std::string header = "HTTP/1.1 200 OK\r\n\r\n";
-    std::string body = "Hello, World!";
+    std::string body   = "Hello, World!";
 
     std::array<capy::const_buffer, 2> write_bufs = {
         capy::const_buffer(header.data(), header.size()),
-        capy::const_buffer(body.data(), body.size())
-    };
+        capy::const_buffer(body.data(), body.size())};
 
     auto [ec, n] = co_await sock.write_some(write_bufs);
     // Sends header followed by body in a single operation
@@ -254,7 +253,8 @@ struct packet_header
     std::uint32_t length;
 };
 
-capy::task<packet_header> read_header(corosio::io_stream& stream)
+capy::task<packet_header>
+read_header(corosio::io_stream& stream)
 {
     packet_header header;
     auto [ec, n] = co_await capy::read(
@@ -269,8 +269,7 @@ capy::task<packet_header> read_header(corosio::io_stream& stream)
 
 struct buffers_test
 {
-    void
-    testMutableBuffer()
+    void testMutableBuffer()
     {
         // tag::mutable_buffer[]
         char data[1024];
@@ -280,8 +279,7 @@ struct buffers_test
         BOOST_TEST(buf.size() == sizeof(data));
     }
 
-    void
-    testConstBuffer()
+    void testConstBuffer()
     {
         // tag::const_buffer[]
         std::string msg = "Hello";
@@ -291,8 +289,7 @@ struct buffers_test
         BOOST_TEST(buf.size() == 5);
     }
 
-    void
-    testFromRawArrays()
+    void testFromRawArrays()
     {
         // tag::from_raw_arrays[]
         char data[1024];
@@ -306,8 +303,7 @@ struct buffers_test
         BOOST_TEST(cbuf.size() == 5);
     }
 
-    void
-    testFromString()
+    void testFromString()
     {
         // tag::from_string[]
         std::string s = "Hello, World!";
@@ -323,8 +319,7 @@ struct buffers_test
         BOOST_TEST(cbuf.size() == 13);
     }
 
-    void
-    testFromVector()
+    void testFromVector()
     {
         // tag::from_vector[]
         std::vector<char> vec(1024);
@@ -334,11 +329,10 @@ struct buffers_test
         BOOST_TEST(buf.size() == 1024);
     }
 
-    void
-    testSingleBuffer()
+    void testSingleBuffer()
     {
         corosio::io_context ioc;
-        auto [a, b] = corosio::test::make_socket_pair(ioc);
+        auto [a, b]   = corosio::test::make_socket_pair(ioc);
         char data[64] = {};
         capy::run_async(ioc.get_executor())(
             [](corosio::tcp_socket& peer) -> capy::task<> {
@@ -350,8 +344,7 @@ struct buffers_test
         BOOST_TEST(std::memcmp(data, "ping", 4) == 0);
     }
 
-    void
-    testMultipleBuffers()
+    void testMultipleBuffers()
     {
         corosio::io_context ioc;
         auto [a, b] = corosio::test::make_socket_pair(ioc);
@@ -359,32 +352,29 @@ struct buffers_test
         // Scatter read: 8 bytes split across a 2-byte header and the
         // body.
         char header[2] = {};
-        char body[6] = {};
+        char body[6]   = {};
         capy::run_async(ioc.get_executor())(
             [](corosio::tcp_socket& peer) -> capy::task<> {
-                co_await peer.write_some(
-                    capy::const_buffer("ABCDEFGH", 8));
+                co_await peer.write_some(capy::const_buffer("ABCDEFGH", 8));
             }(b));
         capy::run_async(ioc.get_executor())(
-            multi_buffer_read(
-                a, header, sizeof(header), body, sizeof(body)));
+            multi_buffer_read(a, header, sizeof(header), body, sizeof(body)));
         ioc.run();
         ioc.restart();
         BOOST_TEST(std::memcmp(header, "AB", 2) == 0);
         BOOST_TEST(std::memcmp(body, "CDEFGH", 6) == 0);
 
         // Gather write in the other direction.
-        std::string hdr = "HDR";
-        std::string bdy = "BODY!";
-        char got[8] = {};
+        std::string hdr   = "HDR";
+        std::string bdy   = "BODY!";
+        char got[8]       = {};
         std::size_t got_n = 0;
-        capy::run_async(ioc.get_executor())(
-            multi_buffer_write(a, hdr, bdy));
+        capy::run_async(ioc.get_executor())(multi_buffer_write(a, hdr, bdy));
         capy::run_async(ioc.get_executor())(
             [](corosio::tcp_socket& peer, char* out, std::size_t len,
                std::size_t& n_out) -> capy::task<> {
-                auto [ec, n] = co_await capy::read(
-                    peer, capy::mutable_buffer(out, len));
+                auto [ec, n] =
+                    co_await capy::read(peer, capy::mutable_buffer(out, len));
                 n_out = n;
             }(b, got, sizeof(got), got_n));
         ioc.run();
@@ -392,8 +382,7 @@ struct buffers_test
         BOOST_TEST(std::memcmp(got, "HDRBODY!", 8) == 0);
     }
 
-    void
-    testBufferSize()
+    void testBufferSize()
     {
         // tag::buffer_size[]
         char header[16];
@@ -401,15 +390,13 @@ struct buffers_test
 
         std::array<capy::mutable_buffer, 2> bufs = {
             capy::mutable_buffer(header, sizeof(header)),
-            capy::mutable_buffer(body, sizeof(body))
-        };
-        std::size_t total = capy::buffer_size(bufs);  // 1040
+            capy::mutable_buffer(body, sizeof(body))};
+        std::size_t total = capy::buffer_size(bufs); // 1040
         // end::buffer_size[]
         BOOST_TEST(total == 1040);
     }
 
-    void
-    testBufferSlice()
+    void testBufferSlice()
     {
         corosio::io_context ioc;
         auto [a, b] = corosio::test::make_socket_pair(ioc);
@@ -417,8 +404,7 @@ struct buffers_test
         std::string part2(16, 'y');
         std::array<capy::const_buffer, 2> bufs = {
             capy::const_buffer(part1.data(), part1.size()),
-            capy::const_buffer(part2.data(), part2.size())
-        };
+            capy::const_buffer(part2.data(), part2.size())};
 
         std::string got;
         bool eof = false;
@@ -444,22 +430,19 @@ struct buffers_test
         BOOST_TEST(got == part1 + part2);
     }
 
-    void
-    testConsumingBuffers()
+    void testConsumingBuffers()
     {
         corosio::io_context ioc;
-        auto [a, b] = corosio::test::make_socket_pair(ioc);
+        auto [a, b]  = corosio::test::make_socket_pair(ioc);
         char head[4] = {};
         char tail[8] = {};
         std::array<capy::mutable_buffer, 2> bufs = {
             capy::mutable_buffer(head, sizeof(head)),
-            capy::mutable_buffer(tail, sizeof(tail))
-        };
+            capy::mutable_buffer(tail, sizeof(tail))};
         std::size_t n = 0;
         capy::run_async(ioc.get_executor())(
             [](corosio::tcp_socket& peer) -> capy::task<> {
-                co_await peer.write_some(
-                    capy::const_buffer("0123456789", 10));
+                co_await peer.write_some(capy::const_buffer("0123456789", 10));
             }(b));
         capy::run_async(ioc.get_executor())(consume_reads(a, bufs, n));
         ioc.run();
@@ -467,8 +450,7 @@ struct buffers_test
         BOOST_TEST(std::memcmp(head, "0123", 4) == 0);
     }
 
-    void
-    testBufferParam()
+    void testBufferParam()
     {
         char header[16];
         char body[64];
@@ -476,26 +458,24 @@ struct buffers_test
         // Works with any buffer sequence (implicit conversion)
         std::array<capy::mutable_buffer, 2> bufs = {
             capy::mutable_buffer(header, sizeof(header)),
-            capy::mutable_buffer(body, sizeof(body))
-        };
+            capy::mutable_buffer(body, sizeof(body))};
         accept_any_buffer(bufs);
         // end::buffer_param_call[]
         BOOST_TEST(capy::buffer_size(bufs) == 80);
     }
 
-    void
-    testLifetime()
+    void testLifetime()
     {
         corosio::io_context ioc;
-        auto [a, b] = corosio::test::make_socket_pair(ioc);
-        char got[8] = {};
+        auto [a, b]       = corosio::test::make_socket_pair(ioc);
+        char got[8]       = {};
         std::size_t got_n = 0;
         capy::run_async(ioc.get_executor())(good_example(a));
         capy::run_async(ioc.get_executor())(
             [](corosio::tcp_socket& peer, char* out, std::size_t len,
                std::size_t& n_out) -> capy::task<> {
-                auto [ec, n] = co_await peer.read_some(
-                    capy::mutable_buffer(out, len));
+                auto [ec, n] =
+                    co_await peer.read_some(capy::mutable_buffer(out, len));
                 n_out = n;
             }(b, got, sizeof(got), got_n));
         ioc.run();
@@ -503,48 +483,43 @@ struct buffers_test
         BOOST_TEST(std::memcmp(got, "Hello", 5) == 0);
     }
 
-    void
-    testStringInvalidation()
+    void testStringInvalidation()
     {
         // tag::string_invalidation[]
         std::string s = "Hello";
         capy::mutable_buffer buf(s.data(), s.size());
 
-        s += " World";  // May reallocate, invalidating buf!
+        s += " World"; // May reallocate, invalidating buf!
 
         // Use buf here: UNDEFINED BEHAVIOR
         // end::string_invalidation[]
         BOOST_TEST(s == "Hello World");
     }
 
-    void
-    testScatterRead()
+    void testScatterRead()
     {
         corosio::io_context ioc;
-        auto [a, b] = corosio::test::make_socket_pair(ioc);
+        auto [a, b]   = corosio::test::make_socket_pair(ioc);
         std::size_t n = 0;
         capy::run_async(ioc.get_executor())(
             [](corosio::tcp_socket& peer) -> capy::task<> {
                 char msg[16] = {};
-                co_await peer.write_some(
-                    capy::const_buffer(msg, sizeof(msg)));
+                co_await peer.write_some(capy::const_buffer(msg, sizeof(msg)));
             }(b));
         capy::run_async(ioc.get_executor())(scatter_read(a, n));
         ioc.run();
         BOOST_TEST(n > 0);
     }
 
-    void
-    testGatherWrite()
+    void testGatherWrite()
     {
         corosio::io_context ioc;
-        auto [a, b] = corosio::test::make_socket_pair(ioc);
+        auto [a, b]         = corosio::test::make_socket_pair(ioc);
         std::size_t written = 0;
         std::string got;
         capy::run_async(ioc.get_executor())(gather_write(a, written));
         capy::run_async(ioc.get_executor())(
-            [](corosio::tcp_socket& peer,
-               std::string& out) -> capy::task<> {
+            [](corosio::tcp_socket& peer, std::string& out) -> capy::task<> {
                 char chunk[64];
                 for (;;)
                 {
@@ -560,22 +535,18 @@ struct buffers_test
         BOOST_TEST(got == "HTTP/1.1 200 OK\r\n\r\nHello, World!");
     }
 
-    void
-    testReadHeader()
+    void testReadHeader()
     {
         corosio::io_context ioc;
         auto [a, b] = corosio::test::make_socket_pair(ioc);
         packet_header sent{0xC0FFEE42, 1234};
         packet_header received{};
         capy::run_async(ioc.get_executor())(
-            [](corosio::tcp_socket& peer,
-               packet_header h) -> capy::task<> {
-                co_await peer.write_some(
-                    capy::const_buffer(&h, sizeof(h)));
+            [](corosio::tcp_socket& peer, packet_header h) -> capy::task<> {
+                co_await peer.write_some(capy::const_buffer(&h, sizeof(h)));
             }(b, sent));
         capy::run_async(ioc.get_executor())(
-            [](corosio::tcp_socket& sock,
-               packet_header& out) -> capy::task<> {
+            [](corosio::tcp_socket& sock, packet_header& out) -> capy::task<> {
                 out = co_await read_header(sock);
             }(a, received));
         ioc.run();
@@ -583,8 +554,7 @@ struct buffers_test
         BOOST_TEST(received.length == sent.length);
     }
 
-    void
-    run()
+    void run()
     {
         testMutableBuffer();
         testConstBuffer();

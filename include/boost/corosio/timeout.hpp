@@ -60,20 +60,20 @@ namespace boost::corosio {
 */
 template<capy::IoAwaitable A, typename Rep, typename Period>
     requires detail::is_io_result_v<
-            std::remove_cvref_t<capy::awaitable_result_t<A>>> &&
-        std::is_default_constructible_v<
-            std::remove_cvref_t<capy::awaitable_result_t<A>>>
-[[nodiscard]] auto timeout(A a, std::chrono::duration<Rep, Period> dur)
+                 std::remove_cvref_t<capy::awaitable_result_t<A>>> &&
+    std::is_default_constructible_v<
+                 std::remove_cvref_t<capy::awaitable_result_t<A>>>
+[[nodiscard]] auto
+timeout(A a, std::chrono::duration<Rep, Period> dur)
 {
     using namespace std::chrono;
     // Narrow reps wrap if nanoseconds::max() is converted into them;
     // a double comparison clamps safely in both directions.
     using dsec = duration<double>;
-    auto ns = dsec(dur) >= dsec((nanoseconds::max)())
-        ? (nanoseconds::max)()
+    auto ns    = dsec(dur) >= dsec((nanoseconds::max)()) ? (nanoseconds::max)()
         : dsec(dur) <= dsec((nanoseconds::min)())
-            ? (nanoseconds::min)()
-            : duration_cast<nanoseconds>(dur);
+        ? (nanoseconds::min)()
+        : duration_cast<nanoseconds>(dur);
     return detail::timeout_awaitable<A>(std::move(a), ns);
 }
 
@@ -93,10 +93,11 @@ template<capy::IoAwaitable A, typename Rep, typename Period>
 */
 template<capy::IoAwaitable A>
     requires detail::is_io_result_v<
-            std::remove_cvref_t<capy::awaitable_result_t<A>>> &&
-        std::is_default_constructible_v<
-            std::remove_cvref_t<capy::awaitable_result_t<A>>>
-[[nodiscard]] auto timeout(A a, std::chrono::steady_clock::time_point tp)
+                 std::remove_cvref_t<capy::awaitable_result_t<A>>> &&
+    std::is_default_constructible_v<
+                 std::remove_cvref_t<capy::awaitable_result_t<A>>>
+[[nodiscard]] auto
+timeout(A a, std::chrono::steady_clock::time_point tp)
 {
     return detail::timeout_awaitable<A>(std::move(a), tp);
 }

@@ -34,11 +34,9 @@ struct native_udp_socket_test
     static_assert(
         !std::is_same_v<
             decltype(std::declval<native_udp_socket<Backend>&>().send_to(
-                std::declval<capy::const_buffer>(),
-                std::declval<endpoint>())),
+                std::declval<capy::const_buffer>(), std::declval<endpoint>())),
             decltype(std::declval<udp_socket&>().send_to(
-                std::declval<capy::const_buffer>(),
-                std::declval<endpoint>()))>,
+                std::declval<capy::const_buffer>(), std::declval<endpoint>()))>,
         "native_udp_socket::send_to must shadow udp_socket::send_to");
     static_assert(
         !std::is_same_v<
@@ -169,11 +167,13 @@ struct native_udp_socket_test
             };
             capy::run_async(ioc.get_executor())(nested());
 
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
             sock.cancel();
 
             // Let the cancellation settle before checking the result.
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST(recv_ec == capy::cond::canceled);
@@ -207,11 +207,13 @@ struct native_udp_socket_test
             };
             capy::run_async(ioc.get_executor())(nested());
 
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
             sock.close();
 
             // Let the close settle before checking the result.
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(50));
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
 
             BOOST_TEST(recv_done);
             BOOST_TEST(recv_ec == capy::cond::canceled);
@@ -343,7 +345,7 @@ struct native_udp_socket_test
     void testWait()
     {
         native_io_context<Backend> ioc;
-        auto       ex = ioc.get_executor();
+        auto ex = ioc.get_executor();
 
         native_udp_socket<Backend> recv(ioc);
         BOOST_TEST(!recv.open(udp::v4()));
@@ -355,7 +357,7 @@ struct native_udp_socket_test
         BOOST_TEST(!send.open(udp::v4()));
 
         std::error_code wait_ec;
-        bool            wait_done = false;
+        bool wait_done = false;
 
         auto waiter = [&]() -> capy::task<> {
             auto [ec] = co_await recv.wait(wait_type::read);
@@ -363,7 +365,7 @@ struct native_udp_socket_test
             wait_done = true;
         };
         auto sender = [&]() -> capy::task<> {
-            char dg[1]   = {'X'};
+            char dg[1]                    = {'X'};
             [[maybe_unused]] auto [ec, n] = co_await send.send_to(
                 capy::const_buffer(dg, sizeof(dg)),
                 endpoint(ipv4_address::loopback(), port));
@@ -388,8 +390,7 @@ struct native_udp_socket_test
         BOOST_TEST(!sock.open());
 
         sock.set_option(native_socket_option::broadcast(true));
-        auto bc =
-            sock.template get_option<native_socket_option::broadcast>();
+        auto bc = sock.template get_option<native_socket_option::broadcast>();
         BOOST_TEST(bc.value());
 
         sock.set_option(native_socket_option::receive_buffer_size(32768));
@@ -398,18 +399,18 @@ struct native_udp_socket_test
         BOOST_TEST(rb.value() > 0);
 
         sock.set_option(native_socket_option::send_buffer_size(32768));
-        auto sb = sock.template get_option<
-            native_socket_option::send_buffer_size>();
+        auto sb =
+            sock.template get_option<native_socket_option::send_buffer_size>();
         BOOST_TEST(sb.value() > 0);
 
         sock.set_option(native_socket_option::multicast_loop_v4(true));
-        auto ml = sock.template get_option<
-            native_socket_option::multicast_loop_v4>();
+        auto ml =
+            sock.template get_option<native_socket_option::multicast_loop_v4>();
         BOOST_TEST(ml.value());
 
         sock.set_option(native_socket_option::multicast_hops_v4(4));
-        auto mh = sock.template get_option<
-            native_socket_option::multicast_hops_v4>();
+        auto mh =
+            sock.template get_option<native_socket_option::multicast_hops_v4>();
         BOOST_TEST_EQ(mh.value(), 4);
 
         // Multicast configuration is environment-specific; the option
@@ -417,8 +418,9 @@ struct native_udp_socket_test
         // regardless of whether the kernel completes the request.
         try
         {
-            sock.set_option(native_socket_option::multicast_interface_v4(
-                ipv4_address::any()));
+            sock.set_option(
+                native_socket_option::multicast_interface_v4(
+                    ipv4_address::any()));
         }
         catch (std::system_error const&)
         {
@@ -443,10 +445,12 @@ struct native_udp_socket_test
 
         try
         {
-            sock.set_option(native_socket_option::join_group_v4(
-                ipv4_address("239.255.0.3")));
-            sock.set_option(native_socket_option::leave_group_v4(
-                ipv4_address("239.255.0.3")));
+            sock.set_option(
+                native_socket_option::join_group_v4(
+                    ipv4_address("239.255.0.3")));
+            sock.set_option(
+                native_socket_option::leave_group_v4(
+                    ipv4_address("239.255.0.3")));
         }
         catch (std::system_error const&)
         {
@@ -492,10 +496,10 @@ struct native_udp_socket_test
 
         try
         {
-            sock.set_option(native_socket_option::join_group_v6(
-                ipv6_address("ff02::1")));
-            sock.set_option(native_socket_option::leave_group_v6(
-                ipv6_address("ff02::1")));
+            sock.set_option(
+                native_socket_option::join_group_v6(ipv6_address("ff02::1")));
+            sock.set_option(
+                native_socket_option::leave_group_v6(ipv6_address("ff02::1")));
         }
         catch (std::system_error const&)
         {
@@ -567,8 +571,8 @@ struct native_udp_socket_test
             auto [e3, n3] = co_await s.send(capy::const_buffer(m, 1));
             BOOST_TEST(e3 == std::errc::bad_file_descriptor);
 
-            auto [e4, n4] = co_await s.recv(
-                capy::mutable_buffer(buf, sizeof(buf)));
+            auto [e4, n4] =
+                co_await s.recv(capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(e4 == std::errc::bad_file_descriptor);
             done = true;
         };

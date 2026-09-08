@@ -130,7 +130,7 @@ struct local_endpoint_test
         std::map<local_endpoint, int> sessions;
         sessions[local_endpoint("/tmp/a")] = 1;
         sessions[local_endpoint("/tmp/b")] = 2;
-        sessions[abstract("c")] = 3;
+        sessions[abstract("c")]            = 3;
 
         BOOST_TEST_EQ(sessions.size(), 3u);
         BOOST_TEST_EQ(sessions[local_endpoint("/tmp/a")], 1);
