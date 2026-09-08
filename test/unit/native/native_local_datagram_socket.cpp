@@ -88,14 +88,14 @@ struct native_local_datagram_socket_test
 
     void testConstruct()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_local_datagram_socket<Backend> s(ioc);
         BOOST_TEST_EQ(s.is_open(), false);
     }
 
     void testOpen()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_local_datagram_socket<Backend> s(ioc);
         BOOST_TEST(!s.open());
         BOOST_TEST(s.is_open());
@@ -105,7 +105,7 @@ struct native_local_datagram_socket_test
 
     void testPolymorphicSlice()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_local_datagram_socket<Backend> s(ioc);
         BOOST_TEST(!s.open());
         local_datagram_socket& base = s;
@@ -114,7 +114,7 @@ struct native_local_datagram_socket_test
 
     void testSendToRecvFrom()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         test::temp_socket_dir tmp1;
         test::temp_socket_dir tmp2;
         auto path1 = tmp1.path();
@@ -156,7 +156,7 @@ struct native_local_datagram_socket_test
 
     void testSendRecvConnected()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         test::temp_socket_dir tmp_a;
         test::temp_socket_dir tmp_b;
         auto path_a = tmp_a.path();
@@ -204,7 +204,7 @@ struct native_local_datagram_socket_test
 
     void testVirtualDispatchFallback()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         test::temp_socket_dir tmp1;
         test::temp_socket_dir tmp2;
         auto path1 = tmp1.path();
@@ -247,7 +247,7 @@ struct native_local_datagram_socket_test
     // bound datagram socket resolves when a datagram arrives.
     void testWait()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         auto       ex      = ioc.get_executor();
         test::temp_socket_dir rx_tmp;
         auto       rx_path = rx_tmp.path();
@@ -287,7 +287,7 @@ struct native_local_datagram_socket_test
     {
         // Datagram operations on a closed socket complete with
         // bad_file_descriptor instead of throwing.
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_local_datagram_socket<Backend> s(ioc);
 
         bool done = false;
@@ -322,7 +322,7 @@ struct native_local_datagram_socket_test
         // connect. We aim it at a path that does not exist so the
         // connect itself yields an error, but the auto-open branch
         // is exercised.
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         auto ex   = ioc.get_executor();
         // temp dir exists, but the socket file inside it does not
         test::temp_socket_dir tmp;

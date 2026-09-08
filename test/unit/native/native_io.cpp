@@ -27,7 +27,7 @@ struct native_io_test
 {
     void testNativeIO()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         auto ex = ctx.get_executor();
 
         native_tcp_acceptor<Backend> acc(ctx);

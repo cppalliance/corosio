@@ -63,14 +63,14 @@ struct native_tcp_socket_test
 
     void testSocketConstruct()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_tcp_socket<Backend> s(ctx);
         BOOST_TEST_PASS();
     }
 
     void testSocketMoveConstruct()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_tcp_socket<Backend> s1(ctx);
         BOOST_TEST(!s1.open());
         BOOST_TEST(s1.is_open());
@@ -81,7 +81,7 @@ struct native_tcp_socket_test
 
     void testSocketPolymorphicSlice()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_tcp_socket<Backend> ns(ctx);
         BOOST_TEST(!ns.open());
 
@@ -102,7 +102,7 @@ struct native_tcp_socket_test
     // resolves without parking on every backend.
     void testWait()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         auto [s1, s2] = test::make_socket_pair<
             native_tcp_socket<Backend>,
             native_tcp_acceptor<Backend>>(ioc);
@@ -126,7 +126,7 @@ struct native_tcp_socket_test
     // boolean<IPPROTO_TCP, TCP_NODELAY> instantiation is fully hit.
     void testNativeNoDelay()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_tcp_socket<Backend> s(ctx);
         BOOST_TEST(!s.open());
 
@@ -157,7 +157,7 @@ struct native_tcp_socket_test
         // connect() auto-opens like the base class: the failure (no
         // listener on the target port) comes from the connect attempt,
         // not from a closed descriptor, and the socket ends up open.
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_tcp_socket<Backend> s(ioc);
         BOOST_TEST_EQ(s.is_open(), false);
 
@@ -178,7 +178,7 @@ struct native_tcp_socket_test
     // bad_file_descriptor instead of dispatching.
     void testClosedOpsComplete()
     {
-        io_context ioc(Backend);
+        native_io_context<Backend> ioc;
         native_tcp_socket<Backend> s(ioc);
 
         bool done = false;

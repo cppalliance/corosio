@@ -30,21 +30,21 @@ struct native_signal_set_test
 
     void testSignalSetConstruct()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_signal_set<Backend> ss(ctx);
         BOOST_TEST_PASS();
     }
 
     void testSignalSetConstructWithSignals()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_signal_set<Backend> ss(ctx, SIGINT);
         BOOST_TEST_PASS();
     }
 
     void testSignalSetPolymorphicSlice()
     {
-        io_context ctx(Backend);
+        native_io_context<Backend> ctx;
         native_signal_set<Backend> nss(ctx, SIGINT);
 
         [[maybe_unused]] signal_set& base = nss;
