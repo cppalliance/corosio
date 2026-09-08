@@ -1239,6 +1239,12 @@ io_uring_scheduler::do_one(long timeout_us)
 
         if (task_running_)
         {
+            // LCOV_EXCL_START: follower path — entered only when another
+            // thread holds ring leadership at the instant this thread
+            // checks. That leader/follower timing overlap is a race no
+            // deterministic test reliably forces (see the io_uring
+            // mt_scheduler regression test, which exercises MT run but
+            // does not pin this window).
             // Another thread holds leadership; either return (poll)
             // or wait for it to deliver work / release leadership.
             if (timeout_us == 0)
@@ -1256,6 +1262,7 @@ io_uring_scheduler::do_one(long timeout_us)
                     return 0;
             }
             continue;
+            // LCOV_EXCL_STOP
         }
 
         // Become the leader: run the kernel poll. We drop the lock
