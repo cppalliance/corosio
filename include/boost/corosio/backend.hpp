@@ -224,27 +224,27 @@ inline constexpr kqueue_t kqueue{};
 
 #endif // BOOST_COROSIO_HAS_KQUEUE
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
 namespace detail {
 
-class io_uring_tcp_socket;
-class io_uring_tcp_service;
-class io_uring_udp_socket;
-class io_uring_udp_service;
-class io_uring_tcp_acceptor;
-class io_uring_tcp_acceptor_service;
-class io_uring_local_stream_socket;
-class io_uring_local_stream_service;
-class io_uring_local_stream_acceptor;
-class io_uring_local_stream_acceptor_service;
-class io_uring_local_datagram_socket;
-class io_uring_local_datagram_service;
-class io_uring_stream_file;
-class io_uring_stream_file_service;
-class io_uring_random_access_file;
-class io_uring_random_access_file_service;
-class io_uring_scheduler;
+class uring_tcp_socket;
+class uring_tcp_service;
+class uring_udp_socket;
+class uring_udp_service;
+class uring_tcp_acceptor;
+class uring_tcp_acceptor_service;
+class uring_local_stream_socket;
+class uring_local_stream_service;
+class uring_local_stream_acceptor;
+class uring_local_stream_acceptor_service;
+class uring_local_datagram_socket;
+class uring_local_datagram_service;
+class uring_stream_file;
+class uring_stream_file_service;
+class uring_random_access_file;
+class uring_random_access_file_service;
+class uring_scheduler;
 
 class posix_signal;
 class posix_signal_service;
@@ -254,32 +254,32 @@ class posix_resolver_service;
 } // namespace detail
 
 /// Backend tag for the Linux io_uring proactor.
-struct io_uring_t
+struct uring_t
 {
-    using scheduler_type            = detail::io_uring_scheduler;
-    using tcp_socket_type           = detail::io_uring_tcp_socket;
-    using tcp_service_type          = detail::io_uring_tcp_service;
-    using udp_socket_type           = detail::io_uring_udp_socket;
-    using udp_service_type          = detail::io_uring_udp_service;
-    using tcp_acceptor_type         = detail::io_uring_tcp_acceptor;
-    using tcp_acceptor_service_type = detail::io_uring_tcp_acceptor_service;
+    using scheduler_type            = detail::uring_scheduler;
+    using tcp_socket_type           = detail::uring_tcp_socket;
+    using tcp_service_type          = detail::uring_tcp_service;
+    using udp_socket_type           = detail::uring_udp_socket;
+    using udp_service_type          = detail::uring_udp_service;
+    using tcp_acceptor_type         = detail::uring_tcp_acceptor;
+    using tcp_acceptor_service_type = detail::uring_tcp_acceptor_service;
 
-    using local_stream_socket_type           = detail::io_uring_local_stream_socket;
-    using local_stream_service_type          = detail::io_uring_local_stream_service;
-    using local_stream_acceptor_type         = detail::io_uring_local_stream_acceptor;
-    using local_stream_acceptor_service_type = detail::io_uring_local_stream_acceptor_service;
-    using local_datagram_socket_type         = detail::io_uring_local_datagram_socket;
-    using local_datagram_service_type        = detail::io_uring_local_datagram_service;
+    using local_stream_socket_type           = detail::uring_local_stream_socket;
+    using local_stream_service_type          = detail::uring_local_stream_service;
+    using local_stream_acceptor_type         = detail::uring_local_stream_acceptor;
+    using local_stream_acceptor_service_type = detail::uring_local_stream_acceptor_service;
+    using local_datagram_socket_type         = detail::uring_local_datagram_socket;
+    using local_datagram_service_type        = detail::uring_local_datagram_service;
 
     using signal_type           = detail::posix_signal;
     using signal_service_type   = detail::posix_signal_service;
     using resolver_type         = detail::posix_resolver;
     using resolver_service_type = detail::posix_resolver_service;
 
-    using stream_file_type                = detail::io_uring_stream_file;
-    using stream_file_service_type        = detail::io_uring_stream_file_service;
-    using random_access_file_type         = detail::io_uring_random_access_file;
-    using random_access_file_service_type = detail::io_uring_random_access_file_service;
+    using stream_file_type                = detail::uring_stream_file;
+    using stream_file_service_type        = detail::uring_stream_file_service;
+    using random_access_file_type         = detail::uring_random_access_file;
+    using random_access_file_service_type = detail::uring_random_access_file_service;
 
     /// Create the scheduler and services for this backend.
     BOOST_COROSIO_DECL static detail::scheduler&
@@ -287,9 +287,9 @@ struct io_uring_t
 };
 
 /// Tag value for selecting the io_uring backend.
-inline constexpr io_uring_t io_uring{};
+inline constexpr uring_t uring{};
 
-#endif // BOOST_COROSIO_HAS_IO_URING
+#endif // BOOST_COROSIO_HAS_URING
 
 #if BOOST_COROSIO_HAS_IOCP
 

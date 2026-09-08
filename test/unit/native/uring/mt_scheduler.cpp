@@ -16,7 +16,7 @@
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
 #include <boost/corosio/native/native_io_context.hpp>
 #include <boost/corosio/tcp.hpp>
@@ -35,11 +35,11 @@
 
 namespace boost::corosio {
 
-struct io_uring_mt_scheduler_test
+struct uring_mt_scheduler_test
 {
     void testForeignPostWakesParkedFollower()
     {
-        native_io_context<io_uring> ioc;
+        native_io_context<uring> ioc;
         auto ex       = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
@@ -104,9 +104,9 @@ struct io_uring_mt_scheduler_test
 };
 
 TEST_SUITE(
-    io_uring_mt_scheduler_test,
-    "boost.corosio.native.io_uring.mt_scheduler");
+    uring_mt_scheduler_test,
+    "boost.corosio.native.uring.mt_scheduler");
 
 } // namespace boost::corosio
 
-#endif // BOOST_COROSIO_HAS_IO_URING
+#endif // BOOST_COROSIO_HAS_URING

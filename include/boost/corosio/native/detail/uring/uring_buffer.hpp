@@ -7,12 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_BUFFER_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_BUFFER_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_URING_URING_BUFFER_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_URING_URING_BUFFER_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
@@ -66,6 +66,6 @@ sockaddr_to_local_endpoint(
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_HAS_IO_URING
+#endif // BOOST_COROSIO_HAS_URING
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_BUFFER_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_URING_URING_BUFFER_HPP

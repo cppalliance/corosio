@@ -637,10 +637,10 @@ struct random_access_file_test
     // complete the op inline with the refusal instead of parking it.
     void testReadWriteAtAfterPoolShutdown()
     {
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
         // io_uring reads through the ring, never through the pool.
         if constexpr (std::is_same_v<
-                std::remove_const_t<decltype(Backend)>, io_uring_t>)
+                std::remove_const_t<decltype(Backend)>, uring_t>)
             return;
 #endif
         temp_file tmp("raf_pool_shut_", "hello world");
@@ -683,10 +683,10 @@ struct random_access_file_test
     // leaked: what LeakSanitizer sees left over is the defect alone.
     void testDestroyWithPoolWorkQueued()
     {
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
         // io_uring reads through the ring, never through the pool.
         if constexpr (std::is_same_v<
-                std::remove_const_t<decltype(Backend)>, io_uring_t>)
+                std::remove_const_t<decltype(Backend)>, uring_t>)
             return;
 #endif
         temp_file tmp("raf_pool_teardown_", "hello world");

@@ -12,7 +12,7 @@
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
 #include <boost/corosio/backend.hpp>
 #include <boost/corosio/native/native_io_context.hpp>
@@ -35,11 +35,11 @@ namespace boost::corosio {
 
 // Exposes the io_uring scheduler's internal in-flight counter so the
 // teardown-accounting test can assert it stays balanced.
-struct io_uring_test_context : native_io_context<io_uring>
+struct uring_test_context : native_io_context<uring>
 {
     std::int64_t inflight()
     {
-        return static_cast<detail::io_uring_scheduler*>(sched_)->inflight();
+        return static_cast<detail::uring_scheduler*>(sched_)->inflight();
     }
 };
 
@@ -47,20 +47,20 @@ struct multishot_acceptor_test
 {
     void testContextConstructs()
     {
-        native_io_context<io_uring> ioc;
+        native_io_context<uring> ioc;
         BOOST_TEST(!ioc.stopped());
     }
 
     // Regression: drain_cqes_for (run from the multishot acceptor's
     // destructor) used to advance CQEs without decrementing
-    // io_uring_inflight_, leaking the counts of the multishot accept SQE
+    // uring_inflight_, leaking the counts of the multishot accept SQE
     // and the cancel SQEs it submits. The counter gates the do_one ring
     // pump, so the leak accumulated across every acceptor teardown for the
     // lifetime of the io_context. After the fix the counter returns to
     // zero once teardown settles.
     void testDrainCqesBalancesInflight()
     {
-        io_uring_test_context ctx;
+        uring_test_context ctx;
 
         // No io_uring SQEs are counted before any op is submitted.
         BOOST_TEST_EQ(ctx.inflight(), 0);
@@ -96,7 +96,7 @@ struct multishot_acceptor_test
     // separate run() posts the accept that consumes the buffered fd.
     void testAcceptBufferedConnection()
     {
-        native_io_context<io_uring> ioc;
+        native_io_context<uring> ioc;
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
@@ -135,7 +135,7 @@ struct multishot_acceptor_test
     // distinct from consuming a pre-buffered fd).
     void testAcceptParkedThenDelivered()
     {
-        native_io_context<io_uring> ioc;
+        native_io_context<uring> ioc;
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
@@ -173,7 +173,7 @@ struct multishot_acceptor_test
     // is destroyed (the ready_fds_ drain in the impl destructor).
     void testDestroyWithBufferedConnections()
     {
-        native_io_context<io_uring> ioc;
+        native_io_context<uring> ioc;
         auto ex = ioc.get_executor();
 
         tcp_socket c1(ioc), c2(ioc);
@@ -216,8 +216,8 @@ struct multishot_acceptor_test
 
 TEST_SUITE(
     multishot_acceptor_test,
-    "boost.corosio.native.io_uring.multishot_acceptor");
+    "boost.corosio.native.uring.multishot_acceptor");
 
 } // namespace boost::corosio
 
-#endif // BOOST_COROSIO_HAS_IO_URING
+#endif // BOOST_COROSIO_HAS_URING

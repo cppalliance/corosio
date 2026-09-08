@@ -43,11 +43,11 @@
 #define COROSIO_SUITE_INSTANTIATE_IOCP(decl)
 #endif
 
-#if BOOST_COROSIO_HAS_IO_URING
-#define COROSIO_SUITE_INSTANTIATE_IO_URING(decl) \
-    template bench::benchmark_suite decl<boost::corosio::io_uring>();
+#if BOOST_COROSIO_HAS_URING
+#define COROSIO_SUITE_INSTANTIATE_URING(decl) \
+    template bench::benchmark_suite decl<boost::corosio::uring>();
 #else
-#define COROSIO_SUITE_INSTANTIATE_IO_URING(decl)
+#define COROSIO_SUITE_INSTANTIATE_URING(decl)
 #endif
 
 #define COROSIO_SUITE_INSTANTIATE(decl)      \
@@ -55,13 +55,13 @@
     COROSIO_SUITE_INSTANTIATE_KQUEUE(decl)   \
     COROSIO_SUITE_INSTANTIATE_SELECT(decl)   \
     COROSIO_SUITE_INSTANTIATE_IOCP(decl)     \
-    COROSIO_SUITE_INSTANTIATE_IO_URING(decl)
+    COROSIO_SUITE_INSTANTIATE_URING(decl)
 
 // POSIX-only instantiation (no IOCP) for Unix domain socket benchmarks
 #define COROSIO_SUITE_INSTANTIATE_POSIX(decl)   \
     COROSIO_SUITE_INSTANTIATE_EPOLL(decl)       \
     COROSIO_SUITE_INSTANTIATE_KQUEUE(decl)      \
     COROSIO_SUITE_INSTANTIATE_SELECT(decl)      \
-    COROSIO_SUITE_INSTANTIATE_IO_URING(decl)
+    COROSIO_SUITE_INSTANTIATE_URING(decl)
 
 #endif // BOOST_COROSIO_PERF_NATIVE_INCLUDES_HPP

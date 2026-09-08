@@ -28,15 +28,15 @@
 #include <boost/corosio/native/detail/kqueue/kqueue_types.hpp>
 #endif
 
-#if BOOST_COROSIO_HAS_IO_URING
-#include <boost/corosio/native/detail/io_uring/io_uring_acceptor_ops.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_buffer.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_dgram_ops.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_multishot_acceptor.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_random_access_file.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_scheduler.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_stream_file.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_types.hpp>
+#if BOOST_COROSIO_HAS_URING
+#include <boost/corosio/native/detail/uring/uring_acceptor_ops.hpp>
+#include <boost/corosio/native/detail/uring/uring_buffer.hpp>
+#include <boost/corosio/native/detail/uring/uring_dgram_ops.hpp>
+#include <boost/corosio/native/detail/uring/uring_multishot_acceptor.hpp>
+#include <boost/corosio/native/detail/uring/uring_random_access_file.hpp>
+#include <boost/corosio/native/detail/uring/uring_scheduler.hpp>
+#include <boost/corosio/native/detail/uring/uring_stream_file.hpp>
+#include <boost/corosio/native/detail/uring/uring_types.hpp>
 #endif
 
 #if BOOST_COROSIO_HAS_IOCP
@@ -126,21 +126,21 @@ iocp_t::construct(capy::execution_context& ctx, unsigned concurrency_hint)
 }
 #endif
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 detail::scheduler&
-io_uring_t::construct(capy::execution_context& ctx, unsigned concurrency_hint)
+uring_t::construct(capy::execution_context& ctx, unsigned concurrency_hint)
 {
-    auto& sched = ctx.make_service<detail::io_uring_scheduler>(
+    auto& sched = ctx.make_service<detail::uring_scheduler>(
         static_cast<int>(concurrency_hint));
 
-    ctx.make_service<detail::io_uring_tcp_service>();
-    ctx.make_service<detail::io_uring_tcp_acceptor_service>();
-    ctx.make_service<detail::io_uring_local_stream_service>();
-    ctx.make_service<detail::io_uring_local_stream_acceptor_service>();
-    ctx.make_service<detail::io_uring_udp_service>();
-    ctx.make_service<detail::io_uring_local_datagram_service>();
-    ctx.make_service<detail::io_uring_stream_file_service>(sched);
-    ctx.make_service<detail::io_uring_random_access_file_service>(sched);
+    ctx.make_service<detail::uring_tcp_service>();
+    ctx.make_service<detail::uring_tcp_acceptor_service>();
+    ctx.make_service<detail::uring_local_stream_service>();
+    ctx.make_service<detail::uring_local_stream_acceptor_service>();
+    ctx.make_service<detail::uring_udp_service>();
+    ctx.make_service<detail::uring_local_datagram_service>();
+    ctx.make_service<detail::uring_stream_file_service>(sched);
+    ctx.make_service<detail::uring_random_access_file_service>(sched);
 
     return sched;
 }
@@ -211,7 +211,7 @@ apply_scheduler_options(
 
 #if BOOST_COROSIO_HAS_EPOLL || BOOST_COROSIO_HAS_KQUEUE || BOOST_COROSIO_HAS_SELECT
     // dynamic_cast — when io_uring is also linked, the runtime probe may
-    // have selected io_uring_scheduler instead of a reactor_scheduler.
+    // have selected uring_scheduler instead of a reactor_scheduler.
     if (auto* reactor =
             dynamic_cast<detail::reactor_scheduler*>(&sched))
     {
@@ -243,9 +243,9 @@ apply_scheduler_options(
     }
 #endif
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
     if (auto* uring_sched =
-            dynamic_cast<detail::io_uring_scheduler*>(&sched))
+            dynamic_cast<detail::uring_scheduler*>(&sched))
     {
         if (opts.enable_sqpoll)
             uring_sched->configure_sqpoll(
@@ -262,9 +262,9 @@ apply_scheduler_options(
 void
 finish_construction([[maybe_unused]] detail::scheduler& sched)
 {
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
     if (auto* uring_sched =
-            dynamic_cast<detail::io_uring_scheduler*>(&sched))
+            dynamic_cast<detail::uring_scheduler*>(&sched))
         uring_sched->init_ring();
 #endif
 }

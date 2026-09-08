@@ -42,7 +42,7 @@
 #include <system_error>
 #include <tuple>
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
 #include <liburing.h>
 
@@ -73,7 +73,7 @@ struct uring_faults
         {
             int const before = open_fds();
             fault_scope f(s, err);
-            expect_system_error([&]{ io_context ioc(io_uring); }, code);
+            expect_system_error([&]{ io_context ioc(uring); }, code);
             BOOST_TEST(f.fired());
             BOOST_TEST_EQ(open_fds(), before);
         };
@@ -92,7 +92,7 @@ struct uring_faults
     */
     void testObjectSurfaceErrors()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto expect_open = [&](auto&& obj, auto&& open_it)
         {
             int const before = open_fds();
@@ -176,7 +176,7 @@ struct uring_faults
     */
     void testAcceptorAssignProbeFails()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto h = make_native_socket(AF_INET, SOCK_STREAM);
         BOOST_TEST(static_cast<int>(h) >= 0);
         make_native_adoptable(h);
@@ -212,7 +212,7 @@ struct uring_faults
     {
         std::optional<fault_scope> f;
         f.emplace(sys::uring_sqe_full, 0);
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         {
             // close() submits the cancel while the descriptor is still
             // open, so the kernel resolves it before the number can be
@@ -245,7 +245,7 @@ struct uring_faults
     void testWaitFails()
     {
         {
-            io_context ioc(io_uring);
+            io_context ioc(uring);
             fault_scope f(sys::io_uring_wait_cqe_timeout, EINTR);
             bool done = false;
             auto body = [&]() -> capy::task<>
@@ -260,7 +260,7 @@ struct uring_faults
             BOOST_TEST(done);
         }
         {
-            io_context ioc(io_uring);
+            io_context ioc(uring);
             fault_scope f(sys::io_uring_wait_cqe_timeout, EBADF);
             auto body = [&]() -> capy::task<>
             {
@@ -279,7 +279,7 @@ struct uring_faults
     // observable is that the fault was reached.
     void testAcceptorDrainSubmitFails()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         fault_scope f(sys::io_uring_submit_and_wait_timeout, EBADF);
         {
             tcp_acceptor acc(ioc, uring_loopback());
@@ -319,7 +319,7 @@ struct uring_faults
             make_native_adoptable(sv[1]);
             fault_scope f(sys::uring_sqe_full, 0);
             fault_scope g(sys::io_uring_submit_and_get_events, EBADF);
-            io_context ioc(io_uring);
+            io_context ioc(uring);
             local_stream_socket b(ioc);
             BOOST_TEST(!b.assign(sv[1]));
             char buf[8];
@@ -368,7 +368,7 @@ struct uring_faults
             make_native_adoptable(sv[1]);
             fault_scope f(sys::uring_sqe_full, 0);
             fault_scope g(sys::io_uring_submit_and_get_events, EBADF);
-            io_context ioc(io_uring);
+            io_context ioc(uring);
             local_stream_socket b(ioc);
             BOOST_TEST(!b.assign(sv[1]));
             std::error_code wec;
@@ -406,7 +406,7 @@ struct uring_faults
             make_native_adoptable(sv[1]);
             fault_scope f(sys::uring_sqe_full, 0);
             fault_scope g(sys::io_uring_submit_and_get_events, EBADF);
-            io_context ioc(io_uring);
+            io_context ioc(uring);
             local_stream_socket b(ioc);
             BOOST_TEST(!b.assign(sv[1]));
             std::error_code pec;
@@ -427,7 +427,7 @@ struct uring_faults
 
     void testConnectCqeRewrite()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         tcp_acceptor acc(ioc, uring_loopback());
         tcp_socket c(ioc);
         BOOST_TEST(!c.open(tcp::v4()));
@@ -457,7 +457,7 @@ struct uring_faults
     // the accept call.
     void testAcceptCqeRewrite()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
         BOOST_TEST(!acc.bind(uring_loopback()));
@@ -493,7 +493,7 @@ struct uring_faults
     // fast path with its own EAGAIN arm.
     void testStreamCqeRewrites()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto [a, b] = test::make_socket_pair(ioc);
         char buf[8] = "1234567";
         std::error_code sec, rec, pec, smec, rvec;
@@ -582,7 +582,7 @@ struct uring_faults
 
     void testDatagramCqeRewrites()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         udp_socket a(ioc), b(ioc);
         BOOST_TEST(!a.open(udp::v4()));
         BOOST_TEST(!b.open(udp::v4()));
@@ -630,7 +630,7 @@ struct uring_faults
     // reachable here, on the completion of the READV/WRITEV SQE.
     void testFileCqeRewrites()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto sf_path = temp_path("uring_sf");
         auto rf_path = temp_path("uring_raf");
         stream_file sf(ioc);
@@ -737,7 +737,7 @@ struct uring_faults
         std::optional<fault_scope> f, g;
         f.emplace(sys::uring_sqe_full, 0);
         g.emplace(sys::io_uring_submit_and_get_events, EBADF);
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         // The listen inside the constructor is what arms the multishot
         // accept, and it finds the one SQE already spent on the wakeup
         // poll.
@@ -809,7 +809,7 @@ struct uring_faults
     {
         fault_scope f(sys::uring_sq_fill, 0);
         BOOST_TEST_THROWS(
-            ([] { io_context tmp(io_uring); }()), std::system_error);
+            ([] { io_context tmp(uring); }()), std::system_error);
         BOOST_TEST(f.fired());
     }
 
@@ -818,7 +818,7 @@ struct uring_faults
     // socket still completes it.
     void testCancelSqFullBestEffort()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto ex       = ioc.get_executor();
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
@@ -864,7 +864,7 @@ struct uring_faults
     // the parked waiter with the error instead of parking it forever.
     void testMultishotArmFailure()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
@@ -910,7 +910,7 @@ struct uring_faults
     // drain the parked waiters with the error rather than strand them.
     void testMultishotRearmFailureWithWaiter()
     {
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
@@ -974,7 +974,7 @@ struct uring_faults
     void testWakeupPollRearm()
     {
         cqe_fault_scope q(-1, IORING_OP_POLL_ADD, 1, IORING_CQE_F_MORE);
-        io_context ioc(io_uring);
+        io_context ioc(uring);
         auto ex = ioc.get_executor();
 
         std::atomic<int> ran{0};
@@ -1006,7 +1006,7 @@ struct uring_faults
     void testSignalPipePollRearm()
     {
         in_child([] {
-            io_context ioc(io_uring);
+            io_context ioc(uring);
             auto ex = ioc.get_executor();
             // Armed after the ring exists, so the first pending
             // POLL_ADD the scope matches is the signal pipe's.
@@ -1042,7 +1042,7 @@ struct uring_faults
         });
         in_child([] {
             // A terminated pipe poll arriving in the teardown drain.
-            io_context ioc(io_uring);
+            io_context ioc(uring);
             cqe_fault_scope q(-1, IORING_OP_POLL_ADD, 1, IORING_CQE_F_MORE);
             signal_set sigs(ioc);
             if (sigs.add(SIGUSR1))
@@ -1078,7 +1078,7 @@ struct uring_faults
     }
 };
 
-TEST_SUITE(uring_faults, "boost.corosio.fault.io_uring");
+TEST_SUITE(uring_faults, "boost.corosio.fault.uring");
 
 } // boost::corosio::test::fault
 

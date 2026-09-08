@@ -7,20 +7,20 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_ACCEPTOR_OPS_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_ACCEPTOR_OPS_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_URING_URING_ACCEPTOR_OPS_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_URING_URING_ACCEPTOR_OPS_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
 #include <liburing.h>
 
 #include <boost/capy/error.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 #include <boost/corosio/io/io_object.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_buffer.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_op.hpp>
+#include <boost/corosio/native/detail/uring/uring_buffer.hpp>
+#include <boost/corosio/native/detail/uring/uring_op.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 
 #include <netinet/in.h>
@@ -41,7 +41,7 @@ namespace boost::corosio::detail {
     present) or park the fd (no waiter). The multishot op persists
     across CQEs; only `acceptor_impl` owns its lifetime.
 */
-struct uring_multi_accept_op : io_uring_op
+struct uring_multi_accept_op : uring_op
 {
     /// Filled by the kernel for each accept. Address of this struct
     /// is registered with the SQE; kernel writes peer address here.
@@ -64,10 +64,10 @@ struct uring_multi_accept_op : io_uring_op
                    bool more) noexcept = nullptr;
 
     uring_multi_accept_op() noexcept
-        : io_uring_op(&do_handler, &do_cqe, &do_prep)
+        : uring_op(&do_handler, &do_cqe, &do_prep)
     {}
 
-    static void do_prep(io_uring_op* base, ::io_uring_sqe* sqe) noexcept
+    static void do_prep(uring_op* base, ::io_uring_sqe* sqe) noexcept
     {
         auto* self = static_cast<uring_multi_accept_op*>(base);
         ::io_uring_prep_multishot_accept(
@@ -86,13 +86,13 @@ struct uring_multi_accept_op : io_uring_op
         without closing it leaks it for the life of the process.
     */
     static void do_retired_cqe(
-        io_uring_op* /*base*/, int res, unsigned /*flags*/) noexcept
+        uring_op* /*base*/, int res, unsigned /*flags*/) noexcept
     {
         if (res >= 0)           // LCOV_EXCL_LINE adopt-over-armed race leak guard
             ::close(res);       // LCOV_EXCL_LINE adopt-over-armed race leak guard
     }
 
-    static void do_cqe(io_uring_op* base, int res, unsigned flags,
+    static void do_cqe(uring_op* base, int res, unsigned flags,
                        ready_queue& /*local*/) noexcept
     {
         auto* self  = static_cast<uring_multi_accept_op*>(base);
@@ -126,7 +126,7 @@ struct uring_multi_accept_op : io_uring_op
 
     `do_cqe` is unused (this op never receives a kernel CQE).
 */
-struct uring_accept_op : io_uring_op
+struct uring_accept_op : uring_op
 {
     int                          accepted_fd          = -1;
     int                          err                  = 0;
@@ -150,12 +150,12 @@ struct uring_accept_op : io_uring_op
                     socklen_t peer_len) noexcept = nullptr;
 
     uring_accept_op() noexcept
-        : io_uring_op(&do_handler, &do_cqe)
+        : uring_op(&do_handler, &do_cqe)
     {}
 
     // LCOV_EXCL_START: never receives a CQE; present for vtable
     // completeness.
-    static void do_cqe(io_uring_op*, int, unsigned,
+    static void do_cqe(uring_op*, int, unsigned,
                        ready_queue&) noexcept
     {
     }
@@ -214,6 +214,6 @@ struct uring_accept_op : io_uring_op
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_HAS_IO_URING
+#endif // BOOST_COROSIO_HAS_URING
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_ACCEPTOR_OPS_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_URING_URING_ACCEPTOR_OPS_HPP

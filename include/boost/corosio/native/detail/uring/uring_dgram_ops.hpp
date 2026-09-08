@@ -8,20 +8,20 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_DGRAM_OPS_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_DGRAM_OPS_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_URING_URING_DGRAM_OPS_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_URING_URING_DGRAM_OPS_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
 #include <liburing.h>
 
 #include <boost/corosio/detail/dispatch_coro.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_op.hpp>
+#include <boost/corosio/native/detail/uring/uring_op.hpp>
 #include <boost/corosio/native/detail/coro_op_complete.hpp>
 #include <boost/corosio/native/detail/speculative_state.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_socket_ops.hpp>
+#include <boost/corosio/native/detail/uring/uring_socket_ops.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/capy/error.hpp>
 
@@ -40,12 +40,12 @@ namespace boost::corosio::detail {
     and `msg.msg_name == nullptr`. In unconnected mode, `dest_storage`
     holds the destination and `msg.msg_name` points at it.
 
-    `iovec[io_uring_max_iov]` for scatter/gather: a single datagram
+    `iovec[uring_max_iov]` for scatter/gather: a single datagram
     can be assembled from N user buffers via `msg.msg_iov`.
 */
-struct uring_dgram_send_op : io_uring_op
+struct uring_dgram_send_op : uring_op
 {
-    iovec            iovecs[io_uring_max_iov];
+    iovec            iovecs[uring_max_iov];
     int              iovec_count = 0;
     msghdr           msg{};
     sockaddr_storage dest_storage{};
@@ -55,7 +55,7 @@ struct uring_dgram_send_op : io_uring_op
     detail::speculative_state* spec_state = nullptr;
 
     uring_dgram_send_op() noexcept
-        : io_uring_op(&do_handler, &do_cqe, &do_prep) {}
+        : uring_op(&do_handler, &do_cqe, &do_prep) {}
 
     /** Reset and initialize for a new submission.
 
@@ -69,7 +69,7 @@ struct uring_dgram_send_op : io_uring_op
         std::error_code*           ec,
         std::size_t*               bytes,
         int                        file_descriptor,
-        io_uring_scheduler*        scheduler,
+        uring_scheduler*        scheduler,
         std::shared_ptr<void>      impl,
         detail::speculative_state* spec,
         buffer_param               buffers,
@@ -109,7 +109,7 @@ struct uring_dgram_send_op : io_uring_op
         start(token);
     }
 
-    static void do_prep(io_uring_op* base, ::io_uring_sqe* sqe) noexcept
+    static void do_prep(uring_op* base, ::io_uring_sqe* sqe) noexcept
     {
         auto* self = static_cast<uring_dgram_send_op*>(base);
         ::io_uring_prep_sendmsg(
@@ -118,7 +118,7 @@ struct uring_dgram_send_op : io_uring_op
     }
 
     static void do_cqe(
-        io_uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
+        uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
     {
         auto* self = static_cast<uring_dgram_send_op*>(base);
         self->res       = res;
@@ -169,9 +169,9 @@ struct uring_dgram_send_op : io_uring_op
     translate `sockaddr_storage` into `endpoint*` or `local_endpoint*`
     without the op needing to know which family it is.
 */
-struct uring_dgram_recv_op : io_uring_op
+struct uring_dgram_recv_op : uring_op
 {
-    iovec            iovecs[io_uring_max_iov];
+    iovec            iovecs[uring_max_iov];
     int              iovec_count = 0;
     msghdr           msg{};
     sockaddr_storage source_storage{};
@@ -187,7 +187,7 @@ struct uring_dgram_recv_op : io_uring_op
         void*, sockaddr_storage const&, socklen_t) noexcept = nullptr;
 
     uring_dgram_recv_op() noexcept
-        : io_uring_op(&do_handler, &do_cqe, &do_prep) {}
+        : uring_op(&do_handler, &do_cqe, &do_prep) {}
 
     /** Reset and initialize for a new submission.
 
@@ -208,7 +208,7 @@ struct uring_dgram_recv_op : io_uring_op
         std::error_code*           ec,
         std::size_t*               bytes,
         int                        file_descriptor,
-        io_uring_scheduler*        scheduler,
+        uring_scheduler*        scheduler,
         std::shared_ptr<void>      impl,
         detail::speculative_state* spec,
         buffer_param               buffers,
@@ -264,7 +264,7 @@ struct uring_dgram_recv_op : io_uring_op
         start(token);
     }
 
-    static void do_prep(io_uring_op* base, ::io_uring_sqe* sqe) noexcept
+    static void do_prep(uring_op* base, ::io_uring_sqe* sqe) noexcept
     {
         auto* self = static_cast<uring_dgram_recv_op*>(base);
         ::io_uring_prep_recvmsg(
@@ -272,7 +272,7 @@ struct uring_dgram_recv_op : io_uring_op
     }
 
     static void do_cqe(
-        io_uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
+        uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
     {
         auto* self = static_cast<uring_dgram_recv_op*>(base);
         self->res       = res;
@@ -322,6 +322,6 @@ struct uring_dgram_recv_op : io_uring_op
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_HAS_IO_URING
+#endif // BOOST_COROSIO_HAS_URING
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_DGRAM_OPS_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_URING_URING_DGRAM_OPS_HPP

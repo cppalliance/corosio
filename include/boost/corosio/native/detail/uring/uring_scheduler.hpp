@@ -8,15 +8,15 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_SCHEDULER_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_SCHEDULER_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_URING_URING_SCHEDULER_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_URING_URING_SCHEDULER_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
 // Include before any project headers open a namespace — prevents the
-// boost::corosio::io_uring tag variable from shadowing struct ::io_uring.
+// boost::corosio::uring tag variable from shadowing struct ::io_uring.
 #include <liburing.h>
 
 #include <boost/corosio/detail/conditionally_enabled_event.hpp>
@@ -27,7 +27,7 @@
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
 #include <boost/corosio/detail/timer_service.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_op.hpp>
+#include <boost/corosio/native/detail/uring/uring_op.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/posix/posix_resolver_service.hpp>
 #include <boost/corosio/native/detail/posix/posix_signal_service.hpp>
@@ -105,8 +105,8 @@ public:
 
 // Forward-declared so the out-of-line inline definitions below the class
 // can reference the frame stack without a circular dependency.
-struct io_uring_scheduler_frame;
-extern thread_local io_uring_scheduler_frame* tl_running_scheduler_frame_;
+struct uring_scheduler_frame;
+extern thread_local uring_scheduler_frame* tl_running_scheduler_frame_;
 
 /** io_uring scheduler — proactor model on Linux 6.x+.
 
@@ -117,7 +117,7 @@ extern thread_local io_uring_scheduler_frame* tl_running_scheduler_frame_;
     @par Thread Safety
     All public member functions are thread-safe.
 */
-class BOOST_COROSIO_DECL io_uring_scheduler final
+class BOOST_COROSIO_DECL uring_scheduler final
     : public scheduler
     , public capy::execution_context::service
 {
@@ -127,10 +127,10 @@ public:
     using lock_type  = mutex_type::scoped_lock;
     using event_type = conditionally_enabled_event;
 
-    io_uring_scheduler(capy::execution_context& ctx, int concurrency_hint = -1);
-    ~io_uring_scheduler() override;
-    io_uring_scheduler(io_uring_scheduler const&)            = delete;
-    io_uring_scheduler& operator=(io_uring_scheduler const&) = delete;
+    uring_scheduler(capy::execution_context& ctx, int concurrency_hint = -1);
+    ~uring_scheduler() override;
+    uring_scheduler(uring_scheduler const&)            = delete;
+    uring_scheduler& operator=(uring_scheduler const&) = delete;
 
     void shutdown() override;
 
@@ -159,7 +159,7 @@ public:
     /** Return the underlying liburing ring.
 
         Triggers lazy ring initialisation on first call. Used by
-        socket op submission helpers (e.g. `io_uring_submit_op`) and
+        socket op submission helpers (e.g. `uring_submit_op`) and
         any other code path that needs a live ring pointer.
     */
     struct ::io_uring* ring() noexcept
@@ -213,12 +213,12 @@ public:
     /// progress doesn't depend on userspace getevents.
     void inflight_inc() const noexcept
     {
-        io_uring_inflight_.fetch_add(1, std::memory_order_release);
+        uring_inflight_.fetch_add(1, std::memory_order_release);
     }
 
     /** Return the current io_uring in-flight counter.
 
-        Test-only helper: `io_uring_inflight_` is an internal accounting
+        Test-only helper: `uring_inflight_` is an internal accounting
         counter (it gates the `do_one` ring pump), with no bearing on the
         public API. It is exposed solely so tests can assert the counter
         stays balanced across op submission and teardown — in particular
@@ -230,7 +230,7 @@ public:
     */
     std::int64_t inflight() const noexcept
     {
-        return io_uring_inflight_.load(std::memory_order_acquire);
+        return uring_inflight_.load(std::memory_order_acquire);
     }
 
     /// Initialize the io_uring ring on first access. Idempotent.
@@ -272,7 +272,7 @@ public:
 
         @param target The in-flight op to cancel.
     */
-    void submit_cancel_by_user_data(io_uring_op* target) noexcept;
+    void submit_cancel_by_user_data(uring_op* target) noexcept;
 
     /** Submit `IORING_OP_ASYNC_CANCEL` with `IORING_ASYNC_CANCEL_FD`
         to cancel every in-flight op on the given fd in one SQE.
@@ -383,7 +383,7 @@ public:
 
         @param target The op pointer used as user_data on the SQE.
     */
-    void drain_cqes_for(io_uring_op* target) noexcept;
+    void drain_cqes_for(uring_op* target) noexcept;
 
     /** Queue an already-counted op while the caller holds dispatch_mutex_.
 
@@ -461,11 +461,11 @@ private:
     mutable mutex_type                ring_mutex_{true};
     mutable event_type                cond_{true};
     mutable ready_queue               completed_ops_;
-    // outstanding_work_ and io_uring_inflight_ are both atomic
+    // outstanding_work_ and uring_inflight_ are both atomic
     // counters updated at high frequency on different paths:
     //   - outstanding_work_ : every work_started / work_finished call,
     //                         including timers, posts, and SQE submits.
-    //   - io_uring_inflight_ : only SQE submit + non-F_MORE CQE consume.
+    //   - uring_inflight_ : only SQE submit + non-F_MORE CQE consume.
     // Under multi-thread workloads the threads tend to update these
     // from different code paths; placing them on the same cache line
     // would cause false sharing and unnecessary cache-line ping-pong.
@@ -475,10 +475,10 @@ private:
     // space to enter the kernel via IORING_ENTER_GETEVENTS for task
     // work to progress under IORING_SETUP_DEFER_TASKRUN. Excludes the
     // wakeup-eventfd multishot poll (registered in lazy_init_ring), and
-    // is updated by io_uring_submit_op and by process_completions on
+    // is updated by uring_submit_op and by process_completions on
     // each non-F_MORE, non-eventfd CQE. Used by do_one to skip the
     // ring pump when there is no io_uring work pending.
-    alignas(64) mutable std::atomic<std::int64_t> io_uring_inflight_{0};
+    alignas(64) mutable std::atomic<std::int64_t> uring_inflight_{0};
     std::atomic<bool>                 stopped_{false};
     // Leader-follower flag: true while a thread is blocked in
     // io_uring_submit_and_wait_timeout. Protected by dispatch_mutex_.
@@ -500,10 +500,10 @@ private:
     // retirement happens on user threads regardless of the threading
     // configuration. Leaf lock — nothing else is taken under it.
     mutable std::mutex                retired_mutex_;
-    std::vector<std::unique_ptr<io_uring_op>> retired_ops_;
+    std::vector<std::unique_ptr<uring_op>> retired_ops_;
 
     /// Free a retired op once its terminal CQE has been consumed.
-    void release_retired_op(io_uring_op* op) noexcept;
+    void release_retired_op(uring_op* op) noexcept;
 
     // Signal self-pipe integration. The read end is watched via a multishot
     // POLL SQE tagged with &signal_pipe_sentinel_ (distinct from nullptr =
@@ -540,7 +540,7 @@ private:
     /// Mirrors Asio's `submit_sqes_op` (`io_uring_service.ipp:730-742`).
     struct submit_sqes_op final : scheduler_op
     {
-        io_uring_scheduler* sched_ = nullptr;
+        uring_scheduler* sched_ = nullptr;
 
         submit_sqes_op() noexcept : scheduler_op(&do_handler) {}
 
@@ -577,7 +577,7 @@ private:
 };
 
 inline
-io_uring_scheduler::io_uring_scheduler(
+uring_scheduler::uring_scheduler(
     capy::execution_context& ctx, int /*concurrency_hint*/)
 {
     // sched_ cannot be set in the member initialiser — `this` is not
@@ -589,7 +589,7 @@ io_uring_scheduler::io_uring_scheduler(
     timer_svc_ = &get_timer_service(ctx, *this);
     timer_svc_->set_on_earliest_changed(
         timer_service::callback(this, [](void* p) {
-            static_cast<io_uring_scheduler*>(p)->interrupt_reactor();
+            static_cast<uring_scheduler*>(p)->interrupt_reactor();
         }));
 
     get_resolver_service(ctx, *this);
@@ -604,7 +604,7 @@ io_uring_scheduler::io_uring_scheduler(
 }
 
 inline
-io_uring_scheduler::~io_uring_scheduler()
+uring_scheduler::~uring_scheduler()
 {
     if (ring_inited_)
     {
@@ -618,7 +618,7 @@ io_uring_scheduler::~io_uring_scheduler()
 }
 
 inline void
-io_uring_scheduler::lazy_init_ring() const
+uring_scheduler::lazy_init_ring() const
 {
     std::call_once(ring_init_once_, [this] {
         lazy_init_ring_unlocked();
@@ -626,7 +626,7 @@ io_uring_scheduler::lazy_init_ring() const
 }
 
 inline void
-io_uring_scheduler::lazy_init_ring_unlocked() const
+uring_scheduler::lazy_init_ring_unlocked() const
 {
     io_uring_params params{};
     // The unsafe_io and unsafe tiers guarantee a single ring submitter.
@@ -734,7 +734,7 @@ io_uring_scheduler::lazy_init_ring_unlocked() const
 }
 
 inline void
-io_uring_scheduler::shutdown()
+uring_scheduler::shutdown()
 {
     stopped_.store(true, std::memory_order_release);
 
@@ -772,7 +772,7 @@ io_uring_scheduler::shutdown()
 }
 
 inline void
-io_uring_scheduler::stop()
+uring_scheduler::stop()
 {
     stopped_.store(true, std::memory_order_release);
     {
@@ -793,32 +793,32 @@ io_uring_scheduler::stop()
 }
 
 inline bool
-io_uring_scheduler::stopped() const noexcept
+uring_scheduler::stopped() const noexcept
 {
     return stopped_.load(std::memory_order_acquire);
 }
 
 inline void
-io_uring_scheduler::restart()
+uring_scheduler::restart()
 {
     stopped_.store(false, std::memory_order_release);
 }
 
 inline void
-io_uring_scheduler::work_started() noexcept
+uring_scheduler::work_started() noexcept
 {
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
 }
 
 inline void
-io_uring_scheduler::work_finished() noexcept
+uring_scheduler::work_finished() noexcept
 {
     if (outstanding_work_.fetch_sub(1, std::memory_order_acq_rel) == 1)
         stop();
 }
 
 inline void
-io_uring_scheduler::interrupt_reactor() const noexcept
+uring_scheduler::interrupt_reactor() const noexcept
 {
     // Skip if the ring hasn't been initialised yet — there's no leader
     // to wake and no eventfd to write.
@@ -846,7 +846,7 @@ io_uring_scheduler::interrupt_reactor() const noexcept
 }
 
 inline void
-io_uring_scheduler::drain_wakeup_eventfd() const noexcept
+uring_scheduler::drain_wakeup_eventfd() const noexcept
 {
     std::uint64_t v;
     std::ignore = ::read(wakeup_eventfd_, &v, sizeof(v));
@@ -857,7 +857,7 @@ io_uring_scheduler::drain_wakeup_eventfd() const noexcept
 }
 
 inline bool
-io_uring_scheduler::prep_multishot_poll(int fd, void* data) noexcept
+uring_scheduler::prep_multishot_poll(int fd, void* data) noexcept
 {
     // Prepare a multishot POLLIN SQE on `fd` tagged with `data`. Caller holds
     // ring_mutex_ and flushes separately (re-arm sites ride the batch submit;
@@ -879,7 +879,7 @@ io_uring_scheduler::prep_multishot_poll(int fd, void* data) noexcept
 }
 
 inline std::error_code
-io_uring_scheduler::register_signal_reader(int read_fd)
+uring_scheduler::register_signal_reader(int read_fd)
 {
     // Called once per service from add_signal(), holding neither the
     // signal_state mutex nor the service mutex (see the call site). Submit a
@@ -904,7 +904,7 @@ io_uring_scheduler::register_signal_reader(int read_fd)
 }
 
 inline void
-io_uring_scheduler::post(std::coroutine_handle<> h) const
+uring_scheduler::post(std::coroutine_handle<> h) const
 {
     struct post_handler final : scheduler_op
     {
@@ -943,7 +943,7 @@ io_uring_scheduler::post(std::coroutine_handle<> h) const
 }
 
 inline void
-io_uring_scheduler::post(scheduler_op* op) const
+uring_scheduler::post(scheduler_op* op) const
 {
     lazy_init_ring();
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
@@ -960,7 +960,7 @@ io_uring_scheduler::post(scheduler_op* op) const
 }
 
 inline void
-io_uring_scheduler::post(capy::continuation& c) const
+uring_scheduler::post(capy::continuation& c) const
 {
     lazy_init_ring();
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
@@ -981,46 +981,46 @@ io_uring_scheduler::post(capy::continuation& c) const
 // running_in_this_thread reporting) and the inline completion budget
 // used by the speculative non-blocking I/O path (plan 5j). Nesting
 // stacks frames via prev_ so each scheduler gets its own budget.
-struct io_uring_scheduler_frame
+struct uring_scheduler_frame
 {
-    io_uring_scheduler const* sched;
-    io_uring_scheduler_frame* prev;
+    uring_scheduler const* sched;
+    uring_scheduler_frame* prev;
     int                       inline_budget;
     int                       inline_budget_max;
 };
 
-inline thread_local io_uring_scheduler_frame* tl_running_scheduler_frame_ = nullptr;
+inline thread_local uring_scheduler_frame* tl_running_scheduler_frame_ = nullptr;
 
 // Default inline budget. Matches reactor's initial budget (2). Adaptive
 // ramp-up to a max is intentionally NOT implemented yet — keep it simple
 // for plan 5j and revisit if benches show fairness issues.
-inline constexpr int io_uring_inline_budget_initial = 2;
-inline constexpr int io_uring_inline_budget_max     = 16;
+inline constexpr int uring_inline_budget_initial = 2;
+inline constexpr int uring_inline_budget_max     = 16;
 
 /// RAII guard: pushes a frame onto the thread's running-scheduler stack
 /// on construction, restores the previous on destruction. Used by
 /// run/run_one/wait_one/poll/poll_one to mark the running thread and
 /// hold a fresh inline budget for speculative completions.
-struct io_uring_run_guard
+struct uring_run_guard
 {
-    io_uring_scheduler_frame frame_;
+    uring_scheduler_frame frame_;
 
-    explicit io_uring_run_guard(io_uring_scheduler const* self) noexcept
+    explicit uring_run_guard(uring_scheduler const* self) noexcept
         : frame_{self, tl_running_scheduler_frame_,
-                 io_uring_inline_budget_initial,
-                 io_uring_inline_budget_max}
+                 uring_inline_budget_initial,
+                 uring_inline_budget_max}
     {
         tl_running_scheduler_frame_ = &frame_;
     }
 
-    ~io_uring_run_guard() noexcept
+    ~uring_run_guard() noexcept
     {
         tl_running_scheduler_frame_ = frame_.prev;
     }
 };
 
 inline bool
-io_uring_scheduler::running_in_this_thread() const noexcept
+uring_scheduler::running_in_this_thread() const noexcept
 {
     for (auto* f = tl_running_scheduler_frame_; f != nullptr; f = f->prev)
     {
@@ -1031,7 +1031,7 @@ io_uring_scheduler::running_in_this_thread() const noexcept
 }
 
 inline void
-io_uring_scheduler::reset_inline_budget() const noexcept
+uring_scheduler::reset_inline_budget() const noexcept
 {
     for (auto* f = tl_running_scheduler_frame_; f != nullptr; f = f->prev)
     {
@@ -1044,7 +1044,7 @@ io_uring_scheduler::reset_inline_budget() const noexcept
 }
 
 inline bool
-io_uring_scheduler::try_consume_inline_budget() const noexcept
+uring_scheduler::try_consume_inline_budget() const noexcept
 {
     for (auto* f = tl_running_scheduler_frame_; f != nullptr; f = f->prev)
     {
@@ -1062,7 +1062,7 @@ io_uring_scheduler::try_consume_inline_budget() const noexcept
 }
 
 inline std::size_t
-io_uring_scheduler::run()
+uring_scheduler::run()
 {
     lazy_init_ring();
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
@@ -1071,7 +1071,7 @@ io_uring_scheduler::run()
         return 0;
     }
 
-    io_uring_run_guard guard(this);
+    uring_run_guard guard(this);
     std::size_t n = 0;
     for (;;)
     {
@@ -1092,7 +1092,7 @@ io_uring_scheduler::run()
 }
 
 inline std::size_t
-io_uring_scheduler::run_one()
+uring_scheduler::run_one()
 {
     lazy_init_ring();
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
@@ -1100,12 +1100,12 @@ io_uring_scheduler::run_one()
         stop();
         return 0;
     }
-    io_uring_run_guard guard(this);
+    uring_run_guard guard(this);
     return do_one(-1);
 }
 
 inline std::size_t
-io_uring_scheduler::wait_one(long usec)
+uring_scheduler::wait_one(long usec)
 {
     lazy_init_ring();
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
@@ -1113,12 +1113,12 @@ io_uring_scheduler::wait_one(long usec)
         stop();
         return 0;
     }
-    io_uring_run_guard guard(this);
+    uring_run_guard guard(this);
     return do_one(usec);
 }
 
 inline std::size_t
-io_uring_scheduler::poll()
+uring_scheduler::poll()
 {
     lazy_init_ring();
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
@@ -1126,7 +1126,7 @@ io_uring_scheduler::poll()
         stop();
         return 0;
     }
-    io_uring_run_guard guard(this);
+    uring_run_guard guard(this);
     std::size_t n = 0;
     while (do_one(0))
     {
@@ -1137,7 +1137,7 @@ io_uring_scheduler::poll()
 }
 
 inline std::size_t
-io_uring_scheduler::poll_one()
+uring_scheduler::poll_one()
 {
     lazy_init_ring();
     if (outstanding_work_.load(std::memory_order_acquire) == 0)
@@ -1145,12 +1145,12 @@ io_uring_scheduler::poll_one()
         stop();
         return 0;
     }
-    io_uring_run_guard guard(this);
+    uring_run_guard guard(this);
     return do_one(0);
 }
 
 inline std::size_t
-io_uring_scheduler::do_one(long timeout_us)
+uring_scheduler::do_one(long timeout_us)
 {
     // Leader-follower: only one thread at a time may call
     // io_uring_submit_and_wait_timeout on a shared ring (liburing's
@@ -1171,7 +1171,7 @@ io_uring_scheduler::do_one(long timeout_us)
     // Gate the kernel pump on there being io_uring-specific work. The
     // check is performed under ring_mutex_ so a concurrent cross-thread
     // submitter cannot prep an SQE that we then race past — both this
-    // path and io_uring_submit_op acquire ring_mutex_ before touching
+    // path and uring_submit_op acquire ring_mutex_ before touching
     // the ring. When all three sources are empty (no io_uring ops in
     // flight needing DEFER_TASKRUN GETEVENTS, no userspace-pending
     // SQEs, no kernel-ready CQEs) a kernel entry would have no work —
@@ -1184,7 +1184,7 @@ io_uring_scheduler::do_one(long timeout_us)
     if (ring_inited_)
     {
         lock_type ring_lock(ring_mutex_);
-        if (io_uring_inflight_.load(std::memory_order_acquire) != 0
+        if (uring_inflight_.load(std::memory_order_acquire) != 0
             || ::io_uring_sq_ready(&ring_) != 0
             || ::io_uring_cq_ready(&ring_) != 0)
         {
@@ -1317,7 +1317,7 @@ io_uring_scheduler::do_one(long timeout_us)
         // io_uring_service::run pattern. ring_mutex_ is held briefly
         // to push pending SQEs and to drain CQEs, but NOT during
         // the blocking io_uring_wait_cqe_timeout. Cross-thread
-        // submitters (io_uring_submit_op, cancel paths) can take
+        // submitters (uring_submit_op, cancel paths) can take
         // ring_mutex_ during the wait and prep new SQEs without
         // blocking on the leader; their wake eventfd write fires the
         // multishot poll and returns the leader from wait_cqe_timeout
@@ -1372,7 +1372,7 @@ io_uring_scheduler::do_one(long timeout_us)
 }
 
 inline void
-io_uring_scheduler::process_completions()
+uring_scheduler::process_completions()
 {
     unsigned head;
     ::io_uring_cqe* cqe;
@@ -1389,7 +1389,7 @@ io_uring_scheduler::process_completions()
         if (ud == nullptr)
         {
             // Wakeup eventfd CQE: drain the eventfd byte. Not counted
-            // by io_uring_inflight_; we never incremented for the
+            // by uring_inflight_; we never incremented for the
             // wakeup multishot SQE (its progress doesn't depend on
             // userspace getevents).
             drain_wakeup_eventfd();
@@ -1413,7 +1413,7 @@ io_uring_scheduler::process_completions()
             // Signal self-pipe readiness. Re-arm the multishot poll if it
             // terminated (F_MORE cleared), then enqueue signal_drain_op_ to
             // drain + deliver in dispatch context. Not counted in
-            // io_uring_inflight_ (like the wakeup eventfd poll): its progress
+            // uring_inflight_ (like the wakeup eventfd poll): its progress
             // does not gate DEFER_TASKRUN GETEVENTS.
             if ((cqe->flags & IORING_CQE_F_MORE) == 0)
                 std::ignore = prep_multishot_poll(
@@ -1430,7 +1430,7 @@ io_uring_scheduler::process_completions()
         }
         else
         {
-            auto* iop = static_cast<io_uring_op*>(ud);
+            auto* iop = static_cast<uring_op*>(ud);
             if (iop->retired)
             {
                 // The owner handed this op to retire_op and is no
@@ -1460,7 +1460,7 @@ io_uring_scheduler::process_completions()
         ++consumed;
     }
     if (inflight_dec)
-        io_uring_inflight_.fetch_sub(
+        uring_inflight_.fetch_sub(
             inflight_dec, std::memory_order_acq_rel);
 
     if (consumed)
@@ -1479,7 +1479,7 @@ io_uring_scheduler::process_completions()
 }
 
 inline void
-io_uring_scheduler::submit_sqes_op::do_handler(
+uring_scheduler::submit_sqes_op::do_handler(
     void* owner, scheduler_op* base,
     std::uint32_t /*bytes*/, std::uint32_t /*error*/) noexcept
 {
@@ -1490,14 +1490,14 @@ io_uring_scheduler::submit_sqes_op::do_handler(
     auto* self  = static_cast<submit_sqes_op*>(base);
     auto* sched = self->sched_;
 
-    io_uring_scheduler::lock_type ring_lock(sched->ring_mutex_);
+    uring_scheduler::lock_type ring_lock(sched->ring_mutex_);
     sched->submit_op_posted_ = false;
     ::io_uring_submit_and_get_events(&sched->ring_);
     sched->process_completions();
 }
 
 inline void
-io_uring_scheduler::submit_cancel_by_user_data(io_uring_op* target) noexcept
+uring_scheduler::submit_cancel_by_user_data(uring_op* target) noexcept
 {
     lazy_init_ring();
     // Wake the leader (if any) so its submit_and_wait_timeout returns
@@ -1522,7 +1522,7 @@ io_uring_scheduler::submit_cancel_by_user_data(io_uring_op* target) noexcept
 }
 
 inline void
-io_uring_scheduler::submit_cancel_by_fd(int fd) noexcept
+uring_scheduler::submit_cancel_by_fd(int fd) noexcept
 {
     lazy_init_ring();
     interrupt_reactor();
@@ -1542,7 +1542,7 @@ io_uring_scheduler::submit_cancel_by_fd(int fd) noexcept
 }
 
 inline void
-io_uring_op::on_cancel() noexcept
+uring_op::on_cancel() noexcept
 {
     request_cancel();   // coro_op: records the cancellation (sets the flag)
     // Skip the cancel SQE if we never linked an SQE to this op — the
@@ -1553,7 +1553,7 @@ io_uring_op::on_cancel() noexcept
 }
 
 inline void
-io_uring_scheduler::cancel_and_flush(int fd) noexcept
+uring_scheduler::cancel_and_flush(int fd) noexcept
 {
     // The flush can execute a queued write on `fd` inline; when the
     // fd is a pipe whose reader has already closed — service
@@ -1582,14 +1582,14 @@ io_uring_scheduler::cancel_and_flush(int fd) noexcept
 }
 
 inline void
-io_uring_scheduler::release_retired_op(io_uring_op* op) noexcept
+uring_scheduler::release_retired_op(uring_op* op) noexcept
 {
     // Called from the CQE loop with ring_mutex_ held; takes
     // retired_mutex_ under it, matching retire_op's order. Deleting
     // here is safe only because retire_op requires the op to hold no
     // reference back to its owner, so ~op cannot re-enter the
     // scheduler or touch a destroyed acceptor.
-    std::unique_ptr<io_uring_op> owned;
+    std::unique_ptr<uring_op> owned;
     {
         std::lock_guard<std::mutex> lock(retired_mutex_);
         for (auto it = retired_ops_.begin(); it != retired_ops_.end(); ++it)
@@ -1605,7 +1605,7 @@ io_uring_scheduler::release_retired_op(io_uring_op* op) noexcept
 }
 
 inline void
-io_uring_scheduler::drain_cqes_for(io_uring_op* target) noexcept
+uring_scheduler::drain_cqes_for(uring_op* target) noexcept
 {
     lazy_init_ring();
     // Submit a cancel by user_data so the kernel returns CQEs for
@@ -1641,7 +1641,7 @@ io_uring_scheduler::drain_cqes_for(io_uring_op* target) noexcept
 
         io_uring_for_each_cqe(&ring_, head, cqe)
         {
-            // Mirror process_completions' io_uring_inflight_ accounting.
+            // Mirror process_completions' uring_inflight_ accounting.
             // That counter gates the do_one ring pump, so every CQE we
             // advance past here must adjust it exactly as the normal
             // drain would — otherwise it drifts upward (each teardown
@@ -1668,7 +1668,7 @@ io_uring_scheduler::drain_cqes_for(io_uring_op* target) noexcept
                 // terminated; the still-readable pipe re-fires on the next
                 // kernel enter so process_completions delivers the signal —
                 // we deliberately do NOT enqueue signal_drain_op_ from this
-                // teardown path. Not counted by io_uring_inflight_ (the poll
+                // teardown path. Not counted by uring_inflight_ (the poll
                 // was armed via prep_multishot_poll, which never increments),
                 // so it must NOT be decremented.
                 if ((cqe->flags & IORING_CQE_F_MORE) == 0)
@@ -1710,7 +1710,7 @@ io_uring_scheduler::drain_cqes_for(io_uring_op* target) noexcept
         {
             io_uring_cq_advance(&ring_, consumed);
             if (inflight_dec)
-                io_uring_inflight_.fetch_sub(
+                uring_inflight_.fetch_sub(
                     inflight_dec, std::memory_order_acq_rel);
             if (saw_target)
                 break;
@@ -1734,6 +1734,6 @@ io_uring_scheduler::drain_cqes_for(io_uring_op* target) noexcept
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_HAS_IO_URING
+#endif // BOOST_COROSIO_HAS_URING
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_SCHEDULER_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_URING_URING_SCHEDULER_HPP

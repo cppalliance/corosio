@@ -8,22 +8,22 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_TYPES_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_TYPES_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_URING_URING_TYPES_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_URING_URING_TYPES_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
 #include <boost/corosio/detail/intrusive.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_acceptor_ops.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_buffer.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_dgram_ops.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_op.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_scheduler.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_multishot_acceptor.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_socket_ops.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_socket_service_base.hpp>
+#include <boost/corosio/native/detail/uring/uring_acceptor_ops.hpp>
+#include <boost/corosio/native/detail/uring/uring_buffer.hpp>
+#include <boost/corosio/native/detail/uring/uring_dgram_ops.hpp>
+#include <boost/corosio/native/detail/uring/uring_op.hpp>
+#include <boost/corosio/native/detail/uring/uring_scheduler.hpp>
+#include <boost/corosio/native/detail/uring/uring_multishot_acceptor.hpp>
+#include <boost/corosio/native/detail/uring/uring_socket_ops.hpp>
+#include <boost/corosio/native/detail/uring/uring_socket_service_base.hpp>
 #include <boost/corosio/native/detail/native_socket_base.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/msg_flags.hpp>
@@ -56,18 +56,18 @@
 
 namespace boost::corosio::detail {
 
-class io_uring_tcp_service;
-class io_uring_tcp_acceptor_service;  // Task 18
-class io_uring_local_stream_service;
-class io_uring_local_stream_acceptor_service;
-class io_uring_udp_service;
-class io_uring_local_datagram_service;
+class uring_tcp_service;
+class uring_tcp_acceptor_service;  // Task 18
+class uring_local_stream_service;
+class uring_local_stream_acceptor_service;
+class uring_udp_service;
+class uring_local_datagram_service;
 
 /** TCP socket implementation for io_uring.
 
     Implements `tcp_socket::implementation` using a proactor model:
     read, write, and connect operations are submitted to the kernel
-    via `io_uring_submit_op` and complete through the ring's CQE path.
+    via `uring_submit_op` and complete through the ring's CQE path.
 
     The object is always owned by a `shared_ptr` managed by the service.
     In-flight ops hold an additional `shared_ptr` copy (`impl_ptr`) so
@@ -78,15 +78,15 @@ class io_uring_local_datagram_service;
     Shared objects: Unsafe. A socket must not have two operations of
     the same type in flight simultaneously.
 */
-class BOOST_COROSIO_DECL io_uring_tcp_socket final
+class BOOST_COROSIO_DECL uring_tcp_socket final
     : public native_socket_base<
-          io_uring_tcp_socket, tcp_socket::implementation, endpoint>
+          uring_tcp_socket, tcp_socket::implementation, endpoint>
 {
-    friend io_uring_tcp_service;
+    friend uring_tcp_service;
 
     int                   family_ = AF_UNSPEC;  // cached at open_socket
-    io_uring_scheduler*   sched_  = nullptr;
-    [[maybe_unused]] io_uring_tcp_service* svc_    = nullptr;
+    uring_scheduler*   sched_  = nullptr;
+    [[maybe_unused]] uring_tcp_service* svc_    = nullptr;
 
     // fd_ and local_endpoint_ are provided by native_socket_base (the
     // readiness/completion-agnostic socket base shared with the reactor
@@ -128,14 +128,14 @@ public:
         @param svc   The owning service (Task 13).
         @param sched The io_uring scheduler owned by the context.
     */
-    explicit io_uring_tcp_socket(
-        io_uring_tcp_service& svc,
-        io_uring_scheduler&   sched) noexcept
+    explicit uring_tcp_socket(
+        uring_tcp_service& svc,
+        uring_scheduler&   sched) noexcept
         : sched_(&sched)
         , svc_(&svc)
     {}
 
-    ~io_uring_tcp_socket() override
+    ~uring_tcp_socket() override
     {
         if (fd_ >= 0)
             ::close(fd_); // LCOV_EXCL_LINE backstop: close_socket() clears fd_ before destroy
@@ -153,7 +153,7 @@ public:
         std::error_code*        ec,
         std::size_t*            bytes) override
     {
-        iovec iovecs[io_uring_max_iov];
+        iovec iovecs[uring_max_iov];
         int   iovec_count = copy_to_iovec(buffers, iovecs);
         bool stop_now  = token.stop_possible() && token.stop_requested();
         bool empty_buf = (iovec_count == 0);
@@ -203,7 +203,7 @@ public:
                 rd_.res = (n < 0) ? -err : static_cast<int>(n);
             sched_->work_started();
             {
-                io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+                uring_scheduler::lock_type lock(sched_->dispatch_mutex());
                 sched_->push_completed_locked(&rd_);
             }
             return std::noop_coroutine();
@@ -214,11 +214,11 @@ public:
         sched_->work_started();
         if (rd_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(sched_->dispatch_mutex());
             sched_->push_completed_locked(&rd_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*sched_, &rd_);
+        uring_submit_op(*sched_, &rd_);
         return std::noop_coroutine();
     }
 
@@ -230,7 +230,7 @@ public:
         std::error_code*        ec,
         std::size_t*            bytes) override
     {
-        iovec iovecs[io_uring_max_iov];
+        iovec iovecs[uring_max_iov];
         int   iovec_count = copy_to_iovec(buffers, iovecs);
         bool stop_now  = token.stop_possible() && token.stop_requested();
         bool empty_buf = (iovec_count == 0);
@@ -276,7 +276,7 @@ public:
                 wr_.res = (n < 0) ? -err : static_cast<int>(n);
             sched_->work_started();
             {
-                io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+                uring_scheduler::lock_type lock(sched_->dispatch_mutex());
                 sched_->push_completed_locked(&wr_);
             }
             return std::noop_coroutine();
@@ -287,11 +287,11 @@ public:
         sched_->work_started();
         if (wr_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(sched_->dispatch_mutex());
             sched_->push_completed_locked(&wr_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*sched_, &wr_);
+        uring_submit_op(*sched_, &wr_);
         return std::noop_coroutine();
     }
 
@@ -321,7 +321,7 @@ public:
             conn_.cancelled.store(true, std::memory_order_release);
             sched_->work_started();
             {
-                io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+                uring_scheduler::lock_type lock(sched_->dispatch_mutex());
                 sched_->push_completed_locked(&conn_);
             }
             return std::noop_coroutine();
@@ -335,11 +335,11 @@ public:
         sched_->work_started();
         if (conn_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(sched_->dispatch_mutex());
             sched_->push_completed_locked(&conn_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*sched_, &conn_);
+        uring_submit_op(*sched_, &conn_);
         return std::noop_coroutine();
     }
 
@@ -362,11 +362,11 @@ public:
         sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(sched_->dispatch_mutex());
             sched_->push_completed_locked(&wait_op_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*sched_, &wait_op_);
+        uring_submit_op(*sched_, &wait_op_);
         return std::noop_coroutine();
     }
 
@@ -453,7 +453,7 @@ public:
 
 /** TCP socket service for io_uring.
 
-    Owns all `io_uring_tcp_socket` implementations for an `io_context`.
+    Owns all `uring_tcp_socket` implementations for an `io_context`.
     Satisfies the `tcp_service` interface so the generic `tcp_socket`
     front-end can call `open_socket` and `bind_socket` transparently.
 
@@ -464,12 +464,12 @@ public:
     @par Thread Safety
     All public member functions are thread-safe.
 */
-class BOOST_COROSIO_DECL io_uring_tcp_service final
-    : public io_uring_socket_service_base<
-          io_uring_tcp_service, tcp_service, io_uring_tcp_socket>
+class BOOST_COROSIO_DECL uring_tcp_service final
+    : public uring_socket_service_base<
+          uring_tcp_service, tcp_service, uring_tcp_socket>
 {
-    using base_service = io_uring_socket_service_base<
-        io_uring_tcp_service, tcp_service, io_uring_tcp_socket>;
+    using base_service = uring_socket_service_base<
+        uring_tcp_service, tcp_service, uring_tcp_socket>;
 
 public:
     /// Identifies this service for `execution_context` lookup.
@@ -480,12 +480,12 @@ public:
         @param ctx The owning execution context. The io_uring scheduler
             must already be registered.
     */
-    explicit io_uring_tcp_service(capy::execution_context& ctx)
+    explicit uring_tcp_service(capy::execution_context& ctx)
         : base_service(ctx)
     {}
 
     // construct / destroy / shutdown / close / scheduler() are inherited
-    // from io_uring_socket_service_base. The methods below are TCP-specific.
+    // from uring_socket_service_base. The methods below are TCP-specific.
 
     /** Open a socket fd and associate it with an impl.
 
@@ -501,7 +501,7 @@ public:
         tcp_socket::implementation& impl,
         int family, int type, int protocol) override
     {
-        auto& sock = static_cast<io_uring_tcp_socket&>(impl);
+        auto& sock = static_cast<uring_tcp_socket&>(impl);
         int fd = ::socket(
             family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
@@ -540,7 +540,7 @@ public:
         tcp_socket::implementation& impl,
         native_handle_type fd) override
     {
-        auto& sock = static_cast<io_uring_tcp_socket&>(impl);
+        auto& sock = static_cast<uring_tcp_socket&>(impl);
         int nfd = static_cast<int>(fd);
         if (nfd >= 0 && nfd == sock.fd_)
             return std::make_error_code(std::errc::invalid_argument);
@@ -566,7 +566,7 @@ public:
             sock.family_         = local.ss_family;
         }
         sock.local_endpoint_state_.store(
-            io_uring_tcp_socket::endpoint_state::resolved,
+            uring_tcp_socket::endpoint_state::resolved,
             std::memory_order_release);
 
         sockaddr_storage remote{};
@@ -587,7 +587,7 @@ public:
     std::error_code bind_socket(
         tcp_socket::implementation& impl, endpoint ep) override
     {
-        auto& sock = static_cast<io_uring_tcp_socket&>(impl);
+        auto& sock = static_cast<uring_tcp_socket&>(impl);
         sockaddr_storage addr{};
         socklen_t len = endpoint_to_sockaddr(ep, addr);
         if (::bind(
@@ -602,7 +602,7 @@ public:
                 reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
             sock.local_endpoint_ = sockaddr_to_endpoint(local);
         sock.local_endpoint_state_.store(
-            io_uring_tcp_socket::endpoint_state::resolved,
+            uring_tcp_socket::endpoint_state::resolved,
             std::memory_order_release);
         return {};
     }
@@ -617,9 +617,9 @@ public:
         @param peer Peer endpoint from `accept(2)`.
         @return Raw pointer to the registered impl.
     */
-    io_uring_tcp_socket* adopt_fd(int fd, endpoint const& peer)
+    uring_tcp_socket* adopt_fd(int fd, endpoint const& peer)
     {
-        auto p = std::make_shared<io_uring_tcp_socket>(*this, *sched_);
+        auto p = std::make_shared<uring_tcp_socket>(*this, *sched_);
         p->fd_              = fd;
         p->remote_endpoint_ = peer;
         // Mark the local endpoint as authoritative-but-unresolved.
@@ -627,7 +627,7 @@ public:
         // Accept-heavy workloads that never query the local endpoint
         // skip the syscall entirely.
         p->local_endpoint_state_.store(
-            io_uring_tcp_socket::endpoint_state::lazy_pending,
+            uring_tcp_socket::endpoint_state::lazy_pending,
             std::memory_order_release);
 
         return this->register_impl(std::move(p));
@@ -637,26 +637,26 @@ public:
 /** TCP acceptor implementation for io_uring.
 
     Inherits the multishot machinery (parked-fd queue, waiter queue,
-    CQE drain on destruction) from `io_uring_multishot_acceptor_base`.
+    CQE drain on destruction) from `uring_multishot_acceptor_base`.
     This class adds only the `accept()` override (matching
     `tcp_acceptor::implementation`'s exact signature) and the
     `adopt_thunk` static that wraps an accepted fd via
-    `io_uring_tcp_service::adopt_fd`.
+    `uring_tcp_service::adopt_fd`.
 */
-class BOOST_COROSIO_DECL io_uring_tcp_acceptor final
-    : public io_uring_multishot_acceptor_base<
-          io_uring_tcp_acceptor,
+class BOOST_COROSIO_DECL uring_tcp_acceptor final
+    : public uring_multishot_acceptor_base<
+          uring_tcp_acceptor,
           tcp_acceptor::implementation,
           endpoint,
-          io_uring_tcp_service>
+          uring_tcp_service>
 {
-    friend io_uring_tcp_acceptor_service;
+    friend uring_tcp_acceptor_service;
 
-    using base_type = io_uring_multishot_acceptor_base<
-        io_uring_tcp_acceptor,
+    using base_type = uring_multishot_acceptor_base<
+        uring_tcp_acceptor,
         tcp_acceptor::implementation,
         endpoint,
-        io_uring_tcp_service>;
+        uring_tcp_service>;
 
     // Readiness-wait slot. The multishot accept op delivers accepted
     // fds, but `wait()` reports raw poll readiness on the listening fd
@@ -664,10 +664,10 @@ class BOOST_COROSIO_DECL io_uring_tcp_acceptor final
     uring_wait_op wait_op_;
 
 public:
-    explicit io_uring_tcp_acceptor(
-        io_uring_tcp_acceptor_service&,
-        io_uring_scheduler&   sched,
-        io_uring_tcp_service& peer_svc) noexcept
+    explicit uring_tcp_acceptor(
+        uring_tcp_acceptor_service&,
+        uring_scheduler&   sched,
+        uring_tcp_service& peer_svc) noexcept
         : base_type(sched, peer_svc)
     {}
 
@@ -730,11 +730,11 @@ public:
         this->sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(this->sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(this->sched_->dispatch_mutex());
             this->sched_->push_completed_locked(&wait_op_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*this->sched_, &wait_op_);
+        uring_submit_op(*this->sched_, &wait_op_);
         return std::noop_coroutine();
     }
 
@@ -742,14 +742,14 @@ public:
         void* peer_service, int fd,
         sockaddr_storage const& peer, socklen_t /*peer_len*/) noexcept
     {
-        auto* svc = static_cast<io_uring_tcp_service*>(peer_service);
+        auto* svc = static_cast<uring_tcp_service*>(peer_service);
         return svc->adopt_fd(fd, sockaddr_to_endpoint(peer));
     }
 };
 
 /** TCP acceptor service for io_uring.
 
-    Owns all `io_uring_tcp_acceptor` implementations for an `io_context`.
+    Owns all `uring_tcp_acceptor` implementations for an `io_context`.
     Satisfies the `tcp_acceptor_service` interface so the generic
     `tcp_acceptor` front-end can call `open_acceptor_socket`,
     `bind_acceptor`, and `listen_acceptor` transparently.
@@ -761,7 +761,7 @@ public:
     @par Thread Safety
     All public member functions are thread-safe.
 */
-class BOOST_COROSIO_DECL io_uring_tcp_acceptor_service final
+class BOOST_COROSIO_DECL uring_tcp_acceptor_service final
     : public tcp_acceptor_service
 {
 public:
@@ -773,14 +773,14 @@ public:
         @param ctx The owning execution context. Both the io_uring scheduler
             and the TCP socket service must already be registered.
     */
-    explicit io_uring_tcp_acceptor_service(capy::execution_context& ctx)
-        : sched_(&ctx.use_service<io_uring_scheduler>())
-        , peer_svc_(&ctx.use_service<io_uring_tcp_service>())
+    explicit uring_tcp_acceptor_service(capy::execution_context& ctx)
+        : sched_(&ctx.use_service<uring_scheduler>())
+        , peer_svc_(&ctx.use_service<uring_tcp_service>())
     {}
 
     void shutdown() override
     {
-        std::vector<std::shared_ptr<io_uring_tcp_acceptor>> live;
+        std::vector<std::shared_ptr<uring_tcp_acceptor>> live;
         {
             std::lock_guard lk(mutex_);
             live.reserve(impls_.size());
@@ -795,7 +795,7 @@ public:
 
     io_object::implementation* construct() override
     {
-        auto p   = std::make_shared<io_uring_tcp_acceptor>(
+        auto p   = std::make_shared<uring_tcp_acceptor>(
             *this, *sched_, *peer_svc_);
         auto* raw = p.get();
         std::lock_guard lk(mutex_);
@@ -808,14 +808,14 @@ public:
         if (!p)
             return;
         std::lock_guard lk(mutex_);
-        impls_.erase(static_cast<io_uring_tcp_acceptor*>(p));
+        impls_.erase(static_cast<uring_tcp_acceptor*>(p));
     }
 
     // Close the fd eagerly when tcp_acceptor::close() is called, before
     // destroy() drops the shared_ptr and the destructor runs.
     void close(io_object::handle& h) override
     {
-        auto* acc = static_cast<io_uring_tcp_acceptor*>(h.get());
+        auto* acc = static_cast<uring_tcp_acceptor*>(h.get());
         if (acc && acc->fd_ >= 0)
         {
             // Flush the cancel SQE before closing the fd so the kernel
@@ -851,7 +851,7 @@ public:
         int type,
         int protocol) override
     {
-        auto& acc = static_cast<io_uring_tcp_acceptor&>(impl);
+        auto& acc = static_cast<uring_tcp_acceptor&>(impl);
         int fd = ::socket(
             family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
@@ -884,7 +884,7 @@ public:
     std::error_code assign_socket(
         tcp_acceptor::implementation& impl, native_handle_type fd) override
     {
-        auto& acc = static_cast<io_uring_tcp_acceptor&>(impl);
+        auto& acc = static_cast<uring_tcp_acceptor&>(impl);
         int   nfd = static_cast<int>(fd);
         if (nfd >= 0 && nfd == acc.fd_)
             return std::make_error_code(std::errc::invalid_argument);
@@ -926,7 +926,7 @@ public:
     std::error_code bind_acceptor(
         tcp_acceptor::implementation& impl, endpoint ep) override
     {
-        auto& acc = static_cast<io_uring_tcp_acceptor&>(impl);
+        auto& acc = static_cast<uring_tcp_acceptor&>(impl);
         sockaddr_storage addr{};
         socklen_t len = endpoint_to_sockaddr(ep, addr);
         if (::bind(
@@ -955,7 +955,7 @@ public:
     std::error_code listen_acceptor(
         tcp_acceptor::implementation& impl, int backlog) override
     {
-        auto& acc = static_cast<io_uring_tcp_acceptor&>(impl);
+        auto& acc = static_cast<uring_tcp_acceptor&>(impl);
         if (::listen(acc.fd_, backlog) < 0)
             return make_err(errno);
         if (acc.prepare_listen_arm())
@@ -964,21 +964,21 @@ public:
     }
 
     /// Return the scheduler used by acceptors created by this service.
-    io_uring_scheduler& scheduler() noexcept { return *sched_; }
+    uring_scheduler& scheduler() noexcept { return *sched_; }
 
 private:
-    io_uring_scheduler*   sched_;
-    io_uring_tcp_service* peer_svc_;
+    uring_scheduler*   sched_;
+    uring_tcp_service* peer_svc_;
     std::mutex            mutex_;
-    std::unordered_map<io_uring_tcp_acceptor*,
-                       std::shared_ptr<io_uring_tcp_acceptor>> impls_;
+    std::unordered_map<uring_tcp_acceptor*,
+                       std::shared_ptr<uring_tcp_acceptor>> impls_;
 };
 
 /** Unix domain stream socket implementation for io_uring.
 
     Implements `local_stream_socket::implementation` using a proactor
     model: read, write, and connect operations are submitted to the
-    kernel via `io_uring_submit_op` and complete through the ring's
+    kernel via `uring_submit_op` and complete through the ring's
     CQE path.
 
     The object is always owned by a `shared_ptr` managed by the service.
@@ -990,16 +990,16 @@ private:
     Shared objects: Unsafe. A socket must not have two operations of
     the same type in flight simultaneously.
 */
-class BOOST_COROSIO_DECL io_uring_local_stream_socket final
+class BOOST_COROSIO_DECL uring_local_stream_socket final
     : public native_socket_base<
-          io_uring_local_stream_socket,
+          uring_local_stream_socket,
           local_stream_socket::implementation,
           corosio::local_endpoint>
 {
-    friend io_uring_local_stream_service;
+    friend uring_local_stream_service;
 
-    io_uring_scheduler*           sched_ = nullptr;
-    [[maybe_unused]] io_uring_local_stream_service* svc_  = nullptr;
+    uring_scheduler*           sched_ = nullptr;
+    [[maybe_unused]] uring_local_stream_service* svc_  = nullptr;
 
     // fd_ and local_endpoint_ live in native_socket_base, which also
     // provides native_handle/is_open/set_option/get_option/local_endpoint.
@@ -1022,14 +1022,14 @@ public:
         @param svc   The owning service.
         @param sched The io_uring scheduler owned by the context.
     */
-    explicit io_uring_local_stream_socket(
-        io_uring_local_stream_service& svc,
-        io_uring_scheduler&            sched) noexcept
+    explicit uring_local_stream_socket(
+        uring_local_stream_service& svc,
+        uring_scheduler&            sched) noexcept
         : sched_(&sched)
         , svc_(&svc)
     {}
 
-    ~io_uring_local_stream_socket() override
+    ~uring_local_stream_socket() override
     {
         if (fd_ >= 0)
             ::close(fd_); // LCOV_EXCL_LINE backstop: close_socket() clears fd_ before destroy
@@ -1047,7 +1047,7 @@ public:
         std::error_code*        ec,
         std::size_t*            bytes) override
     {
-        iovec iovecs[io_uring_max_iov];
+        iovec iovecs[uring_max_iov];
         int   iovec_count = copy_to_iovec(buffers, iovecs);
         bool stop_now  = token.stop_possible() && token.stop_requested();
         bool empty_buf = (iovec_count == 0);
@@ -1097,7 +1097,7 @@ public:
                 rd_.res = (n < 0) ? -err : static_cast<int>(n);
             sched_->work_started();
             {
-                io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+                uring_scheduler::lock_type lock(sched_->dispatch_mutex());
                 sched_->push_completed_locked(&rd_);
             }
             return std::noop_coroutine();
@@ -1108,11 +1108,11 @@ public:
         sched_->work_started();
         if (rd_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(sched_->dispatch_mutex());
             sched_->push_completed_locked(&rd_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*sched_, &rd_);
+        uring_submit_op(*sched_, &rd_);
         return std::noop_coroutine();
     }
 
@@ -1124,7 +1124,7 @@ public:
         std::error_code*        ec,
         std::size_t*            bytes) override
     {
-        iovec iovecs[io_uring_max_iov];
+        iovec iovecs[uring_max_iov];
         int   iovec_count = copy_to_iovec(buffers, iovecs);
         bool stop_now  = token.stop_possible() && token.stop_requested();
         bool empty_buf = (iovec_count == 0);
@@ -1170,7 +1170,7 @@ public:
                 wr_.res = (n < 0) ? -err : static_cast<int>(n);
             sched_->work_started();
             {
-                io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+                uring_scheduler::lock_type lock(sched_->dispatch_mutex());
                 sched_->push_completed_locked(&wr_);
             }
             return std::noop_coroutine();
@@ -1181,11 +1181,11 @@ public:
         sched_->work_started();
         if (wr_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(sched_->dispatch_mutex());
             sched_->push_completed_locked(&wr_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*sched_, &wr_);
+        uring_submit_op(*sched_, &wr_);
         return std::noop_coroutine();
     }
 
@@ -1215,7 +1215,7 @@ public:
             conn_.cancelled.store(true, std::memory_order_release);
             sched_->work_started();
             {
-                io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+                uring_scheduler::lock_type lock(sched_->dispatch_mutex());
                 sched_->push_completed_locked(&conn_);
             }
             return std::noop_coroutine();
@@ -1229,11 +1229,11 @@ public:
         sched_->work_started();
         if (conn_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(sched_->dispatch_mutex());
             sched_->push_completed_locked(&conn_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*sched_, &conn_);
+        uring_submit_op(*sched_, &conn_);
         return std::noop_coroutine();
     }
 
@@ -1256,11 +1256,11 @@ public:
         sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(sched_->dispatch_mutex());
             sched_->push_completed_locked(&wait_op_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*sched_, &wait_op_);
+        uring_submit_op(*sched_, &wait_op_);
         return std::noop_coroutine();
     }
 
@@ -1316,7 +1316,7 @@ public:
 
 /** Unix domain stream socket service for io_uring.
 
-    Owns all `io_uring_local_stream_socket` implementations for an
+    Owns all `uring_local_stream_socket` implementations for an
     `io_context`. Satisfies the `local_stream_service` interface so the
     generic `local_stream_socket` front-end can call `open_socket` and
     `assign_socket` transparently.
@@ -1328,14 +1328,14 @@ public:
     @par Thread Safety
     All public member functions are thread-safe.
 */
-class BOOST_COROSIO_DECL io_uring_local_stream_service final
-    : public io_uring_socket_service_base<
-          io_uring_local_stream_service, local_stream_service,
-          io_uring_local_stream_socket>
+class BOOST_COROSIO_DECL uring_local_stream_service final
+    : public uring_socket_service_base<
+          uring_local_stream_service, local_stream_service,
+          uring_local_stream_socket>
 {
-    using base_service = io_uring_socket_service_base<
-        io_uring_local_stream_service, local_stream_service,
-        io_uring_local_stream_socket>;
+    using base_service = uring_socket_service_base<
+        uring_local_stream_service, local_stream_service,
+        uring_local_stream_socket>;
 
 public:
     /// Identifies this service for `execution_context` lookup.
@@ -1346,12 +1346,12 @@ public:
         @param ctx The owning execution context. The io_uring scheduler
             must already be registered.
     */
-    explicit io_uring_local_stream_service(capy::execution_context& ctx)
+    explicit uring_local_stream_service(capy::execution_context& ctx)
         : base_service(ctx)
     {}
 
     // construct / destroy / shutdown / close / scheduler() are inherited
-    // from io_uring_socket_service_base.
+    // from uring_socket_service_base.
 
     /** Open an AF_UNIX stream socket and associate it with an impl.
 
@@ -1368,7 +1368,7 @@ public:
         local_stream_socket::implementation& impl,
         int family, int type, int protocol) override
     {
-        auto& sock = static_cast<io_uring_local_stream_socket&>(impl);
+        auto& sock = static_cast<uring_local_stream_socket&>(impl);
         int fd = ::socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
             return make_err(errno);
@@ -1397,7 +1397,7 @@ public:
         local_stream_socket::implementation& impl,
         native_handle_type fd) override
     {
-        auto& sock = static_cast<io_uring_local_stream_socket&>(impl);
+        auto& sock = static_cast<uring_local_stream_socket&>(impl);
         int nfd = static_cast<int>(fd);
         if (nfd >= 0 && nfd == sock.fd_)
             return std::make_error_code(std::errc::invalid_argument);
@@ -1436,10 +1436,10 @@ public:
         @param peer Peer endpoint from `accept(2)`.
         @return Raw pointer to the registered impl.
     */
-    io_uring_local_stream_socket* adopt_fd(
+    uring_local_stream_socket* adopt_fd(
         int fd, corosio::local_endpoint const& peer)
     {
-        auto p = std::make_shared<io_uring_local_stream_socket>(*this, *sched_);
+        auto p = std::make_shared<uring_local_stream_socket>(*this, *sched_);
         p->fd_              = fd;
         p->remote_endpoint_ = peer;
 
@@ -1456,33 +1456,33 @@ public:
 
     Inherits all multishot machinery (parked-fd queue, waiter queue,
     descriptor release, CQE drain on destruction) from
-    `io_uring_multishot_acceptor_base`. Adds only the `accept()`
+    `uring_multishot_acceptor_base`. Adds only the `accept()`
     override and the `adopt_thunk` static that wraps an accepted fd
-    via `io_uring_local_stream_service::adopt_fd`.
+    via `uring_local_stream_service::adopt_fd`.
 */
-class BOOST_COROSIO_DECL io_uring_local_stream_acceptor final
-    : public io_uring_multishot_acceptor_base<
-          io_uring_local_stream_acceptor,
+class BOOST_COROSIO_DECL uring_local_stream_acceptor final
+    : public uring_multishot_acceptor_base<
+          uring_local_stream_acceptor,
           local_stream_acceptor::implementation,
           corosio::local_endpoint,
-          io_uring_local_stream_service>
+          uring_local_stream_service>
 {
-    friend io_uring_local_stream_acceptor_service;
+    friend uring_local_stream_acceptor_service;
 
-    using base_type = io_uring_multishot_acceptor_base<
-        io_uring_local_stream_acceptor,
+    using base_type = uring_multishot_acceptor_base<
+        uring_local_stream_acceptor,
         local_stream_acceptor::implementation,
         corosio::local_endpoint,
-        io_uring_local_stream_service>;
+        uring_local_stream_service>;
 
-    // Readiness-wait slot. See io_uring_tcp_acceptor::wait_op_.
+    // Readiness-wait slot. See uring_tcp_acceptor::wait_op_.
     uring_wait_op wait_op_;
 
 public:
-    explicit io_uring_local_stream_acceptor(
-        io_uring_local_stream_acceptor_service&,
-        io_uring_scheduler&            sched,
-        io_uring_local_stream_service& peer_svc) noexcept
+    explicit uring_local_stream_acceptor(
+        uring_local_stream_acceptor_service&,
+        uring_scheduler&            sched,
+        uring_local_stream_service& peer_svc) noexcept
         : base_type(sched, peer_svc)
     {}
 
@@ -1545,11 +1545,11 @@ public:
         this->sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(this->sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(this->sched_->dispatch_mutex());
             this->sched_->push_completed_locked(&wait_op_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*this->sched_, &wait_op_);
+        uring_submit_op(*this->sched_, &wait_op_);
         return std::noop_coroutine();
     }
 
@@ -1557,14 +1557,14 @@ public:
         void* peer_service, int fd,
         sockaddr_storage const& peer, socklen_t peer_len) noexcept
     {
-        auto* svc = static_cast<io_uring_local_stream_service*>(peer_service);
+        auto* svc = static_cast<uring_local_stream_service*>(peer_service);
         return svc->adopt_fd(fd, sockaddr_to_local_endpoint(peer, peer_len));
     }
 };
 
 /** Unix domain stream acceptor service for io_uring.
 
-    Owns all `io_uring_local_stream_acceptor` implementations for an
+    Owns all `uring_local_stream_acceptor` implementations for an
     `io_context`. Satisfies the `local_stream_acceptor_service` interface
     so the generic `local_stream_acceptor` front-end can call
     `open_acceptor_socket`, `bind_acceptor`, and `listen_acceptor`
@@ -1577,7 +1577,7 @@ public:
     @par Thread Safety
     All public member functions are thread-safe.
 */
-class BOOST_COROSIO_DECL io_uring_local_stream_acceptor_service final
+class BOOST_COROSIO_DECL uring_local_stream_acceptor_service final
     : public local_stream_acceptor_service
 {
 public:
@@ -1589,14 +1589,14 @@ public:
         @param ctx The owning execution context. Both the io_uring scheduler
             and the local stream socket service must already be registered.
     */
-    explicit io_uring_local_stream_acceptor_service(capy::execution_context& ctx)
-        : sched_(&ctx.use_service<io_uring_scheduler>())
-        , peer_svc_(&ctx.use_service<io_uring_local_stream_service>())
+    explicit uring_local_stream_acceptor_service(capy::execution_context& ctx)
+        : sched_(&ctx.use_service<uring_scheduler>())
+        , peer_svc_(&ctx.use_service<uring_local_stream_service>())
     {}
 
     void shutdown() override
     {
-        std::vector<std::shared_ptr<io_uring_local_stream_acceptor>> live;
+        std::vector<std::shared_ptr<uring_local_stream_acceptor>> live;
         {
             std::lock_guard lk(mutex_);
             live.reserve(impls_.size());
@@ -1611,7 +1611,7 @@ public:
 
     io_object::implementation* construct() override
     {
-        auto p   = std::make_shared<io_uring_local_stream_acceptor>(
+        auto p   = std::make_shared<uring_local_stream_acceptor>(
             *this, *sched_, *peer_svc_);
         auto* raw = p.get();
         std::lock_guard lk(mutex_);
@@ -1624,14 +1624,14 @@ public:
         if (!p)
             return;
         std::lock_guard lk(mutex_);
-        impls_.erase(static_cast<io_uring_local_stream_acceptor*>(p));
+        impls_.erase(static_cast<uring_local_stream_acceptor*>(p));
     }
 
     // Close the fd eagerly when local_stream_acceptor::close() is called,
     // before destroy() drops the shared_ptr and the destructor runs.
     void close(io_object::handle& h) override
     {
-        auto* acc = static_cast<io_uring_local_stream_acceptor*>(h.get());
+        auto* acc = static_cast<uring_local_stream_acceptor*>(h.get());
         if (acc && acc->fd_ >= 0)
         {
             // cancel_and_flush submits cancel-by-fd; drain_waiters_only
@@ -1643,7 +1643,7 @@ public:
 
             // Break the multi_op_ -> impl_ptr (shared_ptr<this>) cycle
             // start_multishot established. See the symmetric comment
-            // in io_uring_tcp_acceptor_service::close.
+            // in uring_tcp_acceptor_service::close.
             if (acc->multi_op_)
                 acc->multi_op_->impl_ptr.reset();
         }
@@ -1663,7 +1663,7 @@ public:
         int type,
         int protocol) override
     {
-        auto& acc = static_cast<io_uring_local_stream_acceptor&>(impl);
+        auto& acc = static_cast<uring_local_stream_acceptor&>(impl);
         int fd = ::socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
             return make_err(errno);
@@ -1689,7 +1689,7 @@ public:
         local_stream_acceptor::implementation& impl,
         native_handle_type fd) override
     {
-        auto& acc = static_cast<io_uring_local_stream_acceptor&>(impl);
+        auto& acc = static_cast<uring_local_stream_acceptor&>(impl);
         int   nfd = static_cast<int>(fd);
         if (nfd >= 0 && nfd == acc.fd_)
             return std::make_error_code(std::errc::invalid_argument);
@@ -1732,7 +1732,7 @@ public:
         local_stream_acceptor::implementation& impl,
         corosio::local_endpoint ep) override
     {
-        auto& acc = static_cast<io_uring_local_stream_acceptor&>(impl);
+        auto& acc = static_cast<uring_local_stream_acceptor&>(impl);
         sockaddr_storage addr{};
         socklen_t len = endpoint_to_sockaddr(ep, addr);
         if (::bind(acc.fd_, reinterpret_cast<sockaddr*>(&addr), len) < 0)
@@ -1760,7 +1760,7 @@ public:
         local_stream_acceptor::implementation& impl,
         int backlog) override
     {
-        auto& acc = static_cast<io_uring_local_stream_acceptor&>(impl);
+        auto& acc = static_cast<uring_local_stream_acceptor&>(impl);
         if (::listen(acc.fd_, backlog) < 0)
             return make_err(errno);
         if (acc.prepare_listen_arm())
@@ -1769,21 +1769,21 @@ public:
     }
 
     /// Return the scheduler used by acceptors created by this service.
-    io_uring_scheduler& scheduler() noexcept { return *sched_; }
+    uring_scheduler& scheduler() noexcept { return *sched_; }
 
 private:
-    io_uring_scheduler*             sched_;
-    io_uring_local_stream_service*  peer_svc_;
+    uring_scheduler*             sched_;
+    uring_local_stream_service*  peer_svc_;
     std::mutex                      mutex_;
-    std::unordered_map<io_uring_local_stream_acceptor*,
-        std::shared_ptr<io_uring_local_stream_acceptor>> impls_;
+    std::unordered_map<uring_local_stream_acceptor*,
+        std::shared_ptr<uring_local_stream_acceptor>> impls_;
 };
 
 /** UDP socket implementation for io_uring.
 
     Implements `udp_socket::implementation` using a proactor model:
     send_to, recv_from, send, recv, and connect operations are submitted
-    to the kernel via `io_uring_submit_op` and complete through the ring's
+    to the kernel via `uring_submit_op` and complete through the ring's
     CQE path.
 
     The object is always owned by a `shared_ptr` managed by the service.
@@ -1795,15 +1795,15 @@ private:
     Shared objects: Unsafe. One send and one recv may be in flight
     simultaneously, but two sends or two recvs must not overlap.
 */
-class BOOST_COROSIO_DECL io_uring_udp_socket final
+class BOOST_COROSIO_DECL uring_udp_socket final
     : public native_socket_base<
-          io_uring_udp_socket, udp_socket::implementation, corosio::endpoint>
+          uring_udp_socket, udp_socket::implementation, corosio::endpoint>
 {
-    friend io_uring_udp_service;
+    friend uring_udp_service;
 
     int                    family_ = AF_UNSPEC;  // cached at open_socket
-    io_uring_scheduler*    sched_  = nullptr;
-    [[maybe_unused]] io_uring_udp_service*  svc_    = nullptr;
+    uring_scheduler*    sched_  = nullptr;
+    [[maybe_unused]] uring_udp_service*  svc_    = nullptr;
 
     // fd_ and local_endpoint_ live in native_socket_base, which also
     // provides native_handle/is_open/set_option/get_option/local_endpoint.
@@ -1826,14 +1826,14 @@ public:
         @param svc   The owning service.
         @param sched The io_uring scheduler owned by the context.
     */
-    explicit io_uring_udp_socket(
-        io_uring_udp_service& svc,
-        io_uring_scheduler&   sched) noexcept
+    explicit uring_udp_socket(
+        uring_udp_service& svc,
+        uring_scheduler&   sched) noexcept
         : sched_(&sched)
         , svc_(&svc)
     {}
 
-    ~io_uring_udp_socket() override
+    ~uring_udp_socket() override
     {
         if (fd_ >= 0)
             ::close(fd_); // LCOV_EXCL_LINE backstop: close_socket() clears fd_ before destroy
@@ -1922,7 +1922,7 @@ public:
             conn_.cancelled.store(true, std::memory_order_release);
             sched_->work_started();
             {
-                io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+                uring_scheduler::lock_type lock(sched_->dispatch_mutex());
                 sched_->push_completed_locked(&conn_);
             }
             return std::noop_coroutine();
@@ -1936,11 +1936,11 @@ public:
         sched_->work_started();
         if (conn_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(sched_->dispatch_mutex());
             sched_->push_completed_locked(&conn_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*sched_, &conn_);
+        uring_submit_op(*sched_, &conn_);
         return std::noop_coroutine();
     }
 
@@ -1963,11 +1963,11 @@ public:
         sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(sched_->dispatch_mutex());
             sched_->push_completed_locked(&wait_op_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*sched_, &wait_op_);
+        uring_submit_op(*sched_, &wait_op_);
         return std::noop_coroutine();
     }
 
@@ -2033,7 +2033,7 @@ private:
         std::error_code*               ec,
         std::size_t*                   bytes)
     {
-        iovec iovecs[io_uring_max_iov];
+        iovec iovecs[uring_max_iov];
         int   iovec_count = copy_to_iovec(buffers, iovecs);
         bool stop_now  = token.stop_possible() && token.stop_requested();
         bool empty_buf = (iovec_count == 0);
@@ -2087,7 +2087,7 @@ private:
                 send_.res = (n < 0) ? -err : static_cast<int>(n);
             sched_->work_started();
             {
-                io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+                uring_scheduler::lock_type lock(sched_->dispatch_mutex());
                 sched_->push_completed_locked(&send_);
             }
             return std::noop_coroutine();
@@ -2099,11 +2099,11 @@ private:
         sched_->work_started();
         if (send_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(sched_->dispatch_mutex());
             sched_->push_completed_locked(&send_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*sched_, &send_);
+        uring_submit_op(*sched_, &send_);
         return std::noop_coroutine();
     }
 
@@ -2118,7 +2118,7 @@ private:
         std::error_code*         ec,
         std::size_t*             bytes)
     {
-        iovec iovecs[io_uring_max_iov];
+        iovec iovecs[uring_max_iov];
         int   iovec_count = copy_to_iovec(buffers, iovecs);
         bool stop_now  = token.stop_possible() && token.stop_requested();
         bool empty_buf = (iovec_count == 0);
@@ -2187,7 +2187,7 @@ private:
             }
             sched_->work_started();
             {
-                io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+                uring_scheduler::lock_type lock(sched_->dispatch_mutex());
                 sched_->push_completed_locked(&recv_);
             }
             return std::noop_coroutine();
@@ -2201,11 +2201,11 @@ private:
         if (recv_.iovec_count == 0 ||
             recv_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(sched_->dispatch_mutex());
             sched_->push_completed_locked(&recv_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*sched_, &recv_);
+        uring_submit_op(*sched_, &recv_);
         return std::noop_coroutine();
     }
 
@@ -2219,7 +2219,7 @@ private:
 
 /** UDP socket service for io_uring.
 
-    Owns all `io_uring_udp_socket` implementations for an `io_context`.
+    Owns all `uring_udp_socket` implementations for an `io_context`.
     Satisfies the `udp_service` interface so the generic `udp_socket`
     front-end can call `open_datagram_socket` and `bind_datagram`
     transparently.
@@ -2231,12 +2231,12 @@ private:
     @par Thread Safety
     All public member functions are thread-safe.
 */
-class BOOST_COROSIO_DECL io_uring_udp_service final
-    : public io_uring_socket_service_base<
-          io_uring_udp_service, udp_service, io_uring_udp_socket>
+class BOOST_COROSIO_DECL uring_udp_service final
+    : public uring_socket_service_base<
+          uring_udp_service, udp_service, uring_udp_socket>
 {
-    using base_service = io_uring_socket_service_base<
-        io_uring_udp_service, udp_service, io_uring_udp_socket>;
+    using base_service = uring_socket_service_base<
+        uring_udp_service, udp_service, uring_udp_socket>;
 
 public:
     /// Identifies this service for `execution_context` lookup.
@@ -2247,12 +2247,12 @@ public:
         @param ctx The owning execution context. The io_uring scheduler
             must already be registered.
     */
-    explicit io_uring_udp_service(capy::execution_context& ctx)
+    explicit uring_udp_service(capy::execution_context& ctx)
         : base_service(ctx)
     {}
 
     // construct / destroy / shutdown / close / scheduler() are inherited
-    // from io_uring_socket_service_base.
+    // from uring_socket_service_base.
 
     /** Open a datagram socket and associate it with an impl.
 
@@ -2268,7 +2268,7 @@ public:
         udp_socket::implementation& impl,
         int family, int type, int protocol) override
     {
-        auto& sock = static_cast<io_uring_udp_socket&>(impl);
+        auto& sock = static_cast<uring_udp_socket&>(impl);
         int fd = ::socket(
             family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
@@ -2304,7 +2304,7 @@ public:
         udp_socket::implementation& impl,
         native_handle_type fd) override
     {
-        auto& sock = static_cast<io_uring_udp_socket&>(impl);
+        auto& sock = static_cast<uring_udp_socket&>(impl);
         int nfd = static_cast<int>(fd);
         if (nfd >= 0 && nfd == sock.fd_)
             return std::make_error_code(std::errc::invalid_argument);
@@ -2348,7 +2348,7 @@ public:
     std::error_code bind_datagram(
         udp_socket::implementation& impl, endpoint ep) override
     {
-        auto& sock = static_cast<io_uring_udp_socket&>(impl);
+        auto& sock = static_cast<uring_udp_socket&>(impl);
         sockaddr_storage addr{};
         socklen_t len = endpoint_to_sockaddr(ep, addr);
         if (::bind(
@@ -2370,7 +2370,7 @@ public:
 
     Implements `local_datagram_socket::implementation` using a proactor
     model: send_to, recv_from, send, recv, and connect operations are
-    submitted to the kernel via `io_uring_submit_op` and complete through
+    submitted to the kernel via `uring_submit_op` and complete through
     the ring's CQE path.
 
     The object is always owned by a `shared_ptr` managed by the service.
@@ -2382,16 +2382,16 @@ public:
     Shared objects: Unsafe. One send and one recv may be in flight
     simultaneously, but two sends or two recvs must not overlap.
 */
-class BOOST_COROSIO_DECL io_uring_local_datagram_socket final
+class BOOST_COROSIO_DECL uring_local_datagram_socket final
     : public native_socket_base<
-          io_uring_local_datagram_socket,
+          uring_local_datagram_socket,
           local_datagram_socket::implementation,
           corosio::local_endpoint>
 {
-    friend io_uring_local_datagram_service;
+    friend uring_local_datagram_service;
 
-    io_uring_scheduler*              sched_ = nullptr;
-    [[maybe_unused]] io_uring_local_datagram_service* svc_   = nullptr;
+    uring_scheduler*              sched_ = nullptr;
+    [[maybe_unused]] uring_local_datagram_service* svc_   = nullptr;
 
     // fd_ and local_endpoint_ live in native_socket_base, which also
     // provides native_handle/is_open/set_option/get_option/local_endpoint.
@@ -2414,14 +2414,14 @@ public:
         @param svc   The owning service.
         @param sched The io_uring scheduler owned by the context.
     */
-    explicit io_uring_local_datagram_socket(
-        io_uring_local_datagram_service& svc,
-        io_uring_scheduler&              sched) noexcept
+    explicit uring_local_datagram_socket(
+        uring_local_datagram_service& svc,
+        uring_scheduler&              sched) noexcept
         : sched_(&sched)
         , svc_(&svc)
     {}
 
-    ~io_uring_local_datagram_socket() override
+    ~uring_local_datagram_socket() override
     {
         if (fd_ >= 0)
             ::close(fd_); // LCOV_EXCL_LINE backstop: close_socket() clears fd_ before destroy
@@ -2510,7 +2510,7 @@ public:
             conn_.cancelled.store(true, std::memory_order_release);
             sched_->work_started();
             {
-                io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+                uring_scheduler::lock_type lock(sched_->dispatch_mutex());
                 sched_->push_completed_locked(&conn_);
             }
             return std::noop_coroutine();
@@ -2524,11 +2524,11 @@ public:
         sched_->work_started();
         if (conn_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(sched_->dispatch_mutex());
             sched_->push_completed_locked(&conn_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*sched_, &conn_);
+        uring_submit_op(*sched_, &conn_);
         return std::noop_coroutine();
     }
 
@@ -2551,11 +2551,11 @@ public:
         sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(sched_->dispatch_mutex());
             sched_->push_completed_locked(&wait_op_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*sched_, &wait_op_);
+        uring_submit_op(*sched_, &wait_op_);
         return std::noop_coroutine();
     }
 
@@ -2641,7 +2641,7 @@ private:
         std::error_code*               ec,
         std::size_t*                   bytes)
     {
-        iovec iovecs[io_uring_max_iov];
+        iovec iovecs[uring_max_iov];
         int   iovec_count = copy_to_iovec(buffers, iovecs);
         bool stop_now  = token.stop_possible() && token.stop_requested();
         bool empty_buf = (iovec_count == 0);
@@ -2695,7 +2695,7 @@ private:
                 send_.res = (n < 0) ? -err : static_cast<int>(n);
             sched_->work_started();
             {
-                io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+                uring_scheduler::lock_type lock(sched_->dispatch_mutex());
                 sched_->push_completed_locked(&send_);
             }
             return std::noop_coroutine();
@@ -2707,11 +2707,11 @@ private:
         sched_->work_started();
         if (send_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(sched_->dispatch_mutex());
             sched_->push_completed_locked(&send_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*sched_, &send_);
+        uring_submit_op(*sched_, &send_);
         return std::noop_coroutine();
     }
 
@@ -2726,7 +2726,7 @@ private:
         std::error_code*           ec,
         std::size_t*               bytes)
     {
-        iovec iovecs[io_uring_max_iov];
+        iovec iovecs[uring_max_iov];
         int   iovec_count = copy_to_iovec(buffers, iovecs);
         bool stop_now  = token.stop_possible() && token.stop_requested();
         bool empty_buf = (iovec_count == 0);
@@ -2795,7 +2795,7 @@ private:
             }
             sched_->work_started();
             {
-                io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+                uring_scheduler::lock_type lock(sched_->dispatch_mutex());
                 sched_->push_completed_locked(&recv_);
             }
             return std::noop_coroutine();
@@ -2809,11 +2809,11 @@ private:
         if (recv_.iovec_count == 0 ||
             recv_.cancelled.load(std::memory_order_acquire))
         {
-            io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+            uring_scheduler::lock_type lock(sched_->dispatch_mutex());
             sched_->push_completed_locked(&recv_);
             return std::noop_coroutine();
         }
-        io_uring_submit_op(*sched_, &recv_);
+        uring_submit_op(*sched_, &recv_);
         return std::noop_coroutine();
     }
 
@@ -2827,7 +2827,7 @@ private:
 
 /** Unix domain datagram socket service for io_uring.
 
-    Owns all `io_uring_local_datagram_socket` implementations for an
+    Owns all `uring_local_datagram_socket` implementations for an
     `io_context`. Satisfies the `local_datagram_service` interface so the
     generic `local_datagram_socket` front-end can call `open_socket` and
     `bind_socket` transparently.
@@ -2839,14 +2839,14 @@ private:
     @par Thread Safety
     All public member functions are thread-safe.
 */
-class BOOST_COROSIO_DECL io_uring_local_datagram_service final
-    : public io_uring_socket_service_base<
-          io_uring_local_datagram_service, local_datagram_service,
-          io_uring_local_datagram_socket>
+class BOOST_COROSIO_DECL uring_local_datagram_service final
+    : public uring_socket_service_base<
+          uring_local_datagram_service, local_datagram_service,
+          uring_local_datagram_socket>
 {
-    using base_service = io_uring_socket_service_base<
-        io_uring_local_datagram_service, local_datagram_service,
-        io_uring_local_datagram_socket>;
+    using base_service = uring_socket_service_base<
+        uring_local_datagram_service, local_datagram_service,
+        uring_local_datagram_socket>;
 
 public:
     /// Identifies this service for `execution_context` lookup.
@@ -2857,12 +2857,12 @@ public:
         @param ctx The owning execution context. The io_uring scheduler
             must already be registered.
     */
-    explicit io_uring_local_datagram_service(capy::execution_context& ctx)
+    explicit uring_local_datagram_service(capy::execution_context& ctx)
         : base_service(ctx)
     {}
 
     // construct / destroy / shutdown / close / scheduler() are inherited
-    // from io_uring_socket_service_base.
+    // from uring_socket_service_base.
 
     /** Open an AF_UNIX datagram socket and associate it with an impl.
 
@@ -2879,7 +2879,7 @@ public:
         local_datagram_socket::implementation& impl,
         int family, int type, int protocol) override
     {
-        auto& sock = static_cast<io_uring_local_datagram_socket&>(impl);
+        auto& sock = static_cast<uring_local_datagram_socket&>(impl);
         int fd = ::socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
             return make_err(errno);
@@ -2908,7 +2908,7 @@ public:
         local_datagram_socket::implementation& impl,
         native_handle_type fd) override
     {
-        auto& sock = static_cast<io_uring_local_datagram_socket&>(impl);
+        auto& sock = static_cast<uring_local_datagram_socket&>(impl);
         int nfd = static_cast<int>(fd);
         if (nfd >= 0 && nfd == sock.fd_)
             return std::make_error_code(std::errc::invalid_argument);
@@ -2947,7 +2947,7 @@ public:
         local_datagram_socket::implementation& impl,
         corosio::local_endpoint ep) override
     {
-        auto& sock = static_cast<io_uring_local_datagram_socket&>(impl);
+        auto& sock = static_cast<uring_local_datagram_socket&>(impl);
         sockaddr_storage addr{};
         socklen_t len = endpoint_to_sockaddr(ep, addr);
         if (::bind(
@@ -2967,6 +2967,6 @@ public:
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_HAS_IO_URING
+#endif // BOOST_COROSIO_HAS_URING
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_TYPES_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_URING_URING_TYPES_HPP

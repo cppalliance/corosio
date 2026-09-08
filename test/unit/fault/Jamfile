@@ -100,7 +100,7 @@ else if [ os.name ] = LINUX
         alloc_faults.cpp ;
     # The io_uring hook includes <liburing.h> unconditionally, so it can
     # only build where the library's own probe found liburing. Without
-    # it uring_faults.cpp compiles away behind BOOST_COROSIO_HAS_IO_URING
+    # it uring_faults.cpp compiles away behind BOOST_COROSIO_HAS_URING
     # and the program still runs; CMake drops that source instead.
     uring-hook = [ check-target-builds /boost/corosio//has_liburing
         : <source>fault_uring.cpp : ] ;

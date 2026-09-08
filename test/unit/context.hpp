@@ -67,13 +67,13 @@
 #define COROSIO_TEST_SELECT_(impl, name)
 #endif
 
-#if BOOST_COROSIO_HAS_IO_URING
-#define COROSIO_TEST_IO_URING_(impl, name)         \
-    struct impl##_io_uring : impl<io_uring>        \
+#if BOOST_COROSIO_HAS_URING
+#define COROSIO_TEST_URING_(impl, name)         \
+    struct impl##_uring : impl<uring>        \
     {};                                            \
-    TEST_SUITE(impl##_io_uring, name ".io_uring");
+    TEST_SUITE(impl##_uring, name ".uring");
 #else
-#define COROSIO_TEST_IO_URING_(impl, name)
+#define COROSIO_TEST_URING_(impl, name)
 #endif
 
 #define COROSIO_BACKEND_TESTS(impl, name) \
@@ -81,7 +81,7 @@
     COROSIO_TEST_EPOLL_(impl, name)       \
     COROSIO_TEST_KQUEUE_(impl, name)      \
     COROSIO_TEST_SELECT_(impl, name)      \
-    COROSIO_TEST_IO_URING_(impl, name)
+    COROSIO_TEST_URING_(impl, name)
 
 // Reactor-only test registration. Use this in test files that exercise
 // reactor-backend code paths (e.g. EPOLLOUT-rearm under small SO_SNDBUF
@@ -99,7 +99,7 @@
     COROSIO_TEST_EPOLL_(impl, name)                \
     COROSIO_TEST_KQUEUE_(impl, name)               \
     COROSIO_TEST_SELECT_(impl, name)               \
-    COROSIO_TEST_IO_URING_(impl, name)
+    COROSIO_TEST_URING_(impl, name)
 
 // Tests that destroy the io_context with ops still parked abandon the
 // suspended coroutine frames: op destroy() must not resume or destroy

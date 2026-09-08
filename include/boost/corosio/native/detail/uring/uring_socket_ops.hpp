@@ -8,12 +8,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_SOCKET_OPS_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_SOCKET_OPS_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_URING_URING_SOCKET_OPS_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_URING_URING_SOCKET_OPS_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
 #include <liburing.h>
 
@@ -22,9 +22,9 @@
 #include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 #include <boost/corosio/local_endpoint.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_buffer.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_op.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_scheduler.hpp>
+#include <boost/corosio/native/detail/uring/uring_buffer.hpp>
+#include <boost/corosio/native/detail/uring/uring_op.hpp>
+#include <boost/corosio/native/detail/uring/uring_scheduler.hpp>
 #include <boost/corosio/native/detail/coro_op_complete.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/speculative_state.hpp>
@@ -42,12 +42,12 @@ namespace boost::corosio::detail {
 /// Maximum scatter/gather segments per read/write/dgram op.
 ///
 /// Bounded well below `IOV_MAX` (1024 on Linux) so each op's
-/// `iovec[io_uring_max_iov]` lives inside the io_uring_op object on
+/// `iovec[uring_max_iov]` lives inside the uring_op object on
 /// the same allocation as the rest of its state. Plan 4's registered-
 /// buffer work will revisit; until then 16 covers typical scatter use
 /// cases (fragmented buffers from buffer_sequence) without bloating
 /// per-op memory.
-inline constexpr std::size_t io_uring_max_iov = 16;
+inline constexpr std::size_t uring_max_iov = 16;
 
 /** Fill an `iovec` array from a buffer sequence without type-punning.
 
@@ -66,10 +66,10 @@ inline constexpr std::size_t io_uring_max_iov = 16;
 inline int
 copy_to_iovec(
     buffer_param const& buffers,
-    iovec (&iovecs)[io_uring_max_iov]) noexcept
+    iovec (&iovecs)[uring_max_iov]) noexcept
 {
-    capy::mutable_buffer bufs[io_uring_max_iov];
-    std::size_t const n = buffers.copy_to(bufs, io_uring_max_iov);
+    capy::mutable_buffer bufs[uring_max_iov];
+    std::size_t const n = buffers.copy_to(bufs, uring_max_iov);
     for (std::size_t i = 0; i < n; ++i)
     {
         iovecs[i].iov_base = bufs[i].data();
@@ -88,7 +88,7 @@ copy_to_iovec(
     @param empty_buf  True if the submitted buffer was zero-length.
 */
 inline void
-uring_set_result(io_uring_op* self, bool is_read, bool empty_buf) noexcept
+uring_set_result(uring_op* self, bool is_read, bool empty_buf) noexcept
 {
     decode_io_result(
         self->ec_out,
@@ -105,15 +105,15 @@ uring_set_result(io_uring_op* self, bool is_read, bool empty_buf) noexcept
     do_cqe captures `res`/`cqe_flags` and queues self into `local`;
     do_handler runs from the scheduler queue and resumes the coroutine.
 */
-struct uring_read_op : io_uring_op
+struct uring_read_op : uring_op
 {
-    iovec  iovecs[io_uring_max_iov];
+    iovec  iovecs[uring_max_iov];
     int    iovec_count = 0;
     int    fd          = -1;
     detail::speculative_state* spec_state = nullptr;
 
     uring_read_op() noexcept
-        : io_uring_op(&do_handler, &do_cqe, &do_prep)
+        : uring_op(&do_handler, &do_cqe, &do_prep)
     {
         is_read = true;
     }
@@ -132,7 +132,7 @@ struct uring_read_op : io_uring_op
         std::error_code*           ec,
         std::size_t*               bytes,
         int                        file_descriptor,
-        io_uring_scheduler*        scheduler,
+        uring_scheduler*        scheduler,
         std::shared_ptr<void>      impl,
         detail::speculative_state* spec,
         buffer_param               buffers,
@@ -153,7 +153,7 @@ struct uring_read_op : io_uring_op
         start(token);
     }
 
-    static void do_prep(io_uring_op* base, ::io_uring_sqe* sqe) noexcept
+    static void do_prep(uring_op* base, ::io_uring_sqe* sqe) noexcept
     {
         auto* self = static_cast<uring_read_op*>(base);
         // Single-buffer fast path: IORING_OP_RECV with a flat
@@ -176,7 +176,7 @@ struct uring_read_op : io_uring_op
     }
 
     static void do_cqe(
-        io_uring_op* base, int res, unsigned flags,
+        uring_op* base, int res, unsigned flags,
         ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_read_op*>(base);
@@ -218,16 +218,16 @@ struct uring_read_op : io_uring_op
     `MSG_NOSIGNAL` prevents `SIGPIPE` when the peer has closed the
     connection; the error is surfaced as `EPIPE` instead.
 */
-struct uring_write_op : io_uring_op
+struct uring_write_op : uring_op
 {
-    iovec  iovecs[io_uring_max_iov];
+    iovec  iovecs[uring_max_iov];
     int    iovec_count = 0;
     int    fd          = -1;
     msghdr msg{};
     detail::speculative_state* spec_state = nullptr;
 
     uring_write_op() noexcept
-        : io_uring_op(&do_handler, &do_cqe, &do_prep)
+        : uring_op(&do_handler, &do_cqe, &do_prep)
     {}
 
     /** Reset and initialize for a new submission. See uring_read_op::prepare. */
@@ -237,7 +237,7 @@ struct uring_write_op : io_uring_op
         std::error_code*           ec,
         std::size_t*               bytes,
         int                        file_descriptor,
-        io_uring_scheduler*        scheduler,
+        uring_scheduler*        scheduler,
         std::shared_ptr<void>      impl,
         detail::speculative_state* spec,
         buffer_param               buffers,
@@ -264,7 +264,7 @@ struct uring_write_op : io_uring_op
         start(token);
     }
 
-    static void do_prep(io_uring_op* base, ::io_uring_sqe* sqe) noexcept
+    static void do_prep(uring_op* base, ::io_uring_sqe* sqe) noexcept
     {
         auto* self = static_cast<uring_write_op*>(base);
         // Single-buffer fast path: IORING_OP_SEND with MSG_NOSIGNAL
@@ -286,7 +286,7 @@ struct uring_write_op : io_uring_op
     }
 
     static void do_cqe(
-        io_uring_op* base, int res, unsigned flags,
+        uring_op* base, int res, unsigned flags,
         ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_write_op*>(base);
@@ -328,7 +328,7 @@ struct uring_write_op : io_uring_op
     `remote_endpoint_out` is written only on success so a failed
     connect does not corrupt the socket's cached remote endpoint.
 */
-struct uring_connect_op : io_uring_op
+struct uring_connect_op : uring_op
 {
     sockaddr_storage addr{};
     socklen_t        addrlen            = 0;
@@ -338,7 +338,7 @@ struct uring_connect_op : io_uring_op
     endpoint*        local_endpoint_out  = nullptr;
 
     uring_connect_op() noexcept
-        : io_uring_op(&do_handler, &do_cqe, &do_prep)
+        : uring_op(&do_handler, &do_cqe, &do_prep)
     {}
 
     /** Reset and initialize for a new submission.
@@ -354,7 +354,7 @@ struct uring_connect_op : io_uring_op
         capy::executor_ref       executor,
         std::error_code*         ec,
         int                      file_descriptor,
-        io_uring_scheduler*      scheduler,
+        uring_scheduler*      scheduler,
         std::shared_ptr<void>    impl,
         endpoint                 target,
         endpoint*                remote_out,
@@ -377,7 +377,7 @@ struct uring_connect_op : io_uring_op
         start(token);
     }
 
-    static void do_prep(io_uring_op* base, ::io_uring_sqe* sqe) noexcept
+    static void do_prep(uring_op* base, ::io_uring_sqe* sqe) noexcept
     {
         auto* self = static_cast<uring_connect_op*>(base);
         ::io_uring_prep_connect(
@@ -387,7 +387,7 @@ struct uring_connect_op : io_uring_op
     }
 
     static void do_cqe(
-        io_uring_op* base, int res, unsigned flags,
+        uring_op* base, int res, unsigned flags,
         ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_connect_op*>(base);
@@ -428,10 +428,10 @@ struct uring_connect_op : io_uring_op
     }
 };
 
-/** Submit an `io_uring_op`, reporting an SQ that stayed full.
+/** Submit an `uring_op`, reporting an SQ that stayed full.
 
-    The body behind @ref io_uring_submit_op and
-    @ref io_uring_try_submit_op; `counted` selects which of the two
+    The body behind @ref uring_submit_op and
+    @ref uring_try_submit_op; `counted` selects which of the two
     answers an exhausted SQ ring gets.
 
     @pre `op->prep_func != nullptr`.
@@ -448,14 +448,14 @@ struct uring_connect_op : io_uring_op
         caller to report; `true` otherwise.
 */
 inline bool
-io_uring_do_submit_op(
-    io_uring_scheduler& sched, io_uring_op* op, bool counted) noexcept
+uring_do_submit_op(
+    uring_scheduler& sched, uring_op* op, bool counted) noexcept
 {
     sched.lazy_init_ring();
 
     bool need_post = false;
     {
-        typename io_uring_scheduler::lock_type ring_lock(sched.ring_mutex());
+        typename uring_scheduler::lock_type ring_lock(sched.ring_mutex());
 
         ::io_uring_sqe* sqe = ::io_uring_get_sqe(sched.ring());
         if (!sqe)
@@ -485,7 +485,7 @@ io_uring_do_submit_op(
                 // The owner reports the failure instead.
                 return false;
             }
-            typename io_uring_scheduler::lock_type lock(sched.dispatch_mutex());
+            typename uring_scheduler::lock_type lock(sched.dispatch_mutex());
             sched.push_completed_locked(op);
             return true;
         }
@@ -496,7 +496,7 @@ io_uring_do_submit_op(
         // expects exactly one F_MORE-less CQE per submitted SQE
         // (multishot ops decrement only on the terminal CQE).
         sched.inflight_inc();
-        // Release pairs with the acquire in io_uring_op::request_cancel:
+        // Release pairs with the acquire in uring_op::request_cancel:
         // a stop_token firing after we release the mutex will see
         // sqe_set==true and submit a cancel-by-user_data SQE.
         op->sqe_set.store(true, std::memory_order_release);
@@ -515,7 +515,7 @@ io_uring_do_submit_op(
     return true;
 }
 
-/** Submit an `io_uring_op` a `work_started()` already paid for.
+/** Submit an `uring_op` a `work_started()` already paid for.
 
     Acquires the ring mutex, prepares the SQE, and (under the same
     mutex) CAS-sets `submit_op_posted_`. The first submitter of a
@@ -541,17 +541,17 @@ io_uring_do_submit_op(
     @param sched The scheduler owning the ring.
     @param op The operation to submit.
 
-    @see io_uring_try_submit_op
+    @see uring_try_submit_op
 */
 inline void
-io_uring_submit_op(io_uring_scheduler& sched, io_uring_op* op) noexcept
+uring_submit_op(uring_scheduler& sched, uring_op* op) noexcept
 {
     // The result is true by construction: a counted op's SQ-full path
     // queues the op and answers through its own completion.
-    io_uring_do_submit_op(sched, op, true);
+    uring_do_submit_op(sched, op, true);
 }
 
-/** Submit an `io_uring_op` nothing counted, reporting a full SQ.
+/** Submit an `uring_op` nothing counted, reporting a full SQ.
 
     The scheduler spends a `work_finished()` on everything it
     dispatches out of `completed_ops_`, so an op no `work_started()`
@@ -572,12 +572,12 @@ io_uring_submit_op(io_uring_scheduler& sched, io_uring_op* op) noexcept
     @return True when the SQE was prepared; false when the SQ stayed
         full after one flush and the caller owns the failure.
 
-    @see io_uring_submit_op
+    @see uring_submit_op
 */
 [[nodiscard]] inline bool
-io_uring_try_submit_op(io_uring_scheduler& sched, io_uring_op* op) noexcept
+uring_try_submit_op(uring_scheduler& sched, uring_op* op) noexcept
 {
-    return io_uring_do_submit_op(sched, op, false);
+    return uring_do_submit_op(sched, op, false);
 }
 
 /** Readiness wait via `IORING_OP_POLL_ADD`.
@@ -591,13 +591,13 @@ io_uring_try_submit_op(io_uring_scheduler& sched, io_uring_op* op) noexcept
     success/cancel/error on `*ec_out` — callers of `wait()` just need
     a readiness signal, not the specific event mask.
 */
-struct uring_wait_op : io_uring_op
+struct uring_wait_op : uring_op
 {
     int fd         = -1;
     int poll_flags = 0;
 
     uring_wait_op() noexcept
-        : io_uring_op(&do_handler, &do_cqe, &do_prep)
+        : uring_op(&do_handler, &do_cqe, &do_prep)
     {}
 
     /** Reset and initialize for a new submission. */
@@ -606,7 +606,7 @@ struct uring_wait_op : io_uring_op
         capy::executor_ref       executor,
         std::error_code*         ec,
         int                      file_descriptor,
-        io_uring_scheduler*      scheduler,
+        uring_scheduler*      scheduler,
         std::shared_ptr<void>    impl,
         int                      flags,
         std::stop_token const&   token) noexcept
@@ -624,14 +624,14 @@ struct uring_wait_op : io_uring_op
         start(token);
     }
 
-    static void do_prep(io_uring_op* base, ::io_uring_sqe* sqe) noexcept
+    static void do_prep(uring_op* base, ::io_uring_sqe* sqe) noexcept
     {
         auto* self = static_cast<uring_wait_op*>(base);
         ::io_uring_prep_poll_add(sqe, self->fd, self->poll_flags);
     }
 
     static void do_cqe(
-        io_uring_op* base, int res, unsigned flags,
+        uring_op* base, int res, unsigned flags,
         ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_wait_op*>(base);
@@ -689,7 +689,7 @@ struct uring_wait_op : io_uring_op
     and out-pointers, since `sockaddr_to_local_endpoint` returns
     `local_endpoint`, not `endpoint`.
 */
-struct uring_local_connect_op : io_uring_op
+struct uring_local_connect_op : uring_op
 {
     sockaddr_storage  addr{};
     socklen_t         addrlen             = 0;
@@ -699,7 +699,7 @@ struct uring_local_connect_op : io_uring_op
     corosio::local_endpoint*   local_endpoint_out  = nullptr;
 
     uring_local_connect_op() noexcept
-        : io_uring_op(&do_handler, &do_cqe, &do_prep)
+        : uring_op(&do_handler, &do_cqe, &do_prep)
     {}
 
     /** Reset and initialize for a new submission.
@@ -711,7 +711,7 @@ struct uring_local_connect_op : io_uring_op
         capy::executor_ref               executor,
         std::error_code*                 ec,
         int                              file_descriptor,
-        io_uring_scheduler*              scheduler,
+        uring_scheduler*              scheduler,
         std::shared_ptr<void>            impl,
         corosio::local_endpoint          target,
         corosio::local_endpoint*         remote_out,
@@ -733,7 +733,7 @@ struct uring_local_connect_op : io_uring_op
         start(token);
     }
 
-    static void do_prep(io_uring_op* base, ::io_uring_sqe* sqe) noexcept
+    static void do_prep(uring_op* base, ::io_uring_sqe* sqe) noexcept
     {
         auto* self = static_cast<uring_local_connect_op*>(base);
         ::io_uring_prep_connect(
@@ -743,7 +743,7 @@ struct uring_local_connect_op : io_uring_op
     }
 
     static void do_cqe(
-        io_uring_op* base, int res, unsigned flags,
+        uring_op* base, int res, unsigned flags,
         ready_queue& local) noexcept
     {
         auto* self      = static_cast<uring_local_connect_op*>(base);
@@ -787,6 +787,6 @@ struct uring_local_connect_op : io_uring_op
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_HAS_IO_URING
+#endif // BOOST_COROSIO_HAS_URING
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_SOCKET_OPS_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_URING_URING_SOCKET_OPS_HPP

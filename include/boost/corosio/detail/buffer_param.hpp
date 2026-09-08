@@ -164,7 +164,7 @@ namespace boost::corosio {
         }
 
         // CORRECT: Use unrolled buffers for system call now
-        submit_to_io_uring(vecs, n, h);
+        submit_to_uring(vecs, n, h);
 
         // After this function returns, 'p' must not be used again.
         // The iovec array is safe because it contains copies of

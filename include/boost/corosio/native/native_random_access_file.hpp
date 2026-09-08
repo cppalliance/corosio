@@ -20,8 +20,8 @@
 #include <boost/corosio/native/detail/posix/posix_random_access_file_service.hpp>
 #endif
 
-#if BOOST_COROSIO_HAS_IO_URING
-#include <boost/corosio/native/detail/io_uring/io_uring_random_access_file.hpp>
+#if BOOST_COROSIO_HAS_URING
+#include <boost/corosio/native/detail/uring/uring_random_access_file.hpp>
 #endif
 
 #if BOOST_COROSIO_HAS_IOCP

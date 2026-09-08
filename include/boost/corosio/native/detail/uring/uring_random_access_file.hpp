@@ -7,20 +7,20 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-#ifndef BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_STREAM_FILE_HPP
-#define BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_STREAM_FILE_HPP
+#ifndef BOOST_COROSIO_NATIVE_DETAIL_URING_URING_RANDOM_ACCESS_FILE_HPP
+#define BOOST_COROSIO_NATIVE_DETAIL_URING_URING_RANDOM_ACCESS_FILE_HPP
 
 #include <boost/corosio/detail/platform.hpp>
 
-#if BOOST_COROSIO_HAS_IO_URING
+#if BOOST_COROSIO_HAS_URING
 
-#include <boost/corosio/detail/file_service.hpp>
+#include <boost/corosio/detail/random_access_file_service.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_file_ops.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_file_service_base.hpp>
-#include <boost/corosio/native/detail/io_uring/io_uring_scheduler.hpp>
+#include <boost/corosio/native/detail/uring/uring_file_ops.hpp>
+#include <boost/corosio/native/detail/uring/uring_file_service_base.hpp>
+#include <boost/corosio/native/detail/uring/uring_scheduler.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
-#include <boost/corosio/stream_file.hpp>
+#include <boost/corosio/random_access_file.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -37,57 +37,50 @@
 
 namespace boost::corosio::detail {
 
-class io_uring_stream_file_service;
+class uring_random_access_file_service;
 
-/** Native io_uring stream-file implementation.
+/** Native io_uring random-access-file implementation.
 
-    Async `read_some` / `write_some` submit `IORING_OP_READV` /
-    `IORING_OP_WRITEV` with `offset == -1` (kernel f_pos). All
-    metadata operations (open, size, resize, sync, seek, close)
-    are synchronous syscalls.
+    Async `read_some_at` / `write_some_at` submit `IORING_OP_READV`
+    / `IORING_OP_WRITEV` with the caller-supplied offset. Metadata
+    operations (open, size, resize, sync, close) are synchronous
+    syscalls.
 
     @par Thread Safety
-    Concurrent `read_some` / `write_some` calls on the same file
-    interleave at the kernel level (matches POSIX `read(2)` /
-    `write(2)` semantics on a shared positional fd).
-
-    @note On `O_APPEND` open this backend relies on the kernel's
-    `f_pos` rather than tracking the offset in user space. Writes
-    still go to EOF atomically per `O_APPEND` semantics, but
-    `seek(0, seek_cur)` immediately after an append-mode open
-    returns `0` (the current f_pos), not the file size — observably
-    different from the POSIX backend, which seeds an internal offset
-    to size-at-open. Both behaviours are valid; documented for
-    cross-backend symmetry.
+    Concurrent `read_some_at` / `write_some_at` calls on the same
+    file at distinct offsets are safe; ordering between two
+    submissions at the same offset is unspecified at the kernel
+    level (matches POSIX `pread(2)` / `pwrite(2)` semantics).
 */
-class BOOST_COROSIO_DECL io_uring_stream_file final
-    : public stream_file::implementation
-    , public std::enable_shared_from_this<io_uring_stream_file>
-    , public intrusive_list<io_uring_stream_file>::node
+class BOOST_COROSIO_DECL uring_random_access_file final
+    : public random_access_file::implementation
+    , public std::enable_shared_from_this<uring_random_access_file>
+    , public intrusive_list<uring_random_access_file>::node
 {
-    friend class io_uring_stream_file_service;
+    friend class uring_random_access_file_service;
 
     int                  fd_    = -1;
-    io_uring_scheduler*  sched_ = nullptr;
+    uring_scheduler*  sched_ = nullptr;
 
-    // Per-fd op slots — embedded to eliminate per-call heap allocation.
-    // Single-pending invariant per slot.
-    uring_file_read_op   rd_;
-    uring_file_write_op  wr_;
+    // Random-access files legitimately support concurrent ops at
+    // different offsets on the same fd (e.g. parallel reads in
+    // testConcurrentReads). Embedding a single slot would smash
+    // state across calls; ops are heap-allocated per submission.
 
 public:
-    explicit io_uring_stream_file(io_uring_scheduler& sched) noexcept
+    explicit uring_random_access_file(uring_scheduler& sched) noexcept
         : sched_(&sched)
     {}
 
-    ~io_uring_stream_file() override
+    ~uring_random_access_file() override
     {
         close_file();
     }
 
-    // -- io_stream::implementation --
+    // -- random_access_file::implementation --
 
-    std::coroutine_handle<> read_some(
+    std::coroutine_handle<> read_some_at(
+        std::uint64_t,
         std::coroutine_handle<>,
         capy::executor_ref,
         buffer_param,
@@ -95,15 +88,14 @@ public:
         std::error_code*,
         std::size_t*) override;
 
-    std::coroutine_handle<> write_some(
+    std::coroutine_handle<> write_some_at(
+        std::uint64_t,
         std::coroutine_handle<>,
         capy::executor_ref,
         buffer_param,
         std::stop_token,
         std::error_code*,
         std::size_t*) override;
-
-    // -- stream_file::implementation --
 
     native_handle_type native_handle() const noexcept override
     {
@@ -120,7 +112,8 @@ public:
     {
         struct stat st;
         if (::fstat(fd_, &st) < 0)
-            throw_system_error(make_err(errno), "stream_file::size");
+            throw_system_error(
+                make_err(errno), "random_access_file::size");
         return static_cast<std::uint64_t>(st.st_size);
     }
 
@@ -166,19 +159,6 @@ public:
         return {};
     }
 
-    capy::io_result<std::uint64_t> seek(
-        std::int64_t offset, file_base::seek_basis origin) noexcept override
-    {
-        int whence = SEEK_SET;
-        if (origin == file_base::seek_cur) whence = SEEK_CUR;
-        else if (origin == file_base::seek_end) whence = SEEK_END;
-
-        off_t r = ::lseek(fd_, static_cast<off_t>(offset), whence);
-        if (r == static_cast<off_t>(-1))
-            return {make_err(errno), 0};
-        return {std::error_code{}, static_cast<std::uint64_t>(r)};
-    }
-
     // -- Internal --
 
     /// Open the file. Synchronous; sets `fd_`. Caller is the service.
@@ -202,8 +182,6 @@ public:
             oflags |= O_EXCL;
         if ((mode & file_base::truncate) != file_base::flags(0))
             oflags |= O_TRUNC;
-        if ((mode & file_base::append) != file_base::flags(0))
-            oflags |= O_APPEND;
         if ((mode & file_base::sync_all_on_write) != file_base::flags(0))
             oflags |= O_SYNC;
 
@@ -215,10 +193,10 @@ public:
 
         fd_ = fd;
 
-#ifdef POSIX_FADV_SEQUENTIAL
-        // Hint the page cache about the access pattern; matches the
-        // POSIX backend.
-        ::posix_fadvise(fd_, 0, 0, POSIX_FADV_SEQUENTIAL);
+#ifdef POSIX_FADV_RANDOM
+        // Hint the page cache that access will be random; matches
+        // the POSIX backend.
+        ::posix_fadvise(fd_, 0, 0, POSIX_FADV_RANDOM);
 #endif
 
         return {};
@@ -241,7 +219,8 @@ public:
 };
 
 inline std::coroutine_handle<>
-io_uring_stream_file::read_some(
+uring_random_access_file::read_some_at(
+    std::uint64_t           user_offset,
     std::coroutine_handle<> h,
     capy::executor_ref      ex,
     buffer_param            buffers,
@@ -249,34 +228,37 @@ io_uring_stream_file::read_some(
     std::error_code*        ec,
     std::size_t*            bytes)
 {
-    rd_.prepare(h, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_,
-        shared_from_this(), buffers, token);
+    auto op_guard = std::make_unique<uring_random_access_read_op>();
+    op_guard->prepare(h, ex, ec, bytes, fd_,
+        static_cast<std::int64_t>(user_offset),
+        sched_, shared_from_this(), buffers, token);
     sched_->work_started();
 
     // Closed-object contract outranks the zero-length no-op.
     if (fd_ < 0)
     {
-        rd_.empty_buffer = false;
-        rd_.res          = -EBADF;
-        io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
-        sched_->push_completed_locked(&rd_);
+        op_guard->empty_buffer = false;
+        op_guard->res          = -EBADF;
+        uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+        sched_->push_completed_locked(op_guard.release());
         return std::noop_coroutine();
     }
 
-    if (rd_.empty_buffer ||
-        rd_.cancelled.load(std::memory_order_acquire))
+    if (op_guard->empty_buffer ||
+        op_guard->cancelled.load(std::memory_order_acquire))
     {
-        io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
-        sched_->push_completed_locked(&rd_);
+        uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+        sched_->push_completed_locked(op_guard.release());
         return std::noop_coroutine();
     }
 
-    io_uring_submit_op(*sched_, &rd_);
+    uring_submit_op(*sched_, op_guard.release());
     return std::noop_coroutine();
 }
 
 inline std::coroutine_handle<>
-io_uring_stream_file::write_some(
+uring_random_access_file::write_some_at(
+    std::uint64_t           user_offset,
     std::coroutine_handle<> h,
     capy::executor_ref      ex,
     buffer_param            buffers,
@@ -284,66 +266,73 @@ io_uring_stream_file::write_some(
     std::error_code*        ec,
     std::size_t*            bytes)
 {
-    wr_.prepare(h, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_,
-        shared_from_this(), buffers, token);
+    auto op_guard = std::make_unique<uring_random_access_write_op>();
+    op_guard->prepare(h, ex, ec, bytes, fd_,
+        static_cast<std::int64_t>(user_offset),
+        sched_, shared_from_this(), buffers, token);
     sched_->work_started();
 
     // Closed-object contract outranks the zero-length no-op.
     if (fd_ < 0)
     {
-        wr_.empty_buffer = false;
-        wr_.res          = -EBADF;
-        io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
-        sched_->push_completed_locked(&wr_);
+        op_guard->empty_buffer = false;
+        op_guard->res          = -EBADF;
+        uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+        sched_->push_completed_locked(op_guard.release());
         return std::noop_coroutine();
     }
 
-    if (wr_.empty_buffer ||
-        wr_.cancelled.load(std::memory_order_acquire))
+    if (op_guard->empty_buffer ||
+        op_guard->cancelled.load(std::memory_order_acquire))
     {
-        io_uring_scheduler::lock_type lock(sched_->dispatch_mutex());
-        sched_->push_completed_locked(&wr_);
+        uring_scheduler::lock_type lock(sched_->dispatch_mutex());
+        sched_->push_completed_locked(op_guard.release());
         return std::noop_coroutine();
     }
 
-    io_uring_submit_op(*sched_, &wr_);
+    uring_submit_op(*sched_, op_guard.release());
     return std::noop_coroutine();
 }
 
-/** Native io_uring stream-file service.
+/** Native io_uring random-access-file service.
 
-    Owns all `io_uring_stream_file` impls. Replaces
-    `posix_stream_file_service` for the io_uring backend; registered
-    under the abstract `file_service` key by `io_uring_t::construct`.
+    Owns all `uring_random_access_file` impls. Replaces
+    `posix_random_access_file_service` for the io_uring backend;
+    registered under the abstract `random_access_file_service` key
+    by `uring_t::construct`.
 */
-class BOOST_COROSIO_DECL io_uring_stream_file_service final
-    : public io_uring_file_service_base<
-          io_uring_stream_file_service, file_service, io_uring_stream_file>
+class BOOST_COROSIO_DECL uring_random_access_file_service final
+    : public uring_file_service_base<
+          uring_random_access_file_service,
+          random_access_file_service,
+          uring_random_access_file>
 {
-    using base_service = io_uring_file_service_base<
-        io_uring_stream_file_service, file_service, io_uring_stream_file>;
+    using base_service = uring_file_service_base<
+        uring_random_access_file_service,
+        random_access_file_service,
+        uring_random_access_file>;
 
 public:
-    explicit io_uring_stream_file_service(
-        capy::execution_context& /*ctx*/, io_uring_scheduler& sched)
+    explicit uring_random_access_file_service(
+        capy::execution_context& /*ctx*/, uring_scheduler& sched)
         : base_service(sched)
     {}
 
     // construct / destroy / close / shutdown / scheduler() are inherited
-    // from io_uring_file_service_base.
+    // from uring_file_service_base.
 
     std::error_code open_file(
-        stream_file::implementation& impl,
+        random_access_file::implementation& impl,
         std::filesystem::path const& path,
         file_base::flags mode) override
     {
-        return static_cast<io_uring_stream_file&>(impl).open_file(
+        return static_cast<uring_random_access_file&>(impl).open_file(
             path, mode);
     }
 };
 
 } // namespace boost::corosio::detail
 
-#endif // BOOST_COROSIO_HAS_IO_URING
+#endif // BOOST_COROSIO_HAS_URING
 
-#endif // BOOST_COROSIO_NATIVE_DETAIL_IO_URING_IO_URING_STREAM_FILE_HPP
+#endif // BOOST_COROSIO_NATIVE_DETAIL_URING_URING_RANDOM_ACCESS_FILE_HPP
