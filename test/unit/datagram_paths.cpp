@@ -40,7 +40,7 @@
 #include <boost/corosio/local_datagram_socket.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 
-#include <boost/corosio/test/temp_path.hpp>
+#include "temp_path.hpp"
 #endif
 
 #include "context.hpp"

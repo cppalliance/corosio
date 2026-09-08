@@ -32,7 +32,7 @@
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
 
 #include <boost/corosio/test/socket_pair.hpp>
-#include <boost/corosio/test/temp_path.hpp>
+#include "temp_path.hpp"
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
@@ -51,6 +51,8 @@
 #include "test_suite.hpp"
 
 namespace boost::corosio {
+
+using test::temp_file;
 
 namespace {
 
@@ -90,28 +92,6 @@ make_local_pair(io_context& ioc, test::temp_socket_dir const& tmp)
     acc.close();
     return {std::move(server), std::move(client)};
 }
-
-struct temp_file
-{
-    std::filesystem::path path;
-
-    explicit temp_file(std::string_view contents)
-    {
-        static int counter = 0;
-        path = std::filesystem::temp_directory_path() /
-            ("corosio_iocp_paths_" + std::to_string(counter++));
-        std::ofstream(path) << contents;
-    }
-
-    ~temp_file()
-    {
-        std::error_code ec;
-        std::filesystem::remove(path, ec);
-    }
-
-    temp_file(temp_file const&)            = delete;
-    temp_file& operator=(temp_file const&) = delete;
-};
 
 } // namespace
 
@@ -358,7 +338,7 @@ struct iocp_paths_test
 
     void testTruncateWithoutCreate()
     {
-        temp_file tmp("some existing content");
+        temp_file tmp("corosio_iocp_", "some existing content");
         io_context ioc(iocp);
         random_access_file f(ioc);
         BOOST_TEST(

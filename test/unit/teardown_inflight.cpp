@@ -30,7 +30,7 @@
 #include <boost/corosio/wait_type.hpp>
 
 #include <boost/corosio/test/socket_pair.hpp>
-#include <boost/corosio/test/temp_path.hpp>
+#include "temp_path.hpp"
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
@@ -39,7 +39,6 @@
 #include <boost/capy/task.hpp>
 
 #include <filesystem>
-#include <fstream>
 #include <stop_token>
 #include <string>
 #include <system_error>
@@ -53,6 +52,8 @@
 #include "test_suite.hpp"
 
 namespace boost::corosio {
+
+using test::temp_file;
 
 namespace {
 
@@ -77,29 +78,6 @@ fill_pipe(int fd)
         n = ::write(fd, junk, sizeof(junk));
     } while (n > 0);
 }
-
-struct temp_file
-{
-    std::filesystem::path path;
-
-    explicit temp_file(std::string_view contents)
-    {
-        static int counter = 0;
-        path = std::filesystem::temp_directory_path() /
-            ("corosio_teardown_" + std::to_string(::getpid()) + "_" +
-                std::to_string(counter++));
-        std::ofstream(path) << contents;
-    }
-
-    ~temp_file()
-    {
-        std::error_code ec;
-        std::filesystem::remove(path, ec);
-    }
-
-    temp_file(temp_file const&)            = delete;
-    temp_file& operator=(temp_file const&) = delete;
-};
 
 } // namespace
 
@@ -287,7 +265,7 @@ struct io_uring_teardown_test
         // The ops complete in the ring almost immediately, but nothing
         // processes the completions before teardown, so the drain path
         // must reclaim them.
-        temp_file tmp("hello world");
+        temp_file tmp("corosio_teardown_", "hello world");
         auto const path = tmp.path;
         bool read_resumed = false, write_resumed = false;
         {
@@ -478,7 +456,7 @@ struct io_uring_teardown_test
 
     void testDestroyWithQueuedRandomAccessOps()
     {
-        temp_file tmp("hello world");
+        temp_file tmp("corosio_teardown_", "hello world");
         auto const path = tmp.path;
         int resumed     = 0;
         {

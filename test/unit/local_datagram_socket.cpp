@@ -22,7 +22,7 @@
 #include <boost/corosio/local_connect_pair.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/test/temp_path.hpp>
+#include "temp_path.hpp"
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>

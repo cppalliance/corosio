@@ -12,7 +12,7 @@
 #include <boost/corosio/native/native_io_context.hpp>
 #include <boost/corosio/native/native_local_stream_acceptor.hpp>
 #include <boost/corosio/local_endpoint.hpp>
-#include <boost/corosio/test/temp_path.hpp>
+#include "temp_path.hpp"
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/run_async.hpp>

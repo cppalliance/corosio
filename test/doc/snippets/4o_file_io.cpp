@@ -45,7 +45,6 @@ namespace capy = boost::capy;
 // end::assume[]
 
 #include <boost/corosio/io_context.hpp>
-#include <boost/corosio/test/temp_path.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -60,6 +59,7 @@ namespace capy = boost::capy;
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <random>
 #include <string>
 #include <system_error>
 #include <tuple>
@@ -385,15 +385,20 @@ struct file_io_test
         struct cwd_guard
         {
             fs::path old = fs::current_path();
+            fs::path dir;
             ~cwd_guard()
             {
                 std::error_code ec;
                 fs::current_path(old, ec);
+                fs::remove_all(dir, ec);
             }
         };
         cwd_guard guard;
-        boost::corosio::test::temp_socket_dir dir;
-        fs::current_path(fs::path(dir.path()).parent_path());
+        guard.dir = fs::temp_directory_path() /
+            ("corosio_doc_file_io_" +
+                std::to_string(std::random_device{}()));
+        fs::create_directories(guard.dir);
+        fs::current_path(guard.dir);
 
         {
             std::ofstream out("data.bin", std::ios::binary);

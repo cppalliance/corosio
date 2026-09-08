@@ -21,9 +21,10 @@
 
 #ifdef BOOST_COROSIO_HAS_WOLFSSL
 
+#include "temp_path.hpp"
+
 #include <filesystem>
 #include <fstream>
-#include <random>
 
 namespace boost::corosio {
 
@@ -130,10 +131,8 @@ struct wolfssl_stream_test
         // run concurrently, and a shared path would let one process remove
         // the CA file while another loads it, emptying the trust store and
         // failing the handshake as ASN_NO_SIGNER_E.
-        auto dir = std::filesystem::temp_directory_path() /
-            ("corosio_wolfssl_capath_" +
-                std::to_string(std::random_device{}()));
-        std::filesystem::create_directories(dir);
+        temp_dir capath("corosio_wolfssl_capath_");
+        auto const& dir = capath.path;
         auto ca_file = dir / "test_ca.pem";
         {
             std::ofstream out(ca_file, std::ios::binary);
@@ -149,8 +148,6 @@ struct wolfssl_stream_test
             auto server_ctx = make_server_context();
             run_tls_test(ioc, client_ctx, server_ctx, make_stream, make_stream);
         }
-
-        std::filesystem::remove_all(dir);
     }
 
     void run()
