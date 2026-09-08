@@ -232,8 +232,11 @@ resolve_op::completion(DWORD dwError, DWORD /*bytes*/, OVERLAPPED* ov)
 {
     auto* op    = static_cast<resolve_op*>(ov);
     op->dwError = dwError;
-    op->impl->svc_.work_finished();
-    op->impl->svc_.post(op);
+    // Post before work_finished, or the count can hit zero and run() frees
+    // svc_ before the post; cache svc_ since posting may free the impl.
+    auto& svc = op->impl->svc_;
+    svc.post(op);
+    svc.work_finished();
 }
 
 inline resolve_op::resolve_op() noexcept : overlapped_op(&do_complete) {}
@@ -402,11 +405,8 @@ win_resolver::resolve(
     if (result != WSA_IO_PENDING)
     {
         // Completed synchronously - callback won't be invoked
-        svc_.work_finished();
-
         if (result == 0)
         {
-            // Completed synchronously
             op.dwError = 0;
         }
         else
@@ -415,6 +415,7 @@ win_resolver::resolve(
         }
 
         svc_.post(&op);
+        svc_.work_finished();
     }
     // completion is always posted to scheduler queue, never inline.
     return std::noop_coroutine();
@@ -523,13 +524,16 @@ win_resolver::do_reverse_resolve_work(pool_work_item* w) noexcept
         }
     }
 
-    self->svc_.work_finished();
-
     // Hand the keepalive to the op: the completion waits in the
     // scheduler's queue, and the implementation embedding it must
     // outlive that wait. Nothing may touch *self after the post.
     self->reverse_op_.impl_ptr = std::move(pw->ref_);
-    self->svc_.post(&self->reverse_op_);
+
+    // Post before work_finished (see resolve_op::completion); cache svc_
+    // since posting may free *self.
+    auto& svc = self->svc_;
+    svc.post(&self->reverse_op_);
+    svc.work_finished();
 }
 
 // win_resolver_service
