@@ -588,6 +588,13 @@ struct wolfssl_engine_test
         testShutdownZeroReturnNoOutput();
         testHandshakeFatalGarbageInput();
         testGarbageDerCertificateFailsSetup();
+        testInvertedVersionWindowFailsSetup();
+        testGarbagePrivateKeyFailsSetup();
+        testGarbageCaFailsSetup();
+        testGarbagePkcs12FailsSetup();
+        testGarbageCrlFailsSetup();
+        testInvalidCipherListFailsSetup();
+        testInvalidTls13CiphersuitesFailsSetup();
     }
 
     // A certificate that does not parse in the declared format must
@@ -604,6 +611,106 @@ struct wolfssl_engine_test
         wssl_engine eng;
         // Unlike the OpenSSL engine, wolfSSL surfaces setup_error_
         // directly from init (its check_context() is a no-op).
+        BOOST_TEST(!!eng.init(ctx, tls_role::server, std::string()));
+    }
+
+    // An inverted protocol-version window (min > max) admits no version
+    // and must fail context setup closed.
+    void testInvertedVersionWindowFailsSetup()
+    {
+        tls_context ctx;
+        std::ignore =
+            ctx.use_certificate(test::server_cert_pem, tls_file_format::pem);
+        std::ignore =
+            ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+        std::ignore = ctx.set_min_protocol_version(tls_version::tls_1_3);
+        std::ignore = ctx.set_max_protocol_version(tls_version::tls_1_2);
+
+        wssl_engine eng;
+        BOOST_TEST(!!eng.init(ctx, tls_role::server, std::string()));
+    }
+
+    // A private key that does not parse must fail setup.
+    void testGarbagePrivateKeyFailsSetup()
+    {
+        tls_context ctx;
+        std::ignore =
+            ctx.use_certificate(test::server_cert_pem, tls_file_format::pem);
+        std::ignore = ctx.use_private_key(
+            "-----BEGIN PRIVATE KEY-----\nnope\n-----END PRIVATE KEY-----\n",
+            tls_file_format::pem);
+
+        wssl_engine eng;
+        BOOST_TEST(!!eng.init(ctx, tls_role::server, std::string()));
+    }
+
+    // A trust anchor that does not parse must fail setup.
+    void testGarbageCaFailsSetup()
+    {
+        tls_context ctx;
+        std::ignore =
+            ctx.use_certificate(test::server_cert_pem, tls_file_format::pem);
+        std::ignore =
+            ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+        std::ignore = ctx.add_certificate_authority(
+            "-----BEGIN CERTIFICATE-----\nnope\n-----END CERTIFICATE-----\n");
+
+        wssl_engine eng;
+        BOOST_TEST(!!eng.init(ctx, tls_role::client, std::string()));
+    }
+
+    // A PKCS#12 bundle that does not decode must fail setup closed.
+    void testGarbagePkcs12FailsSetup()
+    {
+        tls_context ctx;
+        std::ignore = ctx.use_pkcs12("not-a-pkcs12-bundle", "password");
+
+        wssl_engine eng;
+        BOOST_TEST(!!eng.init(ctx, tls_role::server, std::string()));
+    }
+
+    // A CRL that does not parse must fail setup when revocation checking
+    // is enabled.
+    void testGarbageCrlFailsSetup()
+    {
+        tls_context ctx;
+        std::ignore =
+            ctx.use_certificate(test::server_cert_pem, tls_file_format::pem);
+        std::ignore =
+            ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+        ctx.set_revocation_policy(tls_revocation_policy::hard_fail);
+        std::ignore = ctx.add_crl(
+            "-----BEGIN X509 CRL-----\nnope\n-----END X509 CRL-----\n");
+
+        wssl_engine eng;
+        BOOST_TEST(!!eng.init(ctx, tls_role::client, std::string()));
+    }
+
+    // A cipher list wolfSSL rejects must fail setup.
+    void testInvalidCipherListFailsSetup()
+    {
+        tls_context ctx;
+        std::ignore =
+            ctx.use_certificate(test::server_cert_pem, tls_file_format::pem);
+        std::ignore =
+            ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+        std::ignore = ctx.set_ciphersuites("this-is-not-a-cipher");
+
+        wssl_engine eng;
+        BOOST_TEST(!!eng.init(ctx, tls_role::server, std::string()));
+    }
+
+    // A TLS 1.3 ciphersuite string wolfSSL rejects must fail setup.
+    void testInvalidTls13CiphersuitesFailsSetup()
+    {
+        tls_context ctx;
+        std::ignore =
+            ctx.use_certificate(test::server_cert_pem, tls_file_format::pem);
+        std::ignore =
+            ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
+        std::ignore = ctx.set_ciphersuites_tls13("TLS_NOT_A_REAL_SUITE");
+
+        wssl_engine eng;
         BOOST_TEST(!!eng.init(ctx, tls_role::server, std::string()));
     }
 };
