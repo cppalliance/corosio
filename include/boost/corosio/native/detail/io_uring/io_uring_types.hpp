@@ -138,7 +138,7 @@ public:
     ~io_uring_tcp_socket() override
     {
         if (fd_ >= 0)
-            ::close(fd_);
+            ::close(fd_); // LCOV_EXCL_LINE backstop: close_socket() clears fd_ before destroy
     }
 
     // ----------------------------------------------------------------
@@ -506,11 +506,14 @@ public:
             family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
             return make_err(errno);
+        // LCOV_EXCL_START: dead — open() guards is_open(), so open_socket
+        // never runs against an already-open fd (assign_socket handles that).
         if (sock.fd_ >= 0)
         {
             sched_->submit_cancel_by_fd(sock.fd_);
             ::close(sock.fd_);
         }
+        // LCOV_EXCL_STOP
         sock.fd_     = fd;
         sock.family_ = family;
         // Mirror epoll/select: IPv6 sockets default to v6-only so they
@@ -853,11 +856,14 @@ public:
             family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
             return make_err(errno);
+        // LCOV_EXCL_START: dead — open() guards is_open(), so open_socket
+        // never runs against an already-open fd (assign_socket handles that).
         if (acc.fd_ >= 0)
         {
             sched_->submit_cancel_by_fd(acc.fd_);
             ::close(acc.fd_);
         }
+        // LCOV_EXCL_STOP
         acc.fd_ = fd;
         // Match epoll/select: IPv6 acceptors default to dual-stack
         // (v6-only=false) so they accept both IPv4 and IPv6 connections.
@@ -1026,7 +1032,7 @@ public:
     ~io_uring_local_stream_socket() override
     {
         if (fd_ >= 0)
-            ::close(fd_);
+            ::close(fd_); // LCOV_EXCL_LINE backstop: close_socket() clears fd_ before destroy
     }
 
     // ----------------------------------------------------------------
@@ -1366,11 +1372,14 @@ public:
         int fd = ::socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
             return make_err(errno);
+        // LCOV_EXCL_START: dead — open() guards is_open(), so open_socket
+        // never runs against an already-open fd (assign_socket handles that).
         if (sock.fd_ >= 0)
         {
             sched_->submit_cancel_by_fd(sock.fd_);
             ::close(sock.fd_);
         }
+        // LCOV_EXCL_STOP
         sock.fd_ = fd;
         return {};
     }
@@ -1658,11 +1667,14 @@ public:
         int fd = ::socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
             return make_err(errno);
+        // LCOV_EXCL_START: dead — open() guards is_open(), so open_socket
+        // never runs against an already-open fd (assign_socket handles that).
         if (acc.fd_ >= 0)
         {
             sched_->submit_cancel_by_fd(acc.fd_);
             ::close(acc.fd_);
         }
+        // LCOV_EXCL_STOP
         acc.fd_ = fd;
         return {};
     }
@@ -1824,7 +1836,7 @@ public:
     ~io_uring_udp_socket() override
     {
         if (fd_ >= 0)
-            ::close(fd_);
+            ::close(fd_); // LCOV_EXCL_LINE backstop: close_socket() clears fd_ before destroy
     }
 
     // ----------------------------------------------------------------
@@ -2261,11 +2273,14 @@ public:
             family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
             return make_err(errno);
+        // LCOV_EXCL_START: dead — open() guards is_open(), so open_socket
+        // never runs against an already-open fd (assign_socket handles that).
         if (sock.fd_ >= 0)
         {
             sched_->submit_cancel_by_fd(sock.fd_);
             ::close(sock.fd_);
         }
+        // LCOV_EXCL_STOP
         sock.fd_     = fd;
         sock.family_ = family;
         if (family == AF_INET6)
@@ -2409,7 +2424,7 @@ public:
     ~io_uring_local_datagram_socket() override
     {
         if (fd_ >= 0)
-            ::close(fd_);
+            ::close(fd_); // LCOV_EXCL_LINE backstop: close_socket() clears fd_ before destroy
     }
 
     // ----------------------------------------------------------------
@@ -2868,11 +2883,14 @@ public:
         int fd = ::socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
         if (fd < 0)
             return make_err(errno);
+        // LCOV_EXCL_START: dead — open() guards is_open(), so open_socket
+        // never runs against an already-open fd (assign_socket handles that).
         if (sock.fd_ >= 0)
         {
             sched_->submit_cancel_by_fd(sock.fd_);
             ::close(sock.fd_);
         }
+        // LCOV_EXCL_STOP
         sock.fd_ = fd;
         return {};
     }
