@@ -52,6 +52,31 @@ inline long& win_wsa_init_count() noexcept
     return count;
 }
 
+// Hold Winsock for the life of the process, so the count never falls back
+// to zero between one io_context and the next. An asynchronous
+// GetAddrInfoExW keeps settling inside ws2_32 past its completion
+// routine, with no way to observe when, and a WSACleanup under it faults
+// on a system DNS thread.
+inline void
+win_wsa_hold_process() noexcept
+{
+    struct holder
+    {
+        holder() noexcept
+        {
+            ::InterlockedIncrement(&win_wsa_init_count());
+        }
+
+        ~holder()
+        {
+            if (::InterlockedDecrement(&win_wsa_init_count()) == 0)
+                ::WSACleanup();
+        }
+    };
+
+    static holder const instance;
+}
+
 inline win_wsa_init::win_wsa_init()
 {
     if (::InterlockedIncrement(&win_wsa_init_count()) == 1)
@@ -64,6 +89,9 @@ inline win_wsa_init::win_wsa_init()
             throw_system_error(make_err(result));
         }
     }
+
+    // After the startup above, which must own the first count.
+    win_wsa_hold_process();
 }
 
 inline win_wsa_init::~win_wsa_init()

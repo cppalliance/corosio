@@ -153,6 +153,10 @@ class win_resolver;
 struct resolve_op : overlapped_op
 {
     ADDRINFOEXW* results  = nullptr;
+
+    // GetAddrInfoExW reads these past the frame that starts the lookup.
+    ADDRINFOEXW hints{};
+
     HANDLE cancel_handle  = nullptr;
     resolver_results* out = nullptr;
     std::string host;
@@ -241,6 +245,7 @@ class win_resolver final
 {
     friend class win_resolver_service;
     friend struct resolve_op;
+    friend struct reverse_resolve_op;
 
 public:
     /// Embedded pool work item for thread pool dispatch.
@@ -286,6 +291,11 @@ public:
     static void do_reverse_resolve_work(pool_work_item*) noexcept;
 
 private:
+    // The cancel handle dies when the completion callback is entered, so
+    // cancel() and that callback must not both claim it. Held across the
+    // claim only: GetAddrInfoExCancel can wait on the callback.
+    win_mutex cancel_mutex_;
+
     win_resolver_service& svc_;
 };
 
