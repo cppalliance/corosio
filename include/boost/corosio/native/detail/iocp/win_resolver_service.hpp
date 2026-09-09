@@ -230,13 +230,29 @@ convert_results(
 inline void CALLBACK
 resolve_op::completion(DWORD dwError, DWORD /*bytes*/, OVERLAPPED* ov)
 {
-    auto* op    = static_cast<resolve_op*>(ov);
+    auto* op = static_cast<resolve_op*>(ov);
+
+    // The post below can be drained and the win_resolver freed before
+    // this returns, and Windows owns the OVERLAPPED embedded in it until
+    // then.
+    auto keepalive = op->impl->shared_from_this();
+
     op->dwError = dwError;
-    // Post before work_finished, or the count can hit zero and run() frees
-    // svc_ before the post; cache svc_ since posting may free the impl.
+
+    // Posting may free the impl svc_ is read through.
     auto& svc = op->impl->svc_;
+
+    // The handle dies with this callback's entry; a racing cancel() must
+    // not reach one Windows has already reclaimed.
+    {
+        std::lock_guard<win_mutex> lock(op->impl->cancel_mutex_);
+        op->cancel_handle = nullptr;
+    }
+
+    // The initiation credit rides with the op and is released where it is
+    // consumed, as on POSIX; releasing it here would let the count reach
+    // zero with the op still queued.
     svc.post(op);
-    svc.work_finished();
 }
 
 inline resolve_op::resolve_op() noexcept : overlapped_op(&do_complete) {}
@@ -250,6 +266,9 @@ resolve_op::do_complete(
 {
     auto* op = static_cast<resolve_op*>(base);
 
+    // Dropping the keepalive below may free the impl svc_ is read through.
+    auto& svc = op->impl->svc_;
+
     if (!owner)
     {
         // Destroy path
@@ -259,10 +278,10 @@ resolve_op::do_complete(
             ::FreeAddrInfoExW(op->results);
             op->results = nullptr;
         }
-        op->cancel_handle = nullptr;
         // Dropping the keepalive may destroy the implementation this op
         // is embedded in, so nothing may touch it afterwards.
-        auto suicide = std::move(op->impl_ptr);
+        op->impl_ptr.reset();
+        svc.work_finished();
         return;
     }
 
@@ -291,12 +310,11 @@ resolve_op::do_complete(
         op->results = nullptr;
     }
 
-    op->cancel_handle = nullptr;
-
     op->cont.h = op->h;
     // Hold the keepalive across the dispatch: it may be the last
     // reference to the implementation this op is embedded in.
     auto prevent_destroy = std::move(op->impl_ptr);
+    svc.work_finished();
     dispatch_coro(op->ex, op->cont).resume();
 }
 
@@ -316,12 +334,16 @@ reverse_resolve_op::do_complete(
 {
     auto* op = static_cast<reverse_resolve_op*>(base);
 
+    // Cached before the keepalive drops: see resolve_op::do_complete.
+    auto& svc = op->impl->svc_;
+
     if (!owner)
     {
         op->stop_cb.reset();
         // Dropping the keepalive may destroy the implementation this
         // op is embedded in, so nothing may touch it afterwards.
-        auto suicide = std::move(op->impl_ptr);
+        op->impl_ptr.reset();
+        svc.work_finished();
         return;
     }
 
@@ -348,6 +370,7 @@ reverse_resolve_op::do_complete(
     // Hold the keepalive across the dispatch: it may be the last
     // reference to the implementation this op is embedded in.
     auto prevent_destroy = std::move(op->impl_ptr);
+    svc.work_finished();
     dispatch_coro(op->ex, op->cont).resume();
 }
 
@@ -382,13 +405,14 @@ win_resolver::resolve(
     op.service_w = resolver_detail::to_wide(service);
     op.start(token);
 
-    ADDRINFOEXW hints{};
-    hints.ai_family   = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags    = resolver_detail::flags_to_hints(flags);
+    op.hints             = ADDRINFOEXW{};
+    op.hints.ai_family   = AF_UNSPEC;
+    op.hints.ai_socktype = SOCK_STREAM;
+    op.hints.ai_flags    = resolver_detail::flags_to_hints(flags);
 
     // Keep io_context alive while resolution is pending
-    svc_.work_started();
+    auto& svc = svc_;
+    svc.work_started();
 
     // Prevent impl destruction while the async resolve is in flight and
     // its completion waits in the scheduler queue: the op is embedded in
@@ -396,11 +420,23 @@ win_resolver::resolve(
     // queued completion drains. Mirrors the reverse path's keepalive.
     op.impl_ptr = this->shared_from_this();
 
-    int result = ::GetAddrInfoExW(
-        op.host_w.empty() ? nullptr : op.host_w.c_str(),
-        op.service_w.empty() ? nullptr : op.service_w.c_str(), NS_DNS, nullptr,
-        &hints, &op.results, nullptr, &op, &resolve_op::completion,
-        &op.cancel_handle);
+    // Under the lock: the handle written here and the callback that
+    // retires it must not interleave.
+    int result;
+    {
+        std::lock_guard<win_mutex> lock(cancel_mutex_);
+        op.cancel_handle = nullptr;
+
+        result = ::GetAddrInfoExW(
+            op.host_w.empty() ? nullptr : op.host_w.c_str(),
+            op.service_w.empty() ? nullptr : op.service_w.c_str(), NS_DNS,
+            nullptr, &op.hints, &op.results, nullptr, &op,
+            &resolve_op::completion, &op.cancel_handle);
+
+        // No callback runs on synchronous completion.
+        if (result != WSA_IO_PENDING)
+            op.cancel_handle = nullptr;
+    }
 
     if (result != WSA_IO_PENDING)
     {
@@ -414,8 +450,9 @@ win_resolver::resolve(
             op.dwError = static_cast<DWORD>(::WSAGetLastError());
         }
 
-        svc_.post(&op);
-        svc_.work_finished();
+        // Post only, as above; svc_ is read through this, which the post
+        // may free.
+        svc.post(&op);
     }
     // completion is always posted to scheduler queue, never inline.
     return std::noop_coroutine();
@@ -473,10 +510,20 @@ win_resolver::cancel() noexcept
     op_.request_cancel();
     reverse_op_.request_cancel();
 
-    if (op_.cancel_handle)
+    // Whoever claims the handle owns it: the callback retires it on
+    // entry, and a claim consumes it, so neither a racing callback nor a
+    // second cancel() reaches one Windows has reclaimed.
+    HANDLE h = nullptr;
     {
-        ::GetAddrInfoExCancel(&op_.cancel_handle);
+        std::lock_guard<win_mutex> lock(cancel_mutex_);
+        h                 = op_.cancel_handle;
+        op_.cancel_handle = nullptr;
     }
+
+    // Outside the lock: GetAddrInfoExCancel can wait on the completion
+    // routine, which takes that same lock.
+    if (h)
+        ::GetAddrInfoExCancel(&h);
 }
 
 inline void
@@ -529,11 +576,9 @@ win_resolver::do_reverse_resolve_work(pool_work_item* w) noexcept
     // outlive that wait. Nothing may touch *self after the post.
     self->reverse_op_.impl_ptr = std::move(pw->ref_);
 
-    // Post before work_finished (see resolve_op::completion); cache svc_
-    // since posting may free *self.
-    auto& svc = self->svc_;
-    svc.post(&self->reverse_op_);
-    svc.work_finished();
+    // Post only; the initiation credit is released where the op is
+    // consumed.
+    self->svc_.post(&self->reverse_op_);
 }
 
 // win_resolver_service

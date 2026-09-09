@@ -24,9 +24,11 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include <chrono>
 #include <coroutine>
 #include <optional>
 #include <stop_token>
+#include <string>
 #include <tuple>
 
 #include "context.hpp"
@@ -1227,6 +1229,43 @@ struct resolver_test
         }
         BOOST_TEST(!resumed);
     }
+
+    // The same teardown with the lookup still live inside the system
+    // resolver rather than already queued. Each iteration drops the last
+    // io_context, and with it the library's Winsock reference; a
+    // WSACleanup there lands under the in-flight GetAddrInfoExW.
+    //
+    // A name no cache can answer is what forces the asynchronous path.
+    // Where the system answers synchronously the iteration is a no-op.
+    void testDestroyWithForwardResolvePending()
+    {
+        for (int i = 0; i < 4; ++i)
+        {
+            std::optional<io_context::executor_type> ex;
+            std::optional<capy::io_env> env;
+            std::optional<capy::task<>> parked;
+
+            std::string host = "corosio-no-such-host-" + std::to_string(i) +
+                "-" +
+                std::to_string(std::chrono::steady_clock::now()
+                                   .time_since_epoch()
+                                   .count()) +
+                ".invalid";
+            {
+                io_context ioc;
+                resolver r(ioc);
+                auto query = [&]() -> capy::task<> {
+                    std::ignore = co_await r.resolve(host, "80");
+                };
+
+                ex.emplace(ioc.get_executor());
+                env.emplace(capy::io_env{*ex, std::stop_token{}, nullptr});
+                parked.emplace(query());
+                parked->await_suspend(std::noop_coroutine(), &*env).resume();
+            }
+        }
+        BOOST_TEST_PASS();
+    }
 #endif
 
 #if BOOST_COROSIO_POSIX
@@ -1340,6 +1379,7 @@ struct resolver_test
 
 #if BOOST_COROSIO_HAS_IOCP
         testDestroyWithForwardResolveQueued();
+        testDestroyWithForwardResolvePending();
 #endif
 
 #if !COROSIO_TEST_HAS_ASAN
