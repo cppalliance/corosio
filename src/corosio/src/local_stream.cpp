@@ -14,7 +14,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #elif BOOST_COROSIO_HAS_IOCP
-#include <WinSock2.h>
+#include <winsock2.h>
 #ifndef AF_UNIX
 #define AF_UNIX 1
 #endif

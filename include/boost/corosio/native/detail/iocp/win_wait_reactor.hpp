@@ -30,7 +30,7 @@ instead of including this header directly."
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
 #include <boost/corosio/native/detail/iocp/win_wsa_init.hpp>
 
-#include <Ws2tcpip.h>
+#include <ws2tcpip.h>
 
 #include <algorithm>
 #include <atomic>

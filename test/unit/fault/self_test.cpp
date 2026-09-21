@@ -792,8 +792,8 @@ TEST_SUITE(self_test, "boost.corosio.fault.self");
 
 #else
 
-#include <MSWSock.h>
-#include <WS2tcpip.h>
+#include <mswsock.h>
+#include <ws2tcpip.h>
 #include <signal.h>
 
 // MinGW's <ws2tcpip.h> stops short of this one; the library declares it

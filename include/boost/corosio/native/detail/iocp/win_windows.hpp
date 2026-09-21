@@ -27,8 +27,8 @@
 #define NOMINMAX
 #endif
 
-#include <WinSock2.h>
-#include <Windows.h>
+#include <winsock2.h>
+#include <windows.h>
 
 #endif // BOOST_COROSIO_HAS_IOCP
 

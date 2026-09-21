@@ -25,7 +25,7 @@
 #include <coroutine>
 #include <memory>
 
-#include <MSWSock.h>
+#include <mswsock.h>
 
 namespace boost::corosio::detail {
 
