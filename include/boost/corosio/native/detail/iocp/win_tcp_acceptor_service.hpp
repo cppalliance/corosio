@@ -31,7 +31,7 @@
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 
-#include <Ws2tcpip.h>
+#include <ws2tcpip.h>
 
 namespace boost::corosio::detail {
 

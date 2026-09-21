@@ -40,7 +40,7 @@
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 
-#include <WS2tcpip.h>
+#include <ws2tcpip.h>
 
 #include <atomic>
 #include <cstring>

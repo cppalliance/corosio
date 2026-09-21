@@ -25,8 +25,8 @@
 #include <coroutine>
 #include <memory>
 
-#include <WS2tcpip.h>
-#include <MSWSock.h>
+#include <ws2tcpip.h>
+#include <mswsock.h>
 
 namespace boost::corosio::detail {
 

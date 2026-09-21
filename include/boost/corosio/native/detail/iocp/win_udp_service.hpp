@@ -30,7 +30,7 @@
 
 #include <cstring>
 
-#include <Ws2tcpip.h>
+#include <ws2tcpip.h>
 
 namespace boost::corosio::detail {
 

@@ -21,11 +21,11 @@
 #define NOMINMAX
 #endif
 
-#include <WinSock2.h>
-#include <Windows.h>
+#include <winsock2.h>
+#include <windows.h>
 
-#include <MSWSock.h>
-#include <WS2tcpip.h>
+#include <mswsock.h>
+#include <ws2tcpip.h>
 #include <signal.h>
 #include <tlhelp32.h>
 

@@ -24,7 +24,7 @@
 
 #include <boost/corosio/native/detail/iocp/win_tcp_socket.hpp>
 
-#include <MSWSock.h>
+#include <mswsock.h>
 
 namespace boost::corosio::detail {
 
