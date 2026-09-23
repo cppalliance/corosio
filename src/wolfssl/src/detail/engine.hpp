@@ -85,14 +85,6 @@ class BOOST_COROSIO_DECL engine
     static int send_callback(WOLFSSL*, char* buf, int sz, void* ctx);
 
 public:
-    /** Whether a failed transport write keeps drained ciphertext.
-
-        Ciphertext the driver already drained from the engine when a
-        transport write fails stays queued, and the next flush resends
-        exactly that unsent tail, so a canceled flush can resume
-        without record loss.
-    */
-
     /// Destroy the engine, releasing the session.
     ~engine();
 

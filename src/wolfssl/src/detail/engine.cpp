@@ -1153,7 +1153,11 @@ engine::received_shutdown() const
     // close_notify is queued, which happens on every local shutdown()
     // call regardless of what the peer ever sends. Only the received
     // bit reflects whether the peer's close_notify actually arrived.
-    return (wolfSSL_get_shutdown(ssl_) & WOLFSSL_RECEIVED_SHUTDOWN) != 0;
+    // The latch matters too: some wolfSSL builds clear the shutdown
+    // bitmask on a read that follows a completed close, and without it
+    // an announced close would be misreported as truncation.
+    return received_close_notify_ ||
+        (wolfSSL_get_shutdown(ssl_) & WOLFSSL_RECEIVED_SHUTDOWN) != 0;
 }
 
 } // namespace wolfssl
