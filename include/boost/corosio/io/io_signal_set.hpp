@@ -11,6 +11,7 @@
 #define BOOST_COROSIO_IO_IO_SIGNAL_SET_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/op_base.hpp>
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/error.hpp>
@@ -37,33 +38,16 @@ namespace boost::corosio {
 */
 class BOOST_COROSIO_DECL io_signal_set : public io_object
 {
-    struct wait_awaitable
+    struct wait_awaitable : detail::value_op_base<wait_awaitable, int>
     {
         io_signal_set& s_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable int signal_number_ = 0;
 
         explicit wait_awaitable(io_signal_set& s) noexcept : s_(s) {}
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            return static_cast<bool>(ec_) || token_.stop_requested();
-        }
-
-        [[nodiscard]] capy::io_result<int> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {capy::error::canceled, 0};
-            return {ec_, signal_number_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
-            return s_.get().wait(
-                h, env->executor, token_, &ec_, &signal_number_);
+            return s_.get().wait(h, ex, token_, &ec_, &value_);
         }
     };
 

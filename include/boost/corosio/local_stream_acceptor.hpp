@@ -87,11 +87,9 @@ class BOOST_COROSIO_DECL local_stream_acceptor : public io_object
         }
     };
 
-    struct move_accept_awaitable
+    struct move_accept_awaitable : detail::void_op_base<move_accept_awaitable>
     {
         local_stream_acceptor& acc_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
         mutable io_object::implementation* peer_impl_ = nullptr;
 
         explicit move_accept_awaitable(local_stream_acceptor& acc) noexcept
@@ -99,44 +97,29 @@ class BOOST_COROSIO_DECL local_stream_acceptor : public io_object
         {
         }
 
-        bool await_ready() const noexcept
-        {
-            // A pre-set ec_ means the initiator failed before
-            // dispatch (e.g. a closed object).
-            return static_cast<bool>(ec_) || token_.stop_requested();
-        }
-
         [[nodiscard]] capy::io_result<local_stream_socket>
         await_resume() const noexcept
         {
-            if (token_.stop_requested())
-                return {
-                    make_error_code(std::errc::operation_canceled),
-                    local_stream_socket()};
-
-            if (ec_ || !peer_impl_)
-                return {ec_, local_stream_socket()};
+            if (this->ec_ || !peer_impl_)
+                return {this->ec_, local_stream_socket()};
 
             local_stream_socket peer(acc_.ctx_);
             reset_peer_impl(peer, peer_impl_);
-            return {ec_, std::move(peer)};
+            return {this->ec_, std::move(peer)};
         }
 
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            token_ = env->stop_token;
             return acc_.get().accept(
-                h, env->executor, token_, &ec_, &peer_impl_);
+                h, ex, this->token_, &this->ec_, &peer_impl_);
         }
     };
 
-    struct accept_awaitable
+    struct accept_awaitable : detail::void_op_base<accept_awaitable>
     {
         local_stream_acceptor& acc_;
         local_stream_socket& peer_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
         mutable io_object::implementation* peer_impl_ = nullptr;
 
         accept_awaitable(
@@ -146,29 +129,18 @@ class BOOST_COROSIO_DECL local_stream_acceptor : public io_object
         {
         }
 
-        bool await_ready() const noexcept
-        {
-            // A pre-set ec_ means the initiator failed before
-            // dispatch (e.g. a closed object).
-            return static_cast<bool>(ec_) || token_.stop_requested();
-        }
-
         [[nodiscard]] capy::io_result<> await_resume() const noexcept
         {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled)};
-
-            if (!ec_ && peer_impl_)
+            if (!this->ec_ && peer_impl_)
                 peer_.h_.reset(peer_impl_);
-            return {ec_};
+            return {this->ec_};
         }
 
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            token_ = env->stop_token;
             return acc_.get().accept(
-                h, env->executor, token_, &ec_, &peer_impl_);
+                h, ex, this->token_, &this->ec_, &peer_impl_);
         }
     };
 

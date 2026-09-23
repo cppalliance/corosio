@@ -12,6 +12,7 @@
 
 #include <boost/corosio/signal_set.hpp>
 #include <boost/corosio/backend.hpp>
+#include <boost/corosio/detail/op_base.hpp>
 
 #ifndef BOOST_COROSIO_MRDOCS
 #if BOOST_COROSIO_HAS_EPOLL || BOOST_COROSIO_HAS_SELECT || \
@@ -58,35 +59,20 @@ class native_signal_set : public signal_set
     }
 
     struct native_wait_awaitable
+        : detail::value_op_base<native_wait_awaitable, int>
     {
         native_signal_set& self_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable int signal_number_ = 0;
 
         explicit native_wait_awaitable(native_signal_set& self) noexcept
             : self_(self)
         {
         }
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            return static_cast<bool>(ec_) || token_.stop_requested();
-        }
-
-        [[nodiscard]] capy::io_result<int> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {capy::error::canceled, 0};
-            return {ec_, signal_number_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
             return self_.get_impl().wait(
-                h, env->executor, token_, &ec_, &signal_number_);
+                h, ex, this->token_, &this->ec_, &this->value_);
         }
     };
 
