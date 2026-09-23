@@ -756,6 +756,7 @@ struct random_access_file_test
         testAssign();
         testClosedFileErrors();
         testClosedAtOpsComplete();
+        testStopRaceReportsTransfer();
 #if BOOST_COROSIO_POSIX
         testSyncOnPipeFails();
         testHugeOffsetFails();
@@ -1291,6 +1292,86 @@ struct random_access_file_test
         ioc.run();
 
         BOOST_TEST(completed);
+    }
+
+    // A stop that races the completion must never discard a transfer:
+    // canceled implies nothing moved — the caller's buffer and the file
+    // stay untouched — and a completed op is reported verbatim. The
+    // loop samples both sides of the race.
+    void testStopRaceReportsTransfer()
+    {
+        int bad_reads  = 0;
+        int bad_writes = 0;
+        for (int i = 0; i < 25; ++i)
+        {
+            io_context ioc(Backend);
+            auto ex = ioc.get_executor();
+
+            // Read-at race: canceled ⟹ the caller's buffer is untouched.
+            temp_file rf("raf_race_r_", "hello");
+            random_access_file f(ioc);
+            BOOST_TEST(!f.open(rf.path, file_base::read_only));
+
+            std::stop_source rss;
+            std::error_code rec = capy::error::eof;
+            std::size_t rn      = 99;
+            char buf[8]         = {};
+            std::memset(buf, 'X', sizeof(buf));
+            auto reader = [&]() -> capy::task<> {
+                auto [ec, n] = co_await f.read_some_at(
+                    0, capy::mutable_buffer(buf, sizeof(buf)));
+                rec = ec;
+                rn  = n;
+            };
+            auto rstopper = [&]() -> capy::task<> {
+                rss.request_stop();
+                co_return;
+            };
+            capy::run_async(ex, rss.get_token())(reader());
+            capy::run_async(ex)(rstopper());
+            ioc.run();
+            ioc.restart();
+            f.close();
+
+            bool const r_canceled_ok =
+                rec == capy::cond::canceled && rn == 0 && buf[0] == 'X';
+            bool const r_success_ok =
+                !rec && rn == 5 && std::memcmp(buf, "hello", 5) == 0;
+            if (!(r_canceled_ok || r_success_ok))
+                ++bad_reads;
+
+            // Write-at race: canceled ⟹ the file stayed empty.
+            temp_file wf("raf_race_w_", "");
+            random_access_file g(ioc);
+            BOOST_TEST(!g.open(wf.path, file_base::write_only));
+
+            std::stop_source wss;
+            std::error_code wec = capy::error::eof;
+            std::size_t wn      = 99;
+            auto writer         = [&]() -> capy::task<> {
+                auto [ec, n] =
+                    co_await g.write_some_at(0, capy::const_buffer("hello", 5));
+                wec = ec;
+                wn  = n;
+            };
+            auto wstopper = [&]() -> capy::task<> {
+                wss.request_stop();
+                co_return;
+            };
+            capy::run_async(ex, wss.get_token())(writer());
+            capy::run_async(ex)(wstopper());
+            ioc.run();
+            g.close();
+
+            auto const wsz = std::filesystem::file_size(wf.path);
+            bool const w_canceled_ok =
+                wec == capy::cond::canceled && wn == 0 && wsz == 0;
+            bool const w_success_ok = !wec && wn == 5 && wsz == 5;
+            if (!(w_canceled_ok || w_success_ok))
+                ++bad_writes;
+        }
+        BOOST_TEST_EQ(bad_reads, 0);
+        BOOST_TEST_EQ(bad_writes, 0);
     }
 };
 

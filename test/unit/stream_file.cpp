@@ -1075,6 +1075,7 @@ struct stream_file_test
         testAssignOverOpenAdopts();
         testSeekNegative();
         testCancelWithStoppedToken();
+        testStopRaceReportsTransfer();
 
 #if BOOST_COROSIO_POSIX
         // POSIX file work runs on the pool; IOCP uses overlapped I/O.
@@ -1121,6 +1122,103 @@ struct stream_file_test
 
         BOOST_TEST(completed);
         BOOST_TEST(result_ec == capy::cond::canceled);
+    }
+
+    // A stop that races the completion must never discard a transfer:
+    // canceled implies nothing moved, and a completed op is reported
+    // verbatim. The loop samples both sides of the race; every
+    // interleaving must land on one of the two conforming outcomes.
+    void testStopRaceReportsTransfer()
+    {
+        int bad_writes = 0;
+        int bad_reads  = 0;
+        for (int i = 0; i < 25; ++i)
+        {
+            io_context ioc(Backend);
+            auto ex = ioc.get_executor();
+
+            // Write race: canceled ⟹ the file stayed empty.
+            temp_file wf("sf_race_w_", "");
+            stream_file f(ioc);
+            BOOST_TEST(!f.open(wf.path, file_base::write_only));
+
+            std::stop_source wss;
+            std::error_code wec = capy::error::eof;
+            std::size_t wn      = 99;
+            auto writer         = [&]() -> capy::task<> {
+                auto [ec, n] =
+                    co_await f.write_some(capy::const_buffer("hello", 5));
+                wec = ec;
+                wn  = n;
+            };
+            auto wstopper = [&]() -> capy::task<> {
+                wss.request_stop();
+                co_return;
+            };
+            capy::run_async(ex, wss.get_token())(writer());
+            capy::run_async(ex)(wstopper());
+            ioc.run();
+            ioc.restart();
+            f.close();
+
+            auto const wsz = std::filesystem::file_size(wf.path);
+            bool const w_canceled_ok =
+                wec == capy::cond::canceled && wn == 0 && wsz == 0;
+            bool const w_success_ok = !wec && wn == 5 && wsz == 5;
+            if (!(w_canceled_ok || w_success_ok))
+                ++bad_writes;
+
+            // Read race: canceled ⟹ nothing consumed — a follow-up
+            // read still delivers the full content.
+            temp_file rf("sf_race_r_", "hello");
+            stream_file g(ioc);
+            BOOST_TEST(!g.open(rf.path, file_base::read_only));
+
+            std::stop_source rss;
+            std::error_code rec = capy::error::eof;
+            std::size_t rn      = 99;
+            char buf[8]         = {};
+            auto reader         = [&]() -> capy::task<> {
+                auto [ec, n] = co_await g.read_some(
+                    capy::mutable_buffer(buf, sizeof(buf)));
+                rec = ec;
+                rn  = n;
+            };
+            auto rstopper = [&]() -> capy::task<> {
+                rss.request_stop();
+                co_return;
+            };
+            capy::run_async(ex, rss.get_token())(reader());
+            capy::run_async(ex)(rstopper());
+            ioc.run();
+            ioc.restart();
+
+            bool ok = false;
+            if (!rec && rn == 5 && std::memcmp(buf, "hello", 5) == 0)
+            {
+                ok = true;
+            }
+            else if (rec == capy::cond::canceled && rn == 0)
+            {
+                std::error_code vec = capy::error::eof;
+                std::size_t vn      = 0;
+                char vbuf[8]        = {};
+                auto verifier       = [&]() -> capy::task<> {
+                    auto [ec, n] = co_await g.read_some(
+                        capy::mutable_buffer(vbuf, sizeof(vbuf)));
+                    vec = ec;
+                    vn  = n;
+                };
+                capy::run_async(ex)(verifier());
+                ioc.run();
+                ok = !vec && vn == 5 && std::memcmp(vbuf, "hello", 5) == 0;
+            }
+            if (!ok)
+                ++bad_reads;
+            g.close();
+        }
+        BOOST_TEST_EQ(bad_writes, 0);
+        BOOST_TEST_EQ(bad_reads, 0);
     }
 };
 

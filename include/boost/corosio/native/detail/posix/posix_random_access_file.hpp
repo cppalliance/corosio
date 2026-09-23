@@ -23,6 +23,7 @@
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/corosio/native/detail/coro_op.hpp>
+#include <boost/corosio/native/detail/coro_op_complete.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/error.hpp>
@@ -283,22 +284,12 @@ posix_random_access_file::raf_op::operator()()
 {
     stop_cb.reset();
 
-    bool const was_cancelled = cancelled.load(std::memory_order_acquire);
-
-    if (ec_out)
-    {
-        if (was_cancelled)
-            *ec_out = capy::error::canceled;
-        else if (errn != 0)
-            *ec_out = make_err(errn);
-        else if (is_read && bytes_transferred == 0)
-            *ec_out = capy::error::eof;
-        else
-            *ec_out = {};
-    }
-
-    if (bytes_out)
-        *bytes_out = was_cancelled ? 0 : bytes_transferred;
+    // Empty buffers never reach the pool (diverted at initiation), so
+    // empty_buffer stays false and a 0-byte read is a genuine EOF.
+    decode_io_result(
+        ec_out, bytes_out, cancelled.load(std::memory_order_acquire),
+        errn != 0 ? make_err(errn) : std::error_code{}, is_read,
+        bytes_transferred, /*empty_buffer=*/false);
 
     {
         std::lock_guard<std::mutex> lock(file_->ops_mutex_);
