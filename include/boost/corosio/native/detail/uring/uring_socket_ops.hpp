@@ -90,7 +90,8 @@ inline void
 uring_set_result(uring_op* self, bool is_read, bool empty_buf) noexcept
 {
     decode_io_result(
-        self->ec_out, self->cancelled.load(std::memory_order_acquire),
+        self->ec_out, self->bytes_out,
+        self->cancelled.load(std::memory_order_acquire),
         self->res < 0 ? make_err(-self->res) : std::error_code{}, is_read,
         self->res >= 0 ? static_cast<std::size_t>(self->res) : 0u, empty_buf);
 }
@@ -198,10 +199,6 @@ struct uring_read_op : uring_op
             self->spec_state->on_async_read_ready();
         }
 
-        if (self->bytes_out)
-            *self->bytes_out =
-                self->res >= 0 ? static_cast<std::size_t>(self->res) : 0u;
-
         coro_resume(self);
         // suicide drops here; may destroy impl + self.
     }
@@ -303,10 +300,6 @@ struct uring_write_op : uring_op
             // Kernel signalled readiness — restore speculation.
             self->spec_state->on_async_write_ready();
         }
-
-        if (self->bytes_out)
-            *self->bytes_out =
-                self->res >= 0 ? static_cast<std::size_t>(self->res) : 0u;
 
         coro_resume(self);
     }
@@ -661,7 +654,8 @@ struct uring_wait_op : uring_op
 
         // Wait reports only success/cancel/error — no bytes, no EOF.
         decode_io_result(
-            self->ec_out, self->cancelled.load(std::memory_order_acquire), ec,
+            self->ec_out, /*bytes_out=*/nullptr,
+            self->cancelled.load(std::memory_order_acquire), ec,
             /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
 
         coro_resume(self);

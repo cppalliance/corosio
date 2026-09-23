@@ -38,8 +38,9 @@
 
 namespace boost::corosio::detail {
 
-/** Translate a decoded I/O result into `*ec_out` using the cancelled /
-    error / EOF / success priority shared by every native backend.
+/** Translate a decoded I/O result into `*ec_out`/`*bytes_out` using the
+    error / transfer / cancelled / EOF priority shared by every native
+    backend.
 
     The raw error encodings differ per backend (reactor positive `errno`,
     io_uring negative `res`, IOCP `DWORD`), so the native-error -> error_code
@@ -47,41 +48,56 @@ namespace boost::corosio::detail {
     (an empty error_code means "no error"). This helper owns only the
     priority logic, which is byte-for-byte identical everywhere:
 
-        cancelled                          -> operation_canceled
         err set                            -> err
-        is_read && bytes == 0 && !empty    -> end_of_file
+        bytes > 0                          -> success
+        cancelled                          -> operation_canceled
+        is_read && !empty                  -> end_of_file
         otherwise                          -> success
 
-    Writes nothing when @a ec_out is null. Does not touch bytes_out — callers
-    that report a byte count write it separately (connect/wait carry none).
+    A transfer outranks the cancellation flag: the stream contracts
+    require a completed transfer to be reported verbatim — a stop
+    request that lost the race changes nothing, and the next operation
+    on the still-stopped token reports `canceled`. The flag decides
+    only when nothing was transferred, which is the signature of an op
+    the cancellation actually terminated (and why it also outranks the
+    EOF mapping: an aborted read is `canceled`, not `eof`).
 
-    @param ec_out        Destination (may be null).
+    The byte count is always stored — never zeroed by cancellation.
+
+    @param ec_out        Error destination (may be null).
+    @param bytes_out     Byte-count destination (null for connect/wait/
+                         accept, which report no count).
     @param cancelled     The op's cancellation flag.
     @param err           Backend error already converted to error_code, or a
                          default-constructed error_code on success.
     @param is_read       True only for reads that should map a 0-byte
                          completion to EOF — false for writes, connect, wait,
                          and datagrams (a 0-byte datagram is success, not EOF).
-    @param bytes         Bytes transferred (consulted only for the EOF test).
+    @param bytes         Bytes transferred.
     @param empty_buffer  True when the submitted buffer was zero-length,
                          which suppresses the otherwise-spurious EOF.
 */
 inline void
 decode_io_result(
     std::error_code* ec_out,
+    std::size_t* bytes_out,
     bool cancelled,
     std::error_code err,
     bool is_read,
     std::size_t bytes,
     bool empty_buffer) noexcept
 {
+    if (bytes_out)
+        *bytes_out = bytes;
     if (!ec_out)
         return;
-    if (cancelled)
-        *ec_out = capy::error::canceled;
-    else if (err)
+    if (err)
         *ec_out = err;
-    else if (is_read && bytes == 0 && !empty_buffer)
+    else if (bytes > 0)
+        *ec_out = {};
+    else if (cancelled)
+        *ec_out = capy::error::canceled;
+    else if (is_read && !empty_buffer)
         *ec_out = capy::error::eof;
     else
         *ec_out = {};

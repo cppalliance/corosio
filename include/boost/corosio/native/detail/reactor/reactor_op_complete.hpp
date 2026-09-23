@@ -51,11 +51,9 @@ complete_io_op(Op& op)
     // here and the shared EOF test reduces to the reactor's original
     // `is_read && bytes == 0`.
     decode_io_result(
-        op.ec_out, op.cancelled.load(std::memory_order_acquire),
+        op.ec_out, op.bytes_out, op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
         op.is_read_operation(), op.bytes_transferred, /*empty_buffer=*/false);
-
-    *op.bytes_out = op.bytes_transferred;
 
     coro_resume(&op);
 }
@@ -89,7 +87,8 @@ complete_wait_op(Op& op)
 
     // Wait reports only success/cancel/error — no bytes, no EOF.
     decode_io_result(
-        op.ec_out, op.cancelled.load(std::memory_order_acquire),
+        op.ec_out, /*bytes_out=*/nullptr,
+        op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
         /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
 
@@ -129,7 +128,8 @@ complete_connect_op(Op& op)
     }
 
     decode_io_result(
-        op.ec_out, op.cancelled.load(std::memory_order_acquire),
+        op.ec_out, /*bytes_out=*/nullptr,
+        op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
         /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
 
@@ -222,7 +222,8 @@ complete_accept_op(Op& op)
         (op.errn == 0 && !op.cancelled.load(std::memory_order_acquire));
 
     decode_io_result(
-        op.ec_out, op.cancelled.load(std::memory_order_acquire),
+        op.ec_out, /*bytes_out=*/nullptr,
+        op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
         /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
 
@@ -266,11 +267,9 @@ complete_datagram_op(Op& op)
 
     // No EOF: a zero-length datagram is valid (success with 0 bytes).
     decode_io_result(
-        op.ec_out, op.cancelled.load(std::memory_order_acquire),
+        op.ec_out, op.bytes_out, op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
-        /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
-
-    *op.bytes_out = op.bytes_transferred;
+        /*is_read=*/false, op.bytes_transferred, /*empty_buffer=*/false);
 
     coro_resume(&op);
 }
@@ -295,14 +294,15 @@ complete_datagram_op(Op& op, Endpoint* source_out)
 
     // No EOF: a zero-length datagram is valid (success with 0 bytes).
     decode_io_result(
-        op.ec_out, op.cancelled.load(std::memory_order_acquire),
+        op.ec_out, op.bytes_out, op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
-        /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
+        /*is_read=*/false, op.bytes_transferred, /*empty_buffer=*/false);
 
-    *op.bytes_out = op.bytes_transferred;
-
-    if (source_out && !op.cancelled.load(std::memory_order_acquire) &&
-        op.errn == 0)
+    // Write the source exactly when the decode reported success — a
+    // transfer outranks a raced cancellation flag there too.
+    if (source_out && op.errn == 0 &&
+        (op.bytes_transferred > 0 ||
+         !op.cancelled.load(std::memory_order_acquire)))
         *source_out =
             from_sockaddr_as(op.source_storage, op.source_addrlen, Endpoint{});
 

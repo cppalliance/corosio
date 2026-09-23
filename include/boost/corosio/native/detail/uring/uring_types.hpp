@@ -199,11 +199,10 @@ public:
             if (sched_->try_consume_inline_budget())
             {
                 decode_io_result(
-                    ec, stop_now, err ? make_err(err) : std::error_code{},
+                    ec, bytes, stop_now,
+                    err ? make_err(err) : std::error_code{},
                     /*is_read=*/true, n < 0 ? 0u : static_cast<std::size_t>(n),
                     empty_buf);
-                if (bytes)
-                    *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
                 rd_.cont.h = h;
                 return dispatch_coro(ex, rd_.cont);
             }
@@ -279,10 +278,10 @@ public:
             if (sched_->try_consume_inline_budget())
             {
                 decode_io_result(
-                    ec, stop_now, err ? make_err(err) : std::error_code{},
-                    /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
-                if (bytes)
-                    *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
+                    ec, bytes, stop_now,
+                    err ? make_err(err) : std::error_code{},
+                    /*is_read=*/false, n < 0 ? 0u : static_cast<std::size_t>(n),
+                    /*empty_buffer=*/false);
                 wr_.cont.h = h;
                 return dispatch_coro(ex, wr_.cont);
             }
@@ -1122,11 +1121,10 @@ public:
             if (sched_->try_consume_inline_budget())
             {
                 decode_io_result(
-                    ec, stop_now, err ? make_err(err) : std::error_code{},
+                    ec, bytes, stop_now,
+                    err ? make_err(err) : std::error_code{},
                     /*is_read=*/true, n < 0 ? 0u : static_cast<std::size_t>(n),
                     empty_buf);
-                if (bytes)
-                    *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
                 rd_.cont.h = h;
                 return dispatch_coro(ex, rd_.cont);
             }
@@ -1202,10 +1200,10 @@ public:
             if (sched_->try_consume_inline_budget())
             {
                 decode_io_result(
-                    ec, stop_now, err ? make_err(err) : std::error_code{},
-                    /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
-                if (bytes)
-                    *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
+                    ec, bytes, stop_now,
+                    err ? make_err(err) : std::error_code{},
+                    /*is_read=*/false, n < 0 ? 0u : static_cast<std::size_t>(n),
+                    /*empty_buffer=*/false);
                 wr_.cont.h = h;
                 return dispatch_coro(ex, wr_.cont);
             }
@@ -2160,10 +2158,10 @@ private:
             if (sched_->try_consume_inline_budget())
             {
                 decode_io_result(
-                    ec, stop_now, err ? make_err(err) : std::error_code{},
-                    /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
-                if (bytes)
-                    *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
+                    ec, bytes, stop_now,
+                    err ? make_err(err) : std::error_code{},
+                    /*is_read=*/false, n < 0 ? 0u : static_cast<std::size_t>(n),
+                    /*empty_buffer=*/false);
                 send_.cont.h = h;
                 return dispatch_coro(ex, send_.cont);
             }
@@ -2252,10 +2250,10 @@ private:
             if (sched_->try_consume_inline_budget())
             {
                 decode_io_result(
-                    ec, stop_now, err ? make_err(err) : std::error_code{},
-                    /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
-                if (bytes)
-                    *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
+                    ec, bytes, stop_now,
+                    err ? make_err(err) : std::error_code{},
+                    /*is_read=*/false, n < 0 ? 0u : static_cast<std::size_t>(n),
+                    /*empty_buffer=*/false);
                 if (n >= 0 && want_source && source_out && !empty_buf)
                     *source_out = sockaddr_to_endpoint(src_storage);
                 recv_.cont.h = h;
@@ -2787,10 +2785,10 @@ private:
             if (sched_->try_consume_inline_budget())
             {
                 decode_io_result(
-                    ec, stop_now, err ? make_err(err) : std::error_code{},
-                    /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
-                if (bytes)
-                    *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
+                    ec, bytes, stop_now,
+                    err ? make_err(err) : std::error_code{},
+                    /*is_read=*/false, n < 0 ? 0u : static_cast<std::size_t>(n),
+                    /*empty_buffer=*/false);
                 send_.cont.h = h;
                 return dispatch_coro(ex, send_.cont);
             }
@@ -2879,10 +2877,10 @@ private:
             if (sched_->try_consume_inline_budget())
             {
                 decode_io_result(
-                    ec, stop_now, err ? make_err(err) : std::error_code{},
-                    /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
-                if (bytes)
-                    *bytes = (n < 0) ? 0u : static_cast<std::size_t>(n);
+                    ec, bytes, stop_now,
+                    err ? make_err(err) : std::error_code{},
+                    /*is_read=*/false, n < 0 ? 0u : static_cast<std::size_t>(n),
+                    /*empty_buffer=*/false);
                 if (n >= 0 && want_source && source_out && !empty_buf)
                     *source_out =
                         sockaddr_to_local_endpoint(src_storage, src_namelen);

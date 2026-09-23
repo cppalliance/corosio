@@ -197,13 +197,10 @@ struct overlapped_op
         stop_cb.reset();
 
         decode_io_result(
-            ec_out, cancelled.load(std::memory_order_acquire),
+            ec_out, bytes_out, cancelled.load(std::memory_order_acquire),
             dwError != 0 ? iocp_make_err(dwError, /*accept_path=*/false)
                          : std::error_code{},
             is_read, static_cast<std::size_t>(bytes_transferred), empty_buffer);
-
-        if (bytes_out)
-            *bytes_out = static_cast<std::size_t>(bytes_transferred);
 
         cont.h = h;
         dispatch_coro(ex, cont).resume();

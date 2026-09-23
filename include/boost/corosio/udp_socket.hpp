@@ -140,8 +140,9 @@ public:
 
         /** Request cancellation of pending asynchronous operations.
 
-            All outstanding operations complete with operation_canceled
-            error. Check `ec == cond::canceled` for portable comparison.
+            Operations still in flight complete with `operation_canceled`;
+            an operation whose result is already decided reports that
+            result. Check `ec == cond::canceled` for portable comparison.
         */
         virtual void cancel() noexcept = 0;
 
@@ -521,9 +522,10 @@ public:
 
     /** Cancel any pending asynchronous operations.
 
-        All outstanding operations complete with
-        `errc::operation_canceled`. Check `ec == cond::canceled`
-        for portable comparison.
+        Operations still in flight complete with
+        `errc::operation_canceled`; an operation whose result is
+        already decided reports that result. Check
+        `ec == cond::canceled` for portable comparison.
     */
     void cancel() noexcept;
 

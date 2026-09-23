@@ -139,12 +139,12 @@ struct uring_dgram_send_op : uring_op
 
         // Datagram send: no EOF (a 0-byte send is success).
         decode_io_result(
-            self->ec_out, self->cancelled.load(std::memory_order_acquire),
+            self->ec_out, self->bytes_out,
+            self->cancelled.load(std::memory_order_acquire),
             self->res < 0 ? make_err(-self->res) : std::error_code{},
-            /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
-        if (self->bytes_out)
-            *self->bytes_out =
-                (self->res >= 0) ? static_cast<std::size_t>(self->res) : 0;
+            /*is_read=*/false,
+            self->res >= 0 ? static_cast<std::size_t>(self->res) : 0u,
+            /*empty_buffer=*/false);
 
         if (self->res > 0 && self->spec_state)
         {
@@ -294,12 +294,12 @@ struct uring_dgram_recv_op : uring_op
         // Datagram recv: a 0-byte datagram is success, not EOF — is_read
         // stays false so the shared decode never maps it to end_of_file.
         decode_io_result(
-            self->ec_out, self->cancelled.load(std::memory_order_acquire),
+            self->ec_out, self->bytes_out,
+            self->cancelled.load(std::memory_order_acquire),
             self->res < 0 ? make_err(-self->res) : std::error_code{},
-            /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);
-        if (self->bytes_out)
-            *self->bytes_out =
-                (self->res >= 0) ? static_cast<std::size_t>(self->res) : 0;
+            /*is_read=*/false,
+            self->res >= 0 ? static_cast<std::size_t>(self->res) : 0u,
+            /*empty_buffer=*/false);
 
         if (self->res > 0 && self->spec_state)
         {
