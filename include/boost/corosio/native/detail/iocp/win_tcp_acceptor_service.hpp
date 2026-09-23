@@ -612,7 +612,8 @@ win_tcp_socket_internal::read_some(
     for (DWORD i = 0; i < op.wsabuf_count; ++i)
     {
         op.wsabufs[i].buf = static_cast<char*>(bufs[i].data());
-        op.wsabufs[i].len = static_cast<ULONG>(bufs[i].size());
+        op.wsabufs[i].len = static_cast<ULONG>(
+            (std::min)(bufs[i].size(), std::size_t(0x7fffffff)));
     }
 
     op.flags = 0;
@@ -684,7 +685,8 @@ win_tcp_socket_internal::write_some(
     for (DWORD i = 0; i < op.wsabuf_count; ++i)
     {
         op.wsabufs[i].buf = static_cast<char*>(bufs[i].data());
-        op.wsabufs[i].len = static_cast<ULONG>(bufs[i].size());
+        op.wsabufs[i].len = static_cast<ULONG>(
+            (std::min)(bufs[i].size(), std::size_t(0x7fffffff)));
     }
 
     int result = ::WSASend(

@@ -401,8 +401,9 @@ win_stream_file_internal::read_some(
     }
 
     // ReadFile uses a single contiguous buffer
-    op.buf     = bufs[0].data();
-    op.buf_len = static_cast<DWORD>(bufs[0].size());
+    op.buf = bufs[0].data();
+    op.buf_len =
+        static_cast<DWORD>((std::min)(bufs[0].size(), std::size_t(0x7fffffff)));
 
     // Set file offset in OVERLAPPED
     op.Offset     = static_cast<DWORD>(offset_ & 0xFFFFFFFF);
@@ -470,8 +471,9 @@ win_stream_file_internal::write_some(
     }
 
     // WriteFile uses a single contiguous buffer
-    op.buf     = bufs[0].data();
-    op.buf_len = static_cast<DWORD>(bufs[0].size());
+    op.buf = bufs[0].data();
+    op.buf_len =
+        static_cast<DWORD>((std::min)(bufs[0].size(), std::size_t(0x7fffffff)));
 
     // Set file offset in OVERLAPPED
     op.Offset     = static_cast<DWORD>(offset_ & 0xFFFFFFFF);
