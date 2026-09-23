@@ -48,19 +48,21 @@ namespace boost::corosio::detail {
     (an empty error_code means "no error"). This helper owns only the
     priority logic, which is byte-for-byte identical everywhere:
 
-        err set                            -> err
-        bytes > 0                          -> success
+        bytes > 0                          -> err if set, else success
         cancelled                          -> operation_canceled
+        err set                            -> err
         is_read && !empty                  -> end_of_file
         otherwise                          -> success
 
     A transfer outranks the cancellation flag: the stream contracts
     require a completed transfer to be reported verbatim — a stop
     request that lost the race changes nothing, and the next operation
-    on the still-stopped token reports `canceled`. The flag decides
-    only when nothing was transferred, which is the signature of an op
-    the cancellation actually terminated (and why it also outranks the
-    EOF mapping: an aborted read is `canceled`, not `eof`).
+    on the still-stopped token reports `canceled`. With nothing
+    transferred, the flag outranks the raw completion error: a
+    cancellation request is what tears pending ops down locally (close,
+    stop), and the flag normalizes whichever error that teardown
+    surfaced (and it outranks the EOF mapping for the same reason: an
+    aborted read is `canceled`, not `eof`).
 
     The byte count is always stored — never zeroed by cancellation.
 
@@ -91,12 +93,12 @@ decode_io_result(
         *bytes_out = bytes;
     if (!ec_out)
         return;
-    if (err)
+    if (bytes > 0)
         *ec_out = err;
-    else if (bytes > 0)
-        *ec_out = {};
     else if (cancelled)
         *ec_out = capy::error::canceled;
+    else if (err)
+        *ec_out = err;
     else if (is_read && !empty_buffer)
         *ec_out = capy::error::eof;
     else

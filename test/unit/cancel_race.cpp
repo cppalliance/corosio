@@ -274,4 +274,55 @@ struct cancel_race_test
 
 COROSIO_BACKEND_TESTS(cancel_race_test, "boost.corosio.cancel_race")
 
+// A zero-transfer failure whose op also saw a cancellation request
+// reports canceled: the caller asked for the stop, and the flag is
+// what normalizes locally-induced completion errors (e.g. a close
+// tearing down a pending op) across backends. The closed-object
+// error path is the deterministic stand-in: the EBADF completion is
+// deferred, and the stop lands before it is decoded.
+//
+// Excludes uring, where the closed-object error surfaces from the
+// speculative syscall and completes inline before the stop exists —
+// a completed error reported verbatim, which is equally conforming
+// but a different interleaving.
+template<auto Backend>
+struct cancel_race_flag_test
+{
+    void run()
+    {
+        io_context_options opts;
+        opts.inline_budget_max = 0;
+        io_context ioc(Backend, opts);
+        auto ex = ioc.get_executor();
+
+        tcp_socket s1(ioc);
+        std::stop_source ss;
+        std::error_code wec;
+        std::size_t wn = 99;
+        bool done      = false;
+
+        auto writer = [&]() -> capy::task<> {
+            auto [ec, n] = co_await s1.write_some(capy::const_buffer("x", 1));
+            wec          = ec;
+            wn           = n;
+            done         = true;
+        };
+        auto stopper = [&]() -> capy::task<> {
+            ss.request_stop();
+            co_return;
+        };
+        capy::run_async(ex, ss.get_token())(writer());
+        capy::run_async(ex)(stopper());
+        ioc.run();
+
+        BOOST_TEST(done);
+        BOOST_TEST(wec == capy::cond::canceled);
+        BOOST_TEST_EQ(wn, 0u);
+    }
+};
+
+COROSIO_REACTOR_BACKEND_TESTS(
+    cancel_race_flag_test, "boost.corosio.cancel_race_flag")
+COROSIO_TEST_IOCP_(cancel_race_flag_test, "boost.corosio.cancel_race_flag")
+
 } // namespace boost::corosio
