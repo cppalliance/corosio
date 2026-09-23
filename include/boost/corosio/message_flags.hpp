@@ -16,7 +16,7 @@ namespace boost::corosio {
 
     Platform-agnostic flag values that are mapped to native
     constants (MSG_PEEK, MSG_OOB, MSG_DONTROUTE) at the
-    syscall boundary in the reactor implementation.
+    syscall boundary in each backend implementation.
 */
 enum class message_flags : int
 {

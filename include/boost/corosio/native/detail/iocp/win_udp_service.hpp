@@ -26,6 +26,7 @@
 
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
+#include <boost/corosio/native/detail/msg_flags.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 
 #include <cstring>
@@ -447,7 +448,7 @@ win_udp_socket_internal::send_to(
 
     int result = ::WSASendTo(
         socket_, op.wsabufs, op.wsabuf_count, nullptr,
-        static_cast<DWORD>(flags),
+        static_cast<DWORD>(to_native_msg_flags(flags)),
         reinterpret_cast<sockaddr*>(&op.dest_storage), op.dest_len, &op,
         nullptr);
 
@@ -514,7 +515,7 @@ win_udp_socket_internal::recv_from(
         op.wsabufs[i].len = static_cast<ULONG>(bufs[i].size());
     }
 
-    op.flags = static_cast<DWORD>(flags);
+    op.flags = static_cast<DWORD>(to_native_msg_flags(flags));
     std::memset(&op.source_storage, 0, sizeof(op.source_storage));
     op.source_len = sizeof(op.source_storage);
 
@@ -611,7 +612,7 @@ win_udp_socket_internal::send(
 
     int result = ::WSASend(
         socket_, op.wsabufs, op.wsabuf_count, nullptr,
-        static_cast<DWORD>(flags), &op, nullptr);
+        static_cast<DWORD>(to_native_msg_flags(flags)), &op, nullptr);
 
     if (result == SOCKET_ERROR)
     {
@@ -670,7 +671,7 @@ win_udp_socket_internal::recv(
         op.wsabufs[i].len = static_cast<ULONG>(bufs[i].size());
     }
 
-    op.flags = static_cast<DWORD>(flags);
+    op.flags = static_cast<DWORD>(to_native_msg_flags(flags));
 
     int result = ::WSARecv(
         socket_, op.wsabufs, op.wsabuf_count, nullptr, &op.flags, &op, nullptr);
