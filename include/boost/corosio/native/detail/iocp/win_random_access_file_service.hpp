@@ -23,6 +23,7 @@
 #include <boost/corosio/native/detail/iocp/win_random_access_file.hpp>
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
 #include <boost/corosio/native/detail/iocp/win_completion_key.hpp>
+#include <boost/corosio/native/detail/coro_op_complete.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/capy/buffers.hpp>
@@ -167,23 +168,16 @@ raf_concurrent_op::do_complete(
     // Normal completion
     op->stop_cb.reset();
 
-    if (op->ec_out)
-    {
-        if (op->cancelled.load(std::memory_order_acquire))
-            *op->ec_out = capy::error::canceled;
-        else if (op->dwError != 0)
-            // Through the IOCP normalization point, like every other
-            // overlapped op — plain make_err would leave codes such
-            // as ERROR_INVALID_HANDLE to toolchain-dependent mappings.
-            *op->ec_out = iocp_make_err(op->dwError, /*accept_path=*/false);
-        else if (op->is_read && op->bytes_transferred == 0 && !op->empty_buffer)
-            *op->ec_out = capy::error::eof;
-        else
-            *op->ec_out = {};
-    }
-
-    if (op->bytes_out)
-        *op->bytes_out = static_cast<std::size_t>(op->bytes_transferred);
+    // Through the IOCP normalization point, like every other
+    // overlapped op — plain make_err would leave codes such as
+    // ERROR_INVALID_HANDLE to toolchain-dependent mappings.
+    decode_io_result(
+        op->ec_out, op->bytes_out,
+        op->cancelled.load(std::memory_order_acquire),
+        op->dwError != 0 ? iocp_make_err(op->dwError, /*accept_path=*/false)
+                         : std::error_code{},
+        op->is_read, static_cast<std::size_t>(op->bytes_transferred),
+        op->empty_buffer);
 
     {
         std::lock_guard<win_mutex> lock(op->file_->ops_mutex_);
@@ -361,8 +355,9 @@ win_random_access_file_internal::read_some_at(
         return std::noop_coroutine();
     }
 
-    op->buf     = bufs[0].data();
-    op->buf_len = static_cast<DWORD>(bufs[0].size());
+    op->buf = bufs[0].data();
+    op->buf_len =
+        static_cast<DWORD>((std::min)(bufs[0].size(), std::size_t(0x7fffffff)));
 
     // Set caller-provided offset in OVERLAPPED
     op->Offset     = static_cast<DWORD>(offset & 0xFFFFFFFF);
@@ -441,8 +436,9 @@ win_random_access_file_internal::write_some_at(
         return std::noop_coroutine();
     }
 
-    op->buf     = bufs[0].data();
-    op->buf_len = static_cast<DWORD>(bufs[0].size());
+    op->buf = bufs[0].data();
+    op->buf_len =
+        static_cast<DWORD>((std::min)(bufs[0].size(), std::size_t(0x7fffffff)));
 
     // Set caller-provided offset in OVERLAPPED
     op->Offset     = static_cast<DWORD>(offset & 0xFFFFFFFF);
