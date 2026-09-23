@@ -27,6 +27,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -388,8 +389,12 @@ public:
 
         for (auto& buf : buffers)
         {
-            char* const dest    = static_cast<char*>(buf.data());
-            int const remaining = static_cast<int>(buf.size());
+            char* const dest = static_cast<char*>(buf.data());
+            // Clamp for the engines' int-sized transfer API: a >=2 GiB
+            // buffer becomes a partial read, never a truncated length.
+            int const remaining = static_cast<int>(
+                (std::min)(buf.size(),
+                           std::size_t((std::numeric_limits<int>::max)())));
             if (remaining == 0)
                 continue;
 
@@ -478,8 +483,12 @@ public:
             // The engine only reads through this pointer for a write
             // op; the cast satisfies perform's single transfer
             // signature.
-            void* const src     = const_cast<void*>(buf.data());
-            int const remaining = static_cast<int>(buf.size());
+            void* const src = const_cast<void*>(buf.data());
+            // Clamp for the engines' int-sized transfer API: a >=2 GiB
+            // buffer becomes a partial write, never a truncated length.
+            int const remaining = static_cast<int>(
+                (std::min)(buf.size(),
+                           std::size_t((std::numeric_limits<int>::max)())));
             if (remaining == 0)
                 continue;
 
