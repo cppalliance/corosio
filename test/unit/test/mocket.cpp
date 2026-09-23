@@ -16,6 +16,7 @@
 #include <boost/corosio/native/native_tcp_acceptor.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/fuse.hpp>
@@ -149,12 +150,86 @@ struct mocket_test
         peer.close();
     }
 
+    // WriteStream contract: n reports what was actually transferred.
+    // A write longer than the remaining expect script is a partial
+    // write of the validated prefix — the surplus is neither consumed
+    // nor silently dropped.
+    void testExpectShorterThanWrite()
+    {
+        io_context ioc;
+        capy::test::fuse f;
+
+        auto [m, peer] = make_mocket_pair(ioc, f);
+        m.expect("ab");
+
+        auto task = [](mocket& m_ref) -> capy::task<> {
+            auto [ec, n] =
+                co_await m_ref.write_some(capy::const_buffer("abcdefghij", 10));
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(n, 2u);
+        };
+        capy::run_async(ioc.get_executor())(task(m));
+
+        ioc.run();
+        ioc.restart();
+
+        BOOST_TEST(!m.verify());
+        m.close();
+        peer.close();
+    }
+
+    // Stream cancellation contract: a pre-stopped token short-circuits
+    // with canceled and performs no I/O — staged provide/expect data
+    // stays untouched.
+    void testPreStoppedTokenShortCircuits()
+    {
+        io_context ioc;
+        capy::test::fuse f;
+
+        auto [m, peer] = make_mocket_pair(ioc, f);
+        m.provide("data");
+        m.expect("xx");
+
+        std::stop_source ss;
+        ss.request_stop();
+
+        std::error_code rec, wec;
+        std::size_t rn = 99, wn = 99;
+        bool done = false;
+
+        auto task = [&]() -> capy::task<> {
+            char buf[8];
+            auto [e1, n1] =
+                co_await m.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            rec           = e1;
+            rn            = n1;
+            auto [e2, n2] = co_await m.write_some(capy::const_buffer("xx", 2));
+            wec           = e2;
+            wn            = n2;
+            done          = true;
+        };
+        capy::run_async(ioc.get_executor(), ss.get_token())(task());
+        ioc.run();
+
+        BOOST_TEST(done);
+        BOOST_TEST(rec == capy::cond::canceled);
+        BOOST_TEST_EQ(rn, 0u);
+        BOOST_TEST(wec == capy::cond::canceled);
+        BOOST_TEST_EQ(wn, 0u);
+        // Staged data untouched: verify() reports the leftovers.
+        BOOST_TEST(m.verify());
+        m.close();
+        peer.close();
+    }
+
     void run()
     {
         testProvideExpect();
         testCloseWithUnconsumedData();
         testCloseWithUnconsumedProvide();
         testPassthrough();
+        testExpectShorterThanWrite();
+        testPreStoppedTokenShortCircuits();
     }
 };
 
