@@ -77,13 +77,6 @@ class BOOST_COROSIO_DECL engine
     bool clear_failed_ = false;
 
 public:
-    /** Whether a failed transport write keeps drained ciphertext.
-
-        Ciphertext the driver already drained from the engine when a
-        transport write fails is dropped; a later flush does not
-        resend it.
-    */
-
     /// Destroy the engine, releasing the session and BIO pair.
     ~engine();
 
