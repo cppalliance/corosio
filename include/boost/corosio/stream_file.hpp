@@ -182,8 +182,9 @@ public:
 
     /** Cancel pending asynchronous operations.
 
-        All outstanding operations complete with
-        `errc::operation_canceled`.
+        Operations still in flight complete with
+        `errc::operation_canceled`; an operation whose result is
+        already decided reports that result.
     */
     void cancel() noexcept;
 

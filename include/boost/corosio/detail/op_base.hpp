@@ -10,6 +10,7 @@
 #ifndef BOOST_COROSIO_DETAIL_OP_BASE_HPP
 #define BOOST_COROSIO_DETAIL_OP_BASE_HPP
 
+#include <boost/capy/error.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -47,13 +48,11 @@ public:
     {
         // A pre-set ec_ means the initiator failed before dispatch
         // (e.g. a closed object); complete immediately with that error.
-        return static_cast<bool>(ec_) || token_.stop_requested();
+        return static_cast<bool>(ec_);
     }
 
     [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
     {
-        if (token_.stop_requested())
-            return {make_error_code(std::errc::operation_canceled), 0};
         return {ec_, bytes_};
     }
 
@@ -61,6 +60,15 @@ public:
         -> std::coroutine_handle<>
     {
         token_ = env->stop_token;
+        // A pre-stopped token short-circuits before dispatch so no I/O
+        // is performed. A stop landing after dispatch is decoded by the
+        // backend, and a completed transfer is reported verbatim: the
+        // stream contracts forbid discarding the byte count.
+        if (token_.stop_requested())
+        {
+            ec_ = capy::error::canceled;
+            return h;
+        }
         return static_cast<Derived const*>(this)->dispatch(h, env->executor);
     }
 };
@@ -92,13 +100,11 @@ public:
     {
         // A pre-set ec_ means the initiator failed before dispatch;
         // complete immediately with that error.
-        return static_cast<bool>(ec_) || token_.stop_requested();
+        return static_cast<bool>(ec_);
     }
 
     [[nodiscard]] capy::io_result<Value> await_resume() const noexcept
     {
-        if (token_.stop_requested())
-            return {make_error_code(std::errc::operation_canceled), {}};
         return {ec_, std::move(value_)};
     }
 
@@ -106,6 +112,13 @@ public:
         -> std::coroutine_handle<>
     {
         token_ = env->stop_token;
+        // A pre-stopped token short-circuits before dispatch; a stop
+        // landing after dispatch leaves the completed result intact.
+        if (token_.stop_requested())
+        {
+            ec_ = capy::error::canceled;
+            return h;
+        }
         return static_cast<Derived const*>(this)->dispatch(h, env->executor);
     }
 };
@@ -135,13 +148,11 @@ public:
     {
         // A pre-set ec_ means the initiator failed before dispatch
         // (e.g. auto-open); complete immediately with that error.
-        return static_cast<bool>(ec_) || token_.stop_requested();
+        return static_cast<bool>(ec_);
     }
 
     [[nodiscard]] capy::io_result<> await_resume() const noexcept
     {
-        if (token_.stop_requested())
-            return {make_error_code(std::errc::operation_canceled)};
         return {ec_};
     }
 
@@ -149,6 +160,13 @@ public:
         -> std::coroutine_handle<>
     {
         token_ = env->stop_token;
+        // A pre-stopped token short-circuits before dispatch; a stop
+        // landing after dispatch leaves the completed result intact.
+        if (token_.stop_requested())
+        {
+            ec_ = capy::error::canceled;
+            return h;
+        }
         return static_cast<Derived const*>(this)->dispatch(h, env->executor);
     }
 };

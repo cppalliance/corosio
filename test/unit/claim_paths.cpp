@@ -83,8 +83,9 @@ struct claim_paths_test
         char buf[8];
         char big[65536] = {};
         std::error_code rec, wec, wtec;
-        int done    = 0;
-        auto reader = [&]() -> capy::task<> {
+        std::size_t wn = 0;
+        int done       = 0;
+        auto reader    = [&]() -> capy::task<> {
             auto [ec, n] =
                 co_await s1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             std::ignore = n;
@@ -94,8 +95,8 @@ struct claim_paths_test
         auto writer = [&]() -> capy::task<> {
             auto [ec, n] =
                 co_await s1.write_some(capy::const_buffer(big, sizeof(big)));
-            std::ignore = n;
-            wec         = ec;
+            wec = ec;
+            wn  = n;
             ++done;
         };
         auto waiter = [&]() -> capy::task<> {
@@ -115,7 +116,15 @@ struct claim_paths_test
 
         BOOST_TEST_EQ(done, 3);
         BOOST_TEST(rec == capy::cond::canceled);
-        BOOST_TEST(wec == capy::cond::canceled);
+        // The filled send buffer can drain into the peer's receive
+        // window while the ops run, so the write may complete a genuine
+        // partial transfer before the disrupt claims it — reported
+        // verbatim per the stream contract. Either outcome is legal;
+        // what must never appear is a discarded count or a full
+        // transfer labeled canceled.
+        BOOST_TEST(
+            (wec == capy::cond::canceled && wn == 0) ||
+            (!wec && wn >= 1 && wn < sizeof(big)));
         BOOST_TEST(wtec == capy::cond::canceled);
     }
 

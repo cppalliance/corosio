@@ -9,8 +9,8 @@
 
 // Initiate every async operation with a stop token that is already
 // stopped. Each op must complete with `canceled` without performing
-// any I/O. This exercises the stop_now short-circuit at the head of
-// each initiation path, which no cancellation-after-park test reaches.
+// any I/O. This exercises the awaitable layer's pre-dispatch stop
+// short-circuit, which no cancellation-after-park test reaches.
 
 #include <boost/corosio/detail/platform.hpp>
 
