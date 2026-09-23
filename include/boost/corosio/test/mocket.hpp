@@ -19,6 +19,7 @@
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/error.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/task.hpp>
@@ -315,9 +316,10 @@ basic_mocket<Socket>::validate_expect(
         return false;
     }
 
-    // Consume matched portion
+    // Only the validated prefix counts as written — a longer request
+    // is a partial write, per WriteStream.
     expect_.erase(0, match_size);
-    bytes_written = written.size();
+    bytes_written = match_size;
     return true;
 }
 
@@ -371,8 +373,23 @@ public:
     read_some_awaitable& operator=(read_some_awaitable const&) = delete;
     read_some_awaitable& operator=(read_some_awaitable&&)      = delete;
 
-    bool await_ready()
+    // All decisions wait for await_suspend, where the io_env (and thus
+    // the stop token) is available — a pre-stopped token must
+    // short-circuit before any staged data is consumed.
+    bool await_ready() const noexcept
     {
+        return false;
+    }
+
+    auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+        -> std::coroutine_handle<>
+    {
+        if (env->stop_token.stop_requested())
+        {
+            ec_ = capy::error::canceled;
+            n_  = 0;
+            return h;
+        }
         // Fuse injection point: an armed fuse fails this read as if the
         // transport did, so a fault-injection sweep exercises the error
         // path of every read the caller issues. Inert outside armed().
@@ -392,22 +409,18 @@ public:
         {
             ec_ = fec;
             n_  = 0;
-            return true;
+            return h;
         }
         if (!m_->provide_.empty())
         {
             n_ = m_->consume_provide(buffers_);
-            return true;
+            return h;
         }
         new (&underlying_) sock_awaitable(m_->sock_.read_some(buffers_));
         sync_ = false;
-        return underlying_.await_ready();
-    }
-
-    template<class... Args>
-    auto await_suspend(Args&&... args)
-    {
-        return underlying_.await_suspend(std::forward<Args>(args)...);
+        if (underlying_.await_ready())
+            return h;
+        return underlying_.await_suspend(h, env);
     }
 
     [[nodiscard]] capy::io_result<std::size_t> await_resume()
@@ -468,8 +481,23 @@ public:
     write_some_awaitable& operator=(write_some_awaitable const&) = delete;
     write_some_awaitable& operator=(write_some_awaitable&&)      = delete;
 
-    bool await_ready()
+    // All decisions wait for await_suspend, where the io_env (and thus
+    // the stop token) is available — a pre-stopped token must
+    // short-circuit before any of the expect script is consumed.
+    bool await_ready() const noexcept
     {
+        return false;
+    }
+
+    auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+        -> std::coroutine_handle<>
+    {
+        if (env->stop_token.stop_requested())
+        {
+            ec_ = capy::error::canceled;
+            n_  = 0;
+            return h;
+        }
         // Fuse injection point: an armed fuse fails this write as if the
         // transport did, so a fault-injection sweep exercises the error
         // path of every write the caller issues. Inert outside armed().
@@ -489,7 +517,7 @@ public:
         {
             ec_ = fec;
             n_  = 0;
-            return true;
+            return h;
         }
         if (!m_->expect_.empty())
         {
@@ -498,17 +526,13 @@ public:
                 ec_ = capy::error::test_failure;
                 n_  = 0;
             }
-            return true;
+            return h;
         }
         new (&underlying_) sock_awaitable(m_->sock_.write_some(buffers_));
         sync_ = false;
-        return underlying_.await_ready();
-    }
-
-    template<class... Args>
-    auto await_suspend(Args&&... args)
-    {
-        return underlying_.await_suspend(std::forward<Args>(args)...);
+        if (underlying_.await_ready())
+            return h;
+        return underlying_.await_suspend(h, env);
     }
 
     [[nodiscard]] capy::io_result<std::size_t> await_resume()
