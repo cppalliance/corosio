@@ -13,6 +13,7 @@
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/native/native_local_stream_socket.hpp>
 #include <boost/corosio/backend.hpp>
+#include <boost/corosio/detail/op_base.hpp>
 
 #ifndef BOOST_COROSIO_MRDOCS
 #if BOOST_COROSIO_HAS_EPOLL
@@ -75,12 +76,10 @@ class native_local_stream_acceptor : public local_stream_acceptor
         return *static_cast<impl_type*>(h_.get());
     }
 
-    struct native_wait_awaitable
+    struct native_wait_awaitable : detail::void_op_base<native_wait_awaitable>
     {
         native_local_stream_acceptor& acc_;
         wait_type w_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
 
         native_wait_awaitable(
             native_local_stream_acceptor& acc, wait_type w) noexcept
@@ -89,34 +88,18 @@ class native_local_stream_acceptor : public local_stream_acceptor
         {
         }
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            // A pre-set ec_ means the initiator failed before
-            // dispatch (e.g. a closed object).
-            return static_cast<bool>(ec_) || token_.stop_requested();
-        }
-
-        [[nodiscard]] capy::io_result<> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled)};
-            return {ec_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
-            return acc_.get_impl().wait(h, env->executor, w_, token_, &ec_);
+            return acc_.get_impl().wait(h, ex, w_, this->token_, &this->ec_);
         }
     };
 
     struct native_accept_awaitable
+        : detail::void_op_base<native_accept_awaitable>
     {
         native_local_stream_acceptor& acc_;
         local_stream_socket& peer_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
         mutable io_object::implementation* peer_impl_ = nullptr;
 
         native_accept_awaitable(
@@ -127,36 +110,25 @@ class native_local_stream_acceptor : public local_stream_acceptor
         {
         }
 
-        bool await_ready() const noexcept
-        {
-            // A pre-set ec_ means the initiator failed before
-            // dispatch (e.g. a closed object).
-            return static_cast<bool>(ec_) || token_.stop_requested();
-        }
-
         [[nodiscard]] capy::io_result<> await_resume() const noexcept
         {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled)};
-            if (!ec_)
+            if (!this->ec_)
                 acc_.reset_peer_impl(peer_, peer_impl_);
-            return {ec_};
+            return {this->ec_};
         }
 
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            token_ = env->stop_token;
             return acc_.get_impl().accept(
-                h, env->executor, token_, &ec_, &peer_impl_);
+                h, ex, this->token_, &this->ec_, &peer_impl_);
         }
     };
 
     struct native_move_accept_awaitable
+        : detail::void_op_base<native_move_accept_awaitable>
     {
         native_local_stream_acceptor& acc_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
         mutable io_object::implementation* peer_impl_ = nullptr;
 
         explicit native_move_accept_awaitable(
@@ -165,35 +137,24 @@ class native_local_stream_acceptor : public local_stream_acceptor
         {
         }
 
-        bool await_ready() const noexcept
-        {
-            // A pre-set ec_ means the initiator failed before
-            // dispatch (e.g. a closed object).
-            return static_cast<bool>(ec_) || token_.stop_requested();
-        }
-
         [[nodiscard]] capy::io_result<native_local_stream_socket<Backend>>
         await_resume() const noexcept
         {
-            if (token_.stop_requested())
+            if (this->ec_ || !peer_impl_)
                 return {
-                    make_error_code(std::errc::operation_canceled),
+                    this->ec_,
                     native_local_stream_socket<Backend>(acc_.context())};
-            if (ec_ || !peer_impl_)
-                return {
-                    ec_, native_local_stream_socket<Backend>(acc_.context())};
 
             native_local_stream_socket<Backend> peer(acc_.context());
             acc_.reset_peer_impl(peer, peer_impl_);
-            return {ec_, std::move(peer)};
+            return {this->ec_, std::move(peer)};
         }
 
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            token_ = env->stop_token;
             return acc_.get_impl().accept(
-                h, env->executor, token_, &ec_, &peer_impl_);
+                h, ex, this->token_, &this->ec_, &peer_impl_);
         }
     };
 

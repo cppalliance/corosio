@@ -15,6 +15,7 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
+#include <boost/corosio/detail/op_base.hpp>
 #include <boost/corosio/file_base.hpp>
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/capy/io_result.hpp>
@@ -131,13 +132,11 @@ public:
     /** Awaitable for async read-at operations. */
     template<class MutableBufferSequence>
     struct read_some_at_awaitable
+        : detail::bytes_op_base<read_some_at_awaitable<MutableBufferSequence>>
     {
         random_access_file& f_;
         std::uint64_t offset_;
         MutableBufferSequence buffers_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable std::size_t bytes_ = 0;
 
         read_some_at_awaitable(
             random_access_file& f,
@@ -152,39 +151,23 @@ public:
         {
         }
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            // A pre-set ec_ means the initiator failed before
-            // dispatch (e.g. a closed object).
-            return static_cast<bool>(ec_) || token_.stop_requested();
-        }
-
-        [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled), 0};
-            return {ec_, bytes_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
             return f_.get().read_some_at(
-                offset_, h, env->executor, buffers_, token_, &ec_, &bytes_);
+                offset_, h, ex, buffers_, this->token_, &this->ec_,
+                &this->bytes_);
         }
     };
 
     /** Awaitable for async write-at operations. */
     template<class ConstBufferSequence>
     struct write_some_at_awaitable
+        : detail::bytes_op_base<write_some_at_awaitable<ConstBufferSequence>>
     {
         random_access_file& f_;
         std::uint64_t offset_;
         ConstBufferSequence buffers_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable std::size_t bytes_ = 0;
 
         write_some_at_awaitable(
             random_access_file& f,
@@ -199,26 +182,12 @@ public:
         {
         }
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            // A pre-set ec_ means the initiator failed before
-            // dispatch (e.g. a closed object).
-            return static_cast<bool>(ec_) || token_.stop_requested();
-        }
-
-        [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled), 0};
-            return {ec_, bytes_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
             return f_.get().write_some_at(
-                offset_, h, env->executor, buffers_, token_, &ec_, &bytes_);
+                offset_, h, ex, buffers_, this->token_, &this->ec_,
+                &this->bytes_);
         }
     };
 

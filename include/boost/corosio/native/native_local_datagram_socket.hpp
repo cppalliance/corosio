@@ -17,6 +17,7 @@
 
 #include <boost/corosio/local_datagram_socket.hpp>
 #include <boost/corosio/backend.hpp>
+#include <boost/corosio/detail/op_base.hpp>
 
 #ifndef BOOST_COROSIO_MRDOCS
 #if BOOST_COROSIO_HAS_EPOLL
@@ -80,14 +81,12 @@ class native_local_datagram_socket : public local_datagram_socket
 
     template<class ConstBufferSequence>
     struct native_send_to_awaitable
+        : detail::bytes_op_base<native_send_to_awaitable<ConstBufferSequence>>
     {
         native_local_datagram_socket& self_;
         ConstBufferSequence buffers_;
         corosio::local_endpoint dest_;
         int flags_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable std::size_t bytes_transferred_ = 0;
 
         native_send_to_awaitable(
             native_local_datagram_socket& self,
@@ -101,40 +100,24 @@ class native_local_datagram_socket : public local_datagram_socket
         {
         }
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            // A pre-set ec_ means the initiator failed before
-            // dispatch (e.g. a closed object).
-            return static_cast<bool>(ec_) || token_.stop_requested();
-        }
-
-        [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled), 0};
-            return {ec_, bytes_transferred_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
             return self_.get_impl().send_to(
-                h, env->executor, buffers_, dest_, flags_, token_, &ec_,
-                &bytes_transferred_);
+                h, ex, buffers_, dest_, flags_, this->token_, &this->ec_,
+                &this->bytes_);
         }
     };
 
     template<class MutableBufferSequence>
     struct native_recv_from_awaitable
+        : detail::bytes_op_base<
+              native_recv_from_awaitable<MutableBufferSequence>>
     {
         native_local_datagram_socket& self_;
         MutableBufferSequence buffers_;
         corosio::local_endpoint& source_;
         int flags_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable std::size_t bytes_transferred_ = 0;
 
         native_recv_from_awaitable(
             native_local_datagram_socket& self,
@@ -148,36 +131,19 @@ class native_local_datagram_socket : public local_datagram_socket
         {
         }
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            // A pre-set ec_ means the initiator failed before
-            // dispatch (e.g. a closed object).
-            return static_cast<bool>(ec_) || token_.stop_requested();
-        }
-
-        [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled), 0};
-            return {ec_, bytes_transferred_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
             return self_.get_impl().recv_from(
-                h, env->executor, buffers_, &source_, flags_, token_, &ec_,
-                &bytes_transferred_);
+                h, ex, buffers_, &source_, flags_, this->token_, &this->ec_,
+                &this->bytes_);
         }
     };
 
-    struct native_wait_awaitable
+    struct native_wait_awaitable : detail::void_op_base<native_wait_awaitable>
     {
         native_local_datagram_socket& self_;
         wait_type w_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
 
         native_wait_awaitable(
             native_local_datagram_socket& self, wait_type w) noexcept
@@ -186,34 +152,18 @@ class native_local_datagram_socket : public local_datagram_socket
         {
         }
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            // A pre-set ec_ means the initiator failed before
-            // dispatch (e.g. auto-open).
-            return static_cast<bool>(ec_) || token_.stop_requested();
-        }
-
-        [[nodiscard]] capy::io_result<> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled)};
-            return {ec_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
-            return self_.get_impl().wait(h, env->executor, w_, token_, &ec_);
+            return self_.get_impl().wait(h, ex, w_, this->token_, &this->ec_);
         }
     };
 
     struct native_connect_awaitable
+        : detail::void_op_base<native_connect_awaitable>
     {
         native_local_datagram_socket& self_;
         corosio::local_endpoint endpoint_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
 
         native_connect_awaitable(
             native_local_datagram_socket& self,
@@ -223,38 +173,21 @@ class native_local_datagram_socket : public local_datagram_socket
         {
         }
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            // A pre-set ec_ means the initiator failed before
-            // dispatch (e.g. a closed object).
-            return static_cast<bool>(ec_) || token_.stop_requested();
-        }
-
-        [[nodiscard]] capy::io_result<> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled)};
-            return {ec_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
             return self_.get_impl().connect(
-                h, env->executor, endpoint_, token_, &ec_);
+                h, ex, endpoint_, this->token_, &this->ec_);
         }
     };
 
     template<class ConstBufferSequence>
     struct native_send_awaitable
+        : detail::bytes_op_base<native_send_awaitable<ConstBufferSequence>>
     {
         native_local_datagram_socket& self_;
         ConstBufferSequence buffers_;
         int flags_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable std::size_t bytes_transferred_ = 0;
 
         native_send_awaitable(
             native_local_datagram_socket& self,
@@ -266,39 +199,22 @@ class native_local_datagram_socket : public local_datagram_socket
         {
         }
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            // A pre-set ec_ means the initiator failed before
-            // dispatch (e.g. a closed object).
-            return static_cast<bool>(ec_) || token_.stop_requested();
-        }
-
-        [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled), 0};
-            return {ec_, bytes_transferred_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
             return self_.get_impl().send(
-                h, env->executor, buffers_, flags_, token_, &ec_,
-                &bytes_transferred_);
+                h, ex, buffers_, flags_, this->token_, &this->ec_,
+                &this->bytes_);
         }
     };
 
     template<class MutableBufferSequence>
     struct native_recv_awaitable
+        : detail::bytes_op_base<native_recv_awaitable<MutableBufferSequence>>
     {
         native_local_datagram_socket& self_;
         MutableBufferSequence buffers_;
         int flags_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable std::size_t bytes_transferred_ = 0;
 
         native_recv_awaitable(
             native_local_datagram_socket& self,
@@ -310,27 +226,12 @@ class native_local_datagram_socket : public local_datagram_socket
         {
         }
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            // A pre-set ec_ means the initiator failed before
-            // dispatch (e.g. a closed object).
-            return static_cast<bool>(ec_) || token_.stop_requested();
-        }
-
-        [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled), 0};
-            return {ec_, bytes_transferred_};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
             return self_.get_impl().recv(
-                h, env->executor, buffers_, flags_, token_, &ec_,
-                &bytes_transferred_);
+                h, ex, buffers_, flags_, this->token_, &this->ec_,
+                &this->bytes_);
         }
     };
 

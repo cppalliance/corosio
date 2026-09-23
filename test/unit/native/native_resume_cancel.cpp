@@ -7,12 +7,12 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-// The native awaitables re-check the stop token at resume time and
-// report cancellation even when the operation itself completed. No
-// other suite drives the native fronts with a stopped token, so these
-// resume-time arms are exercised here: once with a pre-stopped token,
-// and once with the stop requested after data is already buffered so
-// the op genuinely succeeds before the resume-time check overrides it.
+// The native awaitables must follow the stream cancellation contract:
+// a pre-stopped token short-circuits with `canceled` before any I/O is
+// performed, while a stop that races a completed operation changes
+// nothing — the completed result is reported verbatim and the next
+// operation on the still-stopped token reports the cancellation. No
+// other suite drives the native fronts with a stopped token.
 
 #include <boost/corosio/detail/platform.hpp>
 
@@ -31,6 +31,7 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include <cstring>
 #include <filesystem>
 #include <stop_token>
 #include <system_error>
@@ -88,15 +89,22 @@ struct native_resume_cancel_test
     void testTcpStopAfterDataBuffered()
     {
         native_io_context<Backend> ioc;
-        auto ex       = ioc.get_executor();
+        auto ex = ioc.get_executor();
+        // Graceful-close pair: the verifier below reads buffered data
+        // after close(), and an abortive close discards it on the peer.
         auto [s1, s2] = test::make_socket_pair<
-            native_tcp_socket<Backend>, native_tcp_acceptor<Backend>>(ioc);
+            native_tcp_socket<Backend>, native_tcp_acceptor<Backend>, false>(
+            ioc);
 
+        // Preload and wait for delivery so the buffered data is
+        // guaranteed present before the pre-stopped read.
         std::error_code pec;
         auto preload = [&]() -> capy::task<> {
             auto [ec, n] = co_await s2.write_some(capy::const_buffer("hi", 2));
             std::ignore  = n;
             pec          = ec;
+            auto [wtec]  = co_await s1.wait(wait_type::read);
+            BOOST_TEST(!wtec);
         };
         capy::run_async(ex)(preload());
         ioc.run();
@@ -116,9 +124,111 @@ struct native_resume_cancel_test
         };
         capy::run_async(ex, ss.get_token())(reader());
         ioc.run();
+        ioc.restart();
 
         BOOST_TEST(rec == capy::cond::canceled);
         BOOST_TEST_EQ(rn, 0u);
+
+        // The short-circuited read must not have consumed the buffered
+        // data: a fresh read still finds it. Close the write side first
+        // so a data-eating implementation reports EOF here instead of
+        // parking forever.
+        s2.close();
+
+        std::error_code vec = capy::error::eof;
+        std::size_t vn      = 0;
+        char vbuf[8]        = {};
+        auto verifier       = [&]() -> capy::task<> {
+            auto [ec, n] =
+                co_await s1.read_some(capy::mutable_buffer(vbuf, sizeof(vbuf)));
+            vec = ec;
+            vn  = n;
+        };
+        capy::run_async(ex)(verifier());
+        ioc.run();
+
+        BOOST_TEST(!vec);
+        BOOST_TEST_EQ(vn, 2u);
+        BOOST_TEST(std::memcmp(vbuf, "hi", 2) == 0);
+    }
+
+    // The completion-race arm: the ops complete before the stop request
+    // is noticed, so the completed results must be reported verbatim.
+    // Zero inline budget defers the synchronously-known completions
+    // through the scheduler queue, letting the stop land in between.
+    void testTcpStopAfterCompleted()
+    {
+        io_context_options opts;
+        opts.inline_budget_max = 0;
+        native_io_context<Backend> ioc(opts);
+        auto ex       = ioc.get_executor();
+        auto [s1, s2] = test::make_socket_pair<
+            native_tcp_socket<Backend>, native_tcp_acceptor<Backend>>(ioc);
+
+        std::stop_source ss;
+        std::error_code wec = capy::error::eof;
+        std::size_t wn      = 0;
+        bool done           = false;
+
+        auto writer = [&]() -> capy::task<> {
+            auto [ec, n] =
+                co_await s1.write_some(capy::const_buffer("hello", 5));
+            wec  = ec;
+            wn   = n;
+            done = true;
+        };
+        auto stopper = [&]() -> capy::task<> {
+            ss.request_stop();
+            co_return;
+        };
+        capy::run_async(ex, ss.get_token())(writer());
+        capy::run_async(ex)(stopper());
+        ioc.run();
+        ioc.restart();
+
+        BOOST_TEST(done);
+        BOOST_TEST(!wec);
+        BOOST_TEST_EQ(wn, 5u);
+
+        // Wait for delivery: without data present the read parks and
+        // the stop then genuinely cancels it, which is conforming but
+        // not the completion race this test pins.
+        bool primed = false;
+        auto primer = [&]() -> capy::task<> {
+            auto [wtec] = co_await s2.wait(wait_type::read);
+            BOOST_TEST(!wtec);
+            primed = true;
+        };
+        capy::run_async(ex)(primer());
+        ioc.run();
+        ioc.restart();
+        BOOST_TEST(primed);
+
+        std::stop_source ss2;
+        std::error_code rec = capy::error::eof;
+        std::size_t rn      = 0;
+        char buf[8]         = {};
+        bool rdone          = false;
+
+        auto reader = [&]() -> capy::task<> {
+            auto [ec, n] =
+                co_await s2.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            rec   = ec;
+            rn    = n;
+            rdone = true;
+        };
+        auto stopper2 = [&]() -> capy::task<> {
+            ss2.request_stop();
+            co_return;
+        };
+        capy::run_async(ex, ss2.get_token())(reader());
+        capy::run_async(ex)(stopper2());
+        ioc.run();
+
+        BOOST_TEST(rdone);
+        BOOST_TEST(!rec);
+        BOOST_TEST_EQ(rn, 5u);
+        BOOST_TEST(std::memcmp(buf, "hello", 5) == 0);
     }
 
     void testTcpAcceptorPreStopped()
@@ -387,6 +497,7 @@ struct native_resume_cancel_test
     {
         testTcpPreStopped();
         testTcpStopAfterDataBuffered();
+        testTcpStopAfterCompleted();
         testTcpAcceptorPreStopped();
         testUdpPreStopped();
         testFileResumeCancel();

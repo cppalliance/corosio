@@ -45,16 +45,14 @@ struct cancel_race_test
     // Zero inline budget defers synchronously-known completions through
     // the scheduler queue, so a stop request posted after initiation is
     // seen before the completed op resumes its awaiter.
-    static io_context
-    make_deferring_ioc()
+    static io_context make_deferring_ioc()
     {
         io_context_options opts;
         opts.inline_budget_max = 0;
         return io_context(Backend, opts);
     }
 
-    void
-    testWriteCompletedThenStop()
+    void testWriteCompletedThenStop()
     {
         auto ioc = make_deferring_ioc();
         auto ex  = ioc.get_executor();
@@ -87,8 +85,7 @@ struct cancel_race_test
         BOOST_TEST_EQ(wn, 5u);
     }
 
-    void
-    testReadCompletedThenStop()
+    void testReadCompletedThenStop()
     {
         auto ioc = make_deferring_ioc();
         auto ex  = ioc.get_executor();
@@ -139,8 +136,7 @@ struct cancel_race_test
         BOOST_TEST(std::memcmp(buf, "hello", 5) == 0);
     }
 
-    void
-    testPreStoppedWritePerformsNoIo()
+    void testPreStoppedWritePerformsNoIo()
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
@@ -155,11 +151,10 @@ struct cancel_race_test
         bool done      = false;
 
         auto writer = [&]() -> capy::task<> {
-            auto [ec, n] =
-                co_await s1.write_some(capy::const_buffer("XX", 2));
-            wec  = ec;
-            wn   = n;
-            done = true;
+            auto [ec, n] = co_await s1.write_some(capy::const_buffer("XX", 2));
+            wec          = ec;
+            wn           = n;
+            done         = true;
         };
         capy::run_async(ex, ss.get_token())(writer());
         ioc.run();
@@ -196,8 +191,7 @@ struct cancel_race_test
         BOOST_TEST(std::memcmp(buf, "yy", 2) == 0);
     }
 
-    void
-    testPreStoppedReadKeepsData()
+    void testPreStoppedReadKeepsData()
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
@@ -269,8 +263,7 @@ struct cancel_race_test
         BOOST_TEST(std::memcmp(buf, "zz", 2) == 0);
     }
 
-    void
-    run()
+    void run()
     {
         testWriteCompletedThenStop();
         testReadCompletedThenStop();

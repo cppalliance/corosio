@@ -13,6 +13,7 @@
 
 #include <boost/corosio/resolver.hpp>
 #include <boost/corosio/backend.hpp>
+#include <boost/corosio/detail/op_base.hpp>
 
 #ifndef BOOST_COROSIO_MRDOCS
 #if BOOST_COROSIO_HAS_EPOLL || BOOST_COROSIO_HAS_SELECT || \
@@ -59,14 +60,12 @@ class native_resolver : public resolver
     }
 
     struct native_resolve_awaitable
+        : detail::value_op_base<native_resolve_awaitable, resolver_results>
     {
         native_resolver& self_;
         std::string host_;
         std::string service_;
         resolve_flags flags_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable resolver_results results_;
 
         native_resolve_awaitable(
             native_resolver& self,
@@ -80,37 +79,22 @@ class native_resolver : public resolver
         {
         }
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            return static_cast<bool>(ec_) || token_.stop_requested();
-        }
-
-        [[nodiscard]] capy::io_result<resolver_results>
-        await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled), {}};
-            return {ec_, std::move(results_)};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
             return self_.get_impl().resolve(
-                h, env->executor, host_, service_, flags_, token_, &ec_,
-                &results_);
+                h, ex, host_, service_, flags_, this->token_, &this->ec_,
+                &this->value_);
         }
     };
 
     struct native_reverse_awaitable
+        : detail::
+              value_op_base<native_reverse_awaitable, reverse_resolver_result>
     {
         native_resolver& self_;
         endpoint ep_;
         reverse_flags flags_;
-        std::stop_token token_;
-        mutable std::error_code ec_;
-        mutable reverse_resolver_result result_;
 
         native_reverse_awaitable(
             native_resolver& self,
@@ -122,25 +106,11 @@ class native_resolver : public resolver
         {
         }
 
-        bool await_ready() const noexcept
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
-            return static_cast<bool>(ec_) || token_.stop_requested();
-        }
-
-        [[nodiscard]] capy::io_result<reverse_resolver_result>
-        await_resume() const noexcept
-        {
-            if (token_.stop_requested())
-                return {make_error_code(std::errc::operation_canceled), {}};
-            return {ec_, std::move(result_)};
-        }
-
-        auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
-            -> std::coroutine_handle<>
-        {
-            token_ = env->stop_token;
             return self_.get_impl().reverse_resolve(
-                h, env->executor, ep_, flags_, token_, &ec_, &result_);
+                h, ex, ep_, flags_, this->token_, &this->ec_, &this->value_);
         }
     };
 
