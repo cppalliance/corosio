@@ -1019,6 +1019,114 @@ struct udp_socket_test
         ioc.run();
     }
 
+    // message_flags::peek must map to the native peek flag on every
+    // backend; a raw pass-through of the portable value selects the
+    // wrong native flag.
+    void testRecvPeek()
+    {
+        io_context ioc(Backend);
+
+        udp_socket a(ioc);
+        udp_socket b(ioc);
+
+        BOOST_TEST(!b.open());
+        auto ec = b.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST_EQ(ec, std::error_code{});
+        auto b_ep = b.local_endpoint();
+
+        bool done = false;
+        auto task = [](udp_socket& a, udp_socket& b, endpoint dest,
+                       bool& d) -> capy::task<> {
+            auto [ec1] = co_await a.connect(dest);
+            BOOST_TEST_EQ(ec1, std::error_code{});
+            auto [ec2] = co_await b.connect(a.local_endpoint());
+            BOOST_TEST_EQ(ec2, std::error_code{});
+
+            char const msg[] = "peek test";
+            auto [se, sn] =
+                co_await a.send(capy::const_buffer(msg, sizeof(msg)));
+            BOOST_TEST_EQ(se, std::error_code{});
+            BOOST_TEST_EQ(sn, sizeof(msg));
+
+            // Peek -- should not consume
+            char buf1[64]  = {};
+            auto [re1, rn1] = co_await b.recv(
+                capy::mutable_buffer(buf1, sizeof(buf1)),
+                message_flags::peek);
+            BOOST_TEST_EQ(re1, std::error_code{});
+            BOOST_TEST_EQ(rn1, sizeof(msg));
+            BOOST_TEST_EQ(std::strcmp(buf1, "peek test"), 0);
+
+            // Normal recv -- should get the same datagram
+            char buf2[64]  = {};
+            auto [re2, rn2] = co_await b.recv(
+                capy::mutable_buffer(buf2, sizeof(buf2)));
+            BOOST_TEST_EQ(re2, std::error_code{});
+            BOOST_TEST_EQ(rn2, sizeof(msg));
+            BOOST_TEST_EQ(std::strcmp(buf2, "peek test"), 0);
+            d = true;
+        };
+
+        auto ex = ioc.get_executor();
+        capy::run_async(ex)(task(a, b, b_ep, done));
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
+    void testRecvFromPeek()
+    {
+        io_context ioc(Backend);
+
+        udp_socket a(ioc);
+        udp_socket b(ioc);
+
+        BOOST_TEST(!a.open());
+        BOOST_TEST(!b.open());
+        auto eca = a.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST_EQ(eca, std::error_code{});
+        auto ecb = b.bind(endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST_EQ(ecb, std::error_code{});
+        auto a_port = a.local_endpoint().port();
+        auto b_ep   = b.local_endpoint();
+
+        bool done = false;
+        auto task = [](udp_socket& a, udp_socket& b, endpoint dest,
+                       std::uint16_t sender_port, bool& d) -> capy::task<> {
+            char const msg[] = "recv_from peek";
+            auto [se, sn] = co_await a.send_to(
+                capy::const_buffer(msg, sizeof(msg)), dest);
+            BOOST_TEST_EQ(se, std::error_code{});
+            BOOST_TEST_EQ(sn, sizeof(msg));
+
+            // Peek via recv_from -- should not consume
+            char buf1[64] = {};
+            endpoint src1;
+            auto [re1, rn1] = co_await b.recv_from(
+                capy::mutable_buffer(buf1, sizeof(buf1)), src1,
+                message_flags::peek);
+            BOOST_TEST_EQ(re1, std::error_code{});
+            BOOST_TEST_EQ(rn1, sizeof(msg));
+            BOOST_TEST_EQ(std::strcmp(buf1, "recv_from peek"), 0);
+            BOOST_TEST_EQ(src1.port(), sender_port);
+
+            // Normal recv_from -- should get the same datagram
+            char buf2[64] = {};
+            endpoint src2;
+            auto [re2, rn2] = co_await b.recv_from(
+                capy::mutable_buffer(buf2, sizeof(buf2)), src2);
+            BOOST_TEST_EQ(re2, std::error_code{});
+            BOOST_TEST_EQ(rn2, sizeof(msg));
+            BOOST_TEST_EQ(std::strcmp(buf2, "recv_from peek"), 0);
+            BOOST_TEST_EQ(src2.port(), sender_port);
+            d = true;
+        };
+
+        auto ex = ioc.get_executor();
+        capy::run_async(ex)(task(a, b, b_ep, a_port, done));
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
     void testSendRecvConnectedV6()
     {
         io_context ioc(Backend);
@@ -1896,6 +2004,8 @@ struct udp_socket_test
         testConnect();
         testConnectAutoOpen();
         testSendRecvConnected();
+        testRecvPeek();
+        testRecvFromPeek();
         testSendRecvConnectedV6();
         testCancelConnectedRecv();
         testMulticastLoopHops();

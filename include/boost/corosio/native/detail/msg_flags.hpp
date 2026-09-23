@@ -21,7 +21,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <WinSock2.h>
+#include <winsock2.h>
 #endif
 
 namespace boost::corosio::detail {
