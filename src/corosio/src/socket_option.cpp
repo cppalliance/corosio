@@ -217,19 +217,6 @@ multicast_hops::name(family f) const noexcept
     return native_socket_option::multicast_hops{}.name(f);
 }
 
-// multicast_interface_v6
-
-int
-multicast_interface_v6::level(family f) const noexcept
-{
-    return native_socket_option::multicast_interface_v6{}.level(f);
-}
-int
-multicast_interface_v6::name(family f) const noexcept
-{
-    return native_socket_option::multicast_interface_v6{}.name(f);
-}
-
 // join_group / leave_group
 //
 // The public classes mirror the native membership_request: the
@@ -323,31 +310,37 @@ leave_group::size(family f) const noexcept
                   : native_socket_option::leave_group(ipv6_address()).size(f);
 }
 
-// multicast_interface_v4
+// multicast_interface
 
-multicast_interface_v4::multicast_interface_v4(ipv4_address iface) noexcept
+multicast_interface::multicast_interface(ipv4_address iface) noexcept
 {
-    native_socket_option::multicast_interface_v4 native(iface);
-    static_assert(
-        sizeof(native) <= sizeof(storage_),
-        "platform in_addr exceeds multicast_interface_v4 storage");
-    std::memcpy(storage_, native.data(family::v4), native.size(family::v4));
+    native_socket_option::multicast_interface native(iface);
+    static_assert(sizeof(struct in_addr) <= sizeof(v4_storage_));
+    std::memcpy(v4_storage_, native.data(family::v4), native.size(family::v4));
+}
+
+ipv4_address
+multicast_interface::address() const noexcept
+{
+    ipv4_address::bytes_type b;
+    std::memcpy(b.data(), v4_storage_, 4);
+    return ipv4_address(b);
 }
 
 int
-multicast_interface_v4::level(family f) const noexcept
+multicast_interface::level(family f) const noexcept
 {
-    return native_socket_option::multicast_interface_v4{}.level(f);
+    return native_socket_option::multicast_interface{}.level(f);
 }
 int
-multicast_interface_v4::name(family f) const noexcept
+multicast_interface::name(family f) const noexcept
 {
-    return native_socket_option::multicast_interface_v4{}.name(f);
+    return native_socket_option::multicast_interface{}.name(f);
 }
 std::size_t
-multicast_interface_v4::size(family f) const noexcept
+multicast_interface::size(family f) const noexcept
 {
-    return native_socket_option::multicast_interface_v4{}.size(f);
+    return native_socket_option::multicast_interface{}.size(f);
 }
 
 } // namespace boost::corosio::socket_option

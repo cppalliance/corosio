@@ -419,7 +419,7 @@ struct native_udp_socket_test
         try
         {
             sock.set_option(
-                native_socket_option::multicast_interface_v4(
+                native_socket_option::multicast_interface(
                     ipv4_address::any()));
         }
         catch (std::system_error const&)
@@ -428,7 +428,7 @@ struct native_udp_socket_test
         }
 
         // Default-constructed variants exercise the no-arg constructors.
-        native_socket_option::multicast_interface_v4 mif4;
+        native_socket_option::multicast_interface mif4;
         BOOST_TEST_EQ(mif4.size(family::v4), sizeof(struct in_addr));
         BOOST_TEST(mif4.data(family::v4) != nullptr);
         BOOST_TEST_EQ(mif4.level(family::v4), IPPROTO_IP);
@@ -484,10 +484,10 @@ struct native_udp_socket_test
 
         try
         {
-            sock.set_option(native_socket_option::multicast_interface_v6(0));
+            sock.set_option(native_socket_option::multicast_interface(0));
             auto mif6 = sock.template get_option<
-                native_socket_option::multicast_interface_v6>();
-            BOOST_TEST_EQ(mif6.value(), 0);
+                native_socket_option::multicast_interface>();
+            BOOST_TEST_EQ(mif6.if_index(), 0u);
         }
         catch (std::system_error const&)
         {

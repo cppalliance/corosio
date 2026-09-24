@@ -9,7 +9,7 @@
 
 // Reference example injected into
 // include/boost/corosio/native/native_socket_option.hpp's documentation for
-// native_socket_option::multicast_interface_v4, by
+// native_socket_option::multicast_interface, by
 // doc/addons/extensions/reference-snippets.lua. The tagged region is what the
 // reference renders; scaffolding stays outside the tags.
 
@@ -23,20 +23,20 @@ namespace corosio = boost::corosio;
 
 namespace {
 
-// tag::multicast_interface_v4[]
+// tag::multicast_interface[]
 void
 choose_the_outgoing_interface_v4(corosio::udp_socket& sock)
 {
     // Precondition: sock is open on udp::v4().
     //
-    // IPv4 names an interface by a local address bound to it, where
-    // multicast_interface_v6 takes an interface index. The default,
+    // IPv4 names an interface by a local address bound to it; the
+    // same option takes an interface index for IPv6. The default,
     // 0.0.0.0, leaves the choice to the routing table -- which on a
     // multi-homed host is rarely the interface you meant.
     sock.set_option(
-        corosio::native_socket_option::multicast_interface_v4(
+        corosio::native_socket_option::multicast_interface(
             corosio::ipv4_address("192.168.1.1")));
 }
-// end::multicast_interface_v4[]
+// end::multicast_interface[]
 
 } // namespace

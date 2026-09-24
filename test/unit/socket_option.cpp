@@ -262,6 +262,27 @@ struct socket_option_test
 
     // The interface option's IPv4 rendering, pinned with a non-any
     // address so an empty marshal cannot pass
+    void testMulticastInterfaceRendering()
+    {
+        ipv4_address const iface("192.168.7.9");
+
+        socket_option::multicast_interface pub(iface);
+        BOOST_TEST_EQ(pub.address(), iface);
+        BOOST_TEST_EQ(pub.if_index(), 0u);
+
+        native_socket_option::multicast_interface nat(iface);
+        BOOST_TEST_EQ(nat.address(), iface);
+        BOOST_TEST_EQ(pub.size(family::v4), nat.size(family::v4));
+        BOOST_TEST(
+            std::memcmp(
+                pub.data(family::v4), nat.data(family::v4),
+                pub.size(family::v4)) == 0);
+
+        BOOST_TEST_EQ(socket_option::multicast_interface(5u).if_index(), 5u);
+        BOOST_TEST_EQ(
+            native_socket_option::multicast_interface(5u).if_index(), 5u);
+    }
+
     void testV6Only()
     {
         io_context ioc(Backend);
@@ -385,6 +406,7 @@ struct socket_option_test
         testUdpOptions();
         testMulticastOptions();
         testMembershipTraits();
+        testMulticastInterfaceRendering();
         testV6Only();
         testClosedSocketThrows();
         testInvalidOptionReportsError();

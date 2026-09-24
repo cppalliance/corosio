@@ -218,8 +218,9 @@ Related options:
 | Set the multicast TTL (IPv4) / hop limit (IPv6). Default is `1` —
   datagrams stay on the local subnet unless you raise it.
 
-| `multicast_interface_v4` / `multicast_interface_v6`
-| Choose the outgoing interface for IPv4 / IPv6 multicast.
+| `multicast_interface`
+| Choose the outgoing interface — by address for IPv4, by index for
+  IPv6; construct with whichever names your interface.
 |===
 
 == Cancellation

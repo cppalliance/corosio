@@ -1323,7 +1323,7 @@ struct udp_socket_test
         try
         {
             sock.set_option(
-                socket_option::multicast_interface_v4(ipv4_address::any()));
+                socket_option::multicast_interface(ipv4_address::any()));
         }
         catch (std::system_error const&)
         {
@@ -1341,9 +1341,9 @@ struct udp_socket_test
 
         try
         {
-            sock.set_option(socket_option::multicast_interface_v6(0));
-            auto opt = sock.get_option<socket_option::multicast_interface_v6>();
-            BOOST_TEST_EQ(opt.value(), 0);
+            sock.set_option(socket_option::multicast_interface(0));
+            auto opt = sock.get_option<socket_option::multicast_interface>();
+            BOOST_TEST_EQ(opt.if_index(), 0u);
         }
         catch (std::system_error const&)
         {
