@@ -11,6 +11,11 @@
 #include <boost/corosio/ipv4_address.hpp>
 
 #include <boost/corosio/detail/except.hpp>
+#include <boost/corosio/detail/platform.hpp>
+
+#if BOOST_COROSIO_POSIX
+#include <net/if.h>
+#endif
 
 #include <cstring>
 #include <ostream>
@@ -18,7 +23,9 @@
 
 namespace boost::corosio {
 
-ipv6_address::ipv6_address(bytes_type const& bytes) noexcept
+ipv6_address::ipv6_address(
+    bytes_type const& bytes, std::uint32_t scope_id) noexcept
+    : scope_id_(scope_id)
 {
     std::memcpy(addr_.data(), bytes.data(), 16);
 }
@@ -58,13 +65,15 @@ ipv6_address::to_buffer(char* dest, std::size_t dest_size) const
 bool
 ipv6_address::is_unspecified() const noexcept
 {
-    return *this == ipv6_address();
+    // Classification tests the address bits; the zone names a link,
+    // not a different kind of address
+    return addr_ == bytes_type{};
 }
 
 bool
 ipv6_address::is_loopback() const noexcept
 {
-    return *this == loopback();
+    return addr_ == loopback().addr_;
 }
 
 bool
@@ -89,8 +98,8 @@ ipv6_address::to_v4() const
         detail::throw_system_error(
             std::make_error_code(std::errc::address_family_not_supported),
             "address is not v4-mapped");
-    return ipv4_address(ipv4_address::bytes_type{
-        {addr_[12], addr_[13], addr_[14], addr_[15]}});
+    return ipv4_address(
+        ipv4_address::bytes_type{{addr_[12], addr_[13], addr_[14], addr_[15]}});
 }
 
 ipv6_address
@@ -225,6 +234,22 @@ ipv6_address::print_impl(char* dest) const noexcept
         auto sv = a.to_buffer(buf, sizeof(buf));
         std::memcpy(dest, sv.data(), sv.size());
         dest += sv.size();
+    }
+
+    if (scope_id_ != 0)
+    {
+        *dest++ = '%';
+        char digits[10];
+        int n           = 0;
+        std::uint32_t v = scope_id_;
+        do
+        {
+            digits[n++] = static_cast<char>('0' + v % 10);
+            v /= 10;
+        }
+        while (v != 0);
+        while (n != 0)
+            *dest++ = digits[--n];
     }
 
     return static_cast<std::size_t>(dest - dest0);
@@ -461,13 +486,69 @@ parse_ipv6_impl(std::string_view s, ipv6_address& addr) noexcept
     return {};
 }
 
+namespace {
+
+// Strict decimal: full consumption, no sign, must fit uint32
+bool
+parse_zone_numeric(std::string_view s, std::uint32_t& out) noexcept
+{
+    if (s.empty())
+        return false;
+    std::uint64_t v = 0;
+    for (char c : s)
+    {
+        if (c < '0' || c > '9')
+            return false;
+        v = v * 10 + static_cast<unsigned>(c - '0');
+        if (v > 0xffffffffull)
+            return false;
+    }
+    out = static_cast<std::uint32_t>(v);
+    return true;
+}
+
+// Numeric everywhere; interface names via the system where the
+// platform names interfaces (Windows zones are numeric). An unknown
+// name is an error, never a silent zone 0.
+bool
+parse_zone(std::string_view s, std::uint32_t& out) noexcept
+{
+    if (parse_zone_numeric(s, out))
+        return true;
+#if BOOST_COROSIO_POSIX
+    char name[IF_NAMESIZE];
+    if (s.empty() || s.size() >= sizeof(name))
+        return false;
+    std::memcpy(name, s.data(), s.size());
+    name[s.size()] = '\0';
+    auto idx       = if_nametoindex(name);
+    if (idx == 0)
+        return false;
+    out = static_cast<std::uint32_t>(idx);
+    return true;
+#else
+    return false;
+#endif
+}
+
+} // namespace
+
 capy::io_result<ipv6_address>
 make_ipv6_address(std::string_view s) noexcept
 {
+    std::uint32_t scope_id = 0;
+    if (auto pos = s.find('%'); pos != std::string_view::npos)
+    {
+        if (!parse_zone(s.substr(pos + 1), scope_id))
+            return {
+                std::make_error_code(std::errc::invalid_argument),
+                ipv6_address{}};
+        s = s.substr(0, pos);
+    }
     ipv6_address addr;
     if (auto ec = parse_ipv6_impl(s, addr))
         return {ec, ipv6_address{}};
-    return {std::error_code{}, addr};
+    return {std::error_code{}, ipv6_address(addr.to_bytes(), scope_id)};
 }
 
 } // namespace boost::corosio

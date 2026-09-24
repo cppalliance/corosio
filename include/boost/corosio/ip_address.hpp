@@ -296,7 +296,9 @@ public:
 /** Create an IP address from a string.
 
     This function parses `s` as an IPv4 address in dotted decimal
-    form, or an IPv6 address in hexadecimal notation. The string
+    form, or an IPv6 address in hexadecimal notation, optionally
+    qualified by a `%zone` suffix (a decimal interface index, or an
+    interface name where the platform names interfaces). The string
     must contain the address alone: port suffixes, surrounding
     brackets, and host names are not accepted.
 

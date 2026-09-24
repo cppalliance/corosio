@@ -153,6 +153,26 @@ struct ip_address_test
         BOOST_TEST_EQ(plain.to_v4(), mapped.to_v4());
     }
 
+    void testScopeIdTransitive()
+    {
+        // The zone rides along through the family-generic type
+        auto [ec, a] = make_ip_address("fe80::1%2");
+        BOOST_TEST(!ec);
+        BOOST_TEST(a.is_v6());
+        BOOST_TEST_EQ(a.to_v6().scope_id(), 2u);
+        BOOST_TEST_EQ(a.to_string(), "fe80::1%2");
+
+        // Same bits on different links are different values
+        auto [ec2, b] = make_ip_address("fe80::1%3");
+        auto [ec3, c] = make_ip_address("fe80::1");
+        BOOST_TEST(!ec2);
+        BOOST_TEST(!ec3);
+        BOOST_TEST(a != b);
+        BOOST_TEST(a != c);
+        BOOST_TEST(c < a);
+        BOOST_TEST(a < b);
+    }
+
     void testParse()
     {
         // Valid addresses, both families
@@ -278,6 +298,7 @@ struct ip_address_test
         testPredicates();
         testConversion();
         testV4MappedSemantics();
+        testScopeIdTransitive();
         testParse();
         testComparison();
         testOrdering();

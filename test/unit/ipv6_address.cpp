@@ -11,9 +11,16 @@
 #include <boost/corosio/ipv6_address.hpp>
 #include <boost/corosio/ipv4_address.hpp>
 
+#include <boost/corosio/detail/platform.hpp>
+
 #include <sstream>
+#include <string>
 #include <tuple>
 #include <system_error>
+
+#if BOOST_COROSIO_POSIX
+#include <net/if.h>
+#endif
 
 #include "test_suite.hpp"
 
@@ -298,6 +305,129 @@ struct ipv6_address_test
         BOOST_TEST(ipv6_address(lo) < ipv6_address(hi));
     }
 
+    void testScopeId()
+    {
+        ipv6_address::bytes_type ll{};
+        ll[0]  = 0xfe;
+        ll[1]  = 0x80;
+        ll[15] = 1; // fe80::1
+
+        // Default is the unscoped address
+        BOOST_TEST_EQ(ipv6_address(ll).scope_id(), 0u);
+        BOOST_TEST_EQ(ipv6_address().scope_id(), 0u);
+        BOOST_TEST_EQ(ipv6_address::loopback().scope_id(), 0u);
+
+        // Construct with a zone
+        ipv6_address a(ll, 2);
+        BOOST_TEST_EQ(a.scope_id(), 2u);
+
+        // The mapping constructor yields an unscoped address
+        BOOST_TEST_EQ(ipv6_address(ipv4_address::loopback()).scope_id(), 0u);
+
+        // Same bytes on different links are different values
+        ipv6_address b(ll, 3);
+        ipv6_address c(ll, 2);
+        BOOST_TEST(a != b);
+        BOOST_TEST(a == c);
+        BOOST_TEST(a != ipv6_address(ll)); // scoped != unscoped
+
+        // Zone is the ordering tiebreaker after the bytes
+        BOOST_TEST(ipv6_address(ll) < a);
+        BOOST_TEST(a < b);
+        BOOST_TEST((a <=> c) == std::strong_ordering::equal);
+        ipv6_address::bytes_type hi = ll;
+        hi[15]                      = 2;
+        BOOST_TEST(b < ipv6_address(hi)); // bytes outrank zone
+
+        // Classification tests the address bits, not the link
+        ipv6_address::bytes_type lo{};
+        lo[15] = 1;
+        BOOST_TEST(ipv6_address(lo, 2).is_loopback());
+        BOOST_TEST(
+            ipv6_address(ipv6_address::bytes_type{}, 2).is_unspecified());
+    }
+
+    void testScopeIdText()
+    {
+        // Numeric zone parses on every platform and round-trips
+        {
+            auto [ec, a] = make_ipv6_address("fe80::1%2");
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(a.scope_id(), 2u);
+            BOOST_TEST_EQ(a.to_string(), "fe80::1%2");
+        }
+
+        // Zone 0 prints without a suffix
+        BOOST_TEST_EQ(ipv6_address("fe80::1").to_string(), "fe80::1");
+
+        // A zone is accepted on any v6 address, up to the uint32 max
+        {
+            auto [ec, a] = make_ipv6_address("2001:db8::1%4294967295");
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(a.scope_id(), 4294967295u);
+            BOOST_TEST_EQ(a.to_string(), "2001:db8::1%4294967295");
+        }
+
+        // Ostream agrees with to_string
+        {
+            std::ostringstream oss;
+            oss << ipv6_address("fe80::1%3");
+            BOOST_TEST_EQ(oss.str(), "fe80::1%3");
+        }
+
+        // The true longest form (39 address chars + 11 zone chars)
+        // fits the documented capacity, pinned numerically so the
+        // constant cannot silently shrink below what print_impl emits
+        {
+            BOOST_TEST_EQ(ipv6_address::max_str_len, 60u);
+            char buf[64];
+            ipv6_address::bytes_type all_ff;
+            all_ff.fill(0xff);
+            ipv6_address a(all_ff, 4294967295u);
+            auto sv = a.to_buffer(buf, sizeof(buf));
+            BOOST_TEST_EQ(
+                sv, "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff%4294967295");
+            BOOST_TEST(sv.size() <= ipv6_address::max_str_len);
+
+            // The mapped form with a zone stays within bounds too
+            ipv6_address m(
+                ipv6_address("::ffff:255.255.255.255").to_bytes(), 4294967295u);
+            auto sm = m.to_buffer(buf, sizeof(buf));
+            BOOST_TEST_EQ(sm, "::ffff:255.255.255.255%4294967295");
+            BOOST_TEST(sm.size() <= ipv6_address::max_str_len);
+        }
+
+        // Rejections: never a silent zone
+        auto rejects = [](std::string_view s) {
+            auto [ec, addr] = make_ipv6_address(s);
+            if (ec)
+                BOOST_TEST(addr == ipv6_address());
+            return bool(ec);
+        };
+        BOOST_TEST(rejects("fe80::1%"));           // empty zone
+        BOOST_TEST(rejects("fe80::1%%2"));         // doubled separator
+        BOOST_TEST(rejects("fe80::1%4294967296")); // exceeds uint32
+        BOOST_TEST(rejects("fe80::1%-1"));         // sign is not a digit
+        BOOST_TEST(rejects("%2"));                 // zone without address
+        BOOST_TEST(rejects("fe80::1%no/such"));    // impossible name
+
+#if BOOST_COROSIO_POSIX
+        // A real interface name maps through if_nametoindex
+        char name[IF_NAMESIZE];
+        if (if_indextoname(1, name) != nullptr)
+        {
+            std::string s = "fe80::1%";
+            s += name;
+            auto [ec, a] = make_ipv6_address(s);
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(a.scope_id(), 1u);
+        }
+#else
+        // Windows accepts numeric zones only
+        BOOST_TEST(rejects("fe80::1%eth0"));
+#endif
+    }
+
     void testToV4()
     {
         // Unmapping recovers the exact v4 address
@@ -315,8 +445,7 @@ struct ipv6_address_test
         }
 
         // Non-mapped addresses refuse the conversion
-        BOOST_TEST_THROWS(
-            ipv6_address::loopback().to_v4(), std::system_error);
+        BOOST_TEST_THROWS(ipv6_address::loopback().to_v4(), std::system_error);
         try
         {
             ipv6_address().to_v4();
@@ -389,6 +518,8 @@ struct ipv6_address_test
         testPredicates();
         testComparison();
         testOrdering();
+        testScopeId();
+        testScopeIdText();
         testToV4();
         testOstream();
     }

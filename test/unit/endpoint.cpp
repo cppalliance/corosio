@@ -136,6 +136,18 @@ struct endpoint_parse_test
             BOOST_TEST_EQ(ep.port(), 8080);
         }
 
+        // IPv6 with a zone, bracketed and bare
+        {
+            endpoint ep("[fe80::1%2]:8080");
+            BOOST_TEST(ep.is_v6());
+            BOOST_TEST_EQ(ep.address().to_v6().scope_id(), 2u);
+            BOOST_TEST_EQ(ep.port(), 8080);
+
+            endpoint bare("fe80::1%2");
+            BOOST_TEST_EQ(bare.address().to_v6().scope_id(), 2u);
+            BOOST_TEST_EQ(bare.port(), 0);
+        }
+
         // IPv6 full address bracketed with port
         {
             endpoint ep("[2001:db8::1]:443");

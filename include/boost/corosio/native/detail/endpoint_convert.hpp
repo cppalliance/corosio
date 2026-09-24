@@ -72,8 +72,10 @@ to_sockaddr_in6(endpoint const& ep) noexcept
     sockaddr_in6 sa{};
     sa.sin6_family = AF_INET6;
     sa.sin6_port   = htons(ep.port());
-    auto bytes     = ep.address().to_v6().to_bytes();
+    auto addr      = ep.address().to_v6();
+    auto bytes     = addr.to_bytes();
     std::memcpy(&sa.sin6_addr, bytes.data(), 16);
+    sa.sin6_scope_id = addr.scope_id();
     return sa;
 }
 
@@ -100,7 +102,7 @@ from_sockaddr_in6(sockaddr_in6 const& sa) noexcept
 {
     ipv6_address::bytes_type bytes;
     std::memcpy(bytes.data(), &sa.sin6_addr, 16);
-    return endpoint(ipv6_address(bytes), ntohs(sa.sin6_port));
+    return endpoint(ipv6_address(bytes, sa.sin6_scope_id), ntohs(sa.sin6_port));
 }
 
 /** Convert an IPv4 endpoint to an IPv4-mapped IPv6 sockaddr_in6.
