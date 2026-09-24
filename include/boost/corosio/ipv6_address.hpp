@@ -12,18 +12,18 @@
 #define BOOST_COROSIO_IPV6_ADDRESS_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/ipv4_address.hpp>
 
 #include <boost/capy/io_result.hpp>
 
 #include <array>
+#include <compare>
 #include <iosfwd>
 #include <string>
 #include <string_view>
 #include <system_error>
 
 namespace boost::corosio {
-
-class ipv4_address;
 
 /** An IP version 6 style address.
 
@@ -237,6 +237,27 @@ public:
     */
     bool is_v4_mapped() const noexcept;
 
+    /** Convert a v4-mapped address to the IPv4 address it maps.
+
+        This is the inverse of the mapping constructor
+        `ipv6_address(ipv4_address const&)`: it extracts the low
+        32 bits of an IPv4-Mapped IPv6 Address (`::ffff:a.b.c.d`)
+        as an `ipv4_address`.
+
+        @throws std::system_error `errc::address_family_not_supported`
+        if the address is not v4-mapped.
+
+        @return The mapped IPv4 address.
+
+        @par Specification
+        @li <a href="https://datatracker.ietf.org/doc/html/rfc4291#section-2.5.5.2">
+            2.5.5.2. IPv4-Mapped IPv6 Address (rfc4291)</a>
+
+        @see
+            @ref is_v4_mapped.
+    */
+    ipv4_address to_v4() const;
+
     /** Return true if the address is a multicast address.
 
         IPv6 multicast addresses have the prefix ff00::/8.
@@ -259,14 +280,20 @@ public:
         return a1.addr_ == a2.addr_;
     }
 
-    /** Return true if two addresses are not equal.
+    /** Order two addresses.
 
-        @return `true` if the addresses are not equal.
+        Establishes a strict total ordering consistent with
+        `operator==`: addresses are ordered lexicographically by
+        their bytes in network order. This makes `ipv6_address`
+        usable as a key in ordered containers such as `std::map`
+        and `std::set`.
+
+        @return The relative order of `a1` and `a2`.
     */
-    friend bool
-    operator!=(ipv6_address const& a1, ipv6_address const& a2) noexcept
+    friend std::strong_ordering
+    operator<=>(ipv6_address const& a1, ipv6_address const& a2) noexcept
     {
-        return a1.addr_ != a2.addr_;
+        return a1.addr_ <=> a2.addr_;
     }
 
     /** Return an address object that represents the unspecified address.

@@ -279,6 +279,55 @@ struct ipv6_address_test
         BOOST_TEST(!(a1 == a3));
     }
 
+    void testOrdering()
+    {
+        auto a1 = ipv6_address::loopback();
+        auto a2 = ipv6_address::loopback();
+
+        BOOST_TEST((a1 <=> a2) == std::strong_ordering::equal);
+        BOOST_TEST(ipv6_address::any() < ipv6_address::loopback());
+        BOOST_TEST(ipv6_address::loopback() > ipv6_address::any());
+        BOOST_TEST(a1 <= a2);
+        BOOST_TEST(a1 >= a2);
+
+        // Lexicographic on the bytes, network order
+        ipv6_address::bytes_type lo{};
+        lo[15] = 1;
+        ipv6_address::bytes_type hi{};
+        hi[0] = 1;
+        BOOST_TEST(ipv6_address(lo) < ipv6_address(hi));
+    }
+
+    void testToV4()
+    {
+        // Unmapping recovers the exact v4 address
+        {
+            ipv4_address v4(0xC0A80101); // 192.168.1.1
+            ipv6_address mapped(v4);
+            BOOST_TEST(mapped.is_v4_mapped());
+            BOOST_TEST_EQ(mapped.to_v4(), v4);
+        }
+
+        // Round-trips through the mapping constructor
+        {
+            ipv4_address v4 = ipv4_address::broadcast();
+            BOOST_TEST_EQ(ipv6_address(v4).to_v4(), v4);
+        }
+
+        // Non-mapped addresses refuse the conversion
+        BOOST_TEST_THROWS(
+            ipv6_address::loopback().to_v4(), std::system_error);
+        try
+        {
+            ipv6_address().to_v4();
+            BOOST_TEST_FAIL();
+        }
+        catch (std::system_error const& e)
+        {
+            BOOST_TEST(e.code() == std::errc::address_family_not_supported);
+        }
+    }
+
     void testOstream()
     {
         std::ostringstream oss;
@@ -339,6 +388,8 @@ struct ipv6_address_test
         testToBufferTooSmallThrows();
         testPredicates();
         testComparison();
+        testOrdering();
+        testToV4();
         testOstream();
     }
 };

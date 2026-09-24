@@ -82,6 +82,17 @@ ipv6_address::is_v4_mapped() const noexcept
         addr_[11] == 0xff;
 }
 
+ipv4_address
+ipv6_address::to_v4() const
+{
+    if (!is_v4_mapped())
+        detail::throw_system_error(
+            std::make_error_code(std::errc::address_family_not_supported),
+            "address is not v4-mapped");
+    return ipv4_address(ipv4_address::bytes_type{
+        {addr_[12], addr_[13], addr_[14], addr_[15]}});
+}
+
 ipv6_address
 ipv6_address::loopback() noexcept
 {
