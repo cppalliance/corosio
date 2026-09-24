@@ -13,6 +13,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/ipv4_address.hpp>
 #include <boost/corosio/ipv6_address.hpp>
 
@@ -62,7 +63,7 @@ class BOOST_COROSIO_DECL ip_address
 {
     ipv4_address v4_;
     ipv6_address v6_;
-    bool is_v4_ = true;
+    corosio::family family_ = corosio::family::v4;
 
 public:
     /** The number of characters in the longest possible address string.
@@ -95,7 +96,11 @@ public:
 
         @param addr The address to hold.
     */
-    ip_address(ipv6_address const& addr) noexcept : v6_(addr), is_v4_(false) {}
+    ip_address(ipv6_address const& addr) noexcept
+        : v6_(addr)
+        , family_(corosio::family::v6)
+    {
+    }
 
     /** Construct from a string.
 
@@ -119,13 +124,25 @@ public:
     */
     explicit ip_address(std::string_view s);
 
+    /** Return the address family.
+
+        The portable spelling of the family; @ref is_v4 and
+        @ref is_v6 are sugar over it.
+
+        @return The family of the held address.
+    */
+    corosio::family family() const noexcept
+    {
+        return family_;
+    }
+
     /** Check if the held address is IPv4.
 
         @return `true` if the address is IPv4, `false` if IPv6.
     */
     bool is_v4() const noexcept
     {
-        return is_v4_;
+        return family_ == corosio::family::v4;
     }
 
     /** Check if the held address is IPv6.
@@ -134,7 +151,7 @@ public:
     */
     bool is_v6() const noexcept
     {
-        return !is_v4_;
+        return family_ == corosio::family::v6;
     }
 
     /** Check if the address is a loopback address.
@@ -144,7 +161,7 @@ public:
     */
     bool is_loopback() const noexcept
     {
-        return is_v4_ ? v4_.is_loopback() : v6_.is_loopback();
+        return is_v4() ? v4_.is_loopback() : v6_.is_loopback();
     }
 
     /** Check if the address is unspecified.
@@ -154,7 +171,7 @@ public:
     */
     bool is_unspecified() const noexcept
     {
-        return is_v4_ ? v4_.is_unspecified() : v6_.is_unspecified();
+        return is_v4() ? v4_.is_unspecified() : v6_.is_unspecified();
     }
 
     /** Check if the address is a multicast address.
@@ -164,7 +181,7 @@ public:
     */
     bool is_multicast() const noexcept
     {
-        return is_v4_ ? v4_.is_multicast() : v6_.is_multicast();
+        return is_v4() ? v4_.is_multicast() : v6_.is_multicast();
     }
 
     /** Check if the address is a v4-mapped IPv6 address.
@@ -177,7 +194,7 @@ public:
     */
     bool is_v4_mapped() const noexcept
     {
-        return !is_v4_ && v6_.is_v4_mapped();
+        return is_v6() && v6_.is_v4_mapped();
     }
 
     /** Convert to an IPv4 address.
@@ -196,7 +213,7 @@ public:
     */
     ipv4_address to_v4() const
     {
-        return is_v4_ ? v4_ : v6_.to_v4();
+        return is_v4() ? v4_ : v6_.to_v4();
     }
 
     /** Convert to an IPv6 address.
@@ -214,7 +231,7 @@ public:
     */
     ipv6_address to_v6() const
     {
-        if (is_v4_)
+        if (is_v4())
             detail::throw_system_error(
                 std::make_error_code(std::errc::address_family_not_supported),
                 "address is not IPv6");
@@ -230,7 +247,7 @@ public:
     */
     std::string to_string() const
     {
-        return is_v4_ ? v4_.to_string() : v6_.to_string();
+        return is_v4() ? v4_.to_string() : v6_.to_string();
     }
 
     /** Write a string representing the address to a buffer.
@@ -259,9 +276,9 @@ public:
     */
     friend bool operator==(ip_address const& a1, ip_address const& a2) noexcept
     {
-        if (a1.is_v4_ != a2.is_v4_)
+        if (a1.family_ != a2.family_)
             return false;
-        return a1.is_v4_ ? a1.v4_ == a2.v4_ : a1.v6_ == a2.v6_;
+        return a1.is_v4() ? a1.v4_ == a2.v4_ : a1.v6_ == a2.v6_;
     }
 
     /** Order two addresses.
@@ -277,10 +294,10 @@ public:
     friend std::strong_ordering
     operator<=>(ip_address const& a1, ip_address const& a2) noexcept
     {
-        if (a1.is_v4_ != a2.is_v4_)
-            return a1.is_v4_ ? std::strong_ordering::less
-                             : std::strong_ordering::greater;
-        return a1.is_v4_ ? a1.v4_ <=> a2.v4_ : a1.v6_ <=> a2.v6_;
+        if (a1.family_ != a2.family_)
+            return a1.is_v4() ? std::strong_ordering::less
+                              : std::strong_ordering::greater;
+        return a1.is_v4() ? a1.v4_ <=> a2.v4_ : a1.v6_ <=> a2.v6_;
     }
 
     /** Format the address to an output stream.

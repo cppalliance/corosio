@@ -131,7 +131,9 @@ public:
 
         /** Return the socket's address family.
 
-            @return The address family the socket was opened with.
+            Socket options render for this family.
+
+            @return The socket's address family.
         */
         virtual corosio::family family() const noexcept = 0;
 

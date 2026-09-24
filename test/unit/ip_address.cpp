@@ -71,6 +71,16 @@ struct ip_address_test
         }
     }
 
+    void testFamily()
+    {
+        // The enum is the portable spelling; the predicates are
+        // sugar over it
+        BOOST_TEST(ip_address().family() == family::v4);
+        BOOST_TEST(ip_address(ipv4_address::loopback()).family() == family::v4);
+        BOOST_TEST(ip_address(ipv6_address::loopback()).family() == family::v6);
+        BOOST_TEST(ip_address("fe80::1%2").family() == family::v6);
+    }
+
     void testPredicates()
     {
         // Loopback dispatches per family
@@ -260,16 +270,16 @@ struct ip_address_test
 
     void testToString()
     {
-        BOOST_TEST_EQ(ip_address(ipv4_address(0xC0A80101)).to_string(),
-                      "192.168.1.1");
+        BOOST_TEST_EQ(
+            ip_address(ipv4_address(0xC0A80101)).to_string(), "192.168.1.1");
         BOOST_TEST_EQ(ip_address(ipv6_address::loopback()).to_string(), "::1");
     }
 
     void testToBuffer()
     {
         char buf[ip_address::max_str_len];
-        auto sv = ip_address(ipv4_address(0x01020304)).to_buffer(
-            buf, sizeof(buf));
+        auto sv =
+            ip_address(ipv4_address(0x01020304)).to_buffer(buf, sizeof(buf));
         BOOST_TEST_EQ(sv, "1.2.3.4");
 
         auto sv6 =
@@ -315,6 +325,7 @@ struct ip_address_test
     void run()
     {
         testConstruction();
+        testFamily();
         testPredicates();
         testConversion();
         testV4MappedSemantics();

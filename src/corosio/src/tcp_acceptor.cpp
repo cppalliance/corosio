@@ -9,6 +9,7 @@
 //
 
 #include <boost/corosio/tcp_acceptor.hpp>
+#include <boost/corosio/native/detail/endpoint_convert.hpp>
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
@@ -97,8 +98,8 @@ tcp_acceptor::open(tcp proto) noexcept
     auto& svc = static_cast<detail::tcp_acceptor_service&>(h_.service());
 #endif
     std::error_code ec = svc.open_acceptor_socket(
-        *static_cast<tcp_acceptor::implementation*>(h_.get()), proto.family(),
-        proto.type(), proto.protocol());
+        *static_cast<tcp_acceptor::implementation*>(h_.get()),
+        detail::native_family(proto.family()), proto.type(), proto.protocol());
     return ec;
 }
 

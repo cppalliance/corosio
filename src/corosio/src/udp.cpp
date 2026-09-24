@@ -8,26 +8,32 @@
 //
 
 #include <boost/corosio/udp.hpp>
-#include <boost/corosio/native/native_udp.hpp>
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <netinet/in.h>
+#include <sys/socket.h>
+#endif
 
 namespace boost::corosio {
 
 int
-udp::family() const noexcept
-{
-    return native_udp(v6_ ? native_udp::v6() : native_udp::v4()).family();
-}
-
-int
 udp::type() noexcept
 {
-    return native_udp::type();
+    return SOCK_DGRAM;
 }
 
 int
 udp::protocol() noexcept
 {
-    return native_udp::protocol();
+    return IPPROTO_UDP;
 }
 
 } // namespace boost::corosio

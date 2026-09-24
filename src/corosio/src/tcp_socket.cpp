@@ -9,6 +9,7 @@
 //
 
 #include <boost/corosio/tcp_socket.hpp>
+#include <boost/corosio/native/detail/endpoint_convert.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
@@ -39,7 +40,8 @@ tcp_socket::open(tcp proto) noexcept
 {
     if (is_open())
         return {};
-    return open_for_family(proto.family(), proto.type(), proto.protocol());
+    return open_for_family(
+        detail::native_family(proto.family()), proto.type(), proto.protocol());
 }
 
 std::error_code

@@ -248,9 +248,7 @@ public:
     {
         // getsockname fails with WSAEINVAL on an unbound socket, so
         // the family recorded at socket creation is authoritative
-        return internal_ && internal_->family_ == AF_INET6
-            ? corosio::family::v6
-            : corosio::family::v4;
+        return to_family(internal_ ? internal_->family_ : AF_UNSPEC);
     }
 
     native_handle_type release_socket() noexcept override;
