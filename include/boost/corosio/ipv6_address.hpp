@@ -18,6 +18,7 @@
 
 #include <array>
 #include <compare>
+#include <cstdint>
 #include <iosfwd>
 #include <string>
 #include <string_view>
@@ -47,7 +48,16 @@ namespace boost::corosio {
 
     h16         = 1*4HEXDIG
                 ; 16 bits of address represented in hexadecimal
+
+    IPv6addrz   = IPv6address "%" ZoneID
+                ; rfc6874: an address qualified by its zone
     @endcode
+
+    The zone accepts a strict decimal interface index on every
+    platform; where the platform names interfaces (POSIX), an
+    interface name maps through `if_nametoindex`. An unknown name
+    or malformed index is a parse error, never a silent zone 0.
+    Formatting always emits the numeric form (`%2`).
 
     @par Specification
     @li <a href="https://datatracker.ietf.org/doc/html/rfc4291"
@@ -62,20 +72,18 @@ namespace boost::corosio {
 class BOOST_COROSIO_DECL ipv6_address
 {
     std::array<unsigned char, 16> addr_{};
+    std::uint32_t scope_id_ = 0;
 
 public:
     /** The number of characters in the longest possible IPv6 string.
 
-        The longest IPv6 address is:
-        @code
-        ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
-        @endcode
-        or with IPv4-mapped:
-        @code
-        ::ffff:255.255.255.255
-        @endcode
+        The longest address body is the IPv4-mapped form
+        `ffff:ffff:ffff:ffff:ffff:ffff:255.255.255.255` (45
+        characters), and a numeric zone suffix adds up to eleven
+        more (`%4294967295`), for a worst case of 56; the constant
+        carries a little slack.
     */
-    static constexpr std::size_t max_str_len = 49;
+    static constexpr std::size_t max_str_len = 60;
 
     /** The type used to represent an address as an array of bytes.
 
@@ -112,8 +120,30 @@ public:
         interpreted in big-endian.
 
         @param bytes The value to construct from.
+        @param scope_id The zone the address belongs to, as an
+        interface index; 0 means unscoped.
     */
-    explicit ipv6_address(bytes_type const& bytes) noexcept;
+    explicit ipv6_address(
+        bytes_type const& bytes, std::uint32_t scope_id = 0) noexcept;
+
+    /** Return the zone the address belongs to.
+
+        Link-local addresses (`fe80::/10`) are unique only per
+        network link, so the address bits alone do not identify a
+        destination; the zone — an interface index, written with a
+        `%` suffix in text form — disambiguates. For global
+        addresses the zone is 0 and has no meaning.
+
+        @return The zone as an interface index; 0 if unscoped.
+
+        @par Specification
+        @li <a href="https://datatracker.ietf.org/doc/html/rfc4007"
+            >IPv6 Scoped Address Architecture (rfc4007)</a>
+    */
+    std::uint32_t scope_id() const noexcept
+    {
+        return scope_id_;
+    }
 
     /** Construct from an IPv4 address.
 
@@ -157,6 +187,10 @@ public:
     explicit ipv6_address(std::string_view s);
 
     /** Return the address as bytes, in network byte order.
+
+        The 16 bytes cannot carry the zone: for a scoped address
+        the result identifies the value only together with
+        @ref scope_id.
 
         @return The address as an array of bytes.
     */
@@ -272,28 +306,34 @@ public:
 
     /** Return true if two addresses are equal.
 
+        Addresses are equal if they have the same bytes and the
+        same zone: the same link-local bits on different links are
+        different destinations.
+
         @return `true` if the addresses are equal.
     */
     friend bool
     operator==(ipv6_address const& a1, ipv6_address const& a2) noexcept
     {
-        return a1.addr_ == a2.addr_;
+        return a1.addr_ == a2.addr_ && a1.scope_id_ == a2.scope_id_;
     }
 
     /** Order two addresses.
 
         Establishes a strict total ordering consistent with
         `operator==`: addresses are ordered lexicographically by
-        their bytes in network order. This makes `ipv6_address`
-        usable as a key in ordered containers such as `std::map`
-        and `std::set`.
+        their bytes in network order, then by zone. This makes
+        `ipv6_address` usable as a key in ordered containers such
+        as `std::map` and `std::set`.
 
         @return The relative order of `a1` and `a2`.
     */
     friend std::strong_ordering
     operator<=>(ipv6_address const& a1, ipv6_address const& a2) noexcept
     {
-        return a1.addr_ <=> a2.addr_;
+        if (auto c = a1.addr_ <=> a2.addr_; c != 0)
+            return c;
+        return a1.scope_id_ <=> a2.scope_id_;
     }
 
     /** Return an address object that represents the unspecified address.
