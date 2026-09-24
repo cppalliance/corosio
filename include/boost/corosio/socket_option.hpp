@@ -590,7 +590,7 @@ class BOOST_COROSIO_DECL join_group
     // Opaque storage sized for the larger of ip_mreq / ipv6_mreq
     static constexpr std::size_t max_storage_ = 20;
     alignas(4) unsigned char storage_[max_storage_]{};
-    bool is_v4_ = true;
+    family group_family_ = family::v4;
 
 public:
     /// Construct with default values.
@@ -652,7 +652,7 @@ class BOOST_COROSIO_DECL leave_group
 {
     static constexpr std::size_t max_storage_ = 20;
     alignas(4) unsigned char storage_[max_storage_]{};
-    bool is_v4_ = true;
+    family group_family_ = family::v4;
 
 public:
     /// Construct with default values.

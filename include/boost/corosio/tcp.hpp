@@ -12,6 +12,7 @@
 #define BOOST_COROSIO_TCP_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/family.hpp>
 
 namespace boost::corosio {
 
@@ -24,43 +25,45 @@ class tcp_acceptor;
     (IPv4 or IPv6). It is used to parameterize socket and acceptor
     `open()` calls with a self-documenting type.
 
-    The `family()`, `type()`, and `protocol()` members return the
-    three integers passed to the operating system's `socket()`
-    call. Their values are platform-defined constants taken from
-    the system socket headers. For an inline variant that includes
-    those headers, use @ref native_tcp.
+    `family()` returns the portable @ref family the socket will be
+    opened with. The `type()` and `protocol()` members return the
+    two integers passed to the operating system's `socket()` call;
+    their values are platform-defined constants resolved inside
+    the library, so this header needs no system socket headers.
 
     @par Example
     @par !example tcp
-
-    @see native_tcp, tcp_socket, tcp_acceptor
 */
 class BOOST_COROSIO_DECL tcp
 {
-    bool v6_;
-    explicit constexpr tcp(bool v6) noexcept : v6_(v6) {}
+    corosio::family family_;
+
+    explicit constexpr tcp(corosio::family f) noexcept : family_(f) {}
 
 public:
     /// Construct an IPv4 TCP protocol.
     static constexpr tcp v4() noexcept
     {
-        return tcp(false);
+        return tcp(corosio::family::v4);
     }
 
     /// Construct an IPv6 TCP protocol.
     static constexpr tcp v6() noexcept
     {
-        return tcp(true);
+        return tcp(corosio::family::v6);
     }
 
     /// Return true if this is IPv6.
     constexpr bool is_v6() const noexcept
     {
-        return v6_;
+        return family_ == corosio::family::v6;
     }
 
-    /// Return the address family (AF_INET or AF_INET6).
-    int family() const noexcept;
+    /// Return the address family.
+    constexpr corosio::family family() const noexcept
+    {
+        return family_;
+    }
 
     /// Return the socket type (SOCK_STREAM).
     static int type() noexcept;
@@ -77,13 +80,13 @@ public:
     /// Test for equality.
     friend constexpr bool operator==(tcp a, tcp b) noexcept
     {
-        return a.v6_ == b.v6_;
+        return a.family_ == b.family_;
     }
 
     /// Test for inequality.
     friend constexpr bool operator!=(tcp a, tcp b) noexcept
     {
-        return a.v6_ != b.v6_;
+        return a.family_ != b.family_;
     }
 };
 

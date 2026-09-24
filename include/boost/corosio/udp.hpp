@@ -12,6 +12,7 @@
 #define BOOST_COROSIO_UDP_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/family.hpp>
 
 namespace boost::corosio {
 
@@ -23,43 +24,45 @@ class udp_socket;
     (IPv4 or IPv6). It is used to parameterize `udp_socket::open()`
     calls with a self-documenting type.
 
-    The `family()`, `type()`, and `protocol()` members return the
-    three integers passed to the operating system's `socket()`
-    call. Their values are platform-defined constants taken from
-    the system socket headers. For an inline variant that includes
-    those headers, use @ref native_udp.
+    `family()` returns the portable @ref family the socket will be
+    opened with. The `type()` and `protocol()` members return the
+    two integers passed to the operating system's `socket()` call;
+    their values are platform-defined constants resolved inside
+    the library, so this header needs no system socket headers.
 
     @par Example
     @par !example udp
-
-    @see native_udp, udp_socket
 */
 class BOOST_COROSIO_DECL udp
 {
-    bool v6_;
-    explicit constexpr udp(bool v6) noexcept : v6_(v6) {}
+    corosio::family family_;
+
+    explicit constexpr udp(corosio::family f) noexcept : family_(f) {}
 
 public:
     /// Construct an IPv4 UDP protocol.
     static constexpr udp v4() noexcept
     {
-        return udp(false);
+        return udp(corosio::family::v4);
     }
 
     /// Construct an IPv6 UDP protocol.
     static constexpr udp v6() noexcept
     {
-        return udp(true);
+        return udp(corosio::family::v6);
     }
 
     /// Return true if this is IPv6.
     constexpr bool is_v6() const noexcept
     {
-        return v6_;
+        return family_ == corosio::family::v6;
     }
 
-    /// Return the address family (AF_INET or AF_INET6).
-    int family() const noexcept;
+    /// Return the address family.
+    constexpr corosio::family family() const noexcept
+    {
+        return family_;
+    }
 
     /// Return the socket type (SOCK_DGRAM).
     static int type() noexcept;
@@ -73,13 +76,13 @@ public:
     /// Test for equality.
     friend constexpr bool operator==(udp a, udp b) noexcept
     {
-        return a.v6_ == b.v6_;
+        return a.family_ == b.family_;
     }
 
     /// Test for inequality.
     friend constexpr bool operator!=(udp a, udp b) noexcept
     {
-        return a.v6_ != b.v6_;
+        return a.family_ != b.family_;
     }
 };
 

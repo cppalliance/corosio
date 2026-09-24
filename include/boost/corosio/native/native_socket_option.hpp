@@ -685,7 +685,7 @@ class membership_request
 {
     struct ip_mreq v4_{};
     struct ipv6_mreq v6_{};
-    bool is_v4_ = true;
+    family group_family_ = family::v4;
 
     void assign_v4(ipv4_address group, ipv4_address iface) noexcept
     {
@@ -693,7 +693,7 @@ class membership_request
         std::memcpy(&v4_.imr_multiaddr, g.data(), 4);
         auto i = iface.to_bytes();
         std::memcpy(&v4_.imr_interface, i.data(), 4);
-        is_v4_ = true;
+        group_family_ = family::v4;
     }
 
     void assign_v6(ipv6_address const& group, unsigned int if_index) noexcept
@@ -702,7 +702,7 @@ class membership_request
         std::memcpy(&v6_.ipv6mr_multiaddr, g.data(), 16);
         // The group's zone is the natural default interface
         v6_.ipv6mr_interface = if_index ? if_index : group.scope_id();
-        is_v4_               = false;
+        group_family_        = family::v6;
     }
 
 public:
@@ -748,28 +748,28 @@ public:
     }
 
     /// Return the protocol level for the group's family.
-    constexpr int level(family) const noexcept
+    int level(family) const noexcept
     {
-        return is_v4_ ? Level4 : Level6;
+        return group_family_ == family::v4 ? Level4 : Level6;
     }
 
     /// Return the option name for the group's family.
-    constexpr int name(family) const noexcept
+    int name(family) const noexcept
     {
-        return is_v4_ ? Name4 : Name6;
+        return group_family_ == family::v4 ? Name4 : Name6;
     }
 
     /// Return a pointer to the wire struct for the group's family.
     void const* data(family) const noexcept
     {
-        return is_v4_ ? static_cast<void const*>(&v4_)
-                      : static_cast<void const*>(&v6_);
+        return group_family_ == family::v4 ? static_cast<void const*>(&v4_)
+                                           : static_cast<void const*>(&v6_);
     }
 
     /// Return the size of the wire struct for the group's family.
     std::size_t size(family) const noexcept
     {
-        return is_v4_ ? sizeof(v4_) : sizeof(v6_);
+        return group_family_ == family::v4 ? sizeof(v4_) : sizeof(v6_);
     }
 
     /// No-op resize.

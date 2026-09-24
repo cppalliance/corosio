@@ -44,6 +44,18 @@ namespace boost::corosio {
 template<auto Backend>
 struct socket_option_test
 {
+    // The protocol tags speak the same portable family the options
+    // consume
+    void testProtocolTagFamily()
+    {
+        static_assert(tcp::v4().family() == family::v4);
+        static_assert(tcp::v6().family() == family::v6);
+        static_assert(udp::v4().family() == family::v4);
+        static_assert(udp::v6().family() == family::v6);
+        BOOST_TEST(tcp::v6().is_v6());
+        BOOST_TEST(!udp::v4().is_v6());
+    }
+
     void testTcpOptions()
     {
         io_context ioc(Backend);
@@ -401,6 +413,7 @@ struct socket_option_test
     void run()
     {
         testResizeNormalization();
+        testProtocolTagFamily();
         testTcpOptions();
         testTcpLocalEndpoint();
         testUdpOptions();

@@ -227,15 +227,16 @@ multicast_hops::name(family f) const noexcept
 static_assert(sizeof(struct ip_mreq) <= 20);
 static_assert(sizeof(struct ipv6_mreq) <= 20);
 
-join_group::join_group(ip_address const& group) noexcept : is_v4_(group.is_v4())
+join_group::join_group(ip_address const& group) noexcept
+    : group_family_(group.family())
 {
     native_socket_option::join_group native(group);
-    auto const f = group.is_v4() ? family::v4 : family::v6;
-    std::memcpy(storage_, native.data(f), native.size(f));
+    std::memcpy(
+        storage_, native.data(group_family_), native.size(group_family_));
 }
 
 join_group::join_group(ipv4_address group, ipv4_address iface) noexcept
-    : is_v4_(true)
+    : group_family_(family::v4)
 {
     native_socket_option::join_group native(group, iface);
     std::memcpy(storage_, native.data(family::v4), native.size(family::v4));
@@ -243,7 +244,7 @@ join_group::join_group(ipv4_address group, ipv4_address iface) noexcept
 
 join_group::join_group(
     ipv6_address const& group, unsigned int if_index) noexcept
-    : is_v4_(false)
+    : group_family_(family::v6)
 {
     native_socket_option::join_group native(group, if_index);
     std::memcpy(storage_, native.data(family::v6), native.size(family::v6));
@@ -252,32 +253,35 @@ join_group::join_group(
 int
 join_group::level(family f) const noexcept
 {
-    return is_v4_ ? native_socket_option::join_group(ipv4_address()).level(f)
-                  : native_socket_option::join_group(ipv6_address()).level(f);
+    return group_family_ == family::v4
+        ? native_socket_option::join_group(ipv4_address()).level(f)
+        : native_socket_option::join_group(ipv6_address()).level(f);
 }
 int
 join_group::name(family f) const noexcept
 {
-    return is_v4_ ? native_socket_option::join_group(ipv4_address()).name(f)
-                  : native_socket_option::join_group(ipv6_address()).name(f);
+    return group_family_ == family::v4
+        ? native_socket_option::join_group(ipv4_address()).name(f)
+        : native_socket_option::join_group(ipv6_address()).name(f);
 }
 std::size_t
 join_group::size(family f) const noexcept
 {
-    return is_v4_ ? native_socket_option::join_group(ipv4_address()).size(f)
-                  : native_socket_option::join_group(ipv6_address()).size(f);
+    return group_family_ == family::v4
+        ? native_socket_option::join_group(ipv4_address()).size(f)
+        : native_socket_option::join_group(ipv6_address()).size(f);
 }
 
 leave_group::leave_group(ip_address const& group) noexcept
-    : is_v4_(group.is_v4())
+    : group_family_(group.family())
 {
     native_socket_option::leave_group native(group);
-    auto const f = group.is_v4() ? family::v4 : family::v6;
-    std::memcpy(storage_, native.data(f), native.size(f));
+    std::memcpy(
+        storage_, native.data(group_family_), native.size(group_family_));
 }
 
 leave_group::leave_group(ipv4_address group, ipv4_address iface) noexcept
-    : is_v4_(true)
+    : group_family_(family::v4)
 {
     native_socket_option::leave_group native(group, iface);
     std::memcpy(storage_, native.data(family::v4), native.size(family::v4));
@@ -285,7 +289,7 @@ leave_group::leave_group(ipv4_address group, ipv4_address iface) noexcept
 
 leave_group::leave_group(
     ipv6_address const& group, unsigned int if_index) noexcept
-    : is_v4_(false)
+    : group_family_(family::v6)
 {
     native_socket_option::leave_group native(group, if_index);
     std::memcpy(storage_, native.data(family::v6), native.size(family::v6));
@@ -294,20 +298,23 @@ leave_group::leave_group(
 int
 leave_group::level(family f) const noexcept
 {
-    return is_v4_ ? native_socket_option::leave_group(ipv4_address()).level(f)
-                  : native_socket_option::leave_group(ipv6_address()).level(f);
+    return group_family_ == family::v4
+        ? native_socket_option::leave_group(ipv4_address()).level(f)
+        : native_socket_option::leave_group(ipv6_address()).level(f);
 }
 int
 leave_group::name(family f) const noexcept
 {
-    return is_v4_ ? native_socket_option::leave_group(ipv4_address()).name(f)
-                  : native_socket_option::leave_group(ipv6_address()).name(f);
+    return group_family_ == family::v4
+        ? native_socket_option::leave_group(ipv4_address()).name(f)
+        : native_socket_option::leave_group(ipv6_address()).name(f);
 }
 std::size_t
 leave_group::size(family f) const noexcept
 {
-    return is_v4_ ? native_socket_option::leave_group(ipv4_address()).size(f)
-                  : native_socket_option::leave_group(ipv6_address()).size(f);
+    return group_family_ == family::v4
+        ? native_socket_option::leave_group(ipv4_address()).size(f)
+        : native_socket_option::leave_group(ipv6_address()).size(f);
 }
 
 // multicast_interface

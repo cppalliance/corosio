@@ -1465,7 +1465,7 @@ win_tcp_acceptor_internal::accept(
     auto& peer_wrapper = static_cast<win_tcp_socket&>(*svc_.construct());
 
     // Derive AF from the listening socket's cached local endpoint
-    int af = local_endpoint_.is_v6() ? AF_INET6 : AF_INET;
+    int af = native_family(local_endpoint_.address().family());
 
     // Create the accepted socket with matching address family
     SOCKET accepted = ::WSASocketW(

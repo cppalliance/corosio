@@ -8,26 +8,32 @@
 //
 
 #include <boost/corosio/tcp.hpp>
-#include <boost/corosio/native/native_tcp.hpp>
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <netinet/in.h>
+#include <sys/socket.h>
+#endif
 
 namespace boost::corosio {
 
 int
-tcp::family() const noexcept
-{
-    return native_tcp(v6_ ? native_tcp::v6() : native_tcp::v4()).family();
-}
-
-int
 tcp::type() noexcept
 {
-    return native_tcp::type();
+    return SOCK_STREAM;
 }
 
 int
 tcp::protocol() noexcept
 {
-    return native_tcp::protocol();
+    return IPPROTO_TCP;
 }
 
 } // namespace boost::corosio

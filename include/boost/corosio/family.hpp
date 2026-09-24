@@ -24,6 +24,11 @@ namespace boost::corosio {
 
     Sockets that are not IP sockets pass `v4`; the options applicable
     to them are family-neutral, so the value is inert.
+
+    This is the portable spelling of the address family throughout
+    the public API — the protocol tags and `ip_address` report it,
+    and socket options consume it. The native `AF_*` constants
+    appear only at the native boundary.
 */
 enum class family
 {

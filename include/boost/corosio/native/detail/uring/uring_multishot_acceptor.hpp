@@ -198,8 +198,7 @@ public:
 
     corosio::family family() const noexcept override
     {
-        return socket_family(fd_) == AF_INET6 ? corosio::family::v6
-                                              : corosio::family::v4;
+        return to_family(socket_family(fd_));
     }
 
     native_handle_type release_socket() noexcept override

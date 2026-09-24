@@ -11,6 +11,7 @@
 #define BOOST_COROSIO_NATIVE_DETAIL_ENDPOINT_CONVERT_HPP
 
 #include <boost/corosio/endpoint.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
@@ -204,6 +205,29 @@ from_sockaddr(sockaddr_storage const& storage) noexcept
         return from_sockaddr_in6(sa6);
     }
     return endpoint{};
+}
+
+/** Convert a native address family to the portable one.
+
+    @param af The native family (`AF_INET`, `AF_INET6`, or anything
+        else, which maps to v4 as the inert value).
+    @return The portable family.
+*/
+inline corosio::family
+to_family(int af) noexcept
+{
+    return af == AF_INET6 ? corosio::family::v6 : corosio::family::v4;
+}
+
+/** Convert the portable address family to the native one.
+
+    @param f The portable family.
+    @return `AF_INET` or `AF_INET6`.
+*/
+inline int
+native_family(corosio::family f) noexcept
+{
+    return f == corosio::family::v6 ? AF_INET6 : AF_INET;
 }
 
 /** Return the native address family for an endpoint.
