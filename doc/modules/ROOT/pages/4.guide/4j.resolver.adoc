@@ -55,7 +55,20 @@ The service can be:
 
 * A service name: `"http"`, `"https"`, `"ssh"`
 * A port number string: `"80"`, `"443"`, `"22"`
-* An empty string: `""` (returns port 0)
+
+=== Host Only
+
+When the port travels separately — as it does in most configuration —
+resolve just the host and get `ip_address` values back, with no
+fabricated service and no port-0 endpoints:
+
+[source,cpp]
+----
+include::example$snippets/4j_resolver.cpp[tag=host_only,indent=0]
+----
+
+Each address appears once, even when the system resolver reports it
+for several socket types.
 
 === With Flags
 

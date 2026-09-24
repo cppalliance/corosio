@@ -46,6 +46,21 @@ forward_resolve(corosio::resolver& r)
 }
 // end::forward_resolve[]
 
+// Resolving a public hostname needs the network; compiled, never run.
+// tag::host_only_resolve[]
+capy::task<>
+host_only_resolve(corosio::resolver& r)
+{
+    // No service, no ports: the host and port travel separately in
+    // most configuration, and the result is addresses alone
+    auto [ec, addrs] = co_await r.resolve("www.example.com");
+    if (ec)
+        co_return;
+    for (corosio::ip_address const& a : addrs)
+        std::cout << a.to_string() << "\n";
+}
+// end::host_only_resolve[]
+
 // tag::reverse_resolve[]
 capy::task<>
 reverse_resolve(corosio::resolver& r)

@@ -33,6 +33,8 @@
 
 #include "context.hpp"
 #include "pool_teardown.hpp"
+#include <vector>
+
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -278,6 +280,141 @@ struct resolver_test
     }
 
     // Error handling tests
+
+    // Host-only resolution completes with addresses, not endpoints:
+    // no fabricated service, no port-0 smuggling.
+    void testResolveHostOnly()
+    {
+        io_context ioc;
+        resolver r(ioc);
+
+        bool completed = false;
+        std::error_code result_ec;
+        std::vector<ip_address> addrs;
+
+        auto task = [](resolver& r_ref, std::error_code& ec_out,
+                       std::vector<ip_address>& out,
+                       bool& done_out) -> capy::task<> {
+            auto [ec, res] = co_await r_ref.resolve("localhost");
+            ec_out         = ec;
+            out            = std::move(res);
+            done_out       = true;
+        };
+        capy::run_async(ioc.get_executor())(
+            task(r, result_ec, addrs, completed));
+
+        ioc.run();
+
+        BOOST_TEST(completed);
+        BOOST_TEST(!result_ec);
+        BOOST_TEST(!addrs.empty());
+
+        // Every result names the loopback host
+        for (auto const& a : addrs)
+            BOOST_TEST(a.is_loopback());
+
+        // Each address appears exactly once
+        for (std::size_t i = 0; i < addrs.size(); ++i)
+            for (std::size_t j = i + 1; j < addrs.size(); ++j)
+                BOOST_TEST(addrs[i] != addrs[j]);
+    }
+
+    void testResolveHostOnlyNumeric()
+    {
+        io_context ioc;
+        resolver r(ioc);
+
+        bool completed = false;
+        std::error_code ec4, ec6;
+        std::vector<ip_address> a4, a6;
+
+        auto task = [](resolver& r_ref, std::error_code& e4,
+                       std::vector<ip_address>& o4, std::error_code& e6,
+                       std::vector<ip_address>& o6,
+                       bool& done_out) -> capy::task<> {
+            // Numeric hosts short-circuit resolution entirely
+            auto [c4, r4] = co_await r_ref.resolve(
+                "127.0.0.1", resolve_flags::numeric_host);
+            e4 = c4;
+            o4 = std::move(r4);
+            auto [c6, r6] =
+                co_await r_ref.resolve("::1", resolve_flags::numeric_host);
+            e6       = c6;
+            o6       = std::move(r6);
+            done_out = true;
+        };
+        capy::run_async(ioc.get_executor())(
+            task(r, ec4, a4, ec6, a6, completed));
+
+        ioc.run();
+
+        BOOST_TEST(completed);
+        BOOST_TEST(!ec4);
+        BOOST_TEST_EQ(a4.size(), 1u);
+        BOOST_TEST(a4.at(0) == ip_address(ipv4_address::loopback()));
+        BOOST_TEST(!ec6);
+        BOOST_TEST_EQ(a6.size(), 1u);
+        BOOST_TEST(a6.at(0) == ip_address(ipv6_address::loopback()));
+    }
+
+    // The flags overload must actually forward its flags: numeric_host
+    // on a non-numeric name is the input that distinguishes
+    // flags-honored from flags-dropped
+    void testResolveHostOnlyFlagsForwarded()
+    {
+        io_context ioc;
+        resolver r(ioc);
+
+        bool completed = false;
+        std::error_code result_ec;
+        std::vector<ip_address> addrs;
+
+        auto task = [](resolver& r_ref, std::error_code& ec_out,
+                       std::vector<ip_address>& out,
+                       bool& done_out) -> capy::task<> {
+            auto [ec, res] = co_await r_ref.resolve(
+                "localhost", resolve_flags::numeric_host);
+            ec_out   = ec;
+            out      = std::move(res);
+            done_out = true;
+        };
+        capy::run_async(ioc.get_executor())(
+            task(r, result_ec, addrs, completed));
+
+        ioc.run();
+
+        BOOST_TEST(completed);
+        BOOST_TEST(result_ec);
+        BOOST_TEST(addrs.empty());
+    }
+
+    void testResolveHostOnlyInvalid()
+    {
+        io_context ioc;
+        resolver r(ioc);
+
+        bool completed = false;
+        std::error_code result_ec;
+        std::vector<ip_address> addrs;
+
+        auto task = [](resolver& r_ref, std::error_code& ec_out,
+                       std::vector<ip_address>& out,
+                       bool& done_out) -> capy::task<> {
+            auto [ec, res] = co_await r_ref.resolve(
+                "this.hostname.definitely.does.not.exist.invalid");
+            ec_out   = ec;
+            out      = std::move(res);
+            done_out = true;
+        };
+        capy::run_async(ioc.get_executor())(
+            task(r, result_ec, addrs, completed));
+
+        ioc.run();
+
+        BOOST_TEST(completed);
+        BOOST_TEST(result_ec);
+        BOOST_TEST(addrs.empty());
+    }
 
     void testResolveInvalidHost()
     {
@@ -569,6 +706,38 @@ struct resolver_test
         // (canceller path) or via the worker's cancelled check —
         // either way we get a canceled error code.
         BOOST_TEST(result_ec == capy::cond::canceled);
+    }
+
+    void testResolveHostOnlyStopTokenCancellation()
+    {
+        // Host-only resolution rides the same token plumbing as the
+        // forward path; a pre-stopped token cancels before dispatch.
+        io_context ioc;
+        resolver r(ioc);
+
+        std::stop_source stop_src;
+        stop_src.request_stop();
+
+        bool completed = false;
+        std::error_code result_ec;
+        std::vector<ip_address> addrs;
+
+        auto task = [](resolver& r_ref, std::error_code& ec_out,
+                       std::vector<ip_address>& out,
+                       bool& done) -> capy::task<> {
+            auto [ec, res] = co_await r_ref.resolve("localhost");
+            ec_out         = ec;
+            out            = std::move(res);
+            done           = true;
+        };
+        capy::run_async(ioc.get_executor(), stop_src.get_token())(
+            task(r, result_ec, addrs, completed));
+
+        ioc.run();
+
+        BOOST_TEST(completed);
+        BOOST_TEST(result_ec == capy::cond::canceled);
+        BOOST_TEST(addrs.empty());
     }
 
     void testReverseResolveStopTokenCancellation()
@@ -1315,6 +1484,10 @@ struct resolver_test
 
         // Basic resolution
         testResolveLocalhost();
+        testResolveHostOnly();
+        testResolveHostOnlyNumeric();
+        testResolveHostOnlyFlagsForwarded();
+        testResolveHostOnlyInvalid();
         testResolveNumericIPv4();
         testResolveNumericIPv6();
         testResolveServiceName();
@@ -1339,6 +1512,7 @@ struct resolver_test
         testResolveAfterPoolShutdown();
 #endif
         testResolveStopTokenCancellation();
+        testResolveHostOnlyStopTokenCancellation();
         testReverseResolveStopTokenCancellation();
 
         // Sequential resolves
