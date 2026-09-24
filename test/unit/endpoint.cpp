@@ -19,6 +19,44 @@ namespace boost::corosio {
 
 struct endpoint_parse_test
 {
+    void testAddress()
+    {
+        // Default endpoint holds the IPv4 any address
+        {
+            endpoint ep;
+            BOOST_TEST(ep.is_v4());
+            BOOST_TEST(ep.address().is_unspecified());
+            BOOST_TEST_EQ(ep.port(), 0);
+        }
+
+        // Construct from ip_address and port, both families
+        {
+            ip_address v4 = ipv4_address::loopback();
+            endpoint ep(v4, 8080);
+            BOOST_TEST(ep.is_v4());
+            BOOST_TEST(!ep.is_v6());
+            BOOST_TEST(ep.address() == v4);
+            BOOST_TEST_EQ(ep.port(), 8080);
+        }
+        {
+            ip_address v6 = ipv6_address::loopback();
+            endpoint ep(v6, 443);
+            BOOST_TEST(ep.is_v6());
+            BOOST_TEST(!ep.is_v4());
+            BOOST_TEST(ep.address() == v6);
+            BOOST_TEST_EQ(ep.port(), 443);
+        }
+
+        // Family-specific addresses convert implicitly
+        {
+            endpoint ep4(ipv4_address::loopback(), 80);
+            BOOST_TEST_EQ(ep4.address().to_v4(), ipv4_address::loopback());
+
+            endpoint ep6(ipv6_address::loopback(), 80);
+            BOOST_TEST_EQ(ep6.address().to_v6(), ipv6_address::loopback());
+        }
+    }
+
     void testConstructFromEndpointAndPort()
     {
         // IPv4 case
@@ -26,7 +64,7 @@ struct endpoint_parse_test
             endpoint ep1(ipv4_address::loopback(), 8080);
             endpoint ep2(ep1, 443);
             BOOST_TEST(ep2.is_v4());
-            BOOST_TEST_EQ(ep2.v4_address(), ipv4_address::loopback());
+            BOOST_TEST_EQ(ep2.address().to_v4(), ipv4_address::loopback());
             BOOST_TEST_EQ(ep2.port(), 443);
         }
 
@@ -35,7 +73,7 @@ struct endpoint_parse_test
             endpoint ep1(ipv6_address::loopback(), 8080);
             endpoint ep2(ep1, 443);
             BOOST_TEST(ep2.is_v6());
-            BOOST_TEST(ep2.v6_address().is_loopback());
+            BOOST_TEST(ep2.address().is_loopback());
             BOOST_TEST_EQ(ep2.port(), 443);
         }
     }
@@ -46,7 +84,7 @@ struct endpoint_parse_test
         {
             endpoint ep("192.168.1.1");
             BOOST_TEST(ep.is_v4());
-            BOOST_TEST_EQ(ep.v4_address().to_string(), "192.168.1.1");
+            BOOST_TEST_EQ(ep.address().to_string(), "192.168.1.1");
             BOOST_TEST_EQ(ep.port(), 0);
         }
 
@@ -54,7 +92,7 @@ struct endpoint_parse_test
         {
             endpoint ep("192.168.1.1:8080");
             BOOST_TEST(ep.is_v4());
-            BOOST_TEST_EQ(ep.v4_address().to_string(), "192.168.1.1");
+            BOOST_TEST_EQ(ep.address().to_string(), "192.168.1.1");
             BOOST_TEST_EQ(ep.port(), 8080);
         }
 
@@ -71,7 +109,7 @@ struct endpoint_parse_test
         {
             endpoint ep("::1");
             BOOST_TEST(ep.is_v6());
-            BOOST_TEST(ep.v6_address().is_loopback());
+            BOOST_TEST(ep.address().is_loopback());
             BOOST_TEST_EQ(ep.port(), 0);
         }
 
@@ -86,7 +124,7 @@ struct endpoint_parse_test
         {
             endpoint ep("[::1]");
             BOOST_TEST(ep.is_v6());
-            BOOST_TEST(ep.v6_address().is_loopback());
+            BOOST_TEST(ep.address().is_loopback());
             BOOST_TEST_EQ(ep.port(), 0);
         }
 
@@ -94,7 +132,7 @@ struct endpoint_parse_test
         {
             endpoint ep("[::1]:8080");
             BOOST_TEST(ep.is_v6());
-            BOOST_TEST(ep.v6_address().is_loopback());
+            BOOST_TEST(ep.address().is_loopback());
             BOOST_TEST_EQ(ep.port(), 8080);
         }
 
@@ -174,7 +212,7 @@ struct endpoint_parse_test
         BOOST_TEST(!ec);
         BOOST_TEST(ep.is_v4());
         BOOST_TEST_EQ(ep.port(), 0);
-        BOOST_TEST_EQ(ep.v4_address().to_string(), "192.168.1.1");
+        BOOST_TEST_EQ(ep.address().to_string(), "192.168.1.1");
     }
 
     void testParseIPv4WithPort()
@@ -183,7 +221,7 @@ struct endpoint_parse_test
         BOOST_TEST(!ec);
         BOOST_TEST(ep.is_v4());
         BOOST_TEST_EQ(ep.port(), 8080);
-        BOOST_TEST_EQ(ep.v4_address().to_string(), "192.168.1.1");
+        BOOST_TEST_EQ(ep.address().to_string(), "192.168.1.1");
 
         // Edge cases
         auto [ec0, ep0] = make_endpoint("127.0.0.1:0");
@@ -201,7 +239,7 @@ struct endpoint_parse_test
         BOOST_TEST(!ec);
         BOOST_TEST(ep.is_v6());
         BOOST_TEST_EQ(ep.port(), 0);
-        BOOST_TEST(ep.v6_address().is_loopback());
+        BOOST_TEST(ep.address().is_loopback());
 
         auto [ec1, ep1] = make_endpoint("2001:db8::1");
         BOOST_TEST(!ec1);
@@ -216,14 +254,14 @@ struct endpoint_parse_test
         BOOST_TEST(!ec);
         BOOST_TEST(ep.is_v6());
         BOOST_TEST_EQ(ep.port(), 0);
-        BOOST_TEST(ep.v6_address().is_loopback());
+        BOOST_TEST(ep.address().is_loopback());
 
         // Bracketed with port
         auto [ec1, ep1] = make_endpoint("[::1]:8080");
         BOOST_TEST(!ec1);
         BOOST_TEST(ep1.is_v6());
         BOOST_TEST_EQ(ep1.port(), 8080);
-        BOOST_TEST(ep1.v6_address().is_loopback());
+        BOOST_TEST(ep1.address().is_loopback());
 
         // Full address with port
         auto [ec2, ep2] = make_endpoint("[2001:db8::1]:443");
@@ -287,6 +325,11 @@ struct endpoint_parse_test
         BOOST_TEST(a != d); // same port, different family
         BOOST_TEST(d == e); // both v6, same port: compares the v6 address
         BOOST_TEST(d != f); // both v6, same port, different address
+
+        // Wildcards differ only by family; pins family participation
+        BOOST_TEST(
+            endpoint(ipv4_address::any(), 80) !=
+            endpoint(ipv6_address::any(), 80));
     }
 
     void testOrdering()
@@ -344,6 +387,7 @@ struct endpoint_parse_test
 
     void run()
     {
+        testAddress();
         testConstructFromEndpointAndPort();
         testConstructFromString();
         testConstructFromStringThrows();

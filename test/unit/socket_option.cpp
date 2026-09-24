@@ -88,7 +88,7 @@ struct socket_option_test
 
         auto ep = sock.local_endpoint();
         BOOST_TEST(ep.is_v4());
-        BOOST_TEST(ep.v4_address() == ipv4_address::loopback());
+        BOOST_TEST(ep.address().to_v4() == ipv4_address::loopback());
         BOOST_TEST_GT(ep.port(), 0);
 
         sock.close();

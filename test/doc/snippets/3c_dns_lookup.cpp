@@ -69,12 +69,12 @@ inspect_endpoint(corosio::resolver_entry const& entry)
     if (ep.is_v4())
     {
         // IPv4 address
-        corosio::ipv4_address addr = ep.v4_address();
+        corosio::ipv4_address addr = ep.address().to_v4();
     }
     else
     {
         // IPv6 address
-        corosio::ipv6_address addr = ep.v6_address();
+        corosio::ipv6_address addr = ep.address().to_v6();
     }
 
     std::uint16_t port = ep.port();

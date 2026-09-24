@@ -43,7 +43,9 @@ namespace boost::corosio::detail {
 
 /** Convert IPv4 endpoint to sockaddr_in.
 
-    @param ep The endpoint to convert. Must be IPv4 (is_v4() == true).
+    @param ep The endpoint to convert. Must be IPv4 (is_v4() == true);
+        a wrong-family endpoint terminates (throwing conversion inside
+        a noexcept function).
     @return A sockaddr_in structure with fields in network byte order.
 */
 inline sockaddr_in
@@ -52,14 +54,16 @@ to_sockaddr_in(endpoint const& ep) noexcept
     sockaddr_in sa{};
     sa.sin_family = AF_INET;
     sa.sin_port   = htons(ep.port());
-    auto bytes    = ep.v4_address().to_bytes();
+    auto bytes    = ep.address().to_v4().to_bytes();
     std::memcpy(&sa.sin_addr, bytes.data(), 4);
     return sa;
 }
 
 /** Convert IPv6 endpoint to sockaddr_in6.
 
-    @param ep The endpoint to convert. Must be IPv6 (is_v6() == true).
+    @param ep The endpoint to convert. Must be IPv6 (is_v6() == true);
+        a wrong-family endpoint terminates (throwing conversion inside
+        a noexcept function).
     @return A sockaddr_in6 structure with fields in network byte order.
 */
 inline sockaddr_in6
@@ -68,7 +72,7 @@ to_sockaddr_in6(endpoint const& ep) noexcept
     sockaddr_in6 sa{};
     sa.sin6_family = AF_INET6;
     sa.sin6_port   = htons(ep.port());
-    auto bytes     = ep.v6_address().to_bytes();
+    auto bytes     = ep.address().to_v6().to_bytes();
     std::memcpy(&sa.sin6_addr, bytes.data(), 16);
     return sa;
 }
@@ -104,7 +108,9 @@ from_sockaddr_in6(sockaddr_in6 const& sa) noexcept
     Produces a `sockaddr_in6` with the `::ffff:` prefix, suitable
     for passing an IPv4 destination to a dual-stack IPv6 socket.
 
-    @param ep The endpoint to convert. Must be IPv4 (is_v4() == true).
+    @param ep The endpoint to convert. Must be IPv4 (is_v4() == true);
+        a wrong-family endpoint terminates (throwing conversion inside
+        a noexcept function).
     @return A sockaddr_in6 with the IPv4-mapped address.
 */
 inline sockaddr_in6
@@ -113,11 +119,9 @@ to_v4_mapped_sockaddr_in6(endpoint const& ep) noexcept
     sockaddr_in6 sa{};
     sa.sin6_family = AF_INET6;
     sa.sin6_port   = htons(ep.port());
-    // ::ffff:0:0/96 prefix
-    sa.sin6_addr.s6_addr[10] = 0xff;
-    sa.sin6_addr.s6_addr[11] = 0xff;
-    auto bytes               = ep.v4_address().to_bytes();
-    std::memcpy(&sa.sin6_addr.s6_addr[12], bytes.data(), 4);
+    // The mapping constructor supplies the ::ffff:0:0/96 prefix
+    auto bytes = ipv6_address(ep.address().to_v4()).to_bytes();
+    std::memcpy(&sa.sin6_addr, bytes.data(), 16);
     return sa;
 }
 
@@ -161,7 +165,9 @@ inline socklen_t
 to_sockaddr(
     endpoint const& ep, int socket_family, sockaddr_storage& storage) noexcept
 {
-    // IPv4 endpoint on IPv6 socket: use IPv4-mapped address
+    // IPv4 endpoint on IPv6 socket: use IPv4-mapped address.
+    // The reverse mismatch (v4-mapped IPv6 endpoint on an AF_INET
+    // socket) is deliberately not bridged; the kernel rejects it.
     if (ep.is_v4() && socket_family == AF_INET6)
     {
         std::memset(&storage, 0, sizeof(storage));
