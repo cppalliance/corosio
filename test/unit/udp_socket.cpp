@@ -1226,7 +1226,7 @@ struct udp_socket_test
         try
         {
             receiver.set_option(
-                socket_option::join_group_v4(ipv4_address("239.255.0.1")));
+                socket_option::join_group(ipv4_address("239.255.0.1")));
         }
         catch (std::system_error const&)
         {
@@ -1281,9 +1281,9 @@ struct udp_socket_test
         try
         {
             sock.set_option(
-                socket_option::join_group_v4(ipv4_address("239.255.0.2")));
+                socket_option::join_group(ipv4_address("239.255.0.2")));
             sock.set_option(
-                socket_option::leave_group_v4(ipv4_address("239.255.0.2")));
+                socket_option::leave_group(ipv4_address("239.255.0.2")));
         }
         catch (std::system_error const&)
         {
@@ -1302,9 +1302,9 @@ struct udp_socket_test
         try
         {
             sock.set_option(
-                socket_option::join_group_v6(ipv6_address("ff02::1")));
+                socket_option::join_group(ipv6_address("ff02::1")));
             sock.set_option(
-                socket_option::leave_group_v6(ipv6_address("ff02::1")));
+                socket_option::leave_group(ipv6_address("ff02::1")));
         }
         catch (std::system_error const&)
         {

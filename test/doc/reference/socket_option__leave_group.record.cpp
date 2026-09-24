@@ -8,13 +8,13 @@
 //
 
 // Reference example injected into include/boost/corosio/socket_option.hpp's
-// documentation for socket_option::leave_group_v6, by
+// documentation for socket_option::leave_group, by
 // doc/addons/extensions/reference-snippets.lua. The tagged region is what the
 // reference renders; scaffolding stays outside the tags.
 
 #include "../doc_warnings.hpp"
 
-#include <boost/corosio/ipv6_address.hpp>
+#include <boost/corosio/ipv4_address.hpp>
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/udp_socket.hpp>
 
@@ -22,21 +22,21 @@ namespace corosio = boost::corosio;
 
 namespace {
 
-// tag::leave_group_v6[]
+// tag::leave_group[]
 void
-stop_receiving_an_ipv6_multicast_group(corosio::udp_socket& sock)
+stop_receiving_an_ipv4_multicast_group(corosio::udp_socket& sock)
 {
-    // Precondition: sock is open on udp::v6() and joined this group.
+    // Precondition: sock is open on udp::v4() and joined this group.
     //
     // Membership otherwise lasts until the socket closes. The group and the
-    // interface index have to match the join_group_v6 that established it --
+    // interface have to match the join_group that established it --
     // attempting to leave a (group, interface) pair the kernel has no
     // membership for fails with EADDRNOTAVAIL, which set_option reports by
     // throwing.
     sock.set_option(
-        corosio::socket_option::leave_group_v6(
-            corosio::ipv6_address("ff15::1234"), 0));
+        corosio::socket_option::leave_group(
+            corosio::ipv4_address("239.255.0.1")));
 }
-// end::leave_group_v6[]
+// end::leave_group[]
 
 } // namespace

@@ -9,7 +9,7 @@
 
 // Reference example injected into
 // include/boost/corosio/native/native_socket_option.hpp's documentation for
-// native_socket_option::join_group_v4, by
+// native_socket_option::join_group, by
 // doc/addons/extensions/reference-snippets.lua. The tagged region is what the
 // reference renders; scaffolding stays outside the tags.
 
@@ -26,7 +26,7 @@ namespace corosio = boost::corosio;
 
 namespace {
 
-// tag::join_group_v4[]
+// tag::join_group[]
 void
 receive_an_ipv4_multicast_group(corosio::io_context& ioc)
 {
@@ -50,9 +50,9 @@ receive_an_ipv4_multicast_group(corosio::io_context& ioc)
     // local interface to receive on; the default, 0.0.0.0, lets the kernel
     // choose one.
     sock.set_option(
-        corosio::native_socket_option::join_group_v4(
+        corosio::native_socket_option::join_group(
             corosio::ipv4_address("239.255.0.1")));
 }
-// end::join_group_v4[]
+// end::join_group[]
 
 } // namespace

@@ -230,113 +230,97 @@ multicast_interface_v6::name(family f) const noexcept
     return native_socket_option::multicast_interface_v6{}.name(f);
 }
 
-// join_group_v4
+// join_group / leave_group
+//
+// The public classes mirror the native membership_request: the
+// group's family picks the wire struct copied into storage_ and the
+// constants reported by level()/name()/size().
 
-join_group_v4::join_group_v4(ipv4_address group, ipv4_address iface) noexcept
+// The membership wire structs must fit both types' opaque storage
+static_assert(sizeof(struct ip_mreq) <= 20);
+static_assert(sizeof(struct ipv6_mreq) <= 20);
+
+join_group::join_group(ip_address const& group) noexcept : is_v4_(group.is_v4())
 {
-    native_socket_option::join_group_v4 native(group, iface);
-    static_assert(
-        sizeof(native) <= sizeof(storage_),
-        "platform ip_mreq exceeds join_group_v4 storage");
+    native_socket_option::join_group native(group);
+    auto const f = group.is_v4() ? family::v4 : family::v6;
+    std::memcpy(storage_, native.data(f), native.size(f));
+}
+
+join_group::join_group(ipv4_address group, ipv4_address iface) noexcept
+    : is_v4_(true)
+{
+    native_socket_option::join_group native(group, iface);
     std::memcpy(storage_, native.data(family::v4), native.size(family::v4));
 }
 
-int
-join_group_v4::level(family f) const noexcept
+join_group::join_group(
+    ipv6_address const& group, unsigned int if_index) noexcept
+    : is_v4_(false)
 {
-    return native_socket_option::join_group_v4{}.level(f);
+    native_socket_option::join_group native(group, if_index);
+    std::memcpy(storage_, native.data(family::v6), native.size(family::v6));
+}
+
+int
+join_group::level(family f) const noexcept
+{
+    return is_v4_ ? native_socket_option::join_group(ipv4_address()).level(f)
+                  : native_socket_option::join_group(ipv6_address()).level(f);
 }
 int
-join_group_v4::name(family f) const noexcept
+join_group::name(family f) const noexcept
 {
-    return native_socket_option::join_group_v4{}.name(f);
+    return is_v4_ ? native_socket_option::join_group(ipv4_address()).name(f)
+                  : native_socket_option::join_group(ipv6_address()).name(f);
 }
 std::size_t
-join_group_v4::size(family f) const noexcept
+join_group::size(family f) const noexcept
 {
-    return native_socket_option::join_group_v4{}.size(f);
+    return is_v4_ ? native_socket_option::join_group(ipv4_address()).size(f)
+                  : native_socket_option::join_group(ipv6_address()).size(f);
 }
 
-// leave_group_v4
-
-leave_group_v4::leave_group_v4(ipv4_address group, ipv4_address iface) noexcept
+leave_group::leave_group(ip_address const& group) noexcept
+    : is_v4_(group.is_v4())
 {
-    native_socket_option::leave_group_v4 native(group, iface);
-    static_assert(
-        sizeof(native) <= sizeof(storage_),
-        "platform ip_mreq exceeds leave_group_v4 storage");
+    native_socket_option::leave_group native(group);
+    auto const f = group.is_v4() ? family::v4 : family::v6;
+    std::memcpy(storage_, native.data(f), native.size(f));
+}
+
+leave_group::leave_group(ipv4_address group, ipv4_address iface) noexcept
+    : is_v4_(true)
+{
+    native_socket_option::leave_group native(group, iface);
     std::memcpy(storage_, native.data(family::v4), native.size(family::v4));
 }
 
-int
-leave_group_v4::level(family f) const noexcept
+leave_group::leave_group(
+    ipv6_address const& group, unsigned int if_index) noexcept
+    : is_v4_(false)
 {
-    return native_socket_option::leave_group_v4{}.level(f);
+    native_socket_option::leave_group native(group, if_index);
+    std::memcpy(storage_, native.data(family::v6), native.size(family::v6));
+}
+
+int
+leave_group::level(family f) const noexcept
+{
+    return is_v4_ ? native_socket_option::leave_group(ipv4_address()).level(f)
+                  : native_socket_option::leave_group(ipv6_address()).level(f);
 }
 int
-leave_group_v4::name(family f) const noexcept
+leave_group::name(family f) const noexcept
 {
-    return native_socket_option::leave_group_v4{}.name(f);
+    return is_v4_ ? native_socket_option::leave_group(ipv4_address()).name(f)
+                  : native_socket_option::leave_group(ipv6_address()).name(f);
 }
 std::size_t
-leave_group_v4::size(family f) const noexcept
+leave_group::size(family f) const noexcept
 {
-    return native_socket_option::leave_group_v4{}.size(f);
-}
-
-// join_group_v6
-
-join_group_v6::join_group_v6(ipv6_address group, unsigned int if_index) noexcept
-{
-    native_socket_option::join_group_v6 native(group, if_index);
-    static_assert(
-        sizeof(native) <= sizeof(storage_),
-        "platform ipv6_mreq exceeds join_group_v6 storage");
-    std::memcpy(storage_, native.data(family::v4), native.size(family::v4));
-}
-
-int
-join_group_v6::level(family f) const noexcept
-{
-    return native_socket_option::join_group_v6{}.level(f);
-}
-int
-join_group_v6::name(family f) const noexcept
-{
-    return native_socket_option::join_group_v6{}.name(f);
-}
-std::size_t
-join_group_v6::size(family f) const noexcept
-{
-    return native_socket_option::join_group_v6{}.size(f);
-}
-
-// leave_group_v6
-
-leave_group_v6::leave_group_v6(
-    ipv6_address group, unsigned int if_index) noexcept
-{
-    native_socket_option::leave_group_v6 native(group, if_index);
-    static_assert(
-        sizeof(native) <= sizeof(storage_),
-        "platform ipv6_mreq exceeds leave_group_v6 storage");
-    std::memcpy(storage_, native.data(family::v4), native.size(family::v4));
-}
-
-int
-leave_group_v6::level(family f) const noexcept
-{
-    return native_socket_option::leave_group_v6{}.level(f);
-}
-int
-leave_group_v6::name(family f) const noexcept
-{
-    return native_socket_option::leave_group_v6{}.name(f);
-}
-std::size_t
-leave_group_v6::size(family f) const noexcept
-{
-    return native_socket_option::leave_group_v6{}.size(f);
+    return is_v4_ ? native_socket_option::leave_group(ipv4_address()).size(f)
+                  : native_socket_option::leave_group(ipv6_address()).size(f);
 }
 
 // multicast_interface_v4

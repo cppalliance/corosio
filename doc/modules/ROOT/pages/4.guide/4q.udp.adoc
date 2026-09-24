@@ -205,11 +205,9 @@ Related options:
 |===
 | Option | Purpose
 
-| `join_group_v4` / `leave_group_v4`
-| Subscribe to or unsubscribe from an IPv4 multicast group.
-
-| `join_group_v6` / `leave_group_v6`
-| IPv6 equivalents.
+| `join_group` / `leave_group`
+| Subscribe to or unsubscribe from a multicast group. The group's
+  family selects the wire form, so one pair serves both families.
 
 | `multicast_loop`
 | Enable or disable receiving your own outgoing multicast. One option

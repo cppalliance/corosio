@@ -26,6 +26,7 @@
 #include <boost/corosio/local_stream_socket.hpp>
 #endif
 
+#include <cstring>
 #include <stdexcept>
 #include <system_error>
 #include <tuple>
@@ -188,18 +189,79 @@ struct socket_option_test
             native_socket_option::multicast_hops(256), std::logic_error);
     }
 
-    // leave_group_v6's static traits and byte layout, exercised directly
-    // so they are covered on hosts with no multicast route to join.
-    void testLeaveGroupV6Traits()
+    // Membership traits, exercised directly so they are covered on
+    // hosts with no multicast route to join. Membership dispatches
+    // on the group's family, not the socket's: a v4 group renders at
+    // the IPv4 level even when the family argument says v6 (the
+    // dual-stack case).
+    void testMembershipTraits()
     {
-        socket_option::leave_group_v6 leave(ipv6_address("ff02::1"), 0);
-        socket_option::join_group_v6 join(ipv6_address("ff02::1"));
-        BOOST_TEST_EQ(leave.level(family::v6), join.level(family::v6));
-        BOOST_TEST(leave.name(family::v6) != join.name(family::v6));
-        BOOST_TEST_EQ(leave.size(family::v6), join.size(family::v6));
-        BOOST_TEST(leave.data(family::v6) != nullptr);
+        socket_option::join_group join4(ip_address("239.1.2.3"));
+        socket_option::leave_group leave4(ip_address("239.1.2.3"));
+        socket_option::join_group join6(ip_address("ff02::1"));
+        socket_option::leave_group leave6(ipv6_address("ff02::1"), 0);
+
+        // Group family decides; the argument does not
+        BOOST_TEST_EQ(join4.level(family::v4), join4.level(family::v6));
+        BOOST_TEST_EQ(join6.level(family::v4), join6.level(family::v6));
+        BOOST_TEST(join4.level(family::v4) != join6.level(family::v4));
+
+        // Join and leave share levels and sizes, not names
+        BOOST_TEST_EQ(leave4.level(family::v4), join4.level(family::v4));
+        BOOST_TEST_EQ(leave6.level(family::v6), join6.level(family::v6));
+        BOOST_TEST(leave4.name(family::v4) != join4.name(family::v4));
+        BOOST_TEST(leave6.name(family::v6) != join6.name(family::v6));
+        BOOST_TEST_EQ(leave4.size(family::v4), join4.size(family::v4));
+        BOOST_TEST_EQ(leave6.size(family::v6), join6.size(family::v6));
+
+        // Distinct wire structs per family
+        BOOST_TEST(join4.size(family::v4) != join6.size(family::v4));
+
+        // The public vocabulary is bytewise the native one, for every
+        // object and either family argument
+        auto same_bytes = [](auto const& pub, auto const& nat) {
+            for (auto f : {family::v4, family::v6})
+            {
+                BOOST_TEST_EQ(pub.level(f), nat.level(f));
+                BOOST_TEST_EQ(pub.name(f), nat.name(f));
+                if (!BOOST_TEST_EQ(pub.size(f), nat.size(f)))
+                    continue;
+                BOOST_TEST(
+                    std::memcmp(pub.data(f), nat.data(f), pub.size(f)) == 0);
+            }
+        };
+        same_bytes(
+            join4, native_socket_option::join_group(ip_address("239.1.2.3")));
+        same_bytes(
+            leave4, native_socket_option::leave_group(ip_address("239.1.2.3")));
+        same_bytes(
+            join6, native_socket_option::join_group(ip_address("ff02::1")));
+        same_bytes(
+            leave6,
+            native_socket_option::leave_group(ipv6_address("ff02::1"), 0));
+
+        // A v6 group's zone is the default interface index; an explicit
+        // index outranks it
+        {
+            native_socket_option::join_group zoned(ip_address("ff02::1%2"));
+            auto const* m =
+                static_cast<struct ipv6_mreq const*>(zoned.data(family::v6));
+            BOOST_TEST_EQ(m->ipv6mr_interface, 2u);
+
+            native_socket_option::join_group unzoned(ip_address("ff02::1"));
+            m = static_cast<struct ipv6_mreq const*>(unzoned.data(family::v6));
+            BOOST_TEST_EQ(m->ipv6mr_interface, 0u);
+
+            native_socket_option::join_group explicit_index(
+                ipv6_address("ff02::1%2"), 5);
+            m = static_cast<struct ipv6_mreq const*>(
+                explicit_index.data(family::v6));
+            BOOST_TEST_EQ(m->ipv6mr_interface, 5u);
+        }
     }
 
+    // The interface option's IPv4 rendering, pinned with a non-any
+    // address so an empty marshal cannot pass
     void testV6Only()
     {
         io_context ioc(Backend);
@@ -322,7 +384,7 @@ struct socket_option_test
         testTcpLocalEndpoint();
         testUdpOptions();
         testMulticastOptions();
-        testLeaveGroupV6Traits();
+        testMembershipTraits();
         testV6Only();
         testClosedSocketThrows();
         testInvalidOptionReportsError();
