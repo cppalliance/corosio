@@ -188,8 +188,8 @@ The acceptor cannot know the correct address family until `bind()` is called.
 **Option 1: Require protocol at construction**
 
 ```cpp
-tcp_acceptor acc(ctx, tcp::v4());  // Creates AF_INET immediately
-tcp_acceptor acc(ctx, tcp::v6());  // Creates AF_INET6 immediately
+tcp_acceptor acc(ctx, family::v4);  // Creates AF_INET immediately
+tcp_acceptor acc(ctx, family::v6);  // Creates AF_INET6 immediately
 ```
 
 Forces the user to decide upfront, reducing API flexibility.

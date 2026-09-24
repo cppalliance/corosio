@@ -21,7 +21,7 @@
 #include <boost/corosio/resolver.hpp>
 #include <boost/corosio/signal_set.hpp>
 #include <boost/corosio/stream_file.hpp>
-#include <boost/corosio/udp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/udp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -920,7 +920,7 @@ struct win_wait_reactor_thread_faults
         io_context ioc;
         auto ex = ioc.get_executor();
         udp_socket u(ioc);
-        BOOST_TEST(!u.open(udp::v4()));
+        BOOST_TEST(!u.open(family::v4));
         BOOST_TEST(!u.bind(endpoint(ipv4_address::loopback(), 0)));
 
         std::error_code wec = win_err(WSAEINTR); // sentinel, must change

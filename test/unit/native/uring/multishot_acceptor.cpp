@@ -17,7 +17,6 @@
 #include <boost/corosio/backend.hpp>
 #include <boost/corosio/native/native_io_context.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/tcp.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 

@@ -17,7 +17,7 @@
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/ipv4_address.hpp>
-#include <boost/corosio/udp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/udp_socket.hpp>
 
 #include <boost/capy/buffers.hpp>
@@ -35,7 +35,7 @@ connectionless_and_connected_modes(corosio::io_context& ioc)
     // Connectionless mode: each send_to/recv_from carries an endpoint --
     // a datagram is a single addressed unit, unlike a stream's byte flow.
     corosio::udp_socket sock(ioc);
-    if (auto ec = sock.open(corosio::udp::v4()))
+    if (auto ec = sock.open(corosio::family::v4))
         co_return;
     if (auto ec =
             sock.bind(corosio::endpoint(corosio::ipv4_address::any(), 9000)))

@@ -21,7 +21,6 @@
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/endpoint.hpp>
-#include <boost/corosio/tcp.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -253,8 +252,8 @@ public:
         Failures such as descriptor exhaustion are normal runtime
         conditions and are reported through the returned error code.
 
-        @param proto The protocol (IPv4 or IPv6). Defaults to
-            `tcp::v4()`.
+        @param f The address family (IPv4 or IPv6). Defaults to
+            `family::v4`.
 
         @par Example
         @par !example open
@@ -263,7 +262,7 @@ public:
 
         @return The error code, empty on success.
     */
-    [[nodiscard]] std::error_code open(tcp proto = tcp::v4()) noexcept;
+    [[nodiscard]] std::error_code open(family f = family::v4) noexcept;
 
     /** Bind to a local endpoint.
 

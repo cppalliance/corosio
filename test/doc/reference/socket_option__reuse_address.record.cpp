@@ -16,7 +16,7 @@
 
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/tcp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 
 namespace corosio = boost::corosio;
@@ -27,7 +27,7 @@ namespace {
 void
 restart_a_listener_on_the_same_port(corosio::tcp_acceptor& acc)
 {
-    if (auto ec = acc.open(corosio::tcp::v4()))
+    if (auto ec = acc.open(corosio::family::v4))
         return; // report the error
 
     // Lets bind() succeed while connections from a previous listener are

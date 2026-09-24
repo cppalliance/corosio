@@ -310,7 +310,7 @@ struct iocp_faults
         {
             tcp_socket s(ioc);
             fault_scope f(sys::WSASocketW, WSAEAFNOSUPPORT);
-            auto ec = s.open(tcp::v4());
+            auto ec = s.open(family::v4);
             BOOST_TEST(f.fired());
             BOOST_TEST(ec == std::errc::address_family_not_supported);
             BOOST_TEST(!s.is_open());
@@ -320,7 +320,7 @@ struct iocp_faults
         expect_no_handle_leak([&] {
             tcp_socket s(ioc);
             fault_scope f(sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
-            auto ec = s.open(tcp::v4());
+            auto ec = s.open(family::v4);
             BOOST_TEST(f.fired());
             BOOST_TEST(ec == win_err(ERROR_INVALID_PARAMETER));
             BOOST_TEST(!s.is_open());
@@ -362,7 +362,7 @@ struct iocp_faults
     {
         io_context ioc(iocp);
         tcp_socket s(ioc);
-        BOOST_TEST(!s.open(tcp::v4()));
+        BOOST_TEST(!s.open(family::v4));
         fault_scope f(sys::bind, WSAEADDRINUSE);
         auto ec = s.bind(loopback());
         BOOST_TEST(f.fired());
@@ -374,7 +374,7 @@ struct iocp_faults
     {
         io_context ioc(iocp);
         tcp_socket s(ioc);
-        BOOST_TEST(!s.open(tcp::v4()));
+        BOOST_TEST(!s.open(family::v4));
         {
             fault_scope f(sys::setsockopt, WSAENOTSOCK);
             expect_system_error(
@@ -411,7 +411,7 @@ struct iocp_faults
         }
         io_context ioc(iocp);
         tcp_socket s(ioc);
-        BOOST_TEST(!s.open(tcp::v4()));
+        BOOST_TEST(!s.open(family::v4));
         // Severing the port association is best effort: the caller
         // gets a working socket either way.
         fault_scope f(sys::NtSetInformationFile, ERROR_INVALID_PARAMETER);
@@ -433,7 +433,7 @@ struct iocp_faults
         tcp_acceptor acc(ioc, loopback());
         auto port = acc.local_endpoint().port();
         tcp_socket s(ioc);
-        BOOST_TEST(!s.open(tcp::v4()));
+        BOOST_TEST(!s.open(family::v4));
         std::error_code cec;
         auto body = [&]() -> capy::task<> {
             auto [ec] =
@@ -458,7 +458,7 @@ struct iocp_faults
                 // ConnectEx needs a bound socket, so an unbound one
                 // is bound to the wildcard first.
                 tcp_socket s(ioc);
-                BOOST_TEST(!s.open(tcp::v4()));
+                BOOST_TEST(!s.open(family::v4));
                 fault_scope f(sys::bind, WSAEADDRNOTAVAIL);
                 auto [ec] = co_await s.connect(ep);
                 bec       = ec;
@@ -467,7 +467,7 @@ struct iocp_faults
             if (hook_is_live(sys::ConnectEx))
             {
                 tcp_socket s(ioc);
-                BOOST_TEST(!s.open(tcp::v4()));
+                BOOST_TEST(!s.open(family::v4));
                 fault_scope f(sys::ConnectEx, WSAECONNREFUSED);
                 auto [ec] = co_await s.connect(ep);
                 sec       = ec;
@@ -481,7 +481,7 @@ struct iocp_faults
                 // The kernel result of a queued connect only exists
                 // on the completion.
                 tcp_socket s(ioc);
-                BOOST_TEST(!s.open(tcp::v4()));
+                BOOST_TEST(!s.open(family::v4));
                 completion_fault_scope q(ERROR_CONNECTION_REFUSED);
                 auto [ec] = co_await s.connect(ep);
                 cec       = ec;
@@ -741,7 +741,7 @@ struct iocp_faults
         {
             udp_socket u(ioc);
             fault_scope f(sys::WSASocketW, WSAEAFNOSUPPORT);
-            auto ec = u.open(udp::v4());
+            auto ec = u.open(family::v4);
             BOOST_TEST(f.fired());
             BOOST_TEST(ec == std::errc::address_family_not_supported);
             BOOST_TEST(!u.is_open());
@@ -749,14 +749,14 @@ struct iocp_faults
         expect_no_handle_leak([&] {
             udp_socket u(ioc);
             fault_scope f(sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
-            auto ec = u.open(udp::v4());
+            auto ec = u.open(family::v4);
             BOOST_TEST(f.fired());
             BOOST_TEST(ec == win_err(ERROR_INVALID_PARAMETER));
             BOOST_TEST(!u.is_open());
         });
         {
             udp_socket u(ioc);
-            BOOST_TEST(!u.open(udp::v4()));
+            BOOST_TEST(!u.open(family::v4));
             fault_scope f(sys::bind, WSAEADDRINUSE);
             BOOST_TEST(u.bind(loopback()) == std::errc::address_in_use);
             BOOST_TEST(f.fired());
@@ -787,7 +787,7 @@ struct iocp_faults
         }
         {
             udp_socket u(ioc);
-            BOOST_TEST(!u.open(udp::v4()));
+            BOOST_TEST(!u.open(family::v4));
             {
                 fault_scope f(sys::setsockopt, WSAENOTSOCK);
                 expect_system_error(
@@ -819,9 +819,9 @@ struct iocp_faults
     {
         io_context ioc(iocp);
         udp_socket a(ioc), b(ioc);
-        BOOST_TEST(!a.open(udp::v4()));
+        BOOST_TEST(!a.open(family::v4));
         BOOST_TEST(!a.bind(loopback()));
-        BOOST_TEST(!b.open(udp::v4()));
+        BOOST_TEST(!b.open(family::v4));
         BOOST_TEST(!b.bind(loopback()));
         auto const a_ep =
             endpoint(ipv4_address::loopback(), a.local_endpoint().port());
@@ -1000,7 +1000,7 @@ struct iocp_faults
             {
                 io_context quiet(iocp);
                 udp_socket s(quiet);
-                BOOST_TEST(!s.open(udp::v4()));
+                BOOST_TEST(!s.open(family::v4));
                 BOOST_TEST(!s.bind(loopback()));
                 s.close();
             }
@@ -1063,7 +1063,7 @@ struct iocp_faults
             fault_scope first(sys::send, WSAENOBUFS, 1);
             fault_scope second(sys::send, WSAENOBUFS, 2);
             tcp_socket s(ioc);
-            BOOST_TEST(!s.open(tcp::v4()));
+            BOOST_TEST(!s.open(family::v4));
             s.cancel();
             BOOST_TEST(first.fired());
             BOOST_TEST(second.fired());

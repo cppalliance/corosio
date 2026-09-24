@@ -18,7 +18,7 @@
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/udp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/udp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
 
@@ -54,8 +54,8 @@ struct datagram_paths_test
     // Connected UDP pair; both sockets bound to ephemeral loopback ports.
     static void make_udp_pair(io_context& ioc, udp_socket& a, udp_socket& b)
     {
-        BOOST_TEST(!a.open(udp::v4()));
-        BOOST_TEST(!b.open(udp::v4()));
+        BOOST_TEST(!a.open(family::v4));
+        BOOST_TEST(!b.open(family::v4));
         auto ec1 = a.bind(endpoint(ipv4_address::loopback(), 0));
         auto ec2 = b.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec1);
@@ -120,8 +120,8 @@ struct datagram_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket recv_sock(ioc), send_sock(ioc);
-        BOOST_TEST(!recv_sock.open(udp::v4()));
-        BOOST_TEST(!send_sock.open(udp::v4()));
+        BOOST_TEST(!recv_sock.open(family::v4));
+        BOOST_TEST(!send_sock.open(family::v4));
         auto ec1 = recv_sock.bind(endpoint(ipv4_address::loopback(), 0));
         auto ec2 = send_sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec1);
@@ -164,7 +164,7 @@ struct datagram_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket sock(ioc);
-        BOOST_TEST(!sock.open(udp::v4()));
+        BOOST_TEST(!sock.open(family::v4));
         auto bec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
@@ -199,7 +199,7 @@ struct datagram_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket sock(ioc);
-        BOOST_TEST(!sock.open(udp::v4()));
+        BOOST_TEST(!sock.open(family::v4));
         auto bec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 

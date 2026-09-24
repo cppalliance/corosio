@@ -23,7 +23,6 @@
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/message_flags.hpp>
 #include <boost/corosio/shutdown_type.hpp>
-#include <boost/corosio/udp.hpp>
 #include <boost/corosio/wait_type.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -476,12 +475,12 @@ public:
         Opening an already-open socket is a no-op that reports
         success.
 
-        @param proto The protocol (IPv4 or IPv6). Defaults to
-            `udp::v4()`.
+        @param f The address family (IPv4 or IPv6). Defaults to
+            `family::v4`.
 
         @return The error code, empty on success.
     */
-    [[nodiscard]] std::error_code open(udp proto = udp::v4()) noexcept;
+    [[nodiscard]] std::error_code open(family f = family::v4) noexcept;
 
     /** Close the socket.
 
@@ -714,7 +713,7 @@ public:
     {
         connect_awaitable aw(*this, ep);
         if (!is_open())
-            aw.ec_ = open(ep.is_v6() ? udp::v6() : udp::v4());
+            aw.ec_ = open(ep.address().family());
         return aw;
     }
 

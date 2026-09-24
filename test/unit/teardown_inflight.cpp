@@ -24,7 +24,7 @@
 #include <boost/corosio/local_stream_socket.hpp>
 #include <boost/corosio/random_access_file.hpp>
 #include <boost/corosio/stream_file.hpp>
-#include <boost/corosio/tcp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
@@ -91,7 +91,7 @@ struct uring_teardown_test
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        BOOST_TEST(!acc.open(tcp::v4()));
+        BOOST_TEST(!acc.open(family::v4));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
         acc.close();
@@ -116,7 +116,7 @@ struct uring_teardown_test
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        BOOST_TEST(!acc.open(tcp::v4()));
+        BOOST_TEST(!acc.open(family::v4));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
 
@@ -146,7 +146,7 @@ struct uring_teardown_test
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        BOOST_TEST(!acc.open(tcp::v4()));
+        BOOST_TEST(!acc.open(family::v4));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
 

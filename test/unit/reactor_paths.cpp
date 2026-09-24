@@ -18,7 +18,7 @@
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/tcp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/udp_socket.hpp>
@@ -496,7 +496,7 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket sock(ioc);
-        BOOST_TEST(!sock.open(udp::v4()));
+        BOOST_TEST(!sock.open(family::v4));
         auto bec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
@@ -524,7 +524,7 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket sock(ioc);
-        BOOST_TEST(!sock.open(udp::v4()));
+        BOOST_TEST(!sock.open(family::v4));
         auto bec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
@@ -558,7 +558,7 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket sock(ioc);
-        BOOST_TEST(!sock.open(udp::v4()));
+        BOOST_TEST(!sock.open(family::v4));
         auto bec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
@@ -589,8 +589,8 @@ struct reactor_paths_test
         // Use a connected pair to avoid sendto address issues.
         udp_socket s1(ioc);
         udp_socket s2(ioc);
-        BOOST_TEST(!s1.open(udp::v4()));
-        BOOST_TEST(!s2.open(udp::v4()));
+        BOOST_TEST(!s1.open(family::v4));
+        BOOST_TEST(!s2.open(family::v4));
         auto e1 = s1.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!e1);
         auto e2 = s2.bind(endpoint(ipv4_address::loopback(), 0));
@@ -638,8 +638,8 @@ struct reactor_paths_test
 
         udp_socket s1(ioc);
         udp_socket s2(ioc);
-        BOOST_TEST(!s1.open(udp::v4()));
-        BOOST_TEST(!s2.open(udp::v4()));
+        BOOST_TEST(!s1.open(family::v4));
+        BOOST_TEST(!s2.open(family::v4));
         auto e1 = s1.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!e1);
         auto e2 = s2.bind(endpoint(ipv4_address::loopback(), 0));
@@ -684,8 +684,8 @@ struct reactor_paths_test
 
         udp_socket s1(ioc);
         udp_socket s2(ioc);
-        BOOST_TEST(!s1.open(udp::v4()));
-        BOOST_TEST(!s2.open(udp::v4()));
+        BOOST_TEST(!s1.open(family::v4));
+        BOOST_TEST(!s2.open(family::v4));
         auto e1 = s1.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!e1);
         auto e2 = s2.bind(endpoint(ipv4_address::loopback(), 0));
@@ -757,7 +757,7 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket sock(ioc);
-        BOOST_TEST(!sock.open(udp::v4()));
+        BOOST_TEST(!sock.open(family::v4));
         auto bec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
@@ -914,8 +914,8 @@ struct reactor_paths_test
 
         udp_socket s1(ioc);
         udp_socket s2(ioc);
-        BOOST_TEST(!s1.open(udp::v4()));
-        BOOST_TEST(!s2.open(udp::v4()));
+        BOOST_TEST(!s1.open(family::v4));
+        BOOST_TEST(!s2.open(family::v4));
         auto e1 = s1.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!e1);
         auto e2 = s2.bind(endpoint(ipv4_address::loopback(), 0));
@@ -968,7 +968,7 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket sock(ioc);
-        BOOST_TEST(!sock.open(udp::v4()));
+        BOOST_TEST(!sock.open(family::v4));
         auto bec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
@@ -1276,12 +1276,12 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket rsock(ioc);
-        BOOST_TEST(!rsock.open(udp::v4()));
+        BOOST_TEST(!rsock.open(family::v4));
         auto bec = rsock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
         udp_socket ssock(ioc);
-        BOOST_TEST(!ssock.open(udp::v4()));
+        BOOST_TEST(!ssock.open(family::v4));
 
         std::error_code wait_ec;
         bool wait_done = false;
@@ -1772,7 +1772,7 @@ struct reactor_paths_test
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
         udp_socket u1(ioc);
-        BOOST_TEST(!u1.open(udp::v4()));
+        BOOST_TEST(!u1.open(family::v4));
         auto bec = u1.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 

@@ -23,7 +23,6 @@
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/corosio/local_endpoint.hpp>
-#include <boost/corosio/local_datagram.hpp>
 #include <boost/corosio/message_flags.hpp>
 #include <boost/corosio/shutdown_type.hpp>
 #include <boost/corosio/wait_type.hpp>
@@ -524,11 +523,10 @@ public:
         Opening an already-open socket is a no-op that reports
         success.
 
-        @param proto The protocol. Defaults to local_datagram{}.
 
         @return The error code, empty on success.
     */
-    [[nodiscard]] std::error_code open(local_datagram proto = {}) noexcept;
+    [[nodiscard]] std::error_code open() noexcept;
 
     /** Close the socket.
 

@@ -16,7 +16,7 @@
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/udp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/udp_socket.hpp>
 
 namespace corosio = boost::corosio;
@@ -28,7 +28,7 @@ void
 allow_sending_to_a_broadcast_address(corosio::io_context& ioc)
 {
     corosio::udp_socket sock(ioc);
-    if (auto ec = sock.open(corosio::udp::v4()))
+    if (auto ec = sock.open(corosio::family::v4))
         return; // report the error
 
     // Without this the kernel refuses a send_to a broadcast address; the

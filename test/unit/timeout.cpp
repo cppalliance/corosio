@@ -11,7 +11,6 @@
 #include <boost/corosio/timeout.hpp>
 
 #include <boost/corosio/delay.hpp>
-#include <boost/corosio/tcp.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/buffers.hpp>

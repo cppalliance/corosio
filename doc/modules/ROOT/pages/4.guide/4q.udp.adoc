@@ -15,8 +15,8 @@ is no handshake, no acknowledgment, and no ordering guarantee.
 
 For the protocol-level fundamentals (header layout, fragmentation, when to
 choose UDP over TCP), see xref:2.networking-tutorial/2g.udp.adoc[UDP: Fast,
-Simple, Unreliable]. This page covers the Corosio API: `udp_socket`, the
-`udp` protocol tag, and the operations they support.
+Simple, Unreliable]. This page covers the Corosio API: `udp_socket` and the
+operations it supports.
 
 [NOTE]
 ====
@@ -27,19 +27,19 @@ include::example$snippets/4q_udp.cpp[tag=assume]
 ----
 ====
 
-== The udp Protocol Tag
+== Choosing the Address Family
 
-`corosio::udp` identifies the address family used to open a socket. The two
-factory functions `udp::v4()` and `udp::v6()` return the IPv4 and IPv6 forms:
+`open()` takes the `corosio::family` the socket should be created
+with — `family::v4` or `family::v6`:
 
 [source,cpp]
 ----
 include::example$snippets/4q_udp.cpp[tag=protocol,indent=0]
 ----
 
-`open()` defaults to `udp::v4()` when no protocol is supplied. The tag is also
-used by `connect()` to pick a family automatically when the socket is not yet
-open — see xref:#connected-mode[Connected Mode] below.
+`open()` defaults to `family::v4` when no family is supplied, and
+`connect()` picks the family automatically from the endpoint when the
+socket is not yet open — see xref:#connected-mode[Connected Mode] below.
 
 == Opening and Binding
 

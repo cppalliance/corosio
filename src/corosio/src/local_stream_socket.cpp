@@ -18,8 +18,12 @@
 
 #if BOOST_COROSIO_POSIX
 #include <sys/ioctl.h>
+#include <sys/socket.h>
 #elif BOOST_COROSIO_HAS_IOCP
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
+#ifndef AF_UNIX
+#define AF_UNIX 1
+#endif
 #endif
 
 namespace boost::corosio {
@@ -35,11 +39,11 @@ local_stream_socket::local_stream_socket(capy::execution_context& ctx)
 }
 
 std::error_code
-local_stream_socket::open(local_stream proto) noexcept
+local_stream_socket::open() noexcept
 {
     if (is_open())
         return {};
-    return open_for_family(proto.family(), proto.type(), proto.protocol());
+    return open_for_family(AF_UNIX, SOCK_STREAM, 0);
 }
 
 std::error_code

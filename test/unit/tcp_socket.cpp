@@ -12,7 +12,7 @@
 
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/tcp.hpp>
+#include <boost/corosio/family.hpp>
 
 #include <boost/capy/read.hpp>
 #include <boost/capy/write.hpp>
@@ -263,7 +263,7 @@ struct tcp_socket_test
         // sockets, so the rejection only holds on POSIX backends.
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        BOOST_TEST(!sock.open(tcp::v4()));
+        BOOST_TEST(!sock.open(family::v4));
 
         // An IPv6-level option on an IPv4 socket fails with a genuine
         // error surfaced as system_error
@@ -306,7 +306,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        BOOST_TEST(!sock.open(tcp::v6()));
+        BOOST_TEST(!sock.open(family::v6));
 
         auto ec = sock.bind(endpoint(ipv6_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -2009,7 +2009,7 @@ struct tcp_socket_test
         io_context ioc(Backend);
 
         tcp_acceptor acc(ioc);
-        BOOST_TEST(!acc.open(tcp::v6()));
+        BOOST_TEST(!acc.open(family::v6));
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
         if (!ec)
@@ -2177,7 +2177,7 @@ struct tcp_socket_test
         io_context ioc(Backend);
 
         tcp_acceptor acc(ioc);
-        BOOST_TEST(!acc.open(tcp::v6()));
+        BOOST_TEST(!acc.open(family::v6));
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
         if (!ec)
@@ -2267,7 +2267,7 @@ struct tcp_socket_test
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
-        BOOST_TEST(!sock.open(tcp::v6())); // IPv6
+        BOOST_TEST(!sock.open(family::v6)); // IPv6
 
         // Default is v6only=true (kernel default after open_socket sets it)
         BOOST_TEST_EQ(sock.get_option<socket_option::v6_only>().value(), true);
@@ -2287,7 +2287,7 @@ struct tcp_socket_test
 
         // Dual-stack listener (v6only=false is the default)
         tcp_acceptor acc(ioc);
-        BOOST_TEST(!acc.open(tcp::v6()));
+        BOOST_TEST(!acc.open(family::v6));
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::any(), 0));
         if (!ec)
@@ -2297,7 +2297,7 @@ struct tcp_socket_test
 
         tcp_socket s1(ioc);
         tcp_socket s2(ioc);
-        BOOST_TEST(!s2.open(tcp::v6())); // IPv6 socket
+        BOOST_TEST(!s2.open(family::v6)); // IPv6 socket
         s2.set_option(socket_option::v6_only(false));
 
         bool accept_done  = false;
@@ -2435,7 +2435,7 @@ struct tcp_socket_test
         close_native_socket(un);
 #endif
 
-        BOOST_TEST(!sock.open(tcp::v4()));
+        BOOST_TEST(!sock.open(family::v4));
         expect_error(sock.native_handle());
         BOOST_TEST(sock.is_open());
         sock.close();
@@ -2618,7 +2618,7 @@ struct tcp_socket_test
         io_context ioc(Backend);
 
         tcp_acceptor acc(ioc);
-        BOOST_TEST(!acc.open(tcp::v6()));
+        BOOST_TEST(!acc.open(family::v6));
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
         if (ec)

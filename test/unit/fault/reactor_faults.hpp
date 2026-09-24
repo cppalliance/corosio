@@ -18,7 +18,7 @@
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/tcp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
@@ -118,7 +118,7 @@ struct reactor_common_faults
         auto port = acc.local_endpoint().port();
 
         tcp_socket s1(ioc), s2(ioc);
-        BOOST_TEST(!s2.open(tcp::v4()));
+        BOOST_TEST(!s2.open(family::v4));
         s2.set_option(socket_option::send_buffer_size(1024));
         BOOST_TEST(
             s2.get_option<socket_option::send_buffer_size>().value() <
@@ -914,7 +914,7 @@ struct reactor_common_faults
         io_context ioc(Backend);
         tcp_acceptor acc(ioc, loopback());
         tcp_socket s(ioc);
-        if (s.open(tcp::v6()))
+        if (s.open(family::v6))
         {
             std::fprintf(
                 stderr,
@@ -1012,8 +1012,8 @@ struct reactor_common_faults
     {
         io_context ioc(Backend);
         udp_socket a(ioc), b(ioc);
-        BOOST_TEST(!a.open(udp::v4()));
-        BOOST_TEST(!b.open(udp::v4()));
+        BOOST_TEST(!a.open(family::v4));
+        BOOST_TEST(!b.open(family::v4));
         BOOST_TEST(!a.bind(loopback()));
         BOOST_TEST(!b.bind(loopback()));
         {
@@ -1079,7 +1079,7 @@ struct reactor_common_faults
             // merely harmless there.
             {
                 udp_socket d(ioc);
-                BOOST_TEST(!d.open(udp::v4()));
+                BOOST_TEST(!d.open(family::v4));
                 BOOST_TEST(!d.bind(loopback()));
                 std::ignore =
                     co_await corosio::delay(std::chrono::milliseconds(1));
@@ -1156,7 +1156,7 @@ struct reactor_common_faults
             // Deferred connected send; same latching hop as send_to.
             {
                 udp_socket d(ioc);
-                BOOST_TEST(!d.open(udp::v4()));
+                BOOST_TEST(!d.open(family::v4));
                 BOOST_TEST(!d.bind(loopback()));
                 {
                     auto [ec] = co_await d.connect(b.local_endpoint());

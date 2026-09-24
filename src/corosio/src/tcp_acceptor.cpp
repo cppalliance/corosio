@@ -73,7 +73,7 @@ tcp_acceptor::tcp_acceptor(
     capy::execution_context& ctx, endpoint ep, int backlog)
     : tcp_acceptor(ctx)
 {
-    if (auto ec = open(ep.is_v6() ? tcp::v6() : tcp::v4()))
+    if (auto ec = open(ep.address().family()))
         detail::throw_system_error(ec, "tcp_acceptor");
 #if BOOST_COROSIO_HAS_IOCP
     set_option(exclusive_address_use{});
@@ -87,7 +87,7 @@ tcp_acceptor::tcp_acceptor(
 }
 
 std::error_code
-tcp_acceptor::open(tcp proto) noexcept
+tcp_acceptor::open(family f) noexcept
 {
     if (is_open())
         return {};
@@ -99,7 +99,7 @@ tcp_acceptor::open(tcp proto) noexcept
 #endif
     std::error_code ec = svc.open_acceptor_socket(
         *static_cast<tcp_acceptor::implementation*>(h_.get()),
-        detail::native_family(proto.family()), proto.type(), proto.protocol());
+        detail::native_family(f), SOCK_STREAM, IPPROTO_TCP);
     return ec;
 }
 

@@ -237,7 +237,7 @@ struct native_resume_cancel_test
         auto ex = ioc.get_executor();
 
         native_tcp_acceptor<Backend> acc(ioc);
-        BOOST_TEST(!acc.open(tcp::v4()));
+        BOOST_TEST(!acc.open(family::v4));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
 
@@ -269,8 +269,8 @@ struct native_resume_cancel_test
         auto ex = ioc.get_executor();
 
         native_udp_socket<Backend> s1(ioc), s2(ioc);
-        BOOST_TEST(!s1.open(udp::v4()));
-        BOOST_TEST(!s2.open(udp::v4()));
+        BOOST_TEST(!s1.open(family::v4));
+        BOOST_TEST(!s2.open(family::v4));
         BOOST_TEST(!s1.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!s2.bind(endpoint(ipv4_address::loopback(), 0)));
         auto peer = s2.local_endpoint();

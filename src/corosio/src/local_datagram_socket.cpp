@@ -17,6 +17,7 @@
 #include <boost/corosio/native/detail/make_err.hpp>
 
 #include <sys/ioctl.h>
+#include <sys/socket.h>
 
 namespace boost::corosio {
 
@@ -31,11 +32,11 @@ local_datagram_socket::local_datagram_socket(capy::execution_context& ctx)
 }
 
 std::error_code
-local_datagram_socket::open(local_datagram proto) noexcept
+local_datagram_socket::open() noexcept
 {
     if (is_open())
         return {};
-    return open_for_family(proto.family(), proto.type(), proto.protocol());
+    return open_for_family(AF_UNIX, SOCK_DGRAM, 0);
 }
 
 std::error_code
