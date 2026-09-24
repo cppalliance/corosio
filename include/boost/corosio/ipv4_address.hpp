@@ -113,14 +113,14 @@ public:
         IPv4 address string or else an exception
         is thrown.
 
-        @note For a non-throwing parse function,
-        use @ref make_ipv4_address.
-
         @par Exception Safety
-        Exceptions thrown on invalid input.
+        Strong guarantee.
 
         @throws std::system_error `errc::invalid_argument` if the input
         failed to parse correctly.
+
+        @note For a non-throwing parse function,
+        use @ref make_ipv4_address.
 
         @param s The string to parse.
 
@@ -158,14 +158,14 @@ public:
 
         The resulting buffer is not null-terminated.
 
-        @throw std::length_error `dest_size < ipv4_address::max_str_len`
-
-        @return The formatted string view.
+        @throws std::length_error `dest_size < ipv4_address::max_str_len`
 
         @param dest The buffer in which to write,
         which must have at least `dest_size` space.
 
         @param dest_size The size of the output buffer.
+
+        @return The formatted string view.
     */
     std::string_view to_buffer(char* dest, std::size_t dest_size) const;
 
