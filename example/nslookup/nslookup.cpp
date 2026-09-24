@@ -45,16 +45,8 @@ do_lookup(
     for (auto const& entry : results)
     {
         auto ep = entry.get_endpoint();
-        if (ep.is_v4())
-        {
-            std::cout << "  IPv4: " << ep.v4_address().to_string() << ":"
-                      << ep.port() << "\n";
-        }
-        else
-        {
-            std::cout << "  IPv6: " << ep.v6_address().to_string() << ":"
-                      << ep.port() << "\n";
-        }
+        std::cout << "  " << (ep.is_v4() ? "IPv4" : "IPv6") << ": "
+                  << ep.address().to_string() << ":" << ep.port() << "\n";
     }
 
     std::cout << "\nTotal: " << results.size() << " addresses\n";

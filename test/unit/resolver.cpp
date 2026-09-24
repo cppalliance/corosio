@@ -130,13 +130,13 @@ struct resolver_test
             // Should be either 127.0.0.1 (IPv4) or ::1 (IPv6)
             if (ep.is_v4())
             {
-                auto addr = ep.v4_address();
+                auto addr = ep.address().to_v4();
                 if (addr == ipv4_address({127, 0, 0, 1}))
                     found_valid = true;
             }
             else if (ep.is_v6())
             {
-                auto addr = ep.v6_address();
+                auto addr = ep.address().to_v6();
                 if (addr == ipv6_address::loopback())
                     found_valid = true;
             }
@@ -177,7 +177,7 @@ struct resolver_test
         auto ep           = entry.get_endpoint();
         BOOST_TEST(ep.is_v4());
         BOOST_TEST_EQ(ep.port(), 8080);
-        BOOST_TEST(ep.v4_address() == ipv4_address({127, 0, 0, 1}));
+        BOOST_TEST(ep.address().to_v4() == ipv4_address({127, 0, 0, 1}));
     }
 
     void testResolveNumericIPv6()
@@ -213,7 +213,7 @@ struct resolver_test
         auto ep           = entry.get_endpoint();
         BOOST_TEST(ep.is_v6());
         BOOST_TEST_EQ(ep.port(), 443);
-        BOOST_TEST(ep.v6_address() == ipv6_address::loopback());
+        BOOST_TEST(ep.address().to_v6() == ipv6_address::loopback());
     }
 
     void testResolveServiceName()

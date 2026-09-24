@@ -136,7 +136,7 @@ struct native_udp_socket_test
             BOOST_TEST_EQ(n2, sizeof(msg));
             BOOST_TEST_EQ(std::strcmp(buf, "native udp"), 0);
 
-            BOOST_TEST_EQ(source.v4_address(), ipv4_address::loopback());
+            BOOST_TEST_EQ(source.address().to_v4(), ipv4_address::loopback());
         };
 
         auto ex = ioc.get_executor();

@@ -13,8 +13,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
-#include <boost/corosio/ipv4_address.hpp>
-#include <boost/corosio/ipv6_address.hpp>
+#include <boost/corosio/ip_address.hpp>
 
 #include <boost/capy/io_result.hpp>
 
@@ -28,11 +27,8 @@ namespace boost::corosio {
 /** An IP endpoint (address + port) supporting both IPv4 and IPv6.
 
     This class represents an endpoint for IP communication,
-    consisting of either an IPv4 or IPv6 address and a port number.
+    consisting of an IP address of either family and a port number.
     Endpoints are used to specify connection targets and bind addresses.
-
-    The endpoint holds both address types as separate members (not a union),
-    with a discriminator to track which address type is active.
 
     @par Thread Safety
     Distinct objects: Safe.@n
@@ -43,47 +39,26 @@ namespace boost::corosio {
 */
 class endpoint
 {
-    ipv4_address v4_address_;
-    ipv6_address v6_address_;
+    ip_address addr_;
     std::uint16_t port_ = 0;
-    bool is_v4_         = true;
 
 public:
     /** Default constructor.
 
         Creates an endpoint with the IPv4 any address (0.0.0.0) and port 0.
     */
-    endpoint() noexcept
-        : v4_address_(ipv4_address::any())
-        , v6_address_{}
-        , port_(0)
-        , is_v4_(true)
-    {
-    }
+    endpoint() noexcept = default;
 
-    /** Construct from IPv4 address and port.
+    /** Construct from an IP address and port.
 
-        @param addr The IPv4 address.
+        `ipv4_address` and `ipv6_address` arguments convert
+        implicitly, so both families construct directly:
+        `endpoint(ipv4_address::loopback(), 80)`.
+
+        @param addr The IP address.
         @param p The port number in host byte order.
     */
-    endpoint(ipv4_address addr, std::uint16_t p) noexcept
-        : v4_address_(addr)
-        , v6_address_{}
-        , port_(p)
-        , is_v4_(true)
-    {
-    }
-
-    /** Construct from IPv6 address and port.
-
-        @param addr The IPv6 address.
-        @param p The port number in host byte order.
-    */
-    endpoint(ipv6_address addr, std::uint16_t p) noexcept
-        : v4_address_(ipv4_address::any())
-        , v6_address_(addr)
-        , port_(p)
-        , is_v4_(false)
+    endpoint(ip_address addr, std::uint16_t p) noexcept : addr_(addr), port_(p)
     {
     }
 
@@ -94,13 +69,7 @@ public:
 
         @param p The port number in host byte order.
     */
-    explicit endpoint(std::uint16_t p) noexcept
-        : v4_address_(ipv4_address::any())
-        , v6_address_{}
-        , port_(p)
-        , is_v4_(true)
-    {
-    }
+    explicit endpoint(std::uint16_t p) noexcept : port_(p) {}
 
     /** Construct from an endpoint's address with a different port.
 
@@ -111,10 +80,8 @@ public:
         @param p The port number in host byte order.
     */
     endpoint(endpoint const& ep, std::uint16_t p) noexcept
-        : v4_address_(ep.v4_address_)
-        , v6_address_(ep.v6_address_)
+        : addr_(ep.addr_)
         , port_(p)
-        , is_v4_(ep.is_v4_)
     {
     }
 
@@ -140,7 +107,7 @@ public:
     */
     bool is_v4() const noexcept
     {
-        return is_v4_;
+        return addr_.is_v4();
     }
 
     /** Check if this endpoint uses an IPv6 address.
@@ -149,30 +116,19 @@ public:
     */
     bool is_v6() const noexcept
     {
-        return !is_v4_;
+        return addr_.is_v6();
     }
 
-    /** Get the IPv4 address.
+    /** Return the IP address.
 
-        @return The IPv4 address. The value is valid even if
-        the endpoint is using IPv6 (it will be the default any address).
+        @return The endpoint's address.
     */
-    ipv4_address v4_address() const noexcept
+    ip_address address() const noexcept
     {
-        return v4_address_;
+        return addr_;
     }
 
-    /** Get the IPv6 address.
-
-        @return The IPv6 address. The value is valid even if
-        the endpoint is using IPv4 (it will be the default any address).
-    */
-    ipv6_address v6_address() const noexcept
-    {
-        return v6_address_;
-    }
-
-    /** Get the port number.
+    /** Return the port number.
 
         @return The port number in host byte order.
     */
@@ -190,14 +146,7 @@ public:
     */
     friend bool operator==(endpoint const& a, endpoint const& b) noexcept
     {
-        if (a.is_v4_ != b.is_v4_)
-            return false;
-        if (a.port_ != b.port_)
-            return false;
-        if (a.is_v4_)
-            return a.v4_address_ == b.v4_address_;
-        else
-            return a.v6_address_ == b.v6_address_;
+        return a.port_ == b.port_ && a.addr_ == b.addr_;
     }
 
     /** Order two endpoints.
@@ -214,21 +163,8 @@ public:
     friend std::strong_ordering
     operator<=>(endpoint const& a, endpoint const& b) noexcept
     {
-        if (a.is_v4_ != b.is_v4_)
-            return a.is_v4_ ? std::strong_ordering::less
-                            : std::strong_ordering::greater;
-        if (a.is_v4_)
-        {
-            if (auto c = a.v4_address_.to_uint() <=> b.v4_address_.to_uint();
-                c != 0)
-                return c;
-        }
-        else
-        {
-            if (auto c = a.v6_address_.to_bytes() <=> b.v6_address_.to_bytes();
-                c != 0)
-                return c;
-        }
+        if (auto c = a.addr_ <=> b.addr_; c != 0)
+            return c;
         return a.port_ <=> b.port_;
     }
 };

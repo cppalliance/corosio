@@ -79,6 +79,16 @@ include::example$snippets/4f_endpoints.cpp[tag=query_type,indent=0]
 include::example$snippets/4f_endpoints.cpp[tag=port,indent=0]
 ----
 
+=== IP Address
+
+The address is returned as an `ip_address`, which holds either
+family and answers family-generic queries directly:
+
+[source,cpp]
+----
+include::example$snippets/4f_endpoints.cpp[tag=address,indent=0]
+----
+
 === IPv4 Address
 
 [source,cpp]

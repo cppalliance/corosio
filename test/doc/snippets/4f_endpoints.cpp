@@ -133,7 +133,7 @@ struct endpoints_test
         BOOST_TEST(ep4.is_v4());
         BOOST_TEST(ep6.is_v6());
         BOOST_TEST(bind_ep.port() == 8080);
-        BOOST_TEST(bind_ep.v4_address() == corosio::ipv4_address::any());
+        BOOST_TEST(bind_ep.address().to_v4() == corosio::ipv4_address::any());
     }
 
     void testFromV4()
@@ -162,7 +162,7 @@ struct endpoints_test
         corosio::endpoint ep(8080); // IPv4 any address (0.0.0.0)
         // end::port_only[]
         BOOST_TEST(ep.is_v4());
-        BOOST_TEST(ep.v4_address() == corosio::ipv4_address::any());
+        BOOST_TEST(ep.address().to_v4() == corosio::ipv4_address::any());
     }
 
     void testDefaultCtor()
@@ -197,17 +197,31 @@ struct endpoints_test
         BOOST_TEST(port == 8080);
     }
 
+    void testAddress()
+    {
+        corosio::endpoint ep(corosio::ipv4_address::loopback(), 8080);
+        // tag::address[]
+        // Family-independent: works for IPv4 and IPv6 endpoints alike
+        corosio::ip_address addr = ep.address();
+        if (addr.is_loopback())
+        {
+            std::cout << addr.to_string() << "\n";
+        }
+        // end::address[]
+        BOOST_TEST(addr.to_string() == "127.0.0.1");
+    }
+
     void testV4Address()
     {
         corosio::endpoint ep(corosio::ipv4_address::loopback(), 8080);
         // tag::v4_address[]
         if (ep.is_v4())
         {
-            corosio::ipv4_address addr = ep.v4_address();
+            corosio::ipv4_address addr = ep.address().to_v4();
             std::cout << addr.to_string() << "\n";
         }
         // end::v4_address[]
-        BOOST_TEST(ep.v4_address().to_string() == "127.0.0.1");
+        BOOST_TEST(ep.address().to_v4().to_string() == "127.0.0.1");
     }
 
     void testV6Address()
@@ -216,11 +230,11 @@ struct endpoints_test
         // tag::v6_address[]
         if (ep.is_v6())
         {
-            corosio::ipv6_address addr = ep.v6_address();
+            corosio::ipv6_address addr = ep.address().to_v6();
             std::cout << addr.to_string() << "\n";
         }
         // end::v6_address[]
-        BOOST_TEST(ep.v6_address().to_string() == "::1");
+        BOOST_TEST(ep.address().to_v6().to_string() == "::1");
     }
 
     void testLoopback()
@@ -273,8 +287,8 @@ struct endpoints_test
             return;
         corosio::endpoint ep6(addr6, 8080);
         // end::make_addresses[]
-        BOOST_TEST(ep.v4_address().to_string() == "192.168.1.1");
-        BOOST_TEST(ep6.v6_address().to_string() == "2001:db8::1");
+        BOOST_TEST(ep.address().to_v4().to_string() == "192.168.1.1");
+        BOOST_TEST(ep6.address().to_v6().to_string() == "2001:db8::1");
     }
 
     void testParseEndpoint()
@@ -285,7 +299,7 @@ struct endpoints_test
             return;
         // end::make_endpoint[]
         BOOST_TEST(ep.is_v4());
-        BOOST_TEST(ep.v4_address().to_string() == "192.168.1.1");
+        BOOST_TEST(ep.address().to_v4().to_string() == "192.168.1.1");
         BOOST_TEST(ep.port() == 8080);
     }
 
@@ -323,6 +337,7 @@ struct endpoints_test
         testDefaultCtor();
         testQueryType();
         testPort();
+        testAddress();
         testV4Address();
         testV6Address();
         testLoopback();

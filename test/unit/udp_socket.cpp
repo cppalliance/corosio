@@ -428,7 +428,7 @@ struct udp_socket_test
             BOOST_TEST_EQ(std::strcmp(buf, "hello udp"), 0);
 
             // Source should be the sender (loopback, ephemeral port)
-            BOOST_TEST_EQ(source.v4_address(), ipv4_address::loopback());
+            BOOST_TEST_EQ(source.address().to_v4(), ipv4_address::loopback());
         };
 
         auto ex = ioc.get_executor();
@@ -930,7 +930,7 @@ struct udp_socket_test
             auto [ec] = co_await s.connect(dest);
             BOOST_TEST_EQ(ec, std::error_code{});
             BOOST_TEST_EQ(s.remote_endpoint().port(), dest.port());
-            BOOST_TEST_EQ(s.remote_endpoint().v4_address(), dest.v4_address());
+            BOOST_TEST_EQ(s.remote_endpoint().address().to_v4(), dest.address().to_v4());
         };
 
         auto ex = ioc.get_executor();

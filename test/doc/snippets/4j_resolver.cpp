@@ -74,7 +74,7 @@ overview(corosio::io_context& ioc)
     for (auto const& entry : results)
     {
         auto ep = entry.get_endpoint();
-        std::cout << ep.v4_address().to_string() << ":" << ep.port() << "\n";
+        std::cout << ep.address().to_v4().to_string() << ":" << ep.port() << "\n";
     }
     // end::overview[]
 }
@@ -121,7 +121,7 @@ combined_flags(corosio::resolver& r)
     {
         auto ep = results.front().get_endpoint();
         BOOST_TEST(ep.is_v4());
-        BOOST_TEST(ep.v4_address().to_string() == "127.0.0.1");
+        BOOST_TEST(ep.address().to_v4().to_string() == "127.0.0.1");
         BOOST_TEST(ep.port() == 8080);
     }
 }
@@ -142,9 +142,9 @@ iterate_results(corosio::resolver_results const& results)
         corosio::endpoint ep = entry.get_endpoint();
 
         if (ep.is_v4())
-            std::cout << "IPv4: " << ep.v4_address().to_string();
+            std::cout << "IPv4: " << ep.address().to_v4().to_string();
         else
-            std::cout << "IPv6: " << ep.v6_address().to_string();
+            std::cout << "IPv6: " << ep.address().to_v6().to_string();
 
         std::cout << ":" << ep.port() << "\n";
     }
