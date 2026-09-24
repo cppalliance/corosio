@@ -37,7 +37,7 @@ limit_how_far_outgoing_packets_can_travel(corosio::udp_socket& sock)
     // apply to an AF_INET6 socket; set_option compiles either way and
     // throws at runtime on the wrong family.
     //
-    // corosio wraps the multicast hop limit (multicast_hops_v4) but not the
+    // corosio wraps the multicast hop limit (multicast_hops) but not the
     // plain unicast one; IP_TTL is the general-purpose option this class is
     // for. A low value keeps a datagram from leaving the local network even
     // when a route to a farther destination exists.

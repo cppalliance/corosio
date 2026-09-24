@@ -403,14 +403,14 @@ struct native_udp_socket_test
             sock.template get_option<native_socket_option::send_buffer_size>();
         BOOST_TEST(sb.value() > 0);
 
-        sock.set_option(native_socket_option::multicast_loop_v4(true));
+        sock.set_option(native_socket_option::multicast_loop(true));
         auto ml =
-            sock.template get_option<native_socket_option::multicast_loop_v4>();
+            sock.template get_option<native_socket_option::multicast_loop>();
         BOOST_TEST(ml.value());
 
-        sock.set_option(native_socket_option::multicast_hops_v4(4));
+        sock.set_option(native_socket_option::multicast_hops(4));
         auto mh =
-            sock.template get_option<native_socket_option::multicast_hops_v4>();
+            sock.template get_option<native_socket_option::multicast_hops>();
         BOOST_TEST_EQ(mh.value(), 4);
 
         // Multicast configuration is environment-specific; the option
@@ -479,8 +479,8 @@ struct native_udp_socket_test
         native_udp_socket<Backend> sock(ioc);
         BOOST_TEST(!sock.open(udp::v6()));
 
-        sock.set_option(native_socket_option::multicast_loop_v6(true));
-        sock.set_option(native_socket_option::multicast_hops_v6(4));
+        sock.set_option(native_socket_option::multicast_loop(true));
+        sock.set_option(native_socket_option::multicast_hops(4));
 
         try
         {

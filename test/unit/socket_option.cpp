@@ -10,6 +10,8 @@
 // Test that header file is self-contained.
 #include <boost/corosio/socket_option.hpp>
 
+#include <boost/corosio/native/native_socket_option.hpp>
+
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/tcp.hpp>
 #include <boost/corosio/tcp_socket.hpp>
@@ -114,25 +116,76 @@ struct socket_option_test
         sock.close();
     }
 
-    // The byte-sized IPv4 multicast options exercise the option
-    // resize() normalization for getsockopt writing a single byte.
+    // One option type serves both families: the socket's family
+    // selects the wire rendering (byte at IPPROTO_IP for v4, int at
+    // IPPROTO_IPV6 for v6), verified through real setsockopt and a
+    // getsockopt round-trip.
     void testMulticastOptions()
     {
         io_context ioc(Backend);
-        udp_socket sock(ioc);
-        BOOST_TEST(!sock.open(udp::v4()));
 
-        sock.set_option(socket_option::multicast_loop_v4(false));
-        BOOST_TEST(
-            !sock.get_option<socket_option::multicast_loop_v4>().value());
-        sock.set_option(socket_option::multicast_loop_v4(true));
-        BOOST_TEST(sock.get_option<socket_option::multicast_loop_v4>().value());
+        // IPv4 rendering
+        {
+            udp_socket sock(ioc);
+            BOOST_TEST(!sock.open(udp::v4()));
 
-        sock.set_option(socket_option::multicast_hops_v4(5));
-        BOOST_TEST_EQ(
-            sock.get_option<socket_option::multicast_hops_v4>().value(), 5);
+            sock.set_option(socket_option::multicast_loop(false));
+            BOOST_TEST(
+                !sock.get_option<socket_option::multicast_loop>().value());
+            sock.set_option(socket_option::multicast_loop(true));
+            BOOST_TEST(
+                sock.get_option<socket_option::multicast_loop>().value());
 
-        sock.close();
+            sock.set_option(socket_option::multicast_hops(5));
+            BOOST_TEST_EQ(
+                sock.get_option<socket_option::multicast_hops>().value(), 5);
+
+            sock.close();
+        }
+
+        // IPv6 rendering, same option types
+        {
+            udp_socket sock(ioc);
+            BOOST_TEST(!sock.open(udp::v6()));
+
+            sock.set_option(socket_option::multicast_loop(false));
+            BOOST_TEST(
+                !sock.get_option<socket_option::multicast_loop>().value());
+            sock.set_option(socket_option::multicast_loop(true));
+            BOOST_TEST(
+                sock.get_option<socket_option::multicast_loop>().value());
+
+            sock.set_option(socket_option::multicast_hops(7));
+            BOOST_TEST_EQ(
+                sock.get_option<socket_option::multicast_hops>().value(), 7);
+
+            sock.close();
+        }
+
+        // The per-family wire widths, pinned as values: a byte at the
+        // IPv4 level (BSD-derived kernels reject the four-byte form),
+        // an int at the IPv6 level
+        {
+            socket_option::multicast_loop ml(true);
+            BOOST_TEST_EQ(ml.size(family::v4), 1u);
+            BOOST_TEST_EQ(ml.size(family::v6), sizeof(int));
+            BOOST_TEST(ml.data(family::v4) != ml.data(family::v6));
+
+            socket_option::multicast_hops mh(9);
+            BOOST_TEST_EQ(mh.size(family::v4), 1u);
+            BOOST_TEST_EQ(mh.size(family::v6), sizeof(int));
+            BOOST_TEST(mh.data(family::v4) != mh.data(family::v6));
+
+            native_socket_option::multicast_loop nl(true);
+            BOOST_TEST_EQ(nl.size(family::v4), 1u);
+            BOOST_TEST_EQ(nl.size(family::v6), sizeof(int));
+        }
+
+        // Hop counts the IPv4 wire cannot carry are refused
+        BOOST_TEST_THROWS(socket_option::multicast_hops(256), std::logic_error);
+        BOOST_TEST_THROWS(socket_option::multicast_hops(-1), std::logic_error);
+        BOOST_TEST_THROWS(
+            native_socket_option::multicast_hops(256), std::logic_error);
     }
 
     // leave_group_v6's static traits and byte layout, exercised directly

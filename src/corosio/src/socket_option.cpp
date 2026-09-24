@@ -193,56 +193,28 @@ linger::size(family f) const noexcept
     return native_socket_option::linger{}.size(f);
 }
 
-// multicast_loop_v4
-
+// multicast_loop
 int
-multicast_loop_v4::level(family f) const noexcept
+multicast_loop::level(family f) const noexcept
 {
-    return native_socket_option::multicast_loop_v4{}.level(f);
+    return native_socket_option::multicast_loop{}.level(f);
 }
 int
-multicast_loop_v4::name(family f) const noexcept
+multicast_loop::name(family f) const noexcept
 {
-    return native_socket_option::multicast_loop_v4{}.name(f);
+    return native_socket_option::multicast_loop{}.name(f);
 }
 
-// multicast_loop_v6
-
+// multicast_hops
 int
-multicast_loop_v6::level(family f) const noexcept
+multicast_hops::level(family f) const noexcept
 {
-    return native_socket_option::multicast_loop_v6{}.level(f);
+    return native_socket_option::multicast_hops{}.level(f);
 }
 int
-multicast_loop_v6::name(family f) const noexcept
+multicast_hops::name(family f) const noexcept
 {
-    return native_socket_option::multicast_loop_v6{}.name(f);
-}
-
-// multicast_hops_v4
-
-int
-multicast_hops_v4::level(family f) const noexcept
-{
-    return native_socket_option::multicast_hops_v4{}.level(f);
-}
-int
-multicast_hops_v4::name(family f) const noexcept
-{
-    return native_socket_option::multicast_hops_v4{}.name(f);
-}
-
-// multicast_hops_v6
-
-int
-multicast_hops_v6::level(family f) const noexcept
-{
-    return native_socket_option::multicast_hops_v6{}.level(f);
-}
-int
-multicast_hops_v6::name(family f) const noexcept
-{
-    return native_socket_option::multicast_hops_v6{}.name(f);
+    return native_socket_option::multicast_hops{}.name(f);
 }
 
 // multicast_interface_v6

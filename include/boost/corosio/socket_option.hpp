@@ -12,6 +12,7 @@
 #define BOOST_COROSIO_SOCKET_OPTION_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/family.hpp>
 #include <boost/corosio/ipv4_address.hpp>
 #include <boost/corosio/ipv6_address.hpp>
@@ -172,132 +173,6 @@ public:
             value_ =
                 static_cast<int>(*reinterpret_cast<unsigned char*>(&value_));
     }
-};
-
-/** Base class for concrete boolean socket options with single-byte storage.
-
-    Some BSD-derived kernels (macOS, FreeBSD) require certain IPv4 multicast
-    options (`IP_MULTICAST_LOOP`) to be set with a one-byte value and return
-    `EINVAL` for the four-byte form that Linux accepts. This base provides
-    `unsigned char` storage so the same options work on every platform.
-*/
-class BOOST_COROSIO_DECL byte_boolean_option
-{
-    unsigned char value_ = 0;
-
-public:
-    /// Construct with default value (disabled).
-    byte_boolean_option() = default;
-
-    /** Construct with an explicit value.
-
-        @param v `true` to enable the option, `false` to disable.
-    */
-    explicit byte_boolean_option(bool v) noexcept : value_(v ? 1 : 0) {}
-
-    /// Assign a new value.
-    byte_boolean_option& operator=(bool v) noexcept
-    {
-        value_ = v ? 1 : 0;
-        return *this;
-    }
-
-    /// Return the option value.
-    bool value() const noexcept
-    {
-        return value_ != 0;
-    }
-
-    /// Return the option value.
-    explicit operator bool() const noexcept
-    {
-        return value_ != 0;
-    }
-
-    /// Return the negated option value.
-    bool operator!() const noexcept
-    {
-        return value_ == 0;
-    }
-
-    /// Return a pointer to the underlying storage.
-    void* data(family) noexcept
-    {
-        return &value_;
-    }
-
-    /// Return a pointer to the underlying storage.
-    void const* data(family) const noexcept
-    {
-        return &value_;
-    }
-
-    /// Return the size of the underlying storage.
-    std::size_t size(family) const noexcept
-    {
-        return sizeof(value_);
-    }
-
-    /// Storage is already one byte; no normalization needed.
-    void resize(family, std::size_t) noexcept {}
-};
-
-/** Base class for concrete integer socket options with single-byte storage.
-
-    Same rationale as `byte_boolean_option`: BSD-derived kernels require
-    `IP_MULTICAST_TTL` to be set with a one-byte value. Linux accepts
-    one-byte too, so single-byte storage is portable.
-*/
-class BOOST_COROSIO_DECL byte_integer_option
-{
-    unsigned char value_ = 0;
-
-public:
-    /// Construct with default value (zero).
-    byte_integer_option() = default;
-
-    /** Construct with an explicit value.
-
-        @param v The option value; truncated to one byte.
-    */
-    explicit byte_integer_option(int v) noexcept
-        : value_(static_cast<unsigned char>(v))
-    {
-    }
-
-    /// Assign a new value; truncated to one byte.
-    byte_integer_option& operator=(int v) noexcept
-    {
-        value_ = static_cast<unsigned char>(v);
-        return *this;
-    }
-
-    /// Return the option value.
-    int value() const noexcept
-    {
-        return value_;
-    }
-
-    /// Return a pointer to the underlying storage.
-    void* data(family) noexcept
-    {
-        return &value_;
-    }
-
-    /// Return a pointer to the underlying storage.
-    void const* data(family) const noexcept
-    {
-        return &value_;
-    }
-
-    /// Return the size of the underlying storage.
-    std::size_t size(family) const noexcept
-    {
-        return sizeof(value_);
-    }
-
-    /// Storage is already one byte; no normalization needed.
-    void resize(family, std::size_t) noexcept {}
 };
 
 /** Disable Nagle's algorithm (TCP_NODELAY).
@@ -525,83 +400,178 @@ public:
     void resize(family, std::size_t) noexcept {}
 };
 
-/** Enable loopback of outgoing multicast on IPv4 (IP_MULTICAST_LOOP).
+/** Enable loopback of outgoing multicast (IP_MULTICAST_LOOP /
+    IPV6_MULTICAST_LOOP).
 
-    Uses single-byte storage because BSD-derived kernels (macOS, FreeBSD)
-    reject the four-byte form with `EINVAL`. Linux accepts either size.
+    The socket's family selects the wire rendering: a single byte
+    at the IPv4 level (BSD-derived kernels reject the four-byte
+    form), an `int` at the IPv6 level.
 
     @par Example
-    @par !example multicast_loop_v4
+    @par !example multicast_loop
 */
-class BOOST_COROSIO_DECL multicast_loop_v4 : public byte_boolean_option
+class BOOST_COROSIO_DECL multicast_loop
 {
+    unsigned char byte_ = 0; // IPv4 rendering
+    int int_            = 0; // IPv6 rendering
+
 public:
-    using byte_boolean_option::byte_boolean_option;
-    using byte_boolean_option::operator=;
+    /// Construct with default value (disabled).
+    multicast_loop() = default;
+
+    /** Construct with an explicit value.
+
+        @param v `true` to enable loopback, `false` to disable.
+    */
+    explicit multicast_loop(bool v) noexcept : byte_(v ? 1 : 0), int_(v ? 1 : 0)
+    {
+    }
+
+    /// Assign a new value.
+    multicast_loop& operator=(bool v) noexcept
+    {
+        byte_ = v ? 1 : 0;
+        int_  = v ? 1 : 0;
+        return *this;
+    }
+
+    /// Return the option value.
+    bool value() const noexcept
+    {
+        return int_ != 0;
+    }
 
     /// Return the protocol level.
     int level(family) const noexcept;
 
     /// Return the option name.
     int name(family) const noexcept;
+
+    /// Return a pointer to the rendering for `f`.
+    void* data(family f) noexcept
+    {
+        return f == family::v6 ? static_cast<void*>(&int_)
+                               : static_cast<void*>(&byte_);
+    }
+
+    /// Return a pointer to the rendering for `f`.
+    void const* data(family f) const noexcept
+    {
+        return f == family::v6 ? static_cast<void const*>(&int_)
+                               : static_cast<void const*>(&byte_);
+    }
+
+    /// Return the size of the rendering for `f`.
+    std::size_t size(family f) const noexcept
+    {
+        return f == family::v6 ? sizeof(int_) : sizeof(byte_);
+    }
+
+    /** Synchronize both renderings after `getsockopt`.
+
+        Only the rendering the socket's family selected was written;
+        fold it into the other so `value()` answers from either.
+
+        @param f The family `getsockopt` was performed for.
+    */
+    void resize(family f, std::size_t) noexcept
+    {
+        if (f == family::v6)
+            byte_ = int_ ? 1 : 0;
+        else
+            int_ = byte_ ? 1 : 0;
+    }
 };
 
-/** Enable loopback of outgoing multicast on IPv6 (IPV6_MULTICAST_LOOP).
+/** Set the multicast TTL / hop limit (IP_MULTICAST_TTL /
+    IPV6_MULTICAST_HOPS).
+
+    The socket's family selects the wire rendering: a single byte
+    at the IPv4 level, an `int` at the IPv6 level.
 
     @par Example
-    @par !example multicast_loop_v6
+    @par !example multicast_hops
 */
-class BOOST_COROSIO_DECL multicast_loop_v6 : public boolean_option
+class BOOST_COROSIO_DECL multicast_hops
 {
+    unsigned char byte_ = 0; // IPv4 rendering
+    int int_            = 0; // IPv6 rendering
+
 public:
-    using boolean_option::boolean_option;
-    using boolean_option::operator=;
+    /// Construct with default value (zero).
+    multicast_hops() = default;
+
+    /** Construct with an explicit value.
+
+        @param v The hop count, 0 to 255 — the range the IPv4 wire
+        rendering can carry.
+
+        @throws std::logic_error if `v` is outside [0, 255].
+    */
+    explicit multicast_hops(int v)
+    {
+        if (v < 0 || v > 255)
+            detail::throw_logic_error("multicast hops value out of range");
+        byte_ = static_cast<unsigned char>(v);
+        int_  = v;
+    }
+
+    /** Assign a new value.
+
+        @throws std::logic_error if `v` is outside [0, 255].
+    */
+    multicast_hops& operator=(int v)
+    {
+        if (v < 0 || v > 255)
+            detail::throw_logic_error("multicast hops value out of range");
+        byte_ = static_cast<unsigned char>(v);
+        int_  = v;
+        return *this;
+    }
+
+    /// Return the option value.
+    int value() const noexcept
+    {
+        return int_;
+    }
 
     /// Return the protocol level.
     int level(family) const noexcept;
 
     /// Return the option name.
     int name(family) const noexcept;
-};
 
-/** Set the multicast TTL for IPv4 (IP_MULTICAST_TTL).
+    /// Return a pointer to the rendering for `f`.
+    void* data(family f) noexcept
+    {
+        return f == family::v6 ? static_cast<void*>(&int_)
+                               : static_cast<void*>(&byte_);
+    }
 
-    Uses single-byte storage because BSD-derived kernels (macOS, FreeBSD)
-    reject the four-byte form with `EINVAL`. Linux accepts either size.
-    Values are truncated to the 0–255 range.
+    /// Return a pointer to the rendering for `f`.
+    void const* data(family f) const noexcept
+    {
+        return f == family::v6 ? static_cast<void const*>(&int_)
+                               : static_cast<void const*>(&byte_);
+    }
 
-    @par Example
-    @par !example multicast_hops_v4
-*/
-class BOOST_COROSIO_DECL multicast_hops_v4 : public byte_integer_option
-{
-public:
-    using byte_integer_option::byte_integer_option;
-    using byte_integer_option::operator=;
+    /// Return the size of the rendering for `f`.
+    std::size_t size(family f) const noexcept
+    {
+        return f == family::v6 ? sizeof(int_) : sizeof(byte_);
+    }
 
-    /// Return the protocol level.
-    int level(family) const noexcept;
+    /** Synchronize both renderings after `getsockopt`.
 
-    /// Return the option name.
-    int name(family) const noexcept;
-};
-
-/** Set the multicast hop limit for IPv6 (IPV6_MULTICAST_HOPS).
-
-    @par Example
-    @par !example multicast_hops_v6
-*/
-class BOOST_COROSIO_DECL multicast_hops_v6 : public integer_option
-{
-public:
-    using integer_option::integer_option;
-    using integer_option::operator=;
-
-    /// Return the protocol level.
-    int level(family) const noexcept;
-
-    /// Return the option name.
-    int name(family) const noexcept;
+        @param f The family `getsockopt` was performed for.
+    */
+    void resize(family f, std::size_t) noexcept
+    {
+        if (f == family::v6)
+            byte_ = static_cast<unsigned char>(int_);
+        else
+            int_ = byte_;
+    }
 };
 
 /** Set the outgoing interface for IPv6 multicast (IPV6_MULTICAST_IF).
