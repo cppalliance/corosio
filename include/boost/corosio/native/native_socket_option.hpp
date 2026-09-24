@@ -47,6 +47,7 @@
 #define IPV6_LEAVE_GROUP IPV6_DROP_MEMBERSHIP
 #endif
 
+#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/family.hpp>
 #include <boost/corosio/ipv4_address.hpp>
 #include <boost/corosio/ipv6_address.hpp>
@@ -485,17 +486,186 @@ using send_buffer_size = integer<SOL_SOCKET, SO_SNDBUF>;
 using reuse_port = boolean<SOL_SOCKET, SO_REUSEPORT>;
 #endif
 
-/// Enable loopback of outgoing multicast on IPv4 (IP_MULTICAST_LOOP).
-using multicast_loop_v4 = byte_boolean<IPPROTO_IP, IP_MULTICAST_LOOP>;
+/** Enable loopback of outgoing multicast (IP_MULTICAST_LOOP /
+    IPV6_MULTICAST_LOOP).
 
-/// Enable loopback of outgoing multicast on IPv6 (IPV6_MULTICAST_LOOP).
-using multicast_loop_v6 = boolean<IPPROTO_IPV6, IPV6_MULTICAST_LOOP>;
+    The socket's family selects the wire rendering: a single byte
+    at `IPPROTO_IP` for IPv4 (BSD-derived kernels reject the
+    four-byte form), an `int` at `IPPROTO_IPV6` for IPv6.
+*/
+class multicast_loop
+{
+    unsigned char byte_ = 0; // IPv4 rendering
+    int int_            = 0; // IPv6 rendering
 
-/// Set the multicast TTL for IPv4 (IP_MULTICAST_TTL).
-using multicast_hops_v4 = byte_integer<IPPROTO_IP, IP_MULTICAST_TTL>;
+public:
+    /// Construct with default value (disabled).
+    multicast_loop() = default;
 
-/// Set the multicast hop limit for IPv6 (IPV6_MULTICAST_HOPS).
-using multicast_hops_v6 = integer<IPPROTO_IPV6, IPV6_MULTICAST_HOPS>;
+    /** Construct with an explicit value.
+
+        @param v `true` to enable loopback, `false` to disable.
+    */
+    explicit multicast_loop(bool v) noexcept : byte_(v ? 1 : 0), int_(v ? 1 : 0)
+    {
+    }
+
+    /// Assign a new value.
+    multicast_loop& operator=(bool v) noexcept
+    {
+        byte_ = v ? 1 : 0;
+        int_  = v ? 1 : 0;
+        return *this;
+    }
+
+    /// Return the option value.
+    bool value() const noexcept
+    {
+        return byte_ != 0 || int_ != 0;
+    }
+
+    /// Return the protocol level for `setsockopt`/`getsockopt`.
+    constexpr int level(family f) const noexcept
+    {
+        return f == family::v6 ? IPPROTO_IPV6 : IPPROTO_IP;
+    }
+
+    /// Return the option name for `setsockopt`/`getsockopt`.
+    constexpr int name(family f) const noexcept
+    {
+        return f == family::v6 ? IPV6_MULTICAST_LOOP : IP_MULTICAST_LOOP;
+    }
+
+    /// Return a pointer to the rendering for `f`.
+    void* data(family f) noexcept
+    {
+        return f == family::v6 ? static_cast<void*>(&int_)
+                               : static_cast<void*>(&byte_);
+    }
+
+    /// Return a pointer to the rendering for `f`.
+    void const* data(family f) const noexcept
+    {
+        return f == family::v6 ? static_cast<void const*>(&int_)
+                               : static_cast<void const*>(&byte_);
+    }
+
+    /// Return the size of the rendering for `f`.
+    std::size_t size(family f) const noexcept
+    {
+        return f == family::v6 ? sizeof(int_) : sizeof(byte_);
+    }
+
+    /** Synchronize both renderings after `getsockopt`.
+
+        Only the rendering the socket's family selected was
+        written; fold it into the other so `value()` answers
+        from either.
+
+        @param f The family `getsockopt` was performed for.
+    */
+    void resize(family f, std::size_t) noexcept
+    {
+        if (f == family::v6)
+            byte_ = int_ ? 1 : 0;
+        else
+            int_ = byte_ ? 1 : 0;
+    }
+};
+
+/** Set the multicast TTL / hop limit (IP_MULTICAST_TTL /
+    IPV6_MULTICAST_HOPS).
+
+    The socket's family selects the wire rendering: a single byte
+    at `IPPROTO_IP` for IPv4, an `int` at `IPPROTO_IPV6` for IPv6.
+*/
+class multicast_hops
+{
+    unsigned char byte_ = 0; // IPv4 rendering
+    int int_            = 0; // IPv6 rendering
+
+public:
+    /// Construct with default value (zero).
+    multicast_hops() = default;
+
+    /** Construct with an explicit value.
+
+        @param v The hop count, 0 to 255 — the range the IPv4 wire
+        rendering can carry.
+
+        @throws std::logic_error if `v` is outside [0, 255].
+    */
+    explicit multicast_hops(int v)
+    {
+        if (v < 0 || v > 255)
+            detail::throw_logic_error("multicast hops value out of range");
+        byte_ = static_cast<unsigned char>(v);
+        int_  = v;
+    }
+
+    /** Assign a new value.
+
+        @throws std::logic_error if `v` is outside [0, 255].
+    */
+    multicast_hops& operator=(int v)
+    {
+        if (v < 0 || v > 255)
+            detail::throw_logic_error("multicast hops value out of range");
+        byte_ = static_cast<unsigned char>(v);
+        int_  = v;
+        return *this;
+    }
+
+    /// Return the option value.
+    int value() const noexcept
+    {
+        return int_;
+    }
+
+    /// Return the protocol level for `setsockopt`/`getsockopt`.
+    constexpr int level(family f) const noexcept
+    {
+        return f == family::v6 ? IPPROTO_IPV6 : IPPROTO_IP;
+    }
+
+    /// Return the option name for `setsockopt`/`getsockopt`.
+    constexpr int name(family f) const noexcept
+    {
+        return f == family::v6 ? IPV6_MULTICAST_HOPS : IP_MULTICAST_TTL;
+    }
+
+    /// Return a pointer to the rendering for `f`.
+    void* data(family f) noexcept
+    {
+        return f == family::v6 ? static_cast<void*>(&int_)
+                               : static_cast<void*>(&byte_);
+    }
+
+    /// Return a pointer to the rendering for `f`.
+    void const* data(family f) const noexcept
+    {
+        return f == family::v6 ? static_cast<void const*>(&int_)
+                               : static_cast<void const*>(&byte_);
+    }
+
+    /// Return the size of the rendering for `f`.
+    std::size_t size(family f) const noexcept
+    {
+        return f == family::v6 ? sizeof(int_) : sizeof(byte_);
+    }
+
+    /** Synchronize both renderings after `getsockopt`.
+
+        @param f The family `getsockopt` was performed for.
+    */
+    void resize(family f, std::size_t) noexcept
+    {
+        if (f == family::v6)
+            byte_ = static_cast<unsigned char>(int_);
+        else
+            int_ = byte_;
+    }
+};
 
 /// Set the outgoing interface for IPv6 multicast (IPV6_MULTICAST_IF).
 using multicast_interface_v6 = integer<IPPROTO_IPV6, IPV6_MULTICAST_IF>;

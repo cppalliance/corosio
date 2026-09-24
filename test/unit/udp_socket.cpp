@@ -876,16 +876,16 @@ struct udp_socket_test
         udp_socket sock(ioc);
         BOOST_TEST(!sock.open());
 
-        sock.set_option(socket_option::multicast_loop_v4(true));
-        auto loop = sock.get_option<socket_option::multicast_loop_v4>();
+        sock.set_option(socket_option::multicast_loop(true));
+        auto loop = sock.get_option<socket_option::multicast_loop>();
         BOOST_TEST(loop.value());
 
-        sock.set_option(socket_option::multicast_loop_v4(false));
-        loop = sock.get_option<socket_option::multicast_loop_v4>();
+        sock.set_option(socket_option::multicast_loop(false));
+        loop = sock.get_option<socket_option::multicast_loop>();
         BOOST_TEST(!loop.value());
 
-        sock.set_option(socket_option::multicast_hops_v4(4));
-        auto hops = sock.get_option<socket_option::multicast_hops_v4>();
+        sock.set_option(socket_option::multicast_hops(4));
+        auto hops = sock.get_option<socket_option::multicast_hops>();
         BOOST_TEST_EQ(hops.value(), 4);
 
         sock.close();
@@ -897,16 +897,16 @@ struct udp_socket_test
         udp_socket sock(ioc);
         BOOST_TEST(!sock.open(udp::v6()));
 
-        sock.set_option(socket_option::multicast_loop_v6(true));
-        auto loop = sock.get_option<socket_option::multicast_loop_v6>();
+        sock.set_option(socket_option::multicast_loop(true));
+        auto loop = sock.get_option<socket_option::multicast_loop>();
         BOOST_TEST(loop.value());
 
-        sock.set_option(socket_option::multicast_loop_v6(false));
-        loop = sock.get_option<socket_option::multicast_loop_v6>();
+        sock.set_option(socket_option::multicast_loop(false));
+        loop = sock.get_option<socket_option::multicast_loop>();
         BOOST_TEST(!loop.value());
 
-        sock.set_option(socket_option::multicast_hops_v6(4));
-        auto hops = sock.get_option<socket_option::multicast_hops_v6>();
+        sock.set_option(socket_option::multicast_hops(4));
+        auto hops = sock.get_option<socket_option::multicast_hops>();
         BOOST_TEST_EQ(hops.value(), 4);
 
         sock.close();
@@ -1235,7 +1235,7 @@ struct udp_socket_test
             return;
         }
 
-        receiver.set_option(socket_option::multicast_loop_v4(true));
+        receiver.set_option(socket_option::multicast_loop(true));
 
         auto task = [](udp_socket& s, udp_socket& r,
                        unsigned short port) -> capy::task<> {

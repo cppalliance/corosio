@@ -211,10 +211,12 @@ Related options:
 | `join_group_v6` / `leave_group_v6`
 | IPv6 equivalents.
 
-| `multicast_loop_v4` / `multicast_loop_v6`
-| Enable or disable receiving your own outgoing multicast.
+| `multicast_loop`
+| Enable or disable receiving your own outgoing multicast. One option
+  for both families; it renders for the family the socket was opened
+  with.
 
-| `multicast_hops_v4` / `multicast_hops_v6`
+| `multicast_hops`
 | Set the multicast TTL (IPv4) / hop limit (IPv6). Default is `1` —
   datagrams stay on the local subnet unless you raise it.
 

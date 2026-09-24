@@ -8,7 +8,7 @@
 //
 
 // Reference example injected into include/boost/corosio/socket_option.hpp's
-// documentation for socket_option::multicast_hops_v6, by
+// documentation for socket_option::multicast_loop, by
 // doc/addons/extensions/reference-snippets.lua. The tagged region is what the
 // reference renders; scaffolding stays outside the tags.
 
@@ -21,17 +21,18 @@ namespace corosio = boost::corosio;
 
 namespace {
 
-// tag::multicast_hops_v6[]
+// tag::multicast_loop[]
 void
-limit_how_far_multicast_travels_v6(corosio::udp_socket& sock)
+loop_multicast_back_to_this_host(corosio::udp_socket& sock)
 {
-    // Precondition: sock is open on udp::v6().
+    // Works for a socket of either family; the option renders for
+    // the family the socket was opened with.
     //
-    // The hop limit is a router budget: 1 (the default) keeps the datagram
-    // on the local link, 4 lets it cross four routers. IPv6 also encodes a
-    // scope in the group address itself, and a datagram has to satisfy both.
-    sock.set_option(corosio::socket_option::multicast_hops_v6(4));
+    // Enabled, datagrams this socket sends are also delivered to members of
+    // the group on this same host, the sending process included. Disable it
+    // when a sender must not receive its own traffic.
+    sock.set_option(corosio::socket_option::multicast_loop(true));
 }
-// end::multicast_hops_v6[]
+// end::multicast_loop[]
 
 } // namespace
