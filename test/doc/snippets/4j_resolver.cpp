@@ -74,7 +74,8 @@ overview(corosio::io_context& ioc)
     for (auto const& entry : results)
     {
         auto ep = entry.get_endpoint();
-        std::cout << ep.address().to_v4().to_string() << ":" << ep.port() << "\n";
+        std::cout << ep.address().to_v4().to_string() << ":" << ep.port()
+                  << "\n";
     }
     // end::overview[]
 }
@@ -94,6 +95,17 @@ basic_resolution(corosio::resolver& r)
     // tag::basic_resolution[]
     auto [ec, results] = co_await r.resolve("www.example.com", "80");
     // end::basic_resolution[]
+}
+
+[[maybe_unused]] capy::task<>
+host_only(corosio::resolver& r)
+{
+    // tag::host_only[]
+    // No service: the result is addresses, not endpoints
+    auto [ec, addrs] = co_await r.resolve("www.example.com");
+    for (corosio::ip_address const& a : addrs)
+        std::cout << a.to_string() << "\n";
+    // end::host_only[]
 }
 
 [[maybe_unused]] capy::task<>

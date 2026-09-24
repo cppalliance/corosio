@@ -31,6 +31,7 @@
 #include <stop_token>
 #include <string>
 #include <string_view>
+#include <vector>
 #include <type_traits>
 
 namespace boost::corosio {
@@ -204,6 +205,59 @@ class BOOST_COROSIO_DECL resolver : public io_object
         }
     };
 
+    struct resolve_host_awaitable
+        : detail::value_op_base<resolve_host_awaitable, resolver_results>
+    {
+        resolver& r_;
+        std::string host_;
+        resolve_flags flags_;
+
+        resolve_host_awaitable(
+            resolver& r, std::string_view host, resolve_flags flags) noexcept
+            : r_(r)
+            , host_(host)
+            , flags_(flags)
+        {
+        }
+
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        {
+            // An empty service reaches the system resolver as null,
+            // which is the host-only query
+            return r_.get().resolve(
+                h, ex, host_, {}, flags_, token_, &ec_, &value_);
+        }
+
+        // Shadows the base: the endpoint-shaped backend result is
+        // reshaped into the honest address list
+        [[nodiscard]] capy::io_result<std::vector<ip_address>>
+        await_resume() const
+        {
+            std::vector<ip_address> addrs;
+            addrs.reserve(value_.size());
+            for (auto const& entry : value_)
+            {
+                auto a         = entry.get_endpoint().address();
+                bool duplicate = false;
+                for (auto const& seen : addrs)
+                {
+                    if (seen == a)
+                    {
+                        duplicate = true;
+                        break;
+                    }
+                }
+                // The same address can come back more than once
+                // (mixed name sources, repeated records); each
+                // address is reported once
+                if (!duplicate)
+                    addrs.push_back(a);
+            }
+            return {ec_, std::move(addrs)};
+        }
+    };
+
     struct reverse_resolve_awaitable
         : detail::
               value_op_base<reverse_resolve_awaitable, reverse_resolver_result>
@@ -320,6 +374,43 @@ public:
     [[nodiscard]] auto resolve(std::string_view host, std::string_view service)
     {
         return resolve_awaitable(*this, host, service, resolve_flags::none);
+    }
+
+    /** Initiate an asynchronous host-only resolve operation.
+
+        Resolves a host name into its addresses, with no service or
+        port involved — the query `getaddrinfo` performs with a null
+        service. Use this when the host and port travel separately,
+        as they do in most configuration.
+
+        Each address appears once in the result even when the query
+        reports it more than once, and link-local results keep
+        their zone.
+
+        @param host The host name or numeric address string.
+
+        @return An awaitable that completes with
+            `io_result<std::vector<ip_address>>`.
+
+        @par Example
+        @par !example host_only_resolve
+    */
+    [[nodiscard]] auto resolve(std::string_view host)
+    {
+        return resolve_host_awaitable(*this, host, resolve_flags::none);
+    }
+
+    /** Initiate an asynchronous host-only resolve operation with flags.
+
+        @param host The host name or numeric address string.
+        @param flags Resolution behavior flags.
+
+        @return An awaitable that completes with
+            `io_result<std::vector<ip_address>>`.
+    */
+    [[nodiscard]] auto resolve(std::string_view host, resolve_flags flags)
+    {
+        return resolve_host_awaitable(*this, host, flags);
     }
 
     /** Initiate an asynchronous resolve operation with flags.
