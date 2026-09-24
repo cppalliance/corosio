@@ -429,10 +429,10 @@ struct native_udp_socket_test
 
         // Default-constructed variants exercise the no-arg constructors.
         native_socket_option::multicast_interface_v4 mif4;
-        BOOST_TEST_EQ(mif4.size(), sizeof(struct in_addr));
-        BOOST_TEST(mif4.data() != nullptr);
-        BOOST_TEST_EQ(mif4.level(), IPPROTO_IP);
-        BOOST_TEST_EQ(mif4.name(), IP_MULTICAST_IF);
+        BOOST_TEST_EQ(mif4.size(family::v4), sizeof(struct in_addr));
+        BOOST_TEST(mif4.data(family::v4) != nullptr);
+        BOOST_TEST_EQ(mif4.level(family::v4), IPPROTO_IP);
+        BOOST_TEST_EQ(mif4.name(family::v4), IP_MULTICAST_IF);
 
         sock.close();
     }
@@ -459,16 +459,16 @@ struct native_udp_socket_test
 
         // Default-constructed forms — verifies no-arg ctor coverage.
         native_socket_option::join_group_v4 jg;
-        BOOST_TEST_EQ(jg.size(), sizeof(struct ip_mreq));
-        BOOST_TEST(jg.data() != nullptr);
-        BOOST_TEST_EQ(jg.level(), IPPROTO_IP);
-        BOOST_TEST_EQ(jg.name(), IP_ADD_MEMBERSHIP);
+        BOOST_TEST_EQ(jg.size(family::v4), sizeof(struct ip_mreq));
+        BOOST_TEST(jg.data(family::v4) != nullptr);
+        BOOST_TEST_EQ(jg.level(family::v4), IPPROTO_IP);
+        BOOST_TEST_EQ(jg.name(family::v4), IP_ADD_MEMBERSHIP);
 
         native_socket_option::leave_group_v4 lg;
-        BOOST_TEST_EQ(lg.size(), sizeof(struct ip_mreq));
-        BOOST_TEST(lg.data() != nullptr);
-        BOOST_TEST_EQ(lg.level(), IPPROTO_IP);
-        BOOST_TEST_EQ(lg.name(), IP_DROP_MEMBERSHIP);
+        BOOST_TEST_EQ(lg.size(family::v4), sizeof(struct ip_mreq));
+        BOOST_TEST(lg.data(family::v4) != nullptr);
+        BOOST_TEST_EQ(lg.level(family::v4), IPPROTO_IP);
+        BOOST_TEST_EQ(lg.name(family::v4), IP_DROP_MEMBERSHIP);
 
         sock.close();
     }
@@ -508,16 +508,16 @@ struct native_udp_socket_test
 
         // Default-constructed forms — verifies no-arg ctor coverage.
         native_socket_option::join_group_v6 jg;
-        BOOST_TEST_EQ(jg.size(), sizeof(struct ipv6_mreq));
-        BOOST_TEST(jg.data() != nullptr);
-        BOOST_TEST_EQ(jg.level(), IPPROTO_IPV6);
-        BOOST_TEST_EQ(jg.name(), IPV6_JOIN_GROUP);
+        BOOST_TEST_EQ(jg.size(family::v4), sizeof(struct ipv6_mreq));
+        BOOST_TEST(jg.data(family::v4) != nullptr);
+        BOOST_TEST_EQ(jg.level(family::v4), IPPROTO_IPV6);
+        BOOST_TEST_EQ(jg.name(family::v4), IPV6_JOIN_GROUP);
 
         native_socket_option::leave_group_v6 lg;
-        BOOST_TEST_EQ(lg.size(), sizeof(struct ipv6_mreq));
-        BOOST_TEST(lg.data() != nullptr);
-        BOOST_TEST_EQ(lg.level(), IPPROTO_IPV6);
-        BOOST_TEST_EQ(lg.name(), IPV6_LEAVE_GROUP);
+        BOOST_TEST_EQ(lg.size(family::v4), sizeof(struct ipv6_mreq));
+        BOOST_TEST(lg.data(family::v4) != nullptr);
+        BOOST_TEST_EQ(lg.level(family::v4), IPPROTO_IPV6);
+        BOOST_TEST_EQ(lg.name(family::v4), IPV6_LEAVE_GROUP);
 
         sock.close();
     }
@@ -528,18 +528,18 @@ struct native_udp_socket_test
         native_socket_option::linger lg;
         BOOST_TEST(!lg.enabled());
         BOOST_TEST_EQ(lg.timeout(), 0);
-        BOOST_TEST_EQ(lg.size(), sizeof(::linger));
-        BOOST_TEST(lg.data() != nullptr);
+        BOOST_TEST_EQ(lg.size(family::v4), sizeof(::linger));
+        BOOST_TEST(lg.data(family::v4) != nullptr);
 
         native_socket_option::linger const& clg = lg;
-        BOOST_TEST(clg.data() != nullptr);
+        BOOST_TEST(clg.data(family::v4) != nullptr);
 
         lg.enabled(true);
         lg.timeout(7);
         BOOST_TEST(lg.enabled());
         BOOST_TEST_EQ(lg.timeout(), 7);
-        BOOST_TEST_EQ(lg.level(), SOL_SOCKET);
-        BOOST_TEST_EQ(lg.name(), SO_LINGER);
+        BOOST_TEST_EQ(lg.level(family::v4), SOL_SOCKET);
+        BOOST_TEST_EQ(lg.name(family::v4), SO_LINGER);
 
         native_socket_option::linger lg2(true, 3);
         BOOST_TEST(lg2.enabled());

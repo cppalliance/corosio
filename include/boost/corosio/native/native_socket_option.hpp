@@ -47,6 +47,7 @@
 #define IPV6_LEAVE_GROUP IPV6_DROP_MEMBERSHIP
 #endif
 
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/ipv4_address.hpp>
 #include <boost/corosio/ipv6_address.hpp>
 
@@ -112,31 +113,31 @@ public:
     }
 
     /// Return the protocol level for `setsockopt`/`getsockopt`.
-    static constexpr int level() noexcept
+    constexpr int level(family) const noexcept
     {
         return Level;
     }
 
     /// Return the option name for `setsockopt`/`getsockopt`.
-    static constexpr int name() noexcept
+    constexpr int name(family) const noexcept
     {
         return Name;
     }
 
     /// Return a pointer to the underlying storage.
-    void* data() noexcept
+    void* data(family) noexcept
     {
         return &value_;
     }
 
     /// Return a pointer to the underlying storage.
-    void const* data() const noexcept
+    void const* data(family) const noexcept
     {
         return &value_;
     }
 
     /// Return the size of the underlying storage.
-    std::size_t size() const noexcept
+    std::size_t size(family) const noexcept
     {
         return sizeof(value_);
     }
@@ -147,7 +148,7 @@ public:
 
         @param s The number of bytes actually written by `getsockopt`.
     */
-    void resize(std::size_t s) noexcept
+    void resize(family, std::size_t s) noexcept
     {
         if (s == sizeof(char))
             value_ = *reinterpret_cast<unsigned char*>(&value_) ? 1 : 0;
@@ -199,31 +200,31 @@ public:
     }
 
     /// Return the protocol level for `setsockopt`/`getsockopt`.
-    static constexpr int level() noexcept
+    constexpr int level(family) const noexcept
     {
         return Level;
     }
 
     /// Return the option name for `setsockopt`/`getsockopt`.
-    static constexpr int name() noexcept
+    constexpr int name(family) const noexcept
     {
         return Name;
     }
 
     /// Return a pointer to the underlying storage.
-    void* data() noexcept
+    void* data(family) noexcept
     {
         return &value_;
     }
 
     /// Return a pointer to the underlying storage.
-    void const* data() const noexcept
+    void const* data(family) const noexcept
     {
         return &value_;
     }
 
     /// Return the size of the underlying storage.
-    std::size_t size() const noexcept
+    std::size_t size(family) const noexcept
     {
         return sizeof(value_);
     }
@@ -232,7 +233,7 @@ public:
 
         @param s The number of bytes actually written by `getsockopt`.
     */
-    void resize(std::size_t s) noexcept
+    void resize(family, std::size_t s) noexcept
     {
         if (s == sizeof(char))
             value_ =
@@ -279,29 +280,29 @@ public:
         return value_ == 0;
     }
 
-    static constexpr int level() noexcept
+    constexpr int level(family) const noexcept
     {
         return Level;
     }
-    static constexpr int name() noexcept
+    constexpr int name(family) const noexcept
     {
         return Name;
     }
 
-    void* data() noexcept
+    void* data(family) noexcept
     {
         return &value_;
     }
-    void const* data() const noexcept
+    void const* data(family) const noexcept
     {
         return &value_;
     }
-    std::size_t size() const noexcept
+    std::size_t size(family) const noexcept
     {
         return sizeof(value_);
     }
 
-    void resize(std::size_t) noexcept {}
+    void resize(family, std::size_t) noexcept {}
 };
 
 /** An integer socket option with single-byte storage.
@@ -338,29 +339,29 @@ public:
         return value_;
     }
 
-    static constexpr int level() noexcept
+    constexpr int level(family) const noexcept
     {
         return Level;
     }
-    static constexpr int name() noexcept
+    constexpr int name(family) const noexcept
     {
         return Name;
     }
 
-    void* data() noexcept
+    void* data(family) noexcept
     {
         return &value_;
     }
-    void const* data() const noexcept
+    void const* data(family) const noexcept
     {
         return &value_;
     }
-    std::size_t size() const noexcept
+    std::size_t size(family) const noexcept
     {
         return sizeof(value_);
     }
 
-    void resize(std::size_t) noexcept {}
+    void resize(family, std::size_t) noexcept {}
 };
 
 /** The SO_LINGER socket option (native variant).
@@ -420,31 +421,31 @@ public:
     }
 
     /// Return the protocol level for `setsockopt`/`getsockopt`.
-    static constexpr int level() noexcept
+    constexpr int level(family) const noexcept
     {
         return SOL_SOCKET;
     }
 
     /// Return the option name for `setsockopt`/`getsockopt`.
-    static constexpr int name() noexcept
+    constexpr int name(family) const noexcept
     {
         return SO_LINGER;
     }
 
     /// Return a pointer to the underlying storage.
-    void* data() noexcept
+    void* data(family) noexcept
     {
         return &value_;
     }
 
     /// Return a pointer to the underlying storage.
-    void const* data() const noexcept
+    void const* data(family) const noexcept
     {
         return &value_;
     }
 
     /// Return the size of the underlying storage.
-    std::size_t size() const noexcept
+    std::size_t size(family) const noexcept
     {
         return sizeof(value_);
     }
@@ -455,7 +456,7 @@ public:
 
         @param s The number of bytes actually written by `getsockopt`.
     */
-    void resize(std::size_t) noexcept {}
+    void resize(family, std::size_t) noexcept {}
 };
 
 /// Disable Nagle's algorithm (TCP_NODELAY).
@@ -527,37 +528,37 @@ public:
     }
 
     /// Return the protocol level for `setsockopt`/`getsockopt`.
-    static constexpr int level() noexcept
+    constexpr int level(family) const noexcept
     {
         return IPPROTO_IP;
     }
 
     /// Return the option name for `setsockopt`/`getsockopt`.
-    static constexpr int name() noexcept
+    constexpr int name(family) const noexcept
     {
         return IP_ADD_MEMBERSHIP;
     }
 
     /// Return a pointer to the underlying storage.
-    void* data() noexcept
+    void* data(family) noexcept
     {
         return &value_;
     }
 
     /// Return a pointer to the underlying storage.
-    void const* data() const noexcept
+    void const* data(family) const noexcept
     {
         return &value_;
     }
 
     /// Return the size of the underlying storage.
-    std::size_t size() const noexcept
+    std::size_t size(family) const noexcept
     {
         return sizeof(value_);
     }
 
     /// No-op resize.
-    void resize(std::size_t) noexcept {}
+    void resize(family, std::size_t) noexcept {}
 };
 
 /** Leave an IPv4 multicast group (IP_DROP_MEMBERSHIP).
@@ -588,37 +589,37 @@ public:
     }
 
     /// Return the protocol level for `setsockopt`/`getsockopt`.
-    static constexpr int level() noexcept
+    constexpr int level(family) const noexcept
     {
         return IPPROTO_IP;
     }
 
     /// Return the option name for `setsockopt`/`getsockopt`.
-    static constexpr int name() noexcept
+    constexpr int name(family) const noexcept
     {
         return IP_DROP_MEMBERSHIP;
     }
 
     /// Return a pointer to the underlying storage.
-    void* data() noexcept
+    void* data(family) noexcept
     {
         return &value_;
     }
 
     /// Return a pointer to the underlying storage.
-    void const* data() const noexcept
+    void const* data(family) const noexcept
     {
         return &value_;
     }
 
     /// Return the size of the underlying storage.
-    std::size_t size() const noexcept
+    std::size_t size(family) const noexcept
     {
         return sizeof(value_);
     }
 
     /// No-op resize.
-    void resize(std::size_t) noexcept {}
+    void resize(family, std::size_t) noexcept {}
 };
 
 /** Join an IPv6 multicast group (IPV6_JOIN_GROUP).
@@ -647,37 +648,37 @@ public:
     }
 
     /// Return the protocol level for `setsockopt`/`getsockopt`.
-    static constexpr int level() noexcept
+    constexpr int level(family) const noexcept
     {
         return IPPROTO_IPV6;
     }
 
     /// Return the option name for `setsockopt`/`getsockopt`.
-    static constexpr int name() noexcept
+    constexpr int name(family) const noexcept
     {
         return IPV6_JOIN_GROUP;
     }
 
     /// Return a pointer to the underlying storage.
-    void* data() noexcept
+    void* data(family) noexcept
     {
         return &value_;
     }
 
     /// Return a pointer to the underlying storage.
-    void const* data() const noexcept
+    void const* data(family) const noexcept
     {
         return &value_;
     }
 
     /// Return the size of the underlying storage.
-    std::size_t size() const noexcept
+    std::size_t size(family) const noexcept
     {
         return sizeof(value_);
     }
 
     /// No-op resize.
-    void resize(std::size_t) noexcept {}
+    void resize(family, std::size_t) noexcept {}
 };
 
 /** Leave an IPv6 multicast group (IPV6_LEAVE_GROUP).
@@ -706,37 +707,37 @@ public:
     }
 
     /// Return the protocol level for `setsockopt`/`getsockopt`.
-    static constexpr int level() noexcept
+    constexpr int level(family) const noexcept
     {
         return IPPROTO_IPV6;
     }
 
     /// Return the option name for `setsockopt`/`getsockopt`.
-    static constexpr int name() noexcept
+    constexpr int name(family) const noexcept
     {
         return IPV6_LEAVE_GROUP;
     }
 
     /// Return a pointer to the underlying storage.
-    void* data() noexcept
+    void* data(family) noexcept
     {
         return &value_;
     }
 
     /// Return a pointer to the underlying storage.
-    void const* data() const noexcept
+    void const* data(family) const noexcept
     {
         return &value_;
     }
 
     /// Return the size of the underlying storage.
-    std::size_t size() const noexcept
+    std::size_t size(family) const noexcept
     {
         return sizeof(value_);
     }
 
     /// No-op resize.
-    void resize(std::size_t) noexcept {}
+    void resize(family, std::size_t) noexcept {}
 };
 
 /** Set the outgoing interface for IPv4 multicast (IP_MULTICAST_IF).
@@ -766,37 +767,37 @@ public:
     }
 
     /// Return the protocol level for `setsockopt`/`getsockopt`.
-    static constexpr int level() noexcept
+    constexpr int level(family) const noexcept
     {
         return IPPROTO_IP;
     }
 
     /// Return the option name for `setsockopt`/`getsockopt`.
-    static constexpr int name() noexcept
+    constexpr int name(family) const noexcept
     {
         return IP_MULTICAST_IF;
     }
 
     /// Return a pointer to the underlying storage.
-    void* data() noexcept
+    void* data(family) noexcept
     {
         return &value_;
     }
 
     /// Return a pointer to the underlying storage.
-    void const* data() const noexcept
+    void const* data(family) const noexcept
     {
         return &value_;
     }
 
     /// Return the size of the underlying storage.
-    std::size_t size() const noexcept
+    std::size_t size(family) const noexcept
     {
         return sizeof(value_);
     }
 
     /// No-op resize.
-    void resize(std::size_t) noexcept {}
+    void resize(family, std::size_t) noexcept {}
 };
 
 } // namespace boost::corosio::native_socket_option

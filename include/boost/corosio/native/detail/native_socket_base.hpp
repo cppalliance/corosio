@@ -77,6 +77,12 @@ public:
         return fd_;
     }
 
+    corosio::family family() const noexcept override
+    {
+        return socket_family(fd_) == AF_INET6 ? corosio::family::v6
+                                              : corosio::family::v4;
+    }
+
     /// Return the cached local endpoint.
     Endpoint local_endpoint() const noexcept override
     {

@@ -10,6 +10,7 @@
 #ifndef BOOST_COROSIO_LOCAL_STREAM_ACCEPTOR_HPP
 #define BOOST_COROSIO_LOCAL_STREAM_ACCEPTOR_HPP
 
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/op_base.hpp>
@@ -481,8 +482,9 @@ public:
             detail::throw_system_error(
                 make_error_code(std::errc::bad_file_descriptor),
                 "local_stream_acceptor::set_option");
+        auto const fam     = get().family();
         std::error_code ec = get().set_option(
-            Option::level(), Option::name(), opt.data(), opt.size());
+            opt.level(fam), opt.name(fam), opt.data(fam), opt.size(fam));
         if (ec)
             detail::throw_system_error(ec, "local_stream_acceptor::set_option");
     }
@@ -508,12 +510,13 @@ public:
                 make_error_code(std::errc::bad_file_descriptor),
                 "local_stream_acceptor::get_option");
         Option opt{};
-        std::size_t sz = opt.size();
+        auto const fam = get().family();
+        std::size_t sz = opt.size(fam);
         std::error_code ec =
-            get().get_option(Option::level(), Option::name(), opt.data(), &sz);
+            get().get_option(opt.level(fam), opt.name(fam), opt.data(fam), &sz);
         if (ec)
             detail::throw_system_error(ec, "local_stream_acceptor::get_option");
-        opt.resize(sz);
+        opt.resize(fam, sz);
         return opt;
     }
 
@@ -564,6 +567,16 @@ public:
 
         /// Return the native handle, or the platform sentinel if closed.
         virtual native_handle_type native_handle() const noexcept = 0;
+
+        /** Return the socket's address family.
+
+            Local sockets have no IP family; implementations return
+            `v4`, which the family-neutral options applicable to them
+            ignore.
+
+            @return The address family for option rendering.
+        */
+        virtual corosio::family family() const noexcept = 0;
 
         /// Release and return the native handle without closing.
         virtual native_handle_type release_socket() noexcept = 0;

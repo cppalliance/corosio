@@ -10,6 +10,7 @@
 #ifndef BOOST_COROSIO_NATIVE_DETAIL_URING_URING_MULTISHOT_ACCEPTOR_HPP
 #define BOOST_COROSIO_NATIVE_DETAIL_URING_URING_MULTISHOT_ACCEPTOR_HPP
 
+#include <boost/corosio/native/detail/endpoint_convert.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_URING
@@ -193,6 +194,12 @@ public:
     native_handle_type native_handle() const noexcept override
     {
         return fd_;
+    }
+
+    corosio::family family() const noexcept override
+    {
+        return socket_family(fd_) == AF_INET6 ? corosio::family::v6
+                                              : corosio::family::v4;
     }
 
     native_handle_type release_socket() noexcept override
