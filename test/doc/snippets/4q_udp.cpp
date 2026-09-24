@@ -222,7 +222,7 @@ multicast_join(corosio::io_context& ioc)
         co_return;
 
     sock.set_option(
-        corosio::socket_option::join_group_v4(
+        corosio::socket_option::join_group(
             corosio::ipv4_address("239.255.0.1")));
     // end::multicast[]
 }

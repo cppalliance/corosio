@@ -14,6 +14,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/family.hpp>
+#include <boost/corosio/ip_address.hpp>
 #include <boost/corosio/ipv4_address.hpp>
 #include <boost/corosio/ipv6_address.hpp>
 
@@ -592,39 +593,57 @@ public:
     int name(family) const noexcept;
 };
 
-/** Join an IPv4 multicast group (IP_ADD_MEMBERSHIP).
+/** Join a multicast group (IP_ADD_MEMBERSHIP / IPV6_JOIN_GROUP).
+
+    The group's family — not the socket's — selects the wire
+    struct and protocol level: a v4 group renders as an `ip_mreq`
+    at the IPv4 level even when applied to a dual-stack v6 socket,
+    which is the level such a join actually targets.
 
     @par Example
-    @par !example join_group_v4
+    @par !example join_group
 */
-class BOOST_COROSIO_DECL join_group_v4
+class BOOST_COROSIO_DECL join_group
 {
-    static constexpr std::size_t max_storage_ = 8;
+    // Opaque storage sized for the larger of ip_mreq / ipv6_mreq
+    static constexpr std::size_t max_storage_ = 20;
     alignas(4) unsigned char storage_[max_storage_]{};
+    bool is_v4_ = true;
 
 public:
     /// Construct with default values.
-    join_group_v4() noexcept = default;
+    join_group() noexcept = default;
 
-    /** Construct with a group and optional interface address.
+    /** Construct from a group address.
+
+        The group's family selects the wire representation; the
+        interface defaults to any (v4) or the group's zone (v6).
+
+        @param group The multicast group address to join.
+    */
+    explicit join_group(ip_address const& group) noexcept;
+
+    /** Construct from an IPv4 group and interface address.
 
         @param group The multicast group address to join.
         @param iface The local interface to use (default: any).
     */
-    join_group_v4(
+    join_group(
         ipv4_address group, ipv4_address iface = ipv4_address()) noexcept;
 
-    /// Return the protocol level.
+    /** Construct from an IPv6 group and interface index.
+
+        @param group The multicast group address to join.
+        @param if_index The interface index; 0 uses the group's
+        zone, and a zone of 0 lets the kernel choose.
+    */
+    join_group(ipv6_address const& group, unsigned int if_index = 0) noexcept;
+
+    /// Return the protocol level for the group's family.
     int level(family) const noexcept;
 
-    /// Return the option name.
+    /// Return the option name for the group's family.
     int name(family) const noexcept;
-
-    /// Return a pointer to the underlying storage.
-    void* data(family) noexcept
-    {
-        return storage_;
-    }
 
     /// Return a pointer to the underlying storage.
     void const* data(family) const noexcept
@@ -632,138 +651,58 @@ public:
         return storage_;
     }
 
-    /// Return the size of the underlying storage.
+    /// Return the size of the wire struct for the group's family.
     std::size_t size(family) const noexcept;
 
     /// No-op resize.
     void resize(family, std::size_t) noexcept {}
 };
 
-/** Leave an IPv4 multicast group (IP_DROP_MEMBERSHIP).
+/** Leave a multicast group (IP_DROP_MEMBERSHIP / IPV6_LEAVE_GROUP).
+
+    The group's family — not the socket's — selects the wire
+    struct and protocol level, mirroring @ref join_group.
 
     @par Example
-    @par !example leave_group_v4
+    @par !example leave_group
 */
-class BOOST_COROSIO_DECL leave_group_v4
+class BOOST_COROSIO_DECL leave_group
 {
-    static constexpr std::size_t max_storage_ = 8;
+    static constexpr std::size_t max_storage_ = 20;
     alignas(4) unsigned char storage_[max_storage_]{};
+    bool is_v4_ = true;
 
 public:
     /// Construct with default values.
-    leave_group_v4() noexcept = default;
+    leave_group() noexcept = default;
 
-    /** Construct with a group and optional interface address.
+    /** Construct from a group address.
+
+        @param group The multicast group address to leave.
+    */
+    explicit leave_group(ip_address const& group) noexcept;
+
+    /** Construct from an IPv4 group and interface address.
 
         @param group The multicast group address to leave.
         @param iface The local interface (default: any).
     */
-    leave_group_v4(
+    leave_group(
         ipv4_address group, ipv4_address iface = ipv4_address()) noexcept;
 
-    /// Return the protocol level.
-    int level(family) const noexcept;
-
-    /// Return the option name.
-    int name(family) const noexcept;
-
-    /// Return a pointer to the underlying storage.
-    void* data(family) noexcept
-    {
-        return storage_;
-    }
-
-    /// Return a pointer to the underlying storage.
-    void const* data(family) const noexcept
-    {
-        return storage_;
-    }
-
-    /// Return the size of the underlying storage.
-    std::size_t size(family) const noexcept;
-
-    /// No-op resize.
-    void resize(family, std::size_t) noexcept {}
-};
-
-/** Join an IPv6 multicast group (IPV6_JOIN_GROUP).
-
-    @par Example
-    @par !example join_group_v6
-*/
-class BOOST_COROSIO_DECL join_group_v6
-{
-    static constexpr std::size_t max_storage_ = 20;
-    alignas(4) unsigned char storage_[max_storage_]{};
-
-public:
-    /// Construct with default values.
-    join_group_v6() noexcept = default;
-
-    /** Construct with a group and optional interface index.
-
-        @param group The multicast group address to join.
-        @param if_index The interface index (0 = kernel chooses).
-    */
-    join_group_v6(ipv6_address group, unsigned int if_index = 0) noexcept;
-
-    /// Return the protocol level.
-    int level(family) const noexcept;
-
-    /// Return the option name.
-    int name(family) const noexcept;
-
-    /// Return a pointer to the underlying storage.
-    void* data(family) noexcept
-    {
-        return storage_;
-    }
-
-    /// Return a pointer to the underlying storage.
-    void const* data(family) const noexcept
-    {
-        return storage_;
-    }
-
-    /// Return the size of the underlying storage.
-    std::size_t size(family) const noexcept;
-
-    /// No-op resize.
-    void resize(family, std::size_t) noexcept {}
-};
-
-/** Leave an IPv6 multicast group (IPV6_LEAVE_GROUP).
-
-    @par Example
-    @par !example leave_group_v6
-*/
-class BOOST_COROSIO_DECL leave_group_v6
-{
-    static constexpr std::size_t max_storage_ = 20;
-    alignas(4) unsigned char storage_[max_storage_]{};
-
-public:
-    /// Construct with default values.
-    leave_group_v6() noexcept = default;
-
-    /** Construct with a group and optional interface index.
+    /** Construct from an IPv6 group and interface index.
 
         @param group The multicast group address to leave.
-        @param if_index The interface index (0 = kernel chooses).
+        @param if_index The interface index; 0 uses the group's
+        zone, and a zone of 0 lets the kernel choose.
     */
-    leave_group_v6(ipv6_address group, unsigned int if_index = 0) noexcept;
+    leave_group(ipv6_address const& group, unsigned int if_index = 0) noexcept;
 
-    /// Return the protocol level.
+    /// Return the protocol level for the group's family.
     int level(family) const noexcept;
 
-    /// Return the option name.
+    /// Return the option name for the group's family.
     int name(family) const noexcept;
-
-    /// Return a pointer to the underlying storage.
-    void* data(family) noexcept
-    {
-        return storage_;
-    }
 
     /// Return a pointer to the underlying storage.
     void const* data(family) const noexcept
@@ -771,7 +710,7 @@ public:
         return storage_;
     }
 
-    /// Return the size of the underlying storage.
+    /// Return the size of the wire struct for the group's family.
     std::size_t size(family) const noexcept;
 
     /// No-op resize.

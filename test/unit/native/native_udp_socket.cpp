@@ -446,10 +446,10 @@ struct native_udp_socket_test
         try
         {
             sock.set_option(
-                native_socket_option::join_group_v4(
+                native_socket_option::join_group(
                     ipv4_address("239.255.0.3")));
             sock.set_option(
-                native_socket_option::leave_group_v4(
+                native_socket_option::leave_group(
                     ipv4_address("239.255.0.3")));
         }
         catch (std::system_error const&)
@@ -458,13 +458,13 @@ struct native_udp_socket_test
         }
 
         // Default-constructed forms — verifies no-arg ctor coverage.
-        native_socket_option::join_group_v4 jg;
+        native_socket_option::join_group jg;
         BOOST_TEST_EQ(jg.size(family::v4), sizeof(struct ip_mreq));
         BOOST_TEST(jg.data(family::v4) != nullptr);
         BOOST_TEST_EQ(jg.level(family::v4), IPPROTO_IP);
         BOOST_TEST_EQ(jg.name(family::v4), IP_ADD_MEMBERSHIP);
 
-        native_socket_option::leave_group_v4 lg;
+        native_socket_option::leave_group lg;
         BOOST_TEST_EQ(lg.size(family::v4), sizeof(struct ip_mreq));
         BOOST_TEST(lg.data(family::v4) != nullptr);
         BOOST_TEST_EQ(lg.level(family::v4), IPPROTO_IP);
@@ -497,23 +497,24 @@ struct native_udp_socket_test
         try
         {
             sock.set_option(
-                native_socket_option::join_group_v6(ipv6_address("ff02::1")));
+                native_socket_option::join_group(ipv6_address("ff02::1")));
             sock.set_option(
-                native_socket_option::leave_group_v6(ipv6_address("ff02::1")));
+                native_socket_option::leave_group(ipv6_address("ff02::1")));
         }
         catch (std::system_error const&)
         {
             BOOST_TEST_PASS();
         }
 
-        // Default-constructed forms — verifies no-arg ctor coverage.
-        native_socket_option::join_group_v6 jg;
+        // v6-group forms carry v6 traits regardless of the family
+        // argument; membership dispatches on the group's family.
+        native_socket_option::join_group jg(ipv6_address("ff02::1"));
         BOOST_TEST_EQ(jg.size(family::v4), sizeof(struct ipv6_mreq));
         BOOST_TEST(jg.data(family::v4) != nullptr);
         BOOST_TEST_EQ(jg.level(family::v4), IPPROTO_IPV6);
         BOOST_TEST_EQ(jg.name(family::v4), IPV6_JOIN_GROUP);
 
-        native_socket_option::leave_group_v6 lg;
+        native_socket_option::leave_group lg(ipv6_address("ff02::1"));
         BOOST_TEST_EQ(lg.size(family::v4), sizeof(struct ipv6_mreq));
         BOOST_TEST(lg.data(family::v4) != nullptr);
         BOOST_TEST_EQ(lg.level(family::v4), IPPROTO_IPV6);

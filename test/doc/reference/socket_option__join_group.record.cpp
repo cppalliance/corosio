@@ -7,9 +7,8 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
-// Reference example injected into
-// include/boost/corosio/native/native_socket_option.hpp's documentation for
-// native_socket_option::join_group_v6, by
+// Reference example injected into include/boost/corosio/socket_option.hpp's
+// documentation for socket_option::join_group, by
 // doc/addons/extensions/reference-snippets.lua. The tagged region is what the
 // reference renders; scaffolding stays outside the tags.
 
@@ -17,8 +16,8 @@
 
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/io_context.hpp>
-#include <boost/corosio/ipv6_address.hpp>
-#include <boost/corosio/native/native_socket_option.hpp>
+#include <boost/corosio/ipv4_address.hpp>
+#include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/udp.hpp>
 #include <boost/corosio/udp_socket.hpp>
 
@@ -26,33 +25,33 @@ namespace corosio = boost::corosio;
 
 namespace {
 
-// tag::join_group_v6[]
+// tag::join_group[]
 void
-receive_an_ipv6_multicast_group(corosio::io_context& ioc)
+receive_an_ipv4_multicast_group(corosio::io_context& ioc)
 {
     corosio::udp_socket sock(ioc);
-    if (auto ec = sock.open(corosio::udp::v6()))
+    if (auto ec = sock.open(corosio::udp::v4()))
         return; // report the error
 
     // Lets other listeners on this host bind the same port and receive the
     // same group. set_option reports failure by throwing, not by returning
     // a code.
-    sock.set_option(corosio::native_socket_option::reuse_address(true));
+    sock.set_option(corosio::socket_option::reuse_address(true));
 
     // Bind before joining: a membership attaches to the socket's local port,
     // so there is nothing for the join to attach to until the bind succeeds.
     if (auto ec =
-            sock.bind(corosio::endpoint(corosio::ipv6_address::any(), 9000)))
+            sock.bind(corosio::endpoint(corosio::ipv4_address::any(), 9000)))
         return; // report the error
 
-    // ff15::1234 is a transient, site-scoped group: the 1 marks it
-    // non-permanent, the 5 sets the scope. The interface index selects which
-    // link to join on; 0 lets the kernel choose, and if_nametoindex() maps a
-    // name such as "eth0".
+    // 239.0.0.0/8 is the administratively scoped range, the IPv4 counterpart
+    // of a private address range. The optional second argument names the
+    // local interface to receive on; the default, 0.0.0.0, lets the kernel
+    // choose one.
     sock.set_option(
-        corosio::native_socket_option::join_group_v6(
-            corosio::ipv6_address("ff15::1234"), 0));
+        corosio::socket_option::join_group(
+            corosio::ipv4_address("239.255.0.1")));
 }
-// end::join_group_v6[]
+// end::join_group[]
 
 } // namespace
