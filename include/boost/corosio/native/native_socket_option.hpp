@@ -668,9 +668,6 @@ public:
     }
 };
 
-/// Set the outgoing interface for IPv6 multicast (IPV6_MULTICAST_IF).
-using multicast_interface_v6 = integer<IPPROTO_IPV6, IPV6_MULTICAST_IF>;
-
 /** A multicast membership request.
 
     The group's family — not the socket's — selects the wire
@@ -793,60 +790,86 @@ using leave_group = membership_request<
     IPPROTO_IPV6,
     IPV6_LEAVE_GROUP>;
 
-/** Set the outgoing interface for IPv4 multicast (IP_MULTICAST_IF).
+/** Set the outgoing multicast interface (IP_MULTICAST_IF /
+    IPV6_MULTICAST_IF).
 
-    Unlike the integer-based `multicast_interface_v6`, this option
-    takes an `ipv4_address` identifying the local interface.
-
-    @par Example
-    @par !example multicast_interface_v4
+    The two families name interfaces differently on the wire — IPv4
+    by interface address, IPv6 by interface index — so the option
+    stores both renderings and the socket's family selects one; the
+    other stays at its default (any address, kernel-chosen index).
 */
-class multicast_interface_v4
+class multicast_interface
 {
-    struct in_addr value_{};
+    struct in_addr v4_{};
+    unsigned int if_index_ = 0;
 
 public:
-    /// Construct with default values (INADDR_ANY).
-    multicast_interface_v4() = default;
+    /// Construct with default values (any address, kernel-chosen index).
+    multicast_interface() = default;
 
-    /** Construct with an interface address.
+    /** Construct with an IPv4 interface address.
 
         @param iface The local interface address.
     */
-    explicit multicast_interface_v4(ipv4_address iface) noexcept
+    explicit multicast_interface(ipv4_address iface) noexcept
     {
         auto b = iface.to_bytes();
-        std::memcpy(&value_, b.data(), 4);
+        std::memcpy(&v4_, b.data(), 4);
+    }
+
+    /** Construct with an IPv6 interface index.
+
+        @param if_index The interface index (0 = kernel chooses).
+    */
+    explicit multicast_interface(unsigned int if_index) noexcept
+        : if_index_(if_index)
+    {
+    }
+
+    /// Return the IPv4 rendering as an address.
+    ipv4_address address() const noexcept
+    {
+        ipv4_address::bytes_type b;
+        std::memcpy(b.data(), &v4_, 4);
+        return ipv4_address(b);
+    }
+
+    /// Return the IPv6 rendering as an interface index.
+    unsigned int if_index() const noexcept
+    {
+        return if_index_;
     }
 
     /// Return the protocol level for `setsockopt`/`getsockopt`.
-    constexpr int level(family) const noexcept
+    constexpr int level(family f) const noexcept
     {
-        return IPPROTO_IP;
+        return f == family::v6 ? IPPROTO_IPV6 : IPPROTO_IP;
     }
 
     /// Return the option name for `setsockopt`/`getsockopt`.
-    constexpr int name(family) const noexcept
+    constexpr int name(family f) const noexcept
     {
-        return IP_MULTICAST_IF;
+        return f == family::v6 ? IPV6_MULTICAST_IF : IP_MULTICAST_IF;
     }
 
-    /// Return a pointer to the underlying storage.
-    void* data(family) noexcept
+    /// Return a pointer to the rendering for `f`.
+    void* data(family f) noexcept
     {
-        return &value_;
+        return f == family::v6 ? static_cast<void*>(&if_index_)
+                               : static_cast<void*>(&v4_);
     }
 
-    /// Return a pointer to the underlying storage.
-    void const* data(family) const noexcept
+    /// Return a pointer to the rendering for `f`.
+    void const* data(family f) const noexcept
     {
-        return &value_;
+        return f == family::v6 ? static_cast<void const*>(&if_index_)
+                               : static_cast<void const*>(&v4_);
     }
 
-    /// Return the size of the underlying storage.
-    std::size_t size(family) const noexcept
+    /// Return the size of the rendering for `f`.
+    std::size_t size(family f) const noexcept
     {
-        return sizeof(value_);
+        return f == family::v6 ? sizeof(if_index_) : sizeof(v4_);
     }
 
     /// No-op resize.
