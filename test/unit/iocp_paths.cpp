@@ -22,10 +22,9 @@
 #include <boost/corosio/random_access_file.hpp>
 #include <boost/corosio/resolver.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/tcp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
-#include <boost/corosio/udp.hpp>
 #include <boost/corosio/udp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
 
@@ -155,7 +154,7 @@ struct iocp_paths_test
         auto ex = ioc.get_executor();
 
         tcp_acceptor tacc(ioc);
-        BOOST_TEST(!tacc.open(tcp::v4()));
+        BOOST_TEST(!tacc.open(family::v4));
         BOOST_TEST(!tacc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!tacc.listen());
 
@@ -198,7 +197,7 @@ struct iocp_paths_test
         auto const invalid = static_cast<native_handle_type>(~0ull);
 
         tcp_socket t(ioc);
-        BOOST_TEST(!t.open(tcp::v4()));
+        BOOST_TEST(!t.open(family::v4));
         BOOST_TEST(!!t.assign(invalid));
         BOOST_TEST(
             t.assign(t.native_handle()) ==
@@ -207,13 +206,13 @@ struct iocp_paths_test
 
         // A datagram socket is the wrong type for a TCP stream slot.
         udp_socket u(ioc);
-        BOOST_TEST(!u.open(udp::v4()));
+        BOOST_TEST(!u.open(family::v4));
         auto ufd = u.release();
         BOOST_TEST(!!t.assign(ufd));
         ::closesocket(static_cast<SOCKET>(ufd));
 
         udp_socket u2(ioc);
-        BOOST_TEST(!u2.open(udp::v4()));
+        BOOST_TEST(!u2.open(family::v4));
         BOOST_TEST(!!u2.assign(invalid));
         BOOST_TEST(
             u2.assign(u2.native_handle()) ==
@@ -224,7 +223,7 @@ struct iocp_paths_test
         local_stream_acceptor lacc(ioc);
         BOOST_TEST(!lacc.open());
         tcp_socket t2(ioc);
-        BOOST_TEST(!t2.open(tcp::v4()));
+        BOOST_TEST(!t2.open(family::v4));
         auto tfd = t2.release();
         BOOST_TEST(!!lacc.assign(tfd));
         ::closesocket(static_cast<SOCKET>(tfd));
@@ -244,8 +243,8 @@ struct iocp_paths_test
         BOOST_TEST(!l1.shutdown(shutdown_receive));
 
         udp_socket u1(ioc), u2(ioc);
-        BOOST_TEST(!u1.open(udp::v4()));
-        BOOST_TEST(!u2.open(udp::v4()));
+        BOOST_TEST(!u1.open(family::v4));
+        BOOST_TEST(!u2.open(family::v4));
         BOOST_TEST(!u1.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!u2.bind(endpoint(ipv4_address::loopback(), 0)));
 
@@ -266,8 +265,8 @@ struct iocp_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket u1(ioc), u2(ioc);
-        BOOST_TEST(!u1.open(udp::v4()));
-        BOOST_TEST(!u2.open(udp::v4()));
+        BOOST_TEST(!u1.open(family::v4));
+        BOOST_TEST(!u2.open(family::v4));
         BOOST_TEST(!u1.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!u2.bind(endpoint(ipv4_address::loopback(), 0)));
 
@@ -357,11 +356,11 @@ struct iocp_paths_test
             auto ex = ioc.get_executor();
 
             udp_socket u(ioc);
-            std::ignore = u.open(udp::v4());
+            std::ignore = u.open(family::v4);
             std::ignore = u.bind(endpoint(ipv4_address::loopback(), 0));
 
             tcp_acceptor tacc(ioc);
-            std::ignore = tacc.open(tcp::v4());
+            std::ignore = tacc.open(family::v4);
             std::ignore = tacc.bind(endpoint(ipv4_address::loopback(), 0));
             std::ignore = tacc.listen();
 

@@ -26,7 +26,7 @@ namespace {
 void
 stop_receiving_an_ipv4_multicast_group(corosio::udp_socket& sock)
 {
-    // Precondition: sock is open on udp::v4() and joined this group.
+    // Precondition: sock is open on family::v4 and joined this group.
     //
     // Membership otherwise lasts until the socket closes. The group and the
     // interface have to match the join_group that established it --

@@ -19,10 +19,9 @@
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/tcp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
-#include <boost/corosio/udp.hpp>
 #include <boost/corosio/udp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
 
@@ -114,8 +113,8 @@ struct budget_disabled_test
         auto ex  = ioc.get_executor();
 
         udp_socket s1(ioc), s2(ioc);
-        BOOST_TEST(!s1.open(udp::v4()));
-        BOOST_TEST(!s2.open(udp::v4()));
+        BOOST_TEST(!s1.open(family::v4));
+        BOOST_TEST(!s2.open(family::v4));
         BOOST_TEST(!s1.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!s2.bind(endpoint(ipv4_address::loopback(), 0)));
         auto ep1 = s1.local_endpoint();
@@ -302,8 +301,8 @@ struct uring_budget_test
         auto ex = ioc.get_executor();
 
         udp_socket s1(ioc), s2(ioc);
-        BOOST_TEST(!s1.open(udp::v4()));
-        BOOST_TEST(!s2.open(udp::v4()));
+        BOOST_TEST(!s1.open(family::v4));
+        BOOST_TEST(!s2.open(family::v4));
         BOOST_TEST(!s1.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!s2.bind(endpoint(ipv4_address::loopback(), 0)));
         auto ep2 = s2.local_endpoint();
@@ -362,8 +361,8 @@ struct uring_budget_test
         auto ex = ioc.get_executor();
 
         udp_socket s1(ioc), s2(ioc);
-        BOOST_TEST(!s1.open(udp::v4()));
-        BOOST_TEST(!s2.open(udp::v4()));
+        BOOST_TEST(!s1.open(family::v4));
+        BOOST_TEST(!s2.open(family::v4));
         BOOST_TEST(!s1.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!s2.bind(endpoint(ipv4_address::loopback(), 0)));
         auto ep1 = s1.local_endpoint();

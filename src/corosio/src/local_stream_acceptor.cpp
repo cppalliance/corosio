@@ -15,6 +15,7 @@
 #include <cstring>
 
 #if BOOST_COROSIO_POSIX
+#include <sys/socket.h>
 #include <unistd.h>
 #else
 // Windows: AF_UNIX socket files are reparse points with tag
@@ -23,7 +24,11 @@
 // silently leave them in place on at least some Windows hosts,
 // so call the Win32 API directly.
 #define WIN32_LEAN_AND_MEAN
+#include <winsock2.h>
 #include <windows.h>
+#ifndef AF_UNIX
+#define AF_UNIX 1
+#endif
 #endif
 
 namespace boost::corosio {
@@ -52,15 +57,15 @@ local_stream_acceptor::local_stream_acceptor(
 }
 
 std::error_code
-local_stream_acceptor::open(local_stream proto) noexcept
+local_stream_acceptor::open() noexcept
 {
     if (is_open())
         return {};
     auto& svc =
         static_cast<detail::local_stream_acceptor_service&>(h_.service());
     auto ec = svc.open_acceptor_socket(
-        static_cast<local_stream_acceptor::implementation&>(*h_.get()),
-        proto.family(), proto.type(), proto.protocol());
+        static_cast<local_stream_acceptor::implementation&>(*h_.get()), AF_UNIX,
+        SOCK_STREAM, 0);
     return ec;
 }
 

@@ -76,7 +76,7 @@ struct select_faults
             int before = open_fds();
             tcp_socket s(ioc);
             fault_scope f(sys::fcntl, EINVAL, nth);
-            auto ec = s.open(tcp::v4());
+            auto ec = s.open(family::v4);
             BOOST_TEST(f.fired());
             BOOST_TEST(ec == std::errc::invalid_argument);
             BOOST_TEST(!s.is_open());
@@ -310,7 +310,7 @@ struct select_faults
         // the failure path owns closing it.
         int const before = open_fds();
         tcp_socket s(ioc);
-        auto ec = s.open(tcp::v4());
+        auto ec = s.open(family::v4);
         BOOST_TEST(ec == std::errc::too_many_files_open);
         BOOST_TEST(!s.is_open());
         tcp_acceptor acc(ioc);
@@ -381,7 +381,7 @@ struct select_faults
             // makes, so the first call is that one.
             tcp_socket s(ioc);
             fault_scope f(sys::setsockopt, ENOPROTOOPT);
-            auto ec = s.open(tcp::v4());
+            auto ec = s.open(family::v4);
             BOOST_TEST(f.fired());
             BOOST_TEST_EQ(f.count(), 1u);
             BOOST_TEST(ec == std::errc::no_protocol_option);

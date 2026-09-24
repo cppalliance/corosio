@@ -27,7 +27,7 @@ namespace {
 void
 choose_the_outgoing_interface_v4(corosio::udp_socket& sock)
 {
-    // Precondition: sock is open on udp::v4().
+    // Precondition: sock is open on family::v4.
     //
     // IPv4 names an interface by a local address bound to it; the
     // same option takes an interface index for IPv6. The default,

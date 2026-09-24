@@ -13,9 +13,8 @@
 #include <boost/corosio/native/native_socket_option.hpp>
 
 #include <boost/corosio/io_context.hpp>
-#include <boost/corosio/tcp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/tcp_socket.hpp>
-#include <boost/corosio/udp.hpp>
 #include <boost/corosio/udp_socket.hpp>
 
 #include <boost/corosio/detail/platform.hpp>
@@ -44,18 +43,6 @@ namespace boost::corosio {
 template<auto Backend>
 struct socket_option_test
 {
-    // The protocol tags speak the same portable family the options
-    // consume
-    void testProtocolTagFamily()
-    {
-        static_assert(tcp::v4().family() == family::v4);
-        static_assert(tcp::v6().family() == family::v6);
-        static_assert(udp::v4().family() == family::v4);
-        static_assert(udp::v6().family() == family::v6);
-        BOOST_TEST(tcp::v6().is_v6());
-        BOOST_TEST(!udp::v4().is_v6());
-    }
-
     void testTcpOptions()
     {
         io_context ioc(Backend);
@@ -113,7 +100,7 @@ struct socket_option_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        BOOST_TEST(!sock.open(udp::v4()));
+        BOOST_TEST(!sock.open(family::v4));
 
         sock.set_option(socket_option::broadcast(true));
         BOOST_TEST(sock.get_option<socket_option::broadcast>().value());
@@ -140,7 +127,7 @@ struct socket_option_test
         // IPv4 rendering
         {
             udp_socket sock(ioc);
-            BOOST_TEST(!sock.open(udp::v4()));
+            BOOST_TEST(!sock.open(family::v4));
 
             sock.set_option(socket_option::multicast_loop(false));
             BOOST_TEST(
@@ -159,7 +146,7 @@ struct socket_option_test
         // IPv6 rendering, same option types
         {
             udp_socket sock(ioc);
-            BOOST_TEST(!sock.open(udp::v6()));
+            BOOST_TEST(!sock.open(family::v6));
 
             sock.set_option(socket_option::multicast_loop(false));
             BOOST_TEST(
@@ -299,7 +286,7 @@ struct socket_option_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        BOOST_TEST(!sock.open(udp::v6()));
+        BOOST_TEST(!sock.open(family::v6));
 
         sock.set_option(socket_option::v6_only(true));
         BOOST_TEST(sock.get_option<socket_option::v6_only>().value());
@@ -342,7 +329,7 @@ struct socket_option_test
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
-        BOOST_TEST(!sock.open(udp::v4()));
+        BOOST_TEST(!sock.open(family::v4));
 
         bool threw = false;
         try
@@ -413,7 +400,6 @@ struct socket_option_test
     void run()
     {
         testResizeNormalization();
-        testProtocolTagFamily();
         testTcpOptions();
         testTcpLocalEndpoint();
         testUdpOptions();

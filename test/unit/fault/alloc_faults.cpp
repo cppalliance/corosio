@@ -19,11 +19,10 @@
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/stream_file.hpp>
-#include <boost/corosio/tcp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_server.hpp>
 #include <boost/corosio/tcp_socket.hpp>
-#include <boost/corosio/udp.hpp>
 #include <boost/corosio/udp_socket.hpp>
 
 #include <boost/corosio/test/socket_pair.hpp>
@@ -224,7 +223,7 @@ struct alloc_fault_test
             // registry intact.
             maybe_arm arm(nth);
             udp_socket u(ioc);
-            auto oec = u.open(udp::v4());
+            auto oec = u.open(family::v4);
             if (oec)
                 return oec == std::errc::not_enough_memory;
 

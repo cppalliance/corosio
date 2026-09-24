@@ -17,7 +17,7 @@
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/ipv6_address.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/tcp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 
 #include <system_error>
@@ -34,7 +34,7 @@ namespace {
 std::error_code
 open_bind_and_listen(corosio::tcp_acceptor& acc)
 {
-    if (auto ec = acc.open(corosio::tcp::v6()))
+    if (auto ec = acc.open(corosio::family::v6))
         return ec;
     acc.set_option(corosio::socket_option::reuse_address(true));
     if (auto ec =

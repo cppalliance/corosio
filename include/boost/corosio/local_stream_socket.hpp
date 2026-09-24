@@ -20,7 +20,6 @@
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/corosio/local_endpoint.hpp>
-#include <boost/corosio/local_stream.hpp>
 #include <boost/corosio/shutdown_type.hpp>
 #include <boost/corosio/wait_type.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -307,11 +306,10 @@ public:
         Opening an already-open socket is a no-op that reports
         success.
 
-        @param proto The protocol. Defaults to local_stream{}.
 
         @return The error code, empty on success.
     */
-    [[nodiscard]] std::error_code open(local_stream proto = {}) noexcept;
+    [[nodiscard]] std::error_code open() noexcept;
 
     /** Close the socket.
 

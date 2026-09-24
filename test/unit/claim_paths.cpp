@@ -21,10 +21,9 @@
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/tcp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
-#include <boost/corosio/udp.hpp>
 #include <boost/corosio/udp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
 
@@ -184,7 +183,7 @@ struct claim_paths_test
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        BOOST_TEST(!acc.open(tcp::v4()));
+        BOOST_TEST(!acc.open(family::v4));
         BOOST_TEST_NO_THROW(acc.set_option(socket_option::reuse_address(true)));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
@@ -242,7 +241,7 @@ struct claim_paths_test
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        BOOST_TEST(!acc.open(tcp::v4()));
+        BOOST_TEST(!acc.open(family::v4));
         BOOST_TEST_NO_THROW(acc.set_option(socket_option::reuse_address(true)));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
@@ -280,7 +279,7 @@ struct claim_paths_test
         tcp_acceptor a(ioc), b(ioc);
         for (tcp_acceptor* acc : {&a, &b})
         {
-            BOOST_TEST(!acc->open(tcp::v4()));
+            BOOST_TEST(!acc->open(family::v4));
             BOOST_TEST_NO_THROW(
                 acc->set_option(socket_option::reuse_address(true)));
             BOOST_TEST(!acc->bind(endpoint(ipv4_address::loopback(), 0)));
@@ -343,11 +342,11 @@ struct claim_paths_test
         // resumes inline; releasing the acceptor there catches its
         // descriptor state still enqueued behind the udp one.
         udp_socket trigger(ioc);
-        BOOST_TEST(!trigger.open(udp::v4()));
+        BOOST_TEST(!trigger.open(family::v4));
         BOOST_TEST(!trigger.bind(endpoint(ipv4_address::loopback(), 0)));
 
         tcp_acceptor acc(ioc);
-        BOOST_TEST(!acc.open(tcp::v4()));
+        BOOST_TEST(!acc.open(family::v4));
         BOOST_TEST_NO_THROW(acc.set_option(socket_option::reuse_address(true)));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
@@ -414,7 +413,7 @@ struct claim_paths_test
         auto ex = ioc.get_executor();
 
         udp_socket s1(ioc);
-        BOOST_TEST(!s1.open(udp::v4()));
+        BOOST_TEST(!s1.open(family::v4));
         BOOST_TEST(!s1.bind(endpoint(ipv4_address::loopback(), 0)));
 
         char buf[8];

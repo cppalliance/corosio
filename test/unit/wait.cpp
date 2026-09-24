@@ -17,7 +17,7 @@
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/tcp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/udp_socket.hpp>
@@ -475,13 +475,13 @@ struct wait_test
         auto ex = ioc.get_executor();
 
         udp_socket recv(ioc);
-        BOOST_TEST(!recv.open(udp::v4()));
+        BOOST_TEST(!recv.open(family::v4));
         auto bec = recv.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
         auto port = recv.local_endpoint().port();
 
         udp_socket send(ioc);
-        BOOST_TEST(!send.open(udp::v4()));
+        BOOST_TEST(!send.open(family::v4));
 
         std::error_code wait_ec;
         bool wait_done = false;
@@ -642,7 +642,7 @@ struct wait_test
         auto ex = ioc.get_executor();
 
         udp_socket sock(ioc);
-        BOOST_TEST(!sock.open(udp::v4()));
+        BOOST_TEST(!sock.open(family::v4));
         auto bec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
@@ -783,13 +783,13 @@ struct wait_test
         auto ex = ioc.get_executor();
 
         udp_socket recv(ioc);
-        BOOST_TEST(!recv.open(udp::v4()));
+        BOOST_TEST(!recv.open(family::v4));
         auto bec = recv.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
         auto port = recv.local_endpoint().port();
 
         udp_socket send(ioc);
-        BOOST_TEST(!send.open(udp::v4()));
+        BOOST_TEST(!send.open(family::v4));
 
         std::size_t first_n = 0;
         std::error_code wait_ec;
@@ -833,12 +833,12 @@ struct wait_test
         auto ex = ioc.get_executor();
 
         udp_socket rsock(ioc);
-        BOOST_TEST(!rsock.open(udp::v4()));
+        BOOST_TEST(!rsock.open(family::v4));
         auto bec = rsock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
         udp_socket ssock(ioc);
-        BOOST_TEST(!ssock.open(udp::v4()));
+        BOOST_TEST(!ssock.open(family::v4));
 
         auto [t1, t2] = test::make_socket_pair(ioc);
 

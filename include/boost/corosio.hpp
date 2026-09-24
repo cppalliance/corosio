@@ -14,9 +14,11 @@
 #include <boost/corosio/connect.hpp>
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/endpoint.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/file_base.hpp>
 #include <boost/corosio/host_name.hpp>
 #include <boost/corosio/io_context.hpp>
+#include <boost/corosio/ip_address.hpp>
 #include <boost/corosio/ipv4_address.hpp>
 #include <boost/corosio/ipv6_address.hpp>
 #include <boost/corosio/random_access_file.hpp>
@@ -33,15 +35,13 @@
 
 #include <boost/corosio/local_connect_pair.hpp>
 #include <boost/corosio/local_endpoint.hpp>
-#include <boost/corosio/local_stream.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
 #include <boost/corosio/local_stream_acceptor.hpp>
 
-// local_datagram.hpp and local_datagram_socket.hpp are POSIX-only;
-// Windows does not support AF_UNIX datagram sockets (SOCK_DGRAM).
+// local_datagram_socket.hpp is POSIX-only; Windows does not
+// support AF_UNIX datagram sockets (SOCK_DGRAM).
 #include <boost/corosio/detail/platform.hpp>
 #if BOOST_COROSIO_POSIX
-#include <boost/corosio/local_datagram.hpp>
 #include <boost/corosio/local_datagram_socket.hpp>
 #endif
 

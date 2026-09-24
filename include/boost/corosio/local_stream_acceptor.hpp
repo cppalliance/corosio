@@ -18,7 +18,6 @@
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/corosio/local_endpoint.hpp>
-#include <boost/corosio/local_stream.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -259,11 +258,10 @@ public:
         Failures such as descriptor exhaustion are normal runtime
         conditions and are reported through the returned error code.
 
-        @param proto The protocol. Defaults to local_stream{}.
 
         @return The error code, empty on success.
     */
-    [[nodiscard]] std::error_code open(local_stream proto = {}) noexcept;
+    [[nodiscard]] std::error_code open() noexcept;
 
     /** Bind to a local endpoint.
 

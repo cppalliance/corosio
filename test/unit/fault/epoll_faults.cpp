@@ -70,7 +70,7 @@ struct epoll_faults
         {
             tcp_socket s(ioc);
             fault_scope f(sys::socket, EMFILE);
-            auto ec = s.open(tcp::v4());
+            auto ec = s.open(family::v4);
             BOOST_TEST(f.fired());
             BOOST_TEST(ec == std::errc::too_many_files_open);
             BOOST_TEST(!s.is_open());
@@ -81,7 +81,7 @@ struct epoll_faults
             int before = open_fds();
             tcp_socket s(ioc);
             fault_scope f(sys::epoll_ctl, ENOMEM);
-            auto ec = s.open(tcp::v4());
+            auto ec = s.open(family::v4);
             BOOST_TEST(f.fired());
             BOOST_TEST(ec == std::errc::not_enough_memory);
             BOOST_TEST(!s.is_open());
@@ -302,7 +302,7 @@ struct epoll_faults
         tcp_acceptor acc(ioc, loopback());
         tcp_socket client(ioc), server(ioc);
         // Opened before any arm so its own registration is not counted.
-        BOOST_TEST(!client.open(tcp::v4()));
+        BOOST_TEST(!client.open(family::v4));
         std::error_code aec;
         std::stop_source guard;
         auto accept_body = [&]() -> capy::task<> {
@@ -342,7 +342,7 @@ struct epoll_faults
         io_context ioc(epoll);
         tcp_acceptor acc(ioc, loopback());
         tcp_socket client(ioc), server(ioc);
-        BOOST_TEST(!client.open(tcp::v4()));
+        BOOST_TEST(!client.open(family::v4));
         std::error_code aec;
         int leaked       = 0;
         auto accept_body = [&]() -> capy::task<> {

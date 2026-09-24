@@ -47,7 +47,7 @@ struct iocp_dissociate_faults
         }
         io_context ioc(iocp);
         tcp_socket s(ioc);
-        BOOST_TEST(!s.open(tcp::v4()));
+        BOOST_TEST(!s.open(family::v4));
         native_handle_type h{};
         {
             // ntdll refuses to answer, so there is no entry point to
@@ -67,7 +67,7 @@ struct iocp_dissociate_faults
         // The lookup ran once for the process, so a second release
         // asks nothing and still hands back its socket.
         tcp_socket t(ioc);
-        BOOST_TEST(!t.open(tcp::v4()));
+        BOOST_TEST(!t.open(family::v4));
         auto const h2 = t.release();
         BOOST_TEST(!t.is_open());
         BOOST_TEST(native_socket_valid(h2));

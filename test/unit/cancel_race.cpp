@@ -17,7 +17,6 @@
 #include <boost/corosio/detail/platform.hpp>
 
 #include <boost/corosio/io_context.hpp>
-#include <boost/corosio/tcp.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>

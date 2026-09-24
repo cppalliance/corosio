@@ -17,7 +17,7 @@
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/ipv6_address.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/tcp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 
 namespace corosio = boost::corosio;
@@ -28,7 +28,7 @@ namespace {
 void
 accept_ipv6_peers_only(corosio::tcp_acceptor& acc)
 {
-    if (auto ec = acc.open(corosio::tcp::v6()))
+    if (auto ec = acc.open(corosio::family::v6))
         return; // report the error
 
     // Set between open() and bind(): once bound, the option no longer moves.

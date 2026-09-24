@@ -36,12 +36,11 @@ tcp_socket::tcp_socket(capy::execution_context& ctx)
 }
 
 std::error_code
-tcp_socket::open(tcp proto) noexcept
+tcp_socket::open(family f) noexcept
 {
     if (is_open())
         return {};
-    return open_for_family(
-        detail::native_family(proto.family()), proto.type(), proto.protocol());
+    return open_for_family(detail::native_family(f), SOCK_STREAM, IPPROTO_TCP);
 }
 
 std::error_code

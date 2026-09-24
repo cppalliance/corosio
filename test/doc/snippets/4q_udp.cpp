@@ -65,9 +65,9 @@ open_by_family(corosio::io_context& ioc)
 {
     // tag::protocol[]
     corosio::udp_socket sock(ioc);
-    if (auto ec = sock.open(corosio::udp::v4())) // SOCK_DGRAM, AF_INET
-        return;                                  // report the error
-    // or open(corosio::udp::v6()) for SOCK_DGRAM, AF_INET6
+    if (auto ec = sock.open(corosio::family::v4)) // SOCK_DGRAM, AF_INET
+        return;                                   // report the error
+    // or open(corosio::family::v6) for SOCK_DGRAM, AF_INET6
     // end::protocol[]
 }
 
@@ -76,7 +76,7 @@ open_and_bind(corosio::io_context& ioc)
 {
     // tag::open_bind[]
     corosio::udp_socket sock(ioc);
-    if (auto ec = sock.open(corosio::udp::v4()))
+    if (auto ec = sock.open(corosio::family::v4))
         return; // report the error
 
     if (auto ec =
@@ -128,7 +128,7 @@ capy::task<>
 echo(corosio::io_context& ioc)
 {
     corosio::udp_socket sock(ioc);
-    if (auto ec = sock.open(corosio::udp::v4()))
+    if (auto ec = sock.open(corosio::family::v4))
         co_return;
     if (auto ec =
             sock.bind(corosio::endpoint(corosio::ipv4_address::any(), 9000)))
@@ -213,7 +213,7 @@ multicast_join(corosio::io_context& ioc)
 {
     // tag::multicast[]
     corosio::udp_socket sock(ioc);
-    if (auto ec = sock.open(corosio::udp::v4()))
+    if (auto ec = sock.open(corosio::family::v4))
         co_return;
     sock.set_option(corosio::socket_option::reuse_address(true));
 
@@ -249,7 +249,7 @@ struct udp_test
     {
         corosio::io_context ioc;
         corosio::udp_socket sock(ioc);
-        BOOST_TEST(!sock.open(corosio::udp::v4()));
+        BOOST_TEST(!sock.open(corosio::family::v4));
 
         std::error_code ec;
         std::size_t n = 0;
@@ -265,13 +265,13 @@ struct udp_test
         auto ex = ioc.get_executor();
 
         corosio::udp_socket sock(ioc);
-        BOOST_TEST(!sock.open(corosio::udp::v4()));
+        BOOST_TEST(!sock.open(corosio::family::v4));
         auto bec =
             sock.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
         corosio::udp_socket helper(ioc);
-        BOOST_TEST(!helper.open(corosio::udp::v4()));
+        BOOST_TEST(!helper.open(corosio::family::v4));
 
         std::error_code ec;
         std::size_t n = 0;
@@ -315,13 +315,13 @@ struct udp_test
         auto ex = ioc.get_executor();
 
         corosio::udp_socket sock(ioc);
-        BOOST_TEST(!sock.open(corosio::udp::v4()));
+        BOOST_TEST(!sock.open(corosio::family::v4));
         auto bec =
             sock.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
 
         corosio::udp_socket helper(ioc);
-        BOOST_TEST(!helper.open(corosio::udp::v4()));
+        BOOST_TEST(!helper.open(corosio::family::v4));
 
         std::size_t peeked  = 0;
         std::size_t drained = 0;
@@ -342,7 +342,7 @@ struct udp_test
     {
         corosio::io_context ioc;
         corosio::udp_socket sock(ioc);
-        BOOST_TEST(!sock.open(corosio::udp::v4()));
+        BOOST_TEST(!sock.open(corosio::family::v4));
         BOOST_TEST(tune_options(sock));
     }
 
@@ -350,7 +350,7 @@ struct udp_test
     {
         corosio::io_context ioc;
         corosio::udp_socket sock(ioc);
-        BOOST_TEST(!sock.open(corosio::udp::v4()));
+        BOOST_TEST(!sock.open(corosio::family::v4));
         cancel_all(sock);
         BOOST_TEST_PASS();
     }
@@ -362,7 +362,7 @@ struct udp_test
 
         auto my_task = [&]() -> capy::task<> {
             corosio::udp_socket s(ioc);
-            BOOST_TEST(!s.open(corosio::udp::v4()));
+            BOOST_TEST(!s.open(corosio::family::v4));
             if (auto bec = s.bind(
                     corosio::endpoint(corosio::ipv4_address::loopback(), 0)))
                 co_return;

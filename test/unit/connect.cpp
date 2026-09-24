@@ -12,7 +12,7 @@
 
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/tcp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 
@@ -38,12 +38,13 @@ struct connect_test
 {
     /* Bind+listen on loopback ephemeral port; return (acceptor, port).
        Caller keeps the acceptor alive. */
-    static std::uint16_t open_listener(tcp_acceptor& acc, tcp proto = tcp::v4())
+    static std::uint16_t
+    open_listener(tcp_acceptor& acc, family proto = family::v4)
     {
         BOOST_TEST(!acc.open(proto));
         acc.set_option(socket_option::reuse_address(true));
         std::error_code ec;
-        if (proto == tcp::v6())
+        if (proto == family::v6)
             ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
         else
             ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
@@ -207,7 +208,7 @@ struct connect_test
     {
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
-        auto port   = open_listener(acc, tcp::v6());
+        auto port   = open_listener(acc, family::v6);
         auto bad_v4 = pick_closed_port(ioc);
 
         tcp_socket client(ioc);

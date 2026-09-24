@@ -19,7 +19,6 @@
 #if BOOST_COROSIO_HAS_URING
 
 #include <boost/corosio/native/native_io_context.hpp>
-#include <boost/corosio/tcp.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 

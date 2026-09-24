@@ -77,7 +77,7 @@ struct posix_common_faults
         io_context ioc(Backend);
         tcp_socket s(ioc);
         fault_scope f(sys::socket, EMFILE);
-        auto ec = s.open(tcp::v4());
+        auto ec = s.open(family::v4);
         BOOST_TEST(f.fired());
         BOOST_TEST(ec == std::errc::too_many_files_open);
         BOOST_TEST(!s.is_open());
@@ -87,7 +87,7 @@ struct posix_common_faults
     {
         io_context ioc(Backend);
         tcp_socket s(ioc);
-        BOOST_TEST(!s.open(tcp::v4()));
+        BOOST_TEST(!s.open(family::v4));
         fault_scope f(sys::bind, EADDRINUSE);
         auto ec = s.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(f.fired());
@@ -99,7 +99,7 @@ struct posix_common_faults
     {
         io_context ioc(Backend);
         tcp_socket s(ioc);
-        BOOST_TEST(!s.open(tcp::v4()));
+        BOOST_TEST(!s.open(family::v4));
         fault_scope f(sys::setsockopt, ENOPROTOOPT);
         expect_system_error(
             [&] { s.set_option(socket_option::reuse_address(true)); },
@@ -112,7 +112,7 @@ struct posix_common_faults
     {
         io_context ioc(Backend);
         tcp_socket s(ioc);
-        BOOST_TEST(!s.open(tcp::v4()));
+        BOOST_TEST(!s.open(family::v4));
         fault_scope f(sys::getsockopt, ENOPROTOOPT);
         expect_system_error(
             [&] { std::ignore = s.get_option<socket_option::reuse_address>(); },

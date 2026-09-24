@@ -33,7 +33,7 @@ namespace {
 void
 limit_how_far_outgoing_packets_can_travel(corosio::udp_socket& sock)
 {
-    // Precondition: sock is open on udp::v4(). IPPROTO_IP options don't
+    // Precondition: sock is open on family::v4. IPPROTO_IP options don't
     // apply to an AF_INET6 socket; set_option compiles either way and
     // throws at runtime on the wrong family.
     //

@@ -265,7 +265,7 @@ public:
     {
         native_connect_awaitable aw(*this, ep);
         if (!is_open())
-            aw.ec_ = open(ep.is_v6() ? tcp::v6() : tcp::v4());
+            aw.ec_ = open(ep.address().family());
         return aw;
     }
 

@@ -12,7 +12,7 @@
 #include <boost/corosio/tcp_acceptor.hpp>
 
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/tcp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/wait_type.hpp>
 
@@ -509,7 +509,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
-        BOOST_TEST(!acc.open(tcp::v6()));
+        BOOST_TEST(!acc.open(family::v6));
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -527,7 +527,7 @@ struct tcp_acceptor_test
     {
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
-        BOOST_TEST(!acc.open(tcp::v6()));
+        BOOST_TEST(!acc.open(family::v6));
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -582,7 +582,7 @@ struct tcp_acceptor_test
         // associated with the acceptor's execution context.
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
-        BOOST_TEST(!acc.open(tcp::v6()));
+        BOOST_TEST(!acc.open(family::v6));
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
         BOOST_TEST(!ec);
@@ -640,7 +640,7 @@ struct tcp_acceptor_test
         tcp_acceptor acc(ioc);
 
         // Default v6only=false gives dual-stack
-        BOOST_TEST(!acc.open(tcp::v6()));
+        BOOST_TEST(!acc.open(family::v6));
         acc.set_option(socket_option::reuse_address(true));
         auto ec = acc.bind(endpoint(ipv6_address::any(), 0));
         BOOST_TEST(!ec);
@@ -695,7 +695,7 @@ struct tcp_acceptor_test
         tcp_acceptor acc(ioc);
 
         // Explicit v6only restricts to IPv6
-        BOOST_TEST(!acc.open(tcp::v6()));
+        BOOST_TEST(!acc.open(family::v6));
         acc.set_option(socket_option::reuse_address(true));
         acc.set_option(socket_option::v6_only(true));
         auto ec = acc.bind(endpoint(ipv6_address::any(), 0));
@@ -991,7 +991,7 @@ struct tcp_acceptor_test
         // only asserted where the listener is genuinely AF_INET.
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
-        BOOST_TEST(!acc.open(tcp::v4()));
+        BOOST_TEST(!acc.open(family::v4));
 
         bool set_threw = false;
         try

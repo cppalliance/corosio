@@ -23,7 +23,6 @@
 #include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/shutdown_type.hpp>
-#include <boost/corosio/tcp.hpp>
 #include <boost/corosio/wait_type.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -304,12 +303,12 @@ public:
         Opening an already-open socket is a no-op that reports
         success.
 
-        @param proto The protocol (IPv4 or IPv6). Defaults to
-            `tcp::v4()`.
+        @param f The address family (IPv4 or IPv6). Defaults to
+            `family::v4`.
 
         @return The error code, empty on success.
     */
-    [[nodiscard]] std::error_code open(tcp proto = tcp::v4()) noexcept;
+    [[nodiscard]] std::error_code open(family f = family::v4) noexcept;
 
     /** Bind the socket to a local endpoint.
 
@@ -388,7 +387,7 @@ public:
     {
         connect_awaitable aw(*this, ep);
         if (!is_open())
-            aw.ec_ = open(ep.is_v6() ? tcp::v6() : tcp::v4());
+            aw.ec_ = open(ep.address().family());
         return aw;
     }
 

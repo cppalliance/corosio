@@ -112,7 +112,7 @@ struct uring_faults
         }
         {
             udp_socket u(ioc);
-            expect_open(u, [&] { return u.open(udp::v4()); });
+            expect_open(u, [&] { return u.open(family::v4); });
         }
         {
             local_stream_socket ls(ioc);
@@ -221,7 +221,7 @@ struct uring_faults
             // open, so the kernel resolves it before the number can be
             // recycled.
             tcp_socket s(ioc);
-            BOOST_TEST(!s.open(tcp::v4()));
+            BOOST_TEST(!s.open(family::v4));
             int const before = open_fds();
             s.close();
             BOOST_TEST(!s.is_open());
@@ -231,7 +231,7 @@ struct uring_faults
             // cancel() reaches the by-descriptor cancel without going
             // through a close.
             tcp_socket s(ioc);
-            BOOST_TEST(!s.open(tcp::v4()));
+            BOOST_TEST(!s.open(family::v4));
             s.cancel();
             BOOST_TEST(s.is_open());
         }
@@ -427,7 +427,7 @@ struct uring_faults
         io_context ioc(uring);
         tcp_acceptor acc(ioc, uring_loopback());
         tcp_socket c(ioc);
-        BOOST_TEST(!c.open(tcp::v4()));
+        BOOST_TEST(!c.open(family::v4));
         std::error_code cec;
         bool fired = false;
         {
@@ -572,8 +572,8 @@ struct uring_faults
     {
         io_context ioc(uring);
         udp_socket a(ioc), b(ioc);
-        BOOST_TEST(!a.open(udp::v4()));
-        BOOST_TEST(!b.open(udp::v4()));
+        BOOST_TEST(!a.open(family::v4));
+        BOOST_TEST(!b.open(family::v4));
         BOOST_TEST(!a.bind(uring_loopback()));
         BOOST_TEST(!b.bind(uring_loopback()));
         char buf[8] = "1234567";
@@ -843,7 +843,7 @@ struct uring_faults
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        BOOST_TEST(!acc.open(tcp::v4()));
+        BOOST_TEST(!acc.open(family::v4));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
 
@@ -888,7 +888,7 @@ struct uring_faults
         auto ex = ioc.get_executor();
 
         tcp_acceptor acc(ioc);
-        BOOST_TEST(!acc.open(tcp::v4()));
+        BOOST_TEST(!acc.open(family::v4));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
 
         // The multishot arms at listen(), so the scope watches before

@@ -215,7 +215,7 @@ inline constexpr struct any_thread_t
     @code
     fault_scope f(sys::epoll_ctl, EPERM);
     tcp_socket s(ioc);
-    auto ec = s.open(tcp::v4());
+    auto ec = s.open(family::v4);
     BOOST_TEST(f.fired());
     BOOST_TEST(ec == std::errc::operation_not_permitted);
     @endcode

@@ -347,13 +347,13 @@ struct native_udp_socket_test
         auto ex = ioc.get_executor();
 
         native_udp_socket<Backend> recv(ioc);
-        BOOST_TEST(!recv.open(udp::v4()));
+        BOOST_TEST(!recv.open(family::v4));
         auto bec = recv.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
         auto port = recv.local_endpoint().port();
 
         native_udp_socket<Backend> send(ioc);
-        BOOST_TEST(!send.open(udp::v4()));
+        BOOST_TEST(!send.open(family::v4));
 
         std::error_code wait_ec;
         bool wait_done = false;
@@ -418,8 +418,7 @@ struct native_udp_socket_test
         try
         {
             sock.set_option(
-                native_socket_option::multicast_interface(
-                    ipv4_address::any()));
+                native_socket_option::multicast_interface(ipv4_address::any()));
         }
         catch (std::system_error const&)
         {
@@ -445,11 +444,9 @@ struct native_udp_socket_test
         try
         {
             sock.set_option(
-                native_socket_option::join_group(
-                    ipv4_address("239.255.0.3")));
+                native_socket_option::join_group(ipv4_address("239.255.0.3")));
             sock.set_option(
-                native_socket_option::leave_group(
-                    ipv4_address("239.255.0.3")));
+                native_socket_option::leave_group(ipv4_address("239.255.0.3")));
         }
         catch (std::system_error const&)
         {
@@ -476,7 +473,7 @@ struct native_udp_socket_test
     {
         native_io_context<Backend> ioc;
         native_udp_socket<Backend> sock(ioc);
-        BOOST_TEST(!sock.open(udp::v6()));
+        BOOST_TEST(!sock.open(family::v6));
 
         sock.set_option(native_socket_option::multicast_loop(true));
         sock.set_option(native_socket_option::multicast_hops(4));

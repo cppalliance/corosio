@@ -18,7 +18,7 @@
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/ipv4_address.hpp>
 #include <boost/corosio/socket_option.hpp>
-#include <boost/corosio/udp.hpp>
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/udp_socket.hpp>
 
 namespace corosio = boost::corosio;
@@ -30,7 +30,7 @@ void
 receive_an_ipv4_multicast_group(corosio::io_context& ioc)
 {
     corosio::udp_socket sock(ioc);
-    if (auto ec = sock.open(corosio::udp::v4()))
+    if (auto ec = sock.open(corosio::family::v4))
         return; // report the error
 
     // Lets other listeners on this host bind the same port and receive the

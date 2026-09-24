@@ -27,12 +27,11 @@ udp_socket::udp_socket(capy::execution_context& ctx)
 }
 
 std::error_code
-udp_socket::open(udp proto) noexcept
+udp_socket::open(family f) noexcept
 {
     if (is_open())
         return {};
-    return open_for_family(
-        detail::native_family(proto.family()), proto.type(), proto.protocol());
+    return open_for_family(detail::native_family(f), SOCK_DGRAM, IPPROTO_UDP);
 }
 
 std::error_code
