@@ -16,6 +16,7 @@
 #include <boost/capy/io_result.hpp>
 
 #include <array>
+#include <compare>
 #include <cstdint>
 #include <iosfwd>
 #include <string>
@@ -196,14 +197,20 @@ public:
         return a1.addr_ == a2.addr_;
     }
 
-    /** Return true if two addresses are not equal.
+    /** Order two addresses.
 
-        @return `true` if the addresses are not equal, otherwise `false`.
+        Establishes a strict total ordering consistent with
+        `operator==`: addresses are ordered by their integer
+        value, most significant octet first. This makes
+        `ipv4_address` usable as a key in ordered containers
+        such as `std::map` and `std::set`.
+
+        @return The relative order of `a1` and `a2`.
     */
-    friend bool
-    operator!=(ipv4_address const& a1, ipv4_address const& a2) noexcept
+    friend std::strong_ordering
+    operator<=>(ipv4_address const& a1, ipv4_address const& a2) noexcept
     {
-        return a1.addr_ != a2.addr_;
+        return a1.addr_ <=> a2.addr_;
     }
 
     /** Return an address object that represents any address.

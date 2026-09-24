@@ -188,6 +188,24 @@ struct ipv4_address_test
         BOOST_TEST(!(a1 == a3));
     }
 
+    void testOrdering()
+    {
+        ipv4_address a1(0x01020304);
+        ipv4_address a2(0x01020304);
+        ipv4_address a3(0x04030201);
+
+        BOOST_TEST((a1 <=> a2) == std::strong_ordering::equal);
+        BOOST_TEST(a1 < a3);
+        BOOST_TEST(a3 > a1);
+        BOOST_TEST(a1 <= a2);
+        BOOST_TEST(a1 >= a2);
+
+        // Order follows the integer value, most significant octet first
+        BOOST_TEST(ipv4_address(0x00000001) < ipv4_address(0x01000000));
+        BOOST_TEST(ipv4_address::any() < ipv4_address::loopback());
+        BOOST_TEST(ipv4_address::loopback() < ipv4_address::broadcast());
+    }
+
     void testOstream()
     {
         std::ostringstream oss;
@@ -206,6 +224,7 @@ struct ipv4_address_test
         testPredicates();
         testStaticFactories();
         testComparison();
+        testOrdering();
         testOstream();
     }
 };
