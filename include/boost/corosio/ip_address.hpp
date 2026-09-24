@@ -322,4 +322,24 @@ inline ip_address::ip_address(std::string_view s)
 
 } // namespace boost::corosio
 
+namespace std {
+
+/// Hash support for `boost::corosio::ip_address`.
+template<>
+struct hash<boost::corosio::ip_address>
+{
+    /// Return the hash of `addr`.
+    std::size_t
+    operator()(boost::corosio::ip_address const& addr) const noexcept
+    {
+        // Family-guarded dispatch keeps the throwing conversions
+        // unreachable
+        return addr.is_v4()
+            ? hash<boost::corosio::ipv4_address>()(addr.to_v4())
+            : hash<boost::corosio::ipv6_address>()(addr.to_v6());
+    }
+};
+
+} // namespace std
+
 #endif

@@ -18,6 +18,7 @@
 #include <array>
 #include <compare>
 #include <cstdint>
+#include <functional>
 #include <iosfwd>
 #include <string>
 #include <string_view>
@@ -268,5 +269,21 @@ private:
 make_ipv4_address(std::string_view s) noexcept;
 
 } // namespace boost::corosio
+
+namespace std {
+
+/// Hash support for `boost::corosio::ipv4_address`.
+template<>
+struct hash<boost::corosio::ipv4_address>
+{
+    /// Return the hash of `addr`.
+    std::size_t
+    operator()(boost::corosio::ipv4_address const& addr) const noexcept
+    {
+        return hash<std::uint32_t>()(addr.to_uint());
+    }
+};
+
+} // namespace std
 
 #endif

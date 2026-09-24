@@ -11,6 +11,7 @@
 #include <boost/corosio/ip_address.hpp>
 
 #include <sstream>
+#include <unordered_set>
 #include <system_error>
 
 #include "test_suite.hpp"
@@ -284,6 +285,25 @@ struct ip_address_test
             std::length_error);
     }
 
+    void testHash()
+    {
+        // Equal values hash equal across construction paths
+        BOOST_TEST_EQ(
+            std::hash<ip_address>()(ip_address(ipv4_address::loopback())),
+            std::hash<ip_address>()(ip_address("127.0.0.1")));
+
+        // Family, mapping, and zone all separate keys
+        std::unordered_set<ip_address> set;
+        set.insert(ip_address(ipv4_address::any()));
+        set.insert(ip_address(ipv6_address::any()));
+        set.insert(ip_address(ipv6_address(ipv4_address::any())));
+        set.insert(ip_address("fe80::1%2"));
+        set.insert(ip_address("fe80::1"));
+        set.insert(ip_address(ipv4_address::any()));
+        BOOST_TEST_EQ(set.size(), 5u);
+        BOOST_TEST(set.contains(ip_address("fe80::1%2")));
+    }
+
     void testOstream()
     {
         std::ostringstream oss;
@@ -304,6 +324,7 @@ struct ip_address_test
         testOrdering();
         testToString();
         testToBuffer();
+        testHash();
         testOstream();
     }
 };
