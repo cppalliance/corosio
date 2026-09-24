@@ -24,11 +24,11 @@ struct native_socket_option_test
     void testResizeNormalization()
     {
         native_socket_option::no_delay b(true);
-        b.resize(1);
+        b.resize(family::v4, 1);
         BOOST_TEST(b.value());
 
         native_socket_option::receive_buffer_size i(1);
-        i.resize(1);
+        i.resize(family::v4, 1);
         BOOST_TEST_EQ(i.value(), 1);
     }
 

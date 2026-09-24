@@ -140,13 +140,13 @@ struct native_tcp_socket_test
         // Cover member accessors on the inline boolean<>.
         native_socket_option::no_delay direct(true);
         BOOST_TEST(direct.value());
-        BOOST_TEST_EQ(direct.size(), sizeof(int));
-        BOOST_TEST(direct.data() != nullptr);
-        BOOST_TEST_EQ(direct.level(), IPPROTO_TCP);
-        BOOST_TEST_EQ(direct.name(), TCP_NODELAY);
+        BOOST_TEST_EQ(direct.size(family::v4), sizeof(int));
+        BOOST_TEST(direct.data(family::v4) != nullptr);
+        BOOST_TEST_EQ(direct.level(family::v4), IPPROTO_TCP);
+        BOOST_TEST_EQ(direct.name(family::v4), TCP_NODELAY);
 
         native_socket_option::no_delay const& cd = direct;
-        BOOST_TEST(cd.data() != nullptr);
+        BOOST_TEST(cd.data(family::v4) != nullptr);
 
         s.close();
     }

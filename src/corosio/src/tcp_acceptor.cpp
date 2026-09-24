@@ -33,19 +33,19 @@ struct exclusive_address_use
 {
     int value_ = 1;
 
-    static int level() noexcept
+    static int level(family) noexcept
     {
         return SOL_SOCKET;
     }
-    static int name() noexcept
+    static int name(family) noexcept
     {
         return SO_EXCLUSIVEADDRUSE;
     }
-    void const* data() const noexcept
+    void const* data(family) const noexcept
     {
         return &value_;
     }
-    std::size_t size() const noexcept
+    std::size_t size(family) const noexcept
     {
         return sizeof(value_);
     }

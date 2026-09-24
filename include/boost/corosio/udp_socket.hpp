@@ -11,6 +11,7 @@
 #ifndef BOOST_COROSIO_UDP_SOCKET_HPP
 #define BOOST_COROSIO_UDP_SOCKET_HPP
 
+#include <boost/corosio/family.hpp>
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/detail/except.hpp>
@@ -127,6 +128,12 @@ public:
 
         /// Return the platform socket descriptor.
         virtual native_handle_type native_handle() const noexcept = 0;
+
+        /** Return the socket's address family.
+
+            @return The address family the socket was opened with.
+        */
+        virtual corosio::family family() const noexcept = 0;
 
         /** Release ownership of the native socket handle.
 
@@ -594,8 +601,9 @@ public:
             detail::throw_system_error(
                 make_error_code(std::errc::bad_file_descriptor),
                 "udp_socket::set_option");
+        auto const fam     = get().family();
         std::error_code ec = get().set_option(
-            Option::level(), Option::name(), opt.data(), opt.size());
+            opt.level(fam), opt.name(fam), opt.data(fam), opt.size(fam));
         if (ec)
             detail::throw_system_error(ec, "udp_socket::set_option");
     }
@@ -615,12 +623,13 @@ public:
                 make_error_code(std::errc::bad_file_descriptor),
                 "udp_socket::get_option");
         Option opt{};
-        std::size_t sz = opt.size();
+        auto const fam = get().family();
+        std::size_t sz = opt.size(fam);
         std::error_code ec =
-            get().get_option(Option::level(), Option::name(), opt.data(), &sz);
+            get().get_option(opt.level(fam), opt.name(fam), opt.data(fam), &sz);
         if (ec)
             detail::throw_system_error(ec, "udp_socket::get_option");
-        opt.resize(sz);
+        opt.resize(fam, sz);
         return opt;
     }
 

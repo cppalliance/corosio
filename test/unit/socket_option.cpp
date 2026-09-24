@@ -141,14 +141,10 @@ struct socket_option_test
     {
         socket_option::leave_group_v6 leave(ipv6_address("ff02::1"), 0);
         socket_option::join_group_v6 join(ipv6_address("ff02::1"));
-        BOOST_TEST_EQ(
-            socket_option::leave_group_v6::level(),
-            socket_option::join_group_v6::level());
-        BOOST_TEST(
-            socket_option::leave_group_v6::name() !=
-            socket_option::join_group_v6::name());
-        BOOST_TEST_EQ(leave.size(), join.size());
-        BOOST_TEST(leave.data() != nullptr);
+        BOOST_TEST_EQ(leave.level(family::v6), join.level(family::v6));
+        BOOST_TEST(leave.name(family::v6) != join.name(family::v6));
+        BOOST_TEST_EQ(leave.size(family::v6), join.size(family::v6));
+        BOOST_TEST(leave.data(family::v6) != nullptr);
     }
 
     void testV6Only()
@@ -258,11 +254,11 @@ struct socket_option_test
     void testResizeNormalization()
     {
         socket_option::no_delay b(true);
-        b.resize(1);
+        b.resize(family::v4, 1);
         BOOST_TEST(b.value());
 
         socket_option::receive_buffer_size i(1);
-        i.resize(1);
+        i.resize(family::v4, 1);
         BOOST_TEST_EQ(i.value(), 1);
     }
 

@@ -11,6 +11,7 @@
 #ifndef BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_TCP_ACCEPTOR_HPP
 #define BOOST_COROSIO_NATIVE_DETAIL_IOCP_WIN_TCP_ACCEPTOR_HPP
 
+#include <boost/corosio/native/detail/endpoint_convert.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_IOCP
@@ -119,6 +120,7 @@ public:
 private:
     win_tcp_service& svc_;
     SOCKET socket_ = INVALID_SOCKET;
+    int family_    = AF_UNSPEC;
     endpoint local_endpoint_;
 };
 
@@ -160,6 +162,15 @@ public:
     void cancel() noexcept override;
 
     native_handle_type native_handle() const noexcept override;
+
+    corosio::family family() const noexcept override
+    {
+        // getsockname fails with WSAEINVAL on an unbound socket, so
+        // the family recorded at socket creation is authoritative
+        return internal_ && internal_->family_ == AF_INET6
+            ? corosio::family::v6
+            : corosio::family::v4;
+    }
     native_handle_type release_socket() noexcept override;
 
     std::error_code set_option(

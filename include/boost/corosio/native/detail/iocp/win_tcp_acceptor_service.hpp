@@ -1313,6 +1313,7 @@ win_tcp_service::open_acceptor_socket(
     }
 
     impl.socket_ = sock;
+    impl.family_ = family;
     return {};
 }
 
@@ -1350,6 +1351,7 @@ win_tcp_service::assign_acceptor_socket(
 
     impl.close_socket();
     impl.socket_ = sock;
+    impl.family_ = proto_info.iAddressFamily;
 
     // AcceptEx sizes its address buffers from this cache, so an
     // unseeded endpoint breaks accepts on an adopted v6 listener.
@@ -1613,6 +1615,8 @@ win_tcp_acceptor_internal::close_socket() noexcept
         socket_ = INVALID_SOCKET;
     }
 
+    family_ = AF_UNSPEC;
+
     // Clear cached endpoint
     local_endpoint_ = endpoint{};
 }
@@ -1694,6 +1698,7 @@ win_tcp_acceptor::release_socket() noexcept
         internal_->cancel();
         dissociate_from_iocp(s);
         internal_->socket_         = INVALID_SOCKET;
+        internal_->family_         = AF_UNSPEC;
         internal_->local_endpoint_ = endpoint{};
     }
     return static_cast<native_handle_type>(s);
