@@ -14,6 +14,7 @@
 #include <boost/corosio/detail/platform.hpp>
 
 #include <sstream>
+#include <unordered_set>
 #include <string>
 #include <tuple>
 #include <system_error>
@@ -457,6 +458,27 @@ struct ipv6_address_test
         }
     }
 
+    void testHash()
+    {
+        // Equal values hash equal; the zone participates
+        ipv6_address::bytes_type ll{};
+        ll[0]  = 0xfe;
+        ll[1]  = 0x80;
+        ll[15] = 1;
+        BOOST_TEST_EQ(
+            std::hash<ipv6_address>()(ipv6_address(ll, 2)),
+            std::hash<ipv6_address>()(ipv6_address(ll, 2)));
+
+        // Zoned and unzoned are distinct keys
+        std::unordered_set<ipv6_address> set;
+        set.insert(ipv6_address(ll));
+        set.insert(ipv6_address(ll, 2));
+        set.insert(ipv6_address(ll, 3));
+        set.insert(ipv6_address(ll, 2));
+        BOOST_TEST_EQ(set.size(), 3u);
+        BOOST_TEST(set.contains(ipv6_address(ll, 3)));
+    }
+
     void testOstream()
     {
         std::ostringstream oss;
@@ -521,6 +543,7 @@ struct ipv6_address_test
         testScopeId();
         testScopeIdText();
         testToV4();
+        testHash();
         testOstream();
     }
 };

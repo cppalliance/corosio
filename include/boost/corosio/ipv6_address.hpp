@@ -19,6 +19,7 @@
 #include <array>
 #include <compare>
 #include <cstdint>
+#include <functional>
 #include <iosfwd>
 #include <string>
 #include <string_view>
@@ -397,5 +398,27 @@ private:
 make_ipv6_address(std::string_view s) noexcept;
 
 } // namespace boost::corosio
+
+namespace std {
+
+/// Hash support for `boost::corosio::ipv6_address`.
+template<>
+struct hash<boost::corosio::ipv6_address>
+{
+    /// Return the hash of `addr`.
+    std::size_t
+    operator()(boost::corosio::ipv6_address const& addr) const noexcept
+    {
+        auto const bytes = addr.to_bytes();
+        auto const h     = hash<std::string_view>()(std::string_view(
+            reinterpret_cast<char const*>(bytes.data()), bytes.size()));
+        // The zone participates in equality, so it must feed the
+        // hash; combine so it cannot cancel the byte entropy
+        auto const z = hash<std::uint32_t>()(addr.scope_id());
+        return h ^ (z + 0x9e3779b9u + (h << 6) + (h >> 2));
+    }
+};
+
+} // namespace std
 
 #endif

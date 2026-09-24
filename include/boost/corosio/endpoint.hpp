@@ -228,4 +228,21 @@ inline endpoint::endpoint(std::string_view s)
 
 } // namespace boost::corosio
 
+namespace std {
+
+/// Hash support for `boost::corosio::endpoint`.
+template<>
+struct hash<boost::corosio::endpoint>
+{
+    /// Return the hash of `ep`.
+    std::size_t operator()(boost::corosio::endpoint const& ep) const noexcept
+    {
+        std::size_t const h1 = hash<boost::corosio::ip_address>()(ep.address());
+        std::size_t const h2 = hash<std::uint16_t>()(ep.port());
+        return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+    }
+};
+
+} // namespace std
+
 #endif

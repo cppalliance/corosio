@@ -11,6 +11,7 @@
 #include <boost/corosio/ipv4_address.hpp>
 
 #include <sstream>
+#include <unordered_set>
 #include <system_error>
 
 #include "test_suite.hpp"
@@ -206,6 +207,22 @@ struct ipv4_address_test
         BOOST_TEST(ipv4_address::loopback() < ipv4_address::broadcast());
     }
 
+    void testHash()
+    {
+        // Equal values hash equal
+        BOOST_TEST_EQ(
+            std::hash<ipv4_address>()(ipv4_address::loopback()),
+            std::hash<ipv4_address>()(ipv4_address(0x7F000001)));
+
+        // Usable as an unordered container key
+        std::unordered_set<ipv4_address> set;
+        set.insert(ipv4_address::any());
+        set.insert(ipv4_address::loopback());
+        set.insert(ipv4_address::loopback());
+        BOOST_TEST_EQ(set.size(), 2u);
+        BOOST_TEST(set.contains(ipv4_address::loopback()));
+    }
+
     void testOstream()
     {
         std::ostringstream oss;
@@ -225,6 +242,7 @@ struct ipv4_address_test
         testStaticFactories();
         testComparison();
         testOrdering();
+        testHash();
         testOstream();
     }
 };

@@ -11,6 +11,7 @@
 #include <boost/corosio/endpoint.hpp>
 
 #include <map>
+#include <unordered_set>
 #include <system_error>
 
 #include "test_suite.hpp"
@@ -397,6 +398,28 @@ struct endpoint_parse_test
         BOOST_TEST(sessions.rbegin()->first.is_v6());
     }
 
+    void testHash()
+    {
+        // Equal endpoints hash equal
+        BOOST_TEST_EQ(
+            std::hash<endpoint>()(endpoint(ipv4_address::loopback(), 80)),
+            std::hash<endpoint>()(endpoint(ipv4_address::loopback(), 80)));
+
+        // Address, port, family, and zone all participate as keys
+        ipv6_address::bytes_type ll{};
+        ll[0]  = 0xfe;
+        ll[1]  = 0x80;
+        ll[15] = 1;
+        std::unordered_set<endpoint> set;
+        set.insert(endpoint(ipv4_address::loopback(), 80));
+        set.insert(endpoint(ipv4_address::loopback(), 443));
+        set.insert(endpoint(ipv6_address::loopback(), 80));
+        set.insert(endpoint(ipv6_address(ll, 2), 80));
+        set.insert(endpoint(ipv6_address(ll, 3), 80));
+        set.insert(endpoint(ipv4_address::loopback(), 80));
+        BOOST_TEST_EQ(set.size(), 5u);
+    }
+
     void run()
     {
         testAddress();
@@ -412,6 +435,7 @@ struct endpoint_parse_test
         testEquality();
         testOrdering();
         testOrderedMapKey();
+        testHash();
     }
 };
 
