@@ -39,13 +39,12 @@
 
 namespace boost::corosio {
 
-/** An asynchronous Unix stream socket with devirtualized I/O operations.
+/** Reads and writes a Unix domain stream, calling the backend directly.
 
-    This class template inherits from @ref local_stream_socket and
-    shadows the async operations (`read_some`, `write_some`,
-    `connect`) with versions that call the backend implementation
-    directly, allowing the compiler to inline through the entire
-    call chain.
+    This class template inherits from @ref local_stream_socket. It
+    shadows the async operations (`read_some`, `write_some`, `connect`)
+    with versions that call the backend implementation directly. The
+    compiler can then inline through the entire call chain.
 
     Non-async operations (`open`, `close`, `cancel`, socket options)
     remain unchanged and dispatch through the compiled library.
@@ -168,7 +167,7 @@ class native_local_stream_socket : public local_stream_socket
 public:
     /** Construct a native socket from an execution context.
 
-        @param ctx The execution context that will own this socket.
+        @param ctx The execution context that owns this socket.
     */
     explicit native_local_stream_socket(capy::execution_context& ctx)
         : io_object(create_handle<service_type>(ctx))
@@ -177,7 +176,7 @@ public:
 
     /** Construct a native socket from an executor.
 
-        @param ex The executor whose context will own the socket.
+        @param ex The executor whose context owns the socket.
     */
     template<class Ex>
         requires(!std::same_as<
@@ -196,7 +195,9 @@ public:
     native_local_stream_socket&
     operator=(native_local_stream_socket&&) noexcept = default;
 
+    /// Copy construction is disabled; the handle is uniquely owned.
     native_local_stream_socket(native_local_stream_socket const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     native_local_stream_socket&
     operator=(native_local_stream_socket const&) = delete;
 

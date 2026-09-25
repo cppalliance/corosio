@@ -39,7 +39,7 @@
 
 namespace boost::corosio {
 
-/** An asynchronous UDP socket for coroutine I/O.
+/** Sends and receives datagrams over UDP, from a coroutine.
 
     This class provides asynchronous UDP datagram operations that
     return awaitable types. Each operation participates in the affine
@@ -60,8 +60,8 @@ namespace boost::corosio {
     @par Thread Safety
     Distinct objects: Safe.@n
     Shared objects: Unsafe. A socket must not have concurrent
-    operations of the same type (e.g., two simultaneous recv_from).
-    One send_to and one recv_from may be in flight simultaneously.
+    operations of the same type (e.g., two simultaneous `recv_from`).
+    One `send_to` and one `recv_from` may be in flight simultaneously.
 
     @par Example
     @par !example udp_socket
@@ -69,6 +69,7 @@ namespace boost::corosio {
 class BOOST_COROSIO_DECL udp_socket : public io_object
 {
 public:
+    /// The shutdown direction type used by this socket.
     using shutdown_type = corosio::shutdown_type;
     using enum corosio::shutdown_type;
 
@@ -79,13 +80,15 @@ public:
     */
     struct implementation : io_object::implementation
     {
-        /** Initiate an asynchronous send_to operation.
+        /** Initiate an asynchronous `send_to` operation.
 
             @param h Coroutine handle to resume on completion.
             @param ex Executor for dispatching the completion.
             @param buf The buffer data to send.
             @param dest The destination endpoint.
-            @param flags Platform message flags (e.g. `MSG_DONTWAIT`).
+            @param flags Portable @ref message_flags bits (for example
+                `message_flags::do_not_route`). The backend translates
+                these to native `MSG_*` constants.
             @param token Stop token for cancellation.
             @param ec Output error code.
             @param bytes_out Output bytes transferred.
@@ -102,13 +105,15 @@ public:
             std::error_code* ec,
             std::size_t* bytes_out) = 0;
 
-        /** Initiate an asynchronous recv_from operation.
+        /** Initiate an asynchronous `recv_from` operation.
 
             @param h Coroutine handle to resume on completion.
             @param ex Executor for dispatching the completion.
             @param buf The buffer to receive into.
             @param source Output endpoint for the sender's address.
-            @param flags Platform message flags (e.g. `MSG_PEEK`).
+            @param flags Portable @ref message_flags bits (for example
+                `message_flags::peek`). The backend translates these to
+                native `MSG_*` constants.
             @param token Stop token for cancellation.
             @param ec Output error code.
             @param bytes_out Output bytes transferred.
@@ -154,7 +159,12 @@ public:
         */
         virtual void cancel() noexcept = 0;
 
-        /// Shut down the socket in one or both directions.
+        /** Shut down the socket in one or both directions.
+
+            @param what Which directions to disable.
+
+            @return The error code, empty on success.
+        */
         virtual std::error_code shutdown(shutdown_type what) noexcept = 0;
 
         /** Set a socket option.
@@ -212,7 +222,9 @@ public:
             @param h Coroutine handle to resume on completion.
             @param ex Executor for dispatching the completion.
             @param buf The buffer data to send.
-            @param flags Platform message flags (e.g. `MSG_DONTWAIT`).
+            @param flags Portable @ref message_flags bits (for example
+                `message_flags::do_not_route`). The backend translates
+                these to native `MSG_*` constants.
             @param token Stop token for cancellation.
             @param ec Output error code.
             @param bytes_out Output bytes transferred.
@@ -228,12 +240,14 @@ public:
             std::error_code* ec,
             std::size_t* bytes_out) = 0;
 
-        /** Initiate an asynchronous connected recv operation.
+        /** Initiate an asynchronous connected `recv` operation.
 
             @param h Coroutine handle to resume on completion.
             @param ex Executor for dispatching the completion.
             @param buf The buffer to receive into.
-            @param flags Platform message flags (e.g. `MSG_PEEK`).
+            @param flags Portable @ref message_flags bits (for example
+                `message_flags::peek`). The backend translates these to
+                native `MSG_*` constants.
             @param token Stop token for cancellation.
             @param ec Output error code.
             @param bytes_out Output bytes transferred.
@@ -278,10 +292,8 @@ public:
     */
     struct send_to_awaitable : detail::bytes_op_base<send_to_awaitable>
     {
-        udp_socket& s_;
-        buffer_param buf_;
-        endpoint dest_;
-        int flags_;
+    private:
+        friend udp_socket;
 
         send_to_awaitable(
             udp_socket& s,
@@ -294,6 +306,13 @@ public:
             , flags_(flags)
         {
         }
+
+        friend detail::bytes_op_base<send_to_awaitable>;
+
+        udp_socket& s_;
+        buffer_param buf_;
+        endpoint dest_;
+        int flags_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -310,10 +329,8 @@ public:
     */
     struct recv_from_awaitable : detail::bytes_op_base<recv_from_awaitable>
     {
-        udp_socket& s_;
-        buffer_param buf_;
-        endpoint& source_;
-        int flags_;
+    private:
+        friend udp_socket;
 
         recv_from_awaitable(
             udp_socket& s,
@@ -327,6 +344,13 @@ public:
         {
         }
 
+        friend detail::bytes_op_base<recv_from_awaitable>;
+
+        udp_socket& s_;
+        buffer_param buf_;
+        endpoint& source_;
+        int flags_;
+
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
@@ -338,14 +362,19 @@ public:
     /// Represent the awaitable returned by @ref connect.
     struct connect_awaitable : detail::void_op_base<connect_awaitable>
     {
-        udp_socket& s_;
-        endpoint endpoint_;
+    private:
+        friend udp_socket;
 
         connect_awaitable(udp_socket& s, endpoint ep) noexcept
             : s_(s)
             , endpoint_(ep)
         {
         }
+
+        friend detail::void_op_base<connect_awaitable>;
+
+        udp_socket& s_;
+        endpoint endpoint_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -357,10 +386,15 @@ public:
     /// Represent the awaitable returned by @ref wait.
     struct wait_awaitable : detail::void_op_base<wait_awaitable>
     {
-        udp_socket& s_;
-        wait_type w_;
+    private:
+        friend udp_socket;
 
         wait_awaitable(udp_socket& s, wait_type w) noexcept : s_(s), w_(w) {}
+
+        friend detail::void_op_base<wait_awaitable>;
+
+        udp_socket& s_;
+        wait_type w_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -372,9 +406,8 @@ public:
     /// Represent the awaitable returned by @ref send.
     struct send_awaitable : detail::bytes_op_base<send_awaitable>
     {
-        udp_socket& s_;
-        buffer_param buf_;
-        int flags_;
+    private:
+        friend udp_socket;
 
         send_awaitable(udp_socket& s, buffer_param buf, int flags = 0) noexcept
             : s_(s)
@@ -382,6 +415,12 @@ public:
             , flags_(flags)
         {
         }
+
+        friend detail::bytes_op_base<send_awaitable>;
+
+        udp_socket& s_;
+        buffer_param buf_;
+        int flags_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -393,9 +432,8 @@ public:
     /// Represent the awaitable returned by @ref recv.
     struct recv_awaitable : detail::bytes_op_base<recv_awaitable>
     {
-        udp_socket& s_;
-        buffer_param buf_;
-        int flags_;
+    private:
+        friend udp_socket;
 
         recv_awaitable(udp_socket& s, buffer_param buf, int flags = 0) noexcept
             : s_(s)
@@ -403,6 +441,12 @@ public:
             , flags_(flags)
         {
         }
+
+        friend detail::bytes_op_base<recv_awaitable>;
+
+        udp_socket& s_;
+        buffer_param buf_;
+        int flags_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -412,15 +456,13 @@ public:
     };
 
 public:
-    /** Destructor.
-
-        Closes the socket if open, cancelling any pending operations.
+    /** Closes the socket if open, cancelling any pending operations.
     */
     ~udp_socket() override;
 
     /** Construct a socket from an execution context.
 
-        @param ctx The execution context that will own this socket.
+        @param ctx The execution context that owns this socket.
     */
     explicit udp_socket(capy::execution_context& ctx);
 
@@ -428,7 +470,7 @@ public:
 
         The socket is associated with the executor's context.
 
-        @param ex The executor whose context will own the socket.
+        @param ex The executor whose context owns the socket.
     */
     template<class Ex>
         requires(!std::same_as<std::remove_cvref_t<Ex>, udp_socket>) &&
@@ -437,17 +479,13 @@ public:
     {
     }
 
-    /** Move constructor.
-
-        Transfers ownership of the socket resources.
+    /** Transfers ownership of the socket resources.
 
         @param other The socket to move from.
     */
     udp_socket(udp_socket&& other) noexcept : io_object(std::move(other)) {}
 
-    /** Move assignment operator.
-
-        Closes any existing socket and transfers ownership.
+    /** Closes any existing socket and transfers ownership.
 
         @param other The socket to move from.
         @return Reference to this socket.
@@ -462,7 +500,9 @@ public:
         return *this;
     }
 
-    udp_socket(udp_socket const&)            = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    udp_socket(udp_socket const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     udp_socket& operator=(udp_socket const&) = delete;
 
     /** Open the socket.
@@ -521,7 +561,7 @@ public:
         conditions and are reported through the returned error
         code. A closed socket reports `errc::bad_file_descriptor`.
 
-        @param what Determines what operations will no longer be
+        @param what Determines which operations are no longer
             allowed.
 
         @return The error code, empty on success.
@@ -565,7 +605,7 @@ public:
         ownership of `fd`.
 
         @param fd The native socket to adopt. On success the object
-            owns it and will close it.
+            owns it and closes it.
 
         @return The error code, empty on success. Validation and
             registration failures are normal runtime conditions when
@@ -644,7 +684,7 @@ public:
 
         @param buf The buffer containing data to send.
         @param dest The destination endpoint.
-        @param flags Message flags (e.g. message_flags::dont_route).
+        @param flags Message flags (e.g. message_flags::do_not_route).
 
         @return An awaitable that completes with
             `io_result<std::size_t>`.
@@ -671,7 +711,7 @@ public:
     /** Receive a datagram and capture the sender's endpoint.
 
         @param buf The buffer to receive data into.
-        @param source Reference to an endpoint that will be set to
+        @param source Reference to an endpoint that receives
             the sender's address on successful completion.
         @param flags Message flags (e.g. message_flags::peek).
 
@@ -731,8 +771,7 @@ public:
 
         A closed socket completes with `errc::bad_file_descriptor`.
 
-        @par Preconditions
-        This socket must outlive the returned awaitable.
+        @pre This socket must outlive the returned awaitable.
     */
     [[nodiscard]] auto wait(wait_type w)
     {

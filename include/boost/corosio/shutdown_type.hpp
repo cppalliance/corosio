@@ -14,8 +14,8 @@ namespace boost::corosio {
 
 /** Different ways a socket may be shutdown.
 
-    Used by tcp_socket, local_stream_socket, and
-    local_datagram_socket to specify the direction of
+    Used by `tcp_socket`, `udp_socket`, `local_stream_socket`, and
+    `local_datagram_socket` to specify the direction of
     communication to disable.
 
     The enumerator values match the POSIX SHUT_RD / SHUT_WR /

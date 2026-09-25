@@ -9,6 +9,7 @@
 //
 
 = Testing
+:page-mode: explanation
 
 Asynchronous I/O code is notoriously difficult to test. Real network
 operations introduce latency, non-determinism, and dependencies on

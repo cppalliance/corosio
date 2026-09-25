@@ -25,7 +25,7 @@
 
 namespace boost::corosio {
 
-/** Abstract base for streams that support async writes.
+/** Writes bytes to a stream asynchronously.
 
     Provides the `write_some` operation via a pure virtual
     `do_write_some` dispatch point. Concrete classes override
@@ -49,8 +49,8 @@ protected:
     struct write_some_awaitable
         : detail::bytes_op_base<write_some_awaitable<ConstBufferSequence>>
     {
-        io_write_stream& ios_;
-        ConstBufferSequence buffers_;
+    private:
+        friend io_write_stream;
 
         write_some_awaitable(
             io_write_stream& ios, ConstBufferSequence buffers) noexcept
@@ -58,6 +58,10 @@ protected:
             , buffers_(std::move(buffers))
         {
         }
+
+        friend detail::bytes_op_base<write_some_awaitable<ConstBufferSequence>>;
+        io_write_stream& ios_;
+        ConstBufferSequence buffers_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -79,19 +83,24 @@ protected:
         @return Coroutine handle to resume immediately.
     */
     virtual std::coroutine_handle<> do_write_some(
-        std::coroutine_handle<>,
-        capy::executor_ref,
-        buffer_param,
-        std::stop_token,
-        std::error_code*,
-        std::size_t*) = 0;
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        buffer_param buffers,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes) = 0;
 
+    /// Default construct; the handle is supplied through @ref io_object.
     io_write_stream() noexcept = default;
 
-    io_write_stream(io_write_stream&&) noexcept            = default;
+    /// Move construct; the handle moves with @ref io_object.
+    io_write_stream(io_write_stream&&) noexcept = default;
+    /// Move assignment is disabled; reseating a live stream is not supported.
     io_write_stream& operator=(io_write_stream&&) noexcept = delete;
-    io_write_stream(io_write_stream const&)                = delete;
-    io_write_stream& operator=(io_write_stream const&)     = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    io_write_stream(io_write_stream const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
+    io_write_stream& operator=(io_write_stream const&) = delete;
 
 public:
     /** Asynchronously write data to the stream.

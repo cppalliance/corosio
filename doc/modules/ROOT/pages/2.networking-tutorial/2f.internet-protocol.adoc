@@ -8,8 +8,9 @@
 //
 
 = IP: Moving Packets Across Networks
+:page-mode: explanation
 
-IP is the workhorse of the internet. Every piece of data your program sends -- whether over TCP or UDP -- travels inside an IP packet. IP's job is limited but essential: take a packet, figure out where it needs to go, and forward it one hop closer to its destination. It makes no promises about whether the packet arrives, whether it arrives once or twice, or whether it arrives before or after the packet sent before it. That deliberate minimalism is what makes the internet scalable.
+Every piece of data your program sends -- whether over TCP or UDP -- travels inside an IP packet. IP's job is limited but essential: take a packet, figure out where it needs to go, and forward it one hop closer to its destination. It makes no promises about whether the packet arrives, whether it arrives once or twice, or whether it arrives before or after the packet sent before it. That deliberate minimalism is what makes the internet scalable.
 
 == What IP Does
 
@@ -54,7 +55,7 @@ Your program sends a packet destined for `203.0.113.80`. The packet does not tra
 
 No single router knows the entire path. Each one knows only its immediate neighbors and which networks are reachable through each neighbor. This distributed, hop-by-hop design is what allows the internet to scale to billions of devices without a central authority coordinating every path.
 
-Routes can change in real time. If a link between two routers goes down, routing protocols detect the failure and recalculate paths within seconds. Your packet might take a different route than the one before it, and neither your program nor the destination will notice -- IP treats every packet independently.
+Routes can change in real time. If a link between two routers goes down, routing protocols detect the failure and recalculate paths within seconds. Your packet might take a different route than the one before it, and neither your program nor the destination notices -- IP treats every packet independently.
 
 == MTU: Maximum Transmission Unit
 
@@ -76,7 +77,7 @@ Fragmentation has costs. If any single fragment is lost, the entire original pac
 
 == Why This Matters to You
 
-As an application developer, you rarely interact with IP directly. TCP and UDP sit between your code and IP, and the operating system handles routing and fragmentation transparently. But IP's behavior explains several things you will encounter:
+As an application developer, you rarely interact with IP directly. TCP and UDP sit between your code and IP, and the operating system handles routing and fragmentation transparently. But IP's behavior explains several things you encounter:
 
 * *Why packets can arrive out of order*: each IP packet is routed independently, and different packets may take different paths.
 * *Why packets can be lost*: routers discard packets when queues overflow, checksums fail, or TTL expires. There is no notification to the sender.

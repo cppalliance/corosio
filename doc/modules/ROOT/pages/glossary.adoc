@@ -8,23 +8,23 @@
 //
 
 = Glossary
+:page-mode: reference
 
 This glossary defines terms used throughout the Corosio documentation.
 
 == A
 
 Acceptor::
-An I/O object that listens for and accepts incoming TCP connections. See
-`corosio::tcp_acceptor` and xref:4.guide/4e.tcp-acceptor.adoc[Acceptors Guide].
+An I/O object that listens for and accepts incoming connections. See
+cpp:tcp_acceptor[] and xref:4.guide/4e.tcp-acceptor.adoc[Acceptors Guide].
 
-Affine Awaitable::
-An awaitable type that implements the affine protocol, receiving an
-`io_env const*` in `await_suspend` (carrying the executor, stop token, and
-frame allocator) to ensure correct executor affinity.
+Affine Awaitable:: An awaitable type that implements the affine protocol.
+It receives an `io_env const*` in `await_suspend`, carrying the executor,
+stop token, and frame allocator, to ensure correct executor affinity.
 
 Affinity::
 The binding of a coroutine to a specific executor. A coroutine with affinity
-to executor `ex` will have all its resumptions dispatched through `ex`.
+to executor `ex` has all its resumptions dispatched through `ex`.
 
 buffer_param::
 A type-erased buffer sequence parameter, allowing non-template code to
@@ -58,12 +58,15 @@ Completion::
 The event when an asynchronous operation finishes, either successfully or
 with an error.
 
+Completion Handler::
+A function or coroutine handle that runs when an operation completes.
+
 Composed Operation::
 An operation built from multiple primitive operations. For example,
 `capy::read()` repeatedly calls `read_some()` until the buffer is full.
 
 Concurrency Hint::
-A value passed to `io_context` indicating how many threads may call `run()`.
+A value passed to cpp:io_context[] indicating how many threads may call `run()`.
 Affects internal synchronization strategy.
 
 Continuation::
@@ -118,14 +121,11 @@ Handle::
 A reference to a system resource (socket, file, etc.) managed by the
 operating system.
 
-Handler::
-A callback function or coroutine handle that runs when an operation completes.
-
 == I
 
 I/O Context::
 The main event loop in Corosio. Processes asynchronous operations and
-dispatches completions. See `corosio::io_context`.
+dispatches completions. See cpp:io_context[].
 
 I/O Object::
 A class representing an I/O resource (socket, resolver, etc.). Base class is
@@ -156,7 +156,7 @@ by `corosio::local_endpoint`. See xref:4.guide/4p.unix-sockets.adoc[Unix Domain 
 == M
 
 Mocket::
-A mock socket for testing. See `corosio::test::mocket`.
+The in-process test double for a socket. See `corosio::test::mocket`.
 
 Move-Only::
 A type that can be moved but not copied. Sockets and other I/O objects are
@@ -193,7 +193,7 @@ any amount of data.
 == R
 
 Resolver::
-An I/O object that performs DNS lookups. See `corosio::resolver`.
+An I/O object that resolves host names to addresses. See cpp:resolver[].
 
 Resume::
 Continuing execution of a suspended coroutine.
@@ -216,7 +216,7 @@ An I/O object that waits for operating system signals. See
 `corosio::signal_set`.
 
 Socket::
-An I/O object for TCP network communication. See `corosio::tcp_socket`.
+An I/O object for network communication. See cpp:tcp_socket[].
 
 Stop Token::
 A mechanism for requesting cancellation. See `std::stop_token`.
@@ -225,7 +225,7 @@ Strand::
 A serialization mechanism that ensures handlers don't run concurrently, so
 operations execute one at a time, eliminating data races without mutexes.
 Corosio does not provide a strand type; the equivalent is executor affinity
-or a single-threaded `io_context`.
+or a single-threaded cpp:io_context[].
 See xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming].
 
 Stream::
@@ -252,7 +252,7 @@ A framework class for building TCP servers with worker pools. See
 
 Thread Safety::
 The ability to use an object safely from multiple threads. Individual I/O
-objects are generally not thread-safe.
+objects are not thread-safe.
 
 Timeout::
 Racing an awaitable against a deadline. See `corosio::timeout()` and
@@ -270,7 +270,7 @@ polymorphism without templates.
 Unix Domain Socket::
 A socket that communicates between processes on the same machine using
 filesystem paths instead of IP addresses and ports. Available as stream
-(`local_stream_socket`) and datagram (`local_datagram_socket`) variants.
+(cpp:local_stream_socket[]) and datagram (cpp:local_datagram_socket[]) variants.
 See xref:4.guide/4p.unix-sockets.adoc[Unix Domain Sockets].
 
 == W

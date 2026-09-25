@@ -1,11 +1,13 @@
 = Boost.Corosio Performance Benchmarks
+:page-mode: explanation
 :toc: left
 :toclevels: 3
 :source-highlighter: highlightjs
 
 == Executive Summary
 
-This report presents comprehensive performance benchmarks comparing *Boost.Corosio*, *Boost.Asio with coroutines* (`co_spawn`/`use_awaitable`), and *Boost.Asio with callbacks* on Windows using the IOCP (I/O Completion Ports) backend. The benchmarks cover handler dispatch, socket throughput, socket latency, HTTP server workloads, timers, and connection churn.
+This report presents comprehensive performance benchmarks on Windows, using the IOCP (I/O Completion Ports) backend. It compares *Boost.Corosio*, *Boost.Asio with coroutines* (`co_spawn`/`use_awaitable`), and *Boost.Asio with callbacks*. The benchmarks cover handler dispatch, socket throughput, socket latency, HTTP server workloads, timers, and connection
+churn.
 
 === Bottom Line
 
@@ -16,7 +18,7 @@ Corosio *outperforms Asio coroutines* in handler dispatch (9-50% faster) and *sc
 * *Multi-threaded handler scaling:* Best scaling of all three — maintains 89% throughput at 8 threads vs 58% (Asio coroutines) and 53% (Asio callbacks)
 * *Concurrent post and run:* 46% faster than Asio coroutines (2.35 Mops/s vs 1.61 Mops/s)
 * *Interleaved post/run:* 34% faster than Asio coroutines (2.14 Mops/s vs 1.60 Mops/s)
-* *HTTP concurrent connections:* 5-7% higher throughput than Asio coroutines
+* *HTTP concurrent connections:* 2-7% higher throughput than Asio coroutines
 
 === Where Asio Callbacks Leads
 
@@ -278,11 +280,11 @@ Multiple threads running handlers concurrently.
 
 ==== Scaling Analysis
 
-[source]
+[role=output]
 ----
 Throughput vs Thread Count:
 
-Threads    Corosio    Asio Coro  Asio CB    Best Scaling
+Threads    Corosio    Asio Coroutine  Asio CB    Best Scaling
    1       1.72 M     1.78 M     2.82 M     —
    2       2.10 M     1.40 M     2.33 M     Corosio (1.23×)
    4       2.02 M     1.25 M     2.10 M     Corosio (1.18×)
@@ -389,7 +391,7 @@ Single direction transfer with varying buffer sizes.
 | *2.31 GB/s*
 |===
 
-*Observation:* Unidirectional throughput is within 10% across all three implementations. Corosio has a slight edge at the smallest buffer size. All three are bounded by the same kernel socket path.
+*Observation:* Unidirectional throughput is within 13% across all three implementations. Corosio has a slight edge at the smallest buffer size. All three are bounded by the same kernel socket path.
 
 === Bidirectional Throughput
 
@@ -485,7 +487,7 @@ A single socket pair exchanges messages for 3 seconds.
 | *927.80 μs*
 |===
 
-*Observation:* All three implementations deliver latency within 5% of each other. Asio callbacks has marginally better tail latency. The differences are small enough to be within measurement noise.
+*Observation:* All three implementations deliver mean, p50, p90, and p99 latency within 5% of each other. Those differences are small enough to be within measurement noise. The far tail spreads wider: p99.9 varies by 16% and max by more than 2×. Asio callbacks has the lowest p99.9 and max.
 
 === Concurrent Socket Pairs
 
@@ -493,7 +495,7 @@ Multiple socket pairs operating concurrently (64-byte messages).
 
 [cols="1,1,1,1,1,1,1", options="header"]
 |===
-| Pairs | Corosio Mean | Asio Coro Mean | Asio CB Mean | Corosio p99 | Asio Coro p99 | Asio CB p99
+| Pairs | Corosio Mean | Asio Coroutine Mean | Asio CB Mean | Corosio p99 | Asio Coroutine p99 | Asio CB p99
 
 | 1
 | 10.78 μs
@@ -557,7 +559,7 @@ Multiple socket pairs operating concurrently (64-byte messages).
 
 [cols="1,1,1,1,1,1,1", options="header"]
 |===
-| Connections | Corosio Throughput | Asio Coro Throughput | Asio CB Throughput | Corosio Mean | Asio Coro Mean | Asio CB Mean
+| Connections | Corosio Throughput | Asio Coroutine Throughput | Asio CB Throughput | Corosio Mean | Asio Coroutine Mean | Asio CB Mean
 
 | 1
 | *86.79 Kops/s*
@@ -592,7 +594,7 @@ Multiple socket pairs operating concurrently (64-byte messages).
 | *391.54 μs*
 |===
 
-*Observation:* Corosio consistently outperforms Asio coroutines by 5-7% in concurrent connection throughput. Corosio and Asio callbacks trade the lead depending on connection count.
+*Observation:* Corosio consistently outperforms Asio coroutines by 2-7% in concurrent connection throughput. The gap narrows at higher connection counts. Corosio and Asio callbacks trade the lead depending on connection count.
 
 === Multi-Threaded HTTP (32 Connections)
 
@@ -630,7 +632,7 @@ Multiple socket pairs operating concurrently (64-byte messages).
 
 [cols="1,1,1,1,1,1,1", options="header"]
 |===
-| Threads | Corosio Mean | Asio Coro Mean | Asio CB Mean | Corosio p99 | Asio Coro p99 | Asio CB p99
+| Threads | Corosio Mean | Asio Coroutine Mean | Asio CB Mean | Corosio p99 | Asio Coroutine p99 | Asio CB p99
 
 | 1
 | 393.50 μs
@@ -678,15 +680,15 @@ Multiple socket pairs operating concurrently (64-byte messages).
 == Timer Benchmarks
 
 NOTE: The timer category was removed from the benchmark suite. Corosio's
-stateless delay() and timeout() acquire their timer per wait while Asio
-reuses a caller-owned timer object, so the two sides no longer measure
-comparable work. The figures below are a historical snapshot taken while
-both libraries exposed an equivalent timer object API.
+stateless delay() and timeout() acquire their timer per wait, while Asio
+reuses a caller-owned timer object. The two sides therefore no longer
+measure comparable work. The figures below are a historical snapshot
+taken while both libraries exposed an equivalent timer object API.
 
-NOTE: The fan-out join primitives are likewise no longer like-for-like
-(corosio's `async_waker` latch versus Asio's parked-timer cancel), so
-those figures compare each library's idiomatic completion signal rather
-than identical mechanisms.
+NOTE: The fan-out join primitives are likewise no longer like-for-like:
+corosio's `async_waker` latch versus Asio's parked-timer cancel. Those
+figures compare each library's idiomatic completion signal rather than
+identical mechanisms.
 
 === Timer Schedule/Cancel
 
@@ -746,7 +748,7 @@ Multiple timers firing at 15 ms intervals concurrently.
 
 [cols="1,1,1,1,1,1,1", options="header"]
 |===
-| Timers | Corosio Mean | Asio Coro Mean | Asio CB Mean | Corosio p99 | Asio Coro p99 | Asio CB p99
+| Timers | Corosio Mean | Asio Coroutine Mean | Asio CB Mean | Corosio p99 | Asio Coroutine p99 | Asio CB p99
 
 | 10
 | 15.39 ms
@@ -773,7 +775,7 @@ Multiple timers firing at 15 ms intervals concurrently.
 | 18.17 ms
 |===
 
-*Observation:* Concurrent timer latency is identical across all three implementations. Mean latency stays within 0.06 ms of the 15 ms target regardless of concurrency level. Corosio has the best p99 at 1000 concurrent timers.
+*Observation:* Concurrent timer latency is identical across all three implementations. Mean latency stays within 0.06 ms across implementations and concurrency levels. Every mean sits about 0.4 ms above the nominal 15 ms interval. Corosio has the best p99 at 1000 concurrent timers.
 
 == Connection Churn Benchmark
 
@@ -815,7 +817,7 @@ The handler dispatch results tell a nuanced story across the three implementatio
 
 [cols="1,1,1,1", options="header"]
 |===
-| Pattern | Corosio vs Asio Coro | Corosio vs Asio CB | Notes
+| Pattern | Corosio vs Asio Coroutine | Corosio vs Asio CB | Notes
 
 | Single-threaded
 | +9%
@@ -840,7 +842,7 @@ The handler dispatch results tell a nuanced story across the three implementatio
 
 The most telling result is multi-threaded scaling. Every implementation loses throughput as threads increase due to coordination overhead, but Corosio degrades the least:
 
-[source]
+[role=output]
 ----
 Throughput retained at 8 threads (vs 1 thread):
 
@@ -867,7 +869,7 @@ HTTP server performance is comparable across all three implementations at all co
 
 === Timers
 
-Timer schedule/cancel throughput is a notable gap — Asio's timer operations are approximately 10× faster. However, the gap narrows substantially for timer fire rate (8%) and disappears entirely for concurrent timer latency accuracy. Applications that create and cancel timers at very high rates may notice this difference; applications that primarily use timers for timeouts and delays will not.
+Timer schedule/cancel throughput is a notable gap — Asio's timer operations are approximately 10× faster. However, the gap narrows substantially for timer fire rate (8%). It disappears entirely for concurrent timer latency accuracy. Applications that create and cancel timers at very high rates may notice this difference; applications that primarily use timers for timeouts and delays do not.
 
 === Summary
 
@@ -875,7 +877,7 @@ Timer schedule/cancel throughput is a notable gap — Asio's timer operations ar
 |===
 | Component | Assessment
 
-| *Handler Dispatch (vs Asio Coro)*
+| *Handler Dispatch (vs Asio Coroutine)*
 | Corosio 9-50% faster
 
 | *Handler Dispatch (vs Asio CB)*
@@ -945,13 +947,14 @@ Asio callbacks achieve the highest raw single-threaded dispatch rate, but this a
 
 === Key Takeaway
 
-For coroutine-based async programming on Windows (IOCP), *Corosio provides equivalent or better performance* compared to Asio coroutines in every category except bidirectional socket throughput and timer schedule/cancel (a measurement that predates removal of the standalone timer API). Corosio's superior multi-threaded scaling makes it particularly well-suited for applications that distribute work across threads. Bidirectional throughput and timer operations are identified areas for future optimization.
+For coroutine-based async programming on Windows (IOCP), *Corosio provides equivalent or better performance* than Asio coroutines in every category but two. The exceptions are bidirectional socket throughput and timer schedule/cancel, a measurement that predates removal of the standalone timer API. Corosio's superior multi-threaded scaling makes it particularly well-suited for applications that distribute work across threads. Bidirectional throughput and timer operations are identified areas for future
+optimization.
 
 == Appendix: Raw Data
 
 === Corosio Results
 
-[source]
+[role=output]
 ----
 Backend: iocp
 Duration: 3 s per benchmark
@@ -1036,7 +1039,7 @@ Duration: 3 s per benchmark
 
 === Asio Coroutines Results
 
-[source]
+[role=output]
 ----
 === Single-threaded Handler Post (Asio Coroutines) ===
   Handlers:    4712000
@@ -1114,7 +1117,7 @@ Duration: 3 s per benchmark
 
 === Asio Callbacks Results
 
-[source]
+[role=output]
 ----
 === Single-threaded Handler Post (Asio Callbacks) ===
   Handlers:    7764000

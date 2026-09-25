@@ -52,39 +52,72 @@ class posix_random_access_file_service;
 
 } // namespace detail
 
-/// Backend tag for the Linux epoll I/O multiplexer.
+/// Selects the Linux epoll I/O multiplexer as the backend.
 struct epoll_t
 {
-    using scheduler_type            = detail::epoll_scheduler;
-    using tcp_socket_type           = detail::epoll_tcp_socket;
-    using tcp_service_type          = detail::epoll_tcp_service;
-    using udp_socket_type           = detail::epoll_udp_socket;
-    using udp_service_type          = detail::epoll_udp_service;
-    using tcp_acceptor_type         = detail::epoll_tcp_acceptor;
+    /// The scheduler that drives the event loop.
+    using scheduler_type = detail::epoll_scheduler;
+    /// The concrete TCP socket type.
+    using tcp_socket_type = detail::epoll_tcp_socket;
+    /// The service that owns the TCP socket implementations.
+    using tcp_service_type = detail::epoll_tcp_service;
+    /// The concrete UDP socket type.
+    using udp_socket_type = detail::epoll_udp_socket;
+    /// The service that owns the UDP socket implementations.
+    using udp_service_type = detail::epoll_udp_service;
+    /// The concrete TCP acceptor type.
+    using tcp_acceptor_type = detail::epoll_tcp_acceptor;
+    /// The service that owns the TCP acceptor implementations.
     using tcp_acceptor_service_type = detail::epoll_tcp_acceptor_service;
 
-    using local_stream_socket_type   = detail::epoll_local_stream_socket;
-    using local_stream_service_type  = detail::epoll_local_stream_service;
+    /// The concrete Unix domain stream socket type.
+    using local_stream_socket_type = detail::epoll_local_stream_socket;
+    /// The service that owns the Unix domain stream implementations.
+    using local_stream_service_type = detail::epoll_local_stream_service;
+    /// The concrete Unix domain stream acceptor type.
     using local_stream_acceptor_type = detail::epoll_local_stream_acceptor;
+    /// The service that owns the Unix domain acceptor implementations.
     using local_stream_acceptor_service_type =
         detail::epoll_local_stream_acceptor_service;
-    using local_datagram_socket_type  = detail::epoll_local_datagram_socket;
+    /// The concrete Unix domain datagram socket type.
+    using local_datagram_socket_type = detail::epoll_local_datagram_socket;
+    /// The service that owns the Unix domain datagram implementations.
     using local_datagram_service_type = detail::epoll_local_datagram_service;
 
-    using signal_type           = detail::posix_signal;
-    using signal_service_type   = detail::posix_signal_service;
-    using resolver_type         = detail::posix_resolver;
+    /// The concrete signal set type.
+    using signal_type = detail::posix_signal;
+    /// The service that owns the signal set implementations.
+    using signal_service_type = detail::posix_signal_service;
+    /// The concrete name resolver type.
+    using resolver_type = detail::posix_resolver;
+    /// The service that owns the resolver implementations.
     using resolver_service_type = detail::posix_resolver_service;
 
-    using stream_file_type         = detail::posix_stream_file;
+    /// The concrete sequential file type.
+    using stream_file_type = detail::posix_stream_file;
+    /// The service that owns the sequential file implementations.
     using stream_file_service_type = detail::posix_stream_file_service;
-    using random_access_file_type  = detail::posix_random_access_file;
+    /// The concrete random-access file type.
+    using random_access_file_type = detail::posix_random_access_file;
+    /// The service that owns the random-access file implementations.
     using random_access_file_service_type =
         detail::posix_random_access_file_service;
 
-    /// Create the scheduler and services for this backend.
+    /** Create the scheduler and services for this backend.
+
+        @param ctx The execution context that owns the scheduler.
+        @param concurrency_hint Hint for the number of threads that
+            call `run()`. A performance tuning knob; the
+            thread-safety contract is set separately by
+            @ref io_context_options::locking.
+
+        @return Reference to the newly created scheduler.
+
+        @throws std::system_error If the backend's infrastructure
+            could not be created.
+    */
     BOOST_COROSIO_DECL static detail::scheduler&
-    construct(capy::execution_context&, unsigned concurrency_hint);
+    construct(capy::execution_context& ctx, unsigned concurrency_hint);
 };
 
 /// Tag value for selecting the epoll backend.
@@ -121,39 +154,72 @@ class posix_random_access_file_service;
 
 } // namespace detail
 
-/// Backend tag for the portable select() I/O multiplexer.
+/// Selects the portable select() I/O multiplexer as the backend.
 struct select_t
 {
-    using scheduler_type            = detail::select_scheduler;
-    using tcp_socket_type           = detail::select_tcp_socket;
-    using tcp_service_type          = detail::select_tcp_service;
-    using udp_socket_type           = detail::select_udp_socket;
-    using udp_service_type          = detail::select_udp_service;
-    using tcp_acceptor_type         = detail::select_tcp_acceptor;
+    /// The scheduler that drives the event loop.
+    using scheduler_type = detail::select_scheduler;
+    /// The concrete TCP socket type.
+    using tcp_socket_type = detail::select_tcp_socket;
+    /// The service that owns the TCP socket implementations.
+    using tcp_service_type = detail::select_tcp_service;
+    /// The concrete UDP socket type.
+    using udp_socket_type = detail::select_udp_socket;
+    /// The service that owns the UDP socket implementations.
+    using udp_service_type = detail::select_udp_service;
+    /// The concrete TCP acceptor type.
+    using tcp_acceptor_type = detail::select_tcp_acceptor;
+    /// The service that owns the TCP acceptor implementations.
     using tcp_acceptor_service_type = detail::select_tcp_acceptor_service;
 
-    using local_stream_socket_type   = detail::select_local_stream_socket;
-    using local_stream_service_type  = detail::select_local_stream_service;
+    /// The concrete Unix domain stream socket type.
+    using local_stream_socket_type = detail::select_local_stream_socket;
+    /// The service that owns the Unix domain stream implementations.
+    using local_stream_service_type = detail::select_local_stream_service;
+    /// The concrete Unix domain stream acceptor type.
     using local_stream_acceptor_type = detail::select_local_stream_acceptor;
+    /// The service that owns the Unix domain acceptor implementations.
     using local_stream_acceptor_service_type =
         detail::select_local_stream_acceptor_service;
-    using local_datagram_socket_type  = detail::select_local_datagram_socket;
+    /// The concrete Unix domain datagram socket type.
+    using local_datagram_socket_type = detail::select_local_datagram_socket;
+    /// The service that owns the Unix domain datagram implementations.
     using local_datagram_service_type = detail::select_local_datagram_service;
 
-    using signal_type           = detail::posix_signal;
-    using signal_service_type   = detail::posix_signal_service;
-    using resolver_type         = detail::posix_resolver;
+    /// The concrete signal set type.
+    using signal_type = detail::posix_signal;
+    /// The service that owns the signal set implementations.
+    using signal_service_type = detail::posix_signal_service;
+    /// The concrete name resolver type.
+    using resolver_type = detail::posix_resolver;
+    /// The service that owns the resolver implementations.
     using resolver_service_type = detail::posix_resolver_service;
 
-    using stream_file_type         = detail::posix_stream_file;
+    /// The concrete sequential file type.
+    using stream_file_type = detail::posix_stream_file;
+    /// The service that owns the sequential file implementations.
     using stream_file_service_type = detail::posix_stream_file_service;
-    using random_access_file_type  = detail::posix_random_access_file;
+    /// The concrete random-access file type.
+    using random_access_file_type = detail::posix_random_access_file;
+    /// The service that owns the random-access file implementations.
     using random_access_file_service_type =
         detail::posix_random_access_file_service;
 
-    /// Create the scheduler and services for this backend.
+    /** Create the scheduler and services for this backend.
+
+        @param ctx The execution context that owns the scheduler.
+        @param concurrency_hint Hint for the number of threads that
+            call `run()`. A performance tuning knob; the
+            thread-safety contract is set separately by
+            @ref io_context_options::locking.
+
+        @return Reference to the newly created scheduler.
+
+        @throws std::system_error If the backend's infrastructure
+            could not be created.
+    */
     BOOST_COROSIO_DECL static detail::scheduler&
-    construct(capy::execution_context&, unsigned concurrency_hint);
+    construct(capy::execution_context& ctx, unsigned concurrency_hint);
 };
 
 /// Tag value for selecting the select backend.
@@ -190,39 +256,72 @@ class posix_random_access_file_service;
 
 } // namespace detail
 
-/// Backend tag for the BSD kqueue I/O multiplexer.
+/// Selects the BSD kqueue I/O multiplexer as the backend.
 struct kqueue_t
 {
-    using scheduler_type            = detail::kqueue_scheduler;
-    using tcp_socket_type           = detail::kqueue_tcp_socket;
-    using tcp_service_type          = detail::kqueue_tcp_service;
-    using udp_socket_type           = detail::kqueue_udp_socket;
-    using udp_service_type          = detail::kqueue_udp_service;
-    using tcp_acceptor_type         = detail::kqueue_tcp_acceptor;
+    /// The scheduler that drives the event loop.
+    using scheduler_type = detail::kqueue_scheduler;
+    /// The concrete TCP socket type.
+    using tcp_socket_type = detail::kqueue_tcp_socket;
+    /// The service that owns the TCP socket implementations.
+    using tcp_service_type = detail::kqueue_tcp_service;
+    /// The concrete UDP socket type.
+    using udp_socket_type = detail::kqueue_udp_socket;
+    /// The service that owns the UDP socket implementations.
+    using udp_service_type = detail::kqueue_udp_service;
+    /// The concrete TCP acceptor type.
+    using tcp_acceptor_type = detail::kqueue_tcp_acceptor;
+    /// The service that owns the TCP acceptor implementations.
     using tcp_acceptor_service_type = detail::kqueue_tcp_acceptor_service;
 
-    using local_stream_socket_type   = detail::kqueue_local_stream_socket;
-    using local_stream_service_type  = detail::kqueue_local_stream_service;
+    /// The concrete Unix domain stream socket type.
+    using local_stream_socket_type = detail::kqueue_local_stream_socket;
+    /// The service that owns the Unix domain stream implementations.
+    using local_stream_service_type = detail::kqueue_local_stream_service;
+    /// The concrete Unix domain stream acceptor type.
     using local_stream_acceptor_type = detail::kqueue_local_stream_acceptor;
+    /// The service that owns the Unix domain acceptor implementations.
     using local_stream_acceptor_service_type =
         detail::kqueue_local_stream_acceptor_service;
-    using local_datagram_socket_type  = detail::kqueue_local_datagram_socket;
+    /// The concrete Unix domain datagram socket type.
+    using local_datagram_socket_type = detail::kqueue_local_datagram_socket;
+    /// The service that owns the Unix domain datagram implementations.
     using local_datagram_service_type = detail::kqueue_local_datagram_service;
 
-    using signal_type           = detail::posix_signal;
-    using signal_service_type   = detail::posix_signal_service;
-    using resolver_type         = detail::posix_resolver;
+    /// The concrete signal set type.
+    using signal_type = detail::posix_signal;
+    /// The service that owns the signal set implementations.
+    using signal_service_type = detail::posix_signal_service;
+    /// The concrete name resolver type.
+    using resolver_type = detail::posix_resolver;
+    /// The service that owns the resolver implementations.
     using resolver_service_type = detail::posix_resolver_service;
 
-    using stream_file_type         = detail::posix_stream_file;
+    /// The concrete sequential file type.
+    using stream_file_type = detail::posix_stream_file;
+    /// The service that owns the sequential file implementations.
     using stream_file_service_type = detail::posix_stream_file_service;
-    using random_access_file_type  = detail::posix_random_access_file;
+    /// The concrete random-access file type.
+    using random_access_file_type = detail::posix_random_access_file;
+    /// The service that owns the random-access file implementations.
     using random_access_file_service_type =
         detail::posix_random_access_file_service;
 
-    /// Create the scheduler and services for this backend.
+    /** Create the scheduler and services for this backend.
+
+        @param ctx The execution context that owns the scheduler.
+        @param concurrency_hint Hint for the number of threads that
+            call `run()`. A performance tuning knob; the
+            thread-safety contract is set separately by
+            @ref io_context_options::locking.
+
+        @return Reference to the newly created scheduler.
+
+        @throws std::system_error If the backend's infrastructure
+            could not be created.
+    */
     BOOST_COROSIO_DECL static detail::scheduler&
-    construct(capy::execution_context&, unsigned concurrency_hint);
+    construct(capy::execution_context& ctx, unsigned concurrency_hint);
 };
 
 /// Tag value for selecting the kqueue backend.
@@ -259,39 +358,72 @@ class posix_resolver_service;
 
 } // namespace detail
 
-/// Backend tag for the Linux io_uring proactor.
+/// Selects the Linux io_uring proactor as the backend.
 struct uring_t
 {
-    using scheduler_type            = detail::uring_scheduler;
-    using tcp_socket_type           = detail::uring_tcp_socket;
-    using tcp_service_type          = detail::uring_tcp_service;
-    using udp_socket_type           = detail::uring_udp_socket;
-    using udp_service_type          = detail::uring_udp_service;
-    using tcp_acceptor_type         = detail::uring_tcp_acceptor;
+    /// The scheduler that drives the event loop.
+    using scheduler_type = detail::uring_scheduler;
+    /// The concrete TCP socket type.
+    using tcp_socket_type = detail::uring_tcp_socket;
+    /// The service that owns the TCP socket implementations.
+    using tcp_service_type = detail::uring_tcp_service;
+    /// The concrete UDP socket type.
+    using udp_socket_type = detail::uring_udp_socket;
+    /// The service that owns the UDP socket implementations.
+    using udp_service_type = detail::uring_udp_service;
+    /// The concrete TCP acceptor type.
+    using tcp_acceptor_type = detail::uring_tcp_acceptor;
+    /// The service that owns the TCP acceptor implementations.
     using tcp_acceptor_service_type = detail::uring_tcp_acceptor_service;
 
-    using local_stream_socket_type   = detail::uring_local_stream_socket;
-    using local_stream_service_type  = detail::uring_local_stream_service;
+    /// The concrete Unix domain stream socket type.
+    using local_stream_socket_type = detail::uring_local_stream_socket;
+    /// The service that owns the Unix domain stream implementations.
+    using local_stream_service_type = detail::uring_local_stream_service;
+    /// The concrete Unix domain stream acceptor type.
     using local_stream_acceptor_type = detail::uring_local_stream_acceptor;
+    /// The service that owns the Unix domain acceptor implementations.
     using local_stream_acceptor_service_type =
         detail::uring_local_stream_acceptor_service;
-    using local_datagram_socket_type  = detail::uring_local_datagram_socket;
+    /// The concrete Unix domain datagram socket type.
+    using local_datagram_socket_type = detail::uring_local_datagram_socket;
+    /// The service that owns the Unix domain datagram implementations.
     using local_datagram_service_type = detail::uring_local_datagram_service;
 
-    using signal_type           = detail::posix_signal;
-    using signal_service_type   = detail::posix_signal_service;
-    using resolver_type         = detail::posix_resolver;
+    /// The concrete signal set type.
+    using signal_type = detail::posix_signal;
+    /// The service that owns the signal set implementations.
+    using signal_service_type = detail::posix_signal_service;
+    /// The concrete name resolver type.
+    using resolver_type = detail::posix_resolver;
+    /// The service that owns the resolver implementations.
     using resolver_service_type = detail::posix_resolver_service;
 
-    using stream_file_type         = detail::uring_stream_file;
+    /// The concrete sequential file type.
+    using stream_file_type = detail::uring_stream_file;
+    /// The service that owns the sequential file implementations.
     using stream_file_service_type = detail::uring_stream_file_service;
-    using random_access_file_type  = detail::uring_random_access_file;
+    /// The concrete random-access file type.
+    using random_access_file_type = detail::uring_random_access_file;
+    /// The service that owns the random-access file implementations.
     using random_access_file_service_type =
         detail::uring_random_access_file_service;
 
-    /// Create the scheduler and services for this backend.
+    /** Create the scheduler and services for this backend.
+
+        @param ctx The execution context that owns the scheduler.
+        @param concurrency_hint Hint for the number of threads that
+            call `run()`. A performance tuning knob; the
+            thread-safety contract is set separately by
+            @ref io_context_options::locking.
+
+        @return Reference to the newly created scheduler.
+
+        @throws std::system_error If the backend's infrastructure
+            could not be created.
+    */
     BOOST_COROSIO_DECL static detail::scheduler&
-    construct(capy::execution_context&, unsigned concurrency_hint);
+    construct(capy::execution_context& ctx, unsigned concurrency_hint);
 };
 
 /// Tag value for selecting the io_uring backend.
@@ -329,39 +461,56 @@ class win_random_access_file_service;
 
 } // namespace detail
 
-/** Backend tag for the Windows I/O Completion Ports multiplexer.
+/** Selects the Windows I/O Completion Ports multiplexer as the backend.
 
-    Selects the IOCP-based reactor for all I/O services, including
-    TCP, UDP, Unix domain sockets (AF_UNIX), signals, and name
-    resolution.
+    Used for all I/O services, including TCP, UDP, Unix domain
+    sockets (AF_UNIX), signals, name resolution, and file I/O.
 */
 struct iocp_t
 {
-    using scheduler_type            = detail::win_scheduler;
-    using tcp_socket_type           = detail::win_tcp_socket;
-    using tcp_service_type          = detail::win_tcp_service;
-    using tcp_acceptor_type         = detail::win_tcp_acceptor;
+    /// The scheduler that drives the event loop.
+    using scheduler_type = detail::win_scheduler;
+    /// The concrete TCP socket type.
+    using tcp_socket_type = detail::win_tcp_socket;
+    /// The service that owns the TCP socket implementations.
+    using tcp_service_type = detail::win_tcp_service;
+    /// The concrete TCP acceptor type.
+    using tcp_acceptor_type = detail::win_tcp_acceptor;
+    /// The service that owns the TCP acceptor implementations.
     using tcp_acceptor_service_type = detail::win_tcp_acceptor_service;
-    using udp_socket_type           = detail::win_udp_socket;
-    using udp_service_type          = detail::win_udp_service;
+    /// The concrete UDP socket type.
+    using udp_socket_type = detail::win_udp_socket;
+    /// The service that owns the UDP socket implementations.
+    using udp_service_type = detail::win_udp_service;
 
     /// @name Unix domain socket types
     /// @{
-    using local_stream_socket_type   = detail::win_local_stream_socket;
-    using local_stream_service_type  = detail::win_local_stream_service;
+    using local_stream_socket_type = detail::win_local_stream_socket;
+    /// The service that owns the Unix domain stream implementations.
+    using local_stream_service_type = detail::win_local_stream_service;
+    /// The concrete Unix domain stream acceptor type.
     using local_stream_acceptor_type = detail::win_local_stream_acceptor;
+    /// The service that owns the Unix domain acceptor implementations.
     using local_stream_acceptor_service_type =
         detail::win_local_stream_acceptor_service;
     /// @}
 
-    using signal_type           = detail::win_signal;
-    using signal_service_type   = detail::win_signals;
-    using resolver_type         = detail::win_resolver;
+    /// The concrete signal set type.
+    using signal_type = detail::win_signal;
+    /// The service that owns the signal set implementations.
+    using signal_service_type = detail::win_signals;
+    /// The concrete name resolver type.
+    using resolver_type = detail::win_resolver;
+    /// The service that owns the resolver implementations.
     using resolver_service_type = detail::win_resolver_service;
 
-    using stream_file_type         = detail::win_stream_file;
+    /// The concrete sequential file type.
+    using stream_file_type = detail::win_stream_file;
+    /// The service that owns the sequential file implementations.
     using stream_file_service_type = detail::win_file_service;
-    using random_access_file_type  = detail::win_random_access_file;
+    /// The concrete random-access file type.
+    using random_access_file_type = detail::win_random_access_file;
+    /// The service that owns the random-access file implementations.
     using random_access_file_service_type =
         detail::win_random_access_file_service;
 
@@ -369,14 +518,17 @@ struct iocp_t
 
         @param ctx The execution context that owns the scheduler.
         @param concurrency_hint Hint for the number of threads that
-            will call `run()`; a performance tuning knob. The
+            call `run()`. A performance tuning knob; the
             thread-safety contract is set separately by
             @ref io_context_options::locking.
 
         @return Reference to the newly created scheduler.
+
+        @throws std::system_error If the backend's infrastructure
+            could not be created.
     */
     BOOST_COROSIO_DECL static detail::scheduler&
-    construct(capy::execution_context&, unsigned concurrency_hint);
+    construct(capy::execution_context& ctx, unsigned concurrency_hint);
 };
 
 /// Tag value for selecting the IOCP backend.

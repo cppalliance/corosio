@@ -1,0 +1,36 @@
+# C10 / C.1 one-term-per-concept. Two things this rule has to get right at once,
+# and it got both wrong before: it must catch the verb in every form a writer
+# actually uses, and it must NOT touch API identifiers or the noun `launcher`.
+#
+# `ignorecase: false` plus bare stems meant only the exact lowercase stem was
+# seen. Measured on a fixture: `Launch the task for execution.`, `launches it on
+# the executor`, `launched`, `launching`, `Spawn`, `spawns`, `spawned`,
+# `spawning`, `Fire off`, `fires off`, `Kick off`, `kicked off` and `Boxed` all
+# passed; only `launch`, `cancellation token`, `cancel token` and `boxed` were
+# caught. That left the majority of real C10 prose invisible to the C10 checker.
+#
+# `ignorecase: true` is safe here, MEASURED rather than assumed. Every
+# `launch`/`spawn`-bearing identifier in the library and the pages is either
+# snake_case (`launch_one`, `launch_all`, `spawn_work`, `co_spawn`,
+# `launch_policies`, the snippet tag `4b_launching`) or a `launcher` compound
+# (`when_any_io_launcher`, `launchable`, `relaunch`, `launchers`). `_` is a word
+# character, so the `\b` after the stem already excludes the snake_case forms,
+# and the inflection list below is deliberately limited to VERB endings so it
+# cannot reach `launcher`. On top of that, `.vale.ini`'s `TokenIgnores` blanks
+# backtick spans and `cpp:` macros, so an identifier written as code is invisible
+# to this rule anyway.
+#
+# The noun `launcher` STAYS, and must not be flagged: it is the role name of the
+# `run_async` wrapper object, and plan Task 11's approved brief for all 18
+# overloads uses it — "Bind <options> to produce a launcher; invoke the launcher
+# with a task to start it." The verb `launch` is the violation, the noun
+# `launcher` is not. Verify both directions if you touch the pattern.
+extends: substitution
+message: "Use '%s' for one-term-per-concept consistency (style guide C.1)."
+level: warning
+ignorecase: true
+swap:
+  '\b(launch(?:es|ed|ing)?|spawn(?:s|ed|ing)?|fire[sd]? off|firing off|kick(?:s|ed)? off|kicking off)\b': start
+  '\bcancellation token\b': stop token
+  '\bcancel token\b': stop token
+  '\bboxed\b': type-erased

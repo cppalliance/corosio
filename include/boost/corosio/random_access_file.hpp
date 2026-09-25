@@ -36,7 +36,7 @@
 
 namespace boost::corosio {
 
-/** An asynchronous random-access file for coroutine I/O.
+/** Reads and writes a file at arbitrary offsets, from a coroutine.
 
     Provides asynchronous read and write operations at explicit
     byte offsets, without maintaining an implicit file position.
@@ -47,10 +47,8 @@ namespace boost::corosio {
 
     @par Thread Safety
     Distinct objects: Safe.@n
-    Shared objects: Unsafe. Multiple concurrent reads and writes
-    are supported from coroutines sharing the same file object,
-    but external synchronization is required for non-async
-    operations (open, close, size, resize, etc.).
+    Shared objects: Unsafe. Coroutines sharing the same file object may
+    run multiple concurrent reads and writes. Non-async operations such as open, close, size, and resize require external synchronization.
 
     @par Example
     @par !example random_access_file
@@ -58,7 +56,8 @@ namespace boost::corosio {
 class BOOST_COROSIO_DECL random_access_file : public io_object
 {
 public:
-    /** Platform-specific random-access file implementation interface.
+    /** Declares the offset-based file operations a platform backend
+        must implement.
 
         Backends derive from this to provide offset-based file I/O.
     */
@@ -113,19 +112,36 @@ public:
         /// Return the file size in bytes.
         virtual std::uint64_t size() const = 0;
 
-        /// Resize the file to @p new_size bytes.
+        /** Resize the file to @p new_size bytes.
+
+            @param new_size The requested size in bytes.
+
+            @return The error code, empty on success.
+        */
         virtual std::error_code resize(std::uint64_t new_size) noexcept = 0;
 
-        /// Synchronize file data to stable storage.
+        /** Synchronize file data to stable storage.
+
+            @return The error code, empty on success.
+        */
         virtual std::error_code sync_data() noexcept = 0;
 
-        /// Synchronize file data and metadata to stable storage.
+        /** Synchronize file data and metadata to stable storage.
+
+            @return The error code, empty on success.
+        */
         virtual std::error_code sync_all() noexcept = 0;
 
         /// Release ownership of the native handle.
         virtual native_handle_type release() = 0;
 
-        /// Adopt an existing native handle.
+        /** Adopt an existing native handle.
+
+            @param handle The native handle to adopt. The implementation takes
+                ownership and closes it.
+
+            @return The error code, empty on success.
+        */
         virtual std::error_code assign(native_handle_type handle) noexcept = 0;
     };
 
@@ -134,6 +150,11 @@ public:
     struct read_some_at_awaitable
         : detail::bytes_op_base<read_some_at_awaitable<MutableBufferSequence>>
     {
+    private:
+        friend random_access_file;
+        friend detail::bytes_op_base<
+            read_some_at_awaitable<MutableBufferSequence>>;
+
         random_access_file& f_;
         std::uint64_t offset_;
         MutableBufferSequence buffers_;
@@ -165,6 +186,11 @@ public:
     struct write_some_at_awaitable
         : detail::bytes_op_base<write_some_at_awaitable<ConstBufferSequence>>
     {
+    private:
+        friend random_access_file;
+        friend detail::bytes_op_base<
+            write_some_at_awaitable<ConstBufferSequence>>;
+
         random_access_file& f_;
         std::uint64_t offset_;
         ConstBufferSequence buffers_;
@@ -200,13 +226,13 @@ public:
 
     /** Construct from an execution context.
 
-        @param ctx The execution context that will own this file.
+        @param ctx The execution context that owns this file.
     */
     explicit random_access_file(capy::execution_context& ctx);
 
     /** Construct from an executor.
 
-        @param ex The executor whose context will own this file.
+        @param ex The executor whose context owns this file.
     */
     template<class Ex>
         requires(!std::same_as<std::remove_cvref_t<Ex>, random_access_file>) &&
@@ -232,7 +258,9 @@ public:
         return *this;
     }
 
-    random_access_file(random_access_file const&)            = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    random_access_file(random_access_file const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     random_access_file& operator=(random_access_file const&) = delete;
 
     /** Open a file.
@@ -254,12 +282,17 @@ public:
 
     /** Close the file.
 
-        Releases file resources. Any pending operations complete
-        with `errc::operation_canceled`.
+        Releases file resources. Pending operations complete through the
+        same path as @ref cancel: one still in flight completes with
+        `errc::operation_canceled`. An operation whose result is already
+        decided reports that result.
     */
     void close() noexcept;
 
-    /** Check if the file is open. */
+    /** Check if the file is open.
+
+        @return `true` if the file holds an open handle.
+    */
     bool is_open() const noexcept
     {
 #if BOOST_COROSIO_HAS_IOCP && !defined(BOOST_COROSIO_MRDOCS)
@@ -312,6 +345,8 @@ public:
     native_handle_type native_handle() const noexcept;
 
     /** Return the file size in bytes.
+
+        @return The current size of the file, in bytes.
 
         @throws std::system_error If the file is not open, or if the
             underlying size query fails.

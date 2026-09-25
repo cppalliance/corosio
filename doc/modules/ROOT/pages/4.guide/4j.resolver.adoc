@@ -8,8 +8,9 @@
 //
 
 = Name Resolution
+:page-mode: how-to
 
-The `resolver` class performs asynchronous DNS lookups, converting hostnames
+The cpp:resolver[] class performs asynchronous DNS lookups, converting hostnames
 to IP addresses. It wraps the system's `getaddrinfo()` function with an
 asynchronous interface.
 
@@ -59,7 +60,7 @@ The service can be:
 === Host Only
 
 When the port travels separately — as it does in most configuration —
-resolve just the host and get `ip_address` values back, with no
+resolve just the host. You get `ip_address` values back, with no
 fabricated service and no port-0 endpoints:
 
 [source,cpp]
@@ -96,7 +97,7 @@ include::example$snippets/4j_resolver.cpp[tag=with_flags,indent=0]
 | Service is a port number string, don't look up service name
 
 | `address_configured`
-| Only return IPv4 if the system has IPv4 configured, same for IPv6
+| Only return IPv4 if the system has a non-loopback IPv4 address configured, same for IPv6
 
 | `v4_mapped`
 | Intended to return IPv4-mapped IPv6 addresses when no IPv6 addresses are
@@ -239,9 +240,10 @@ include::example$snippets/4j_resolver.cpp[tag=http_get]
 
 == Platform Notes
 
-The resolver uses the system's `getaddrinfo()` function. On most platforms,
-this is a blocking call executed on a thread pool to avoid blocking the
-I/O context.
+The resolver uses the system's `getaddrinfo()` function. On POSIX, this is a
+blocking call executed on a thread pool, so it does not block the I/O context.
+On Windows, resolution uses the native asynchronous `GetAddrInfoExW` API
+instead.
 
 [IMPORTANT]
 ====

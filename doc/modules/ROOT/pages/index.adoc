@@ -8,6 +8,7 @@
 //
 
 = Boost.Corosio
+:page-mode: explanation
 
 Boost.Corosio is a coroutine-first I/O library for C++20 that provides
 asynchronous networking primitives with automatic executor affinity propagation.
@@ -19,19 +20,19 @@ C++20 coroutines. Every operation returns an awaitable that integrates with
 the _IoAwaitable_ protocol, ensuring your coroutines resume on the correct
 executor without manual dispatch.
 
-* **io_context** — Event loop for processing asynchronous operations
-* **tcp_socket** — Asynchronous TCP socket with connect, read, and write
-* **tcp_acceptor** — TCP listener for accepting incoming connections
-* **tcp_server** — Server framework with worker pools
-* **udp_socket** — Asynchronous UDP socket for datagrams (including multicast)
-* **local_stream_socket** — Unix domain stream socket for local IPC
-* **local_stream_acceptor** — Unix domain stream listener
-* **local_datagram_socket** — Unix domain datagram socket for local IPC
-* **resolver** — Asynchronous DNS resolution
-* **delay()** / **timeout()**: stateless delays and deadline racing for coroutines
-* **signal_set** — Asynchronous signal handling
-* **stream_file** / **random_access_file** — Asynchronous file I/O
-* **openssl_stream** / **wolfssl_stream** — TLS encryption (OpenSSL or WolfSSL)
+* cpp:io_context[] — Event loop for processing asynchronous operations
+* cpp:tcp_socket[] — Asynchronous TCP socket with connect, read, and write
+* cpp:tcp_acceptor[] — TCP listener for accepting incoming connections
+* cpp:tcp_server[] — Server framework with worker pools
+* cpp:udp_socket[] — Asynchronous UDP socket for datagrams (including multicast)
+* cpp:local_stream_socket[] — Unix domain stream socket for local IPC
+* cpp:local_stream_acceptor[] — Unix domain stream listener
+* cpp:local_datagram_socket[] — Unix domain datagram socket for local IPC
+* cpp:resolver[] — Asynchronous DNS resolution
+* cpp:delay[] / cpp:timeout[]: stateless delays and deadline racing for coroutines
+* cpp:signal_set[] — Asynchronous signal handling
+* cpp:stream_file[] / cpp:random_access_file[] — Asynchronous file I/O
+* cpp:openssl_stream[] / cpp:wolfssl_stream[] — TLS encryption (OpenSSL or WolfSSL)
 
 == What This Library Does Not Do
 
@@ -49,16 +50,17 @@ Corosio works with Boost.Capy for task management and execution contexts.
 **Coroutines only.** Every I/O operation returns an awaitable. There are no
 callback-based interfaces.
 
-**Affinity through protocol.** The dispatcher propagates through `await_suspend`
+**Affinity through protocol.** The executor propagates through `await_suspend`
 parameters, not through thread-local storage. When an I/O operation completes,
-it resumes your coroutine through the dispatcher you provided.
+it resumes your coroutine through the executor you provided.
 
 **Structured bindings.** Results use `io_result<T>` which supports structured
-bindings: `auto [ec, n] = co_await s.read_some(buf)`. `io_result` has no
-`value()`; to throw on error, check `ec` and `throw std::system_error(ec)`.
+bindings: `auto [ec, n] = co_await s.read_some(buf)`. See
+xref:4.guide/4m.error-handling.adoc[Error Handling] for how to handle the
+error code.
 
 **Type erasure at I/O boundaries.** Socket implementations use type-erased
-dispatchers internally. The indirection cost is negligible compared to I/O
+I/O backends internally. The indirection cost is negligible compared to I/O
 latency.
 
 == Target Audience
@@ -89,7 +91,7 @@ and xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming] for back
 
 === Platform Support
 
-* Linux — epoll backend (x86_64, ARM64); io_uring planned
+* Linux — epoll backend (x86_64, ARM64); io_uring backend available, not the default
 * Windows — IOCP backend
 * macOS — kqueue backend (ARM64)
 * FreeBSD — kqueue backend
@@ -113,6 +115,7 @@ include::example$programs/index_page_connect.cpp[tag=full]
 == Next Steps
 
 * xref:quick-start.adoc[Quick Start] — Build a working echo server
+* xref:4.guide/4m.error-handling.adoc[Error Handling] — How errors are reported and handled
 * xref:4.guide/4a.tcp-networking.adoc[TCP/IP Networking] — Networking fundamentals
 * xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming] — Coroutines and strands
 * xref:4.guide/4c.io-context.adoc[I/O Context] — Understand the event loop

@@ -26,8 +26,8 @@ namespace boost::corosio {
 
     On POSIX the implementation uses `socketpair(AF_UNIX, SOCK_STREAM)`
     and adopts the descriptors via `assign()`. On Windows it performs a
-    private bind/listen/accept on the calling thread paired with a
-    `connect()` on a short-lived worker thread; the caller's
+    private bind/listen/accept on the calling thread, paired with a
+    `connect()` on a short-lived worker thread. The caller's
     `io_context` is never driven, so it may be running on another
     thread.
 

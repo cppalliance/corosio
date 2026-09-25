@@ -147,9 +147,8 @@ public:
             heap, completes by posting the continuation without
             publishing.
 
-            @par Preconditions
-            @p w is fully initialized, and its storage (the awaitable
-            on the suspended coroutine's frame) outlives the wait.
+            @pre @p w is fully initialized, and its storage (the awaitable
+                on the suspended coroutine's frame) outlives the wait.
 
             @param w The waiter to publish.
         */
@@ -167,8 +166,7 @@ public:
             embedded op; hook-driven waits must observe every
             completion through the op, where the re-arm hook runs.
 
-            @par Preconditions
-            Same as `wait`.
+            @pre Same as `wait`.
 
             @param w The waiter to publish.
         */
@@ -234,8 +232,7 @@ public:
 
     /** Set the timer's expiry time as an absolute time.
 
-        @par Preconditions
-        No wait is published on this timer.
+        @pre No wait is published on this timer.
 
         @param t The expiry time to be used for the timer.
     */
@@ -250,8 +247,7 @@ public:
 
     /** Set the timer's expiry time relative to now.
 
-        @par Preconditions
-        No wait is published on this timer.
+        @pre No wait is published on this timer.
 
         @param d The expiry time relative to now.
     */
@@ -311,9 +307,8 @@ public:
         re-publish the waiter to continue a logical wait across
         several timer expirations.
 
-        @par Preconditions
-        @p w is fully initialized ( handle, executor, stop token,
-        hook fields ) and its storage outlives the wait.
+        @pre @p w is fully initialized ( handle, executor, stop token,
+            hook fields ) and its storage outlives the wait.
 
         @param w The waiter to publish.
 
@@ -329,9 +324,8 @@ public:
         where the waiter has been popped from the service but not
         yet resumed.
 
-        @par Preconditions
-        The timer has no other waiters — this is what makes the
-        unlocked expiry write race-free.
+        @pre The timer has no other waiters — this is what makes the
+            unlocked expiry write race-free.
 
         Re-publication needs heap capacity and can fail under
         allocation pressure. On failure the waiter is left exactly as
@@ -480,8 +474,7 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE waiter_node
 
     /** Arm the stop callback.
 
-        @par Preconditions
-        `token_` is set.
+        @pre `token_` is set.
     */
     void arm_stop_cb()
     {

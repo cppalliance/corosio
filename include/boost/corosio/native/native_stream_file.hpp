@@ -32,12 +32,12 @@
 
 namespace boost::corosio {
 
-/** A sequential file with devirtualized async I/O operations.
+/** Reads and writes a file sequentially, calling the backend directly.
 
-    This class template inherits from @ref stream_file and shadows
+    This class template inherits from @ref stream_file. It shadows
     `read_some` / `write_some` with versions that call the backend
-    implementation directly, allowing the compiler to inline through
-    the entire call chain.
+    implementation directly. The compiler can then inline through the
+    entire call chain.
 
     Non-async operations (`open`, `close`, `size`, `resize`, `seek`,
     `sync_data`, `sync_all`) remain unchanged and dispatch through
@@ -47,9 +47,9 @@ namespace boost::corosio {
     any function expecting `stream_file&` or `io_stream&`, in which
     case virtual dispatch is used transparently.
 
-    @note On POSIX platforms, file I/O is dispatched to a thread
-    pool regardless of the chosen reactor backend, so all three
-    reactor tags (`epoll`, `select`, `kqueue`) resolve to the same
+    @note On POSIX platforms, file I/O is dispatched to a thread pool
+    regardless of the chosen reactor backend. All three reactor tags
+    (`epoll`, `select`, `kqueue`) therefore resolve to the same
     underlying implementation. The `Backend` template parameter
     exists for API symmetry with @ref native_tcp_socket and friends.
     The vtable savings are smaller relative to the thread-pool /
@@ -124,7 +124,7 @@ class native_stream_file : public stream_file
 public:
     /** Construct a native stream file from an execution context.
 
-        @param ctx The execution context that will own this file.
+        @param ctx The execution context that owns this file.
     */
     explicit native_stream_file(capy::execution_context& ctx)
         : io_object(create_handle<service_type>(ctx))
@@ -133,7 +133,7 @@ public:
 
     /** Construct a native stream file from an executor.
 
-        @param ex The executor whose context will own this file.
+        @param ex The executor whose context owns this file.
     */
     template<class Ex>
         requires(!std::same_as<std::remove_cvref_t<Ex>, native_stream_file>) &&
@@ -148,13 +148,19 @@ public:
     /// Move assign.
     native_stream_file& operator=(native_stream_file&&) noexcept = default;
 
-    native_stream_file(native_stream_file const&)            = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    native_stream_file(native_stream_file const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     native_stream_file& operator=(native_stream_file const&) = delete;
 
     /** Asynchronously read data from the file.
 
         Calls the backend implementation directly, bypassing virtual
         dispatch. Otherwise identical to @ref io_stream::read_some.
+
+        @param buffers The buffers to read into.
+
+        @return An awaitable yielding the error code and the byte count read.
     */
     template<capy::MutableBufferSequence MB>
     [[nodiscard]] auto read_some(MB const& buffers)
@@ -166,6 +172,10 @@ public:
 
         Calls the backend implementation directly, bypassing virtual
         dispatch. Otherwise identical to @ref io_stream::write_some.
+
+        @param buffers The buffer data to write.
+
+        @return An awaitable yielding the error code and the byte count written.
     */
     template<capy::ConstBufferSequence CB>
     [[nodiscard]] auto write_some(CB const& buffers)

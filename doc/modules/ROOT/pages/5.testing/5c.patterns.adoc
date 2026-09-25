@@ -8,10 +8,11 @@
 //
 
 = Testing Patterns
+:page-mode: how-to
 
 This page collects recipes that combine xref:5.testing/5a.mocket.adoc[`mocket`]
 and xref:5.testing/5b.socket-pair.adoc[`make_socket_pair`] in realistic test
-scenarios. Each recipe is a small standalone block; copy and adapt.
+scenarios. Each recipe is a small standalone block. Copy and adapt it.
 
 [NOTE]
 ====
@@ -56,10 +57,10 @@ The same applies to `max_write_size` for write-loop testing.
 
 == Layering Streams on a Mocket
 
-`m.socket()` returns the underlying `tcp_socket`. You can stack any stream
-that wraps a TCP socket on top of it, but be aware that doing so *bypasses*
-the mocket's `provide()` / `expect()` scripting: those stages run only
-inside the mocket's own `read_some` / `write_some`. A stream built on
+`m.socket()` returns the underlying cpp:tcp_socket[]. You can stack any stream
+that wraps a TCP socket on top of it. Doing so *bypasses* the mocket's
+`provide()` / `expect()` scripting, because those stages run only inside the
+mocket's own `read_some` / `write_some`. A stream built on
 `m.socket()` calls the underlying socket's `read_some` / `write_some`
 directly, so staged bytes do not apply. If you need to script bytes for a
 higher-level stream, drive the mocket directly instead of layering on
@@ -96,9 +97,9 @@ include::example$snippets/5c_patterns.cpp[tag=close_verification,indent=0]
 
 This is the line that catches "the test passed because the code under
 test silently did nothing." Treat it as a test-suite convention. An
-unmet expectation also trips the fuse, so a plain `close()` without
-the explicit `verify()` still fails the test — the assertion just
-makes the failure local and readable.
+unmet expectation also trips the fuse, so a plain `close()` without the
+explicit `verify()` still fails the test. The assertion just makes the
+failure local and readable.
 
 == See Also
 

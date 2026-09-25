@@ -9,15 +9,16 @@
 //
 
 = Delays and Timeouts
+:page-mode: how-to
 
 Corosio schedules delays and deadlines through two free functions,
 `delay()` and `timeout()`. Neither one names an I/O object: there is
 no timer to construct, store as a member, move around, or close.
 Each call returns an awaitable that arms whatever clock resource it
-needs for the duration of a single `co_await`, then releases it. A
-loop that waits repeatedly, like a heartbeat or a retry backoff, just
-calls `delay()` again on the next iteration instead of resetting a
-long-lived object's expiry.
+needs for the duration of a single `co_await`, then releases it. A loop
+that waits repeatedly, like a heartbeat or a retry backoff, just calls
+`delay()` again on the next iteration. There is no long-lived object
+whose expiry must be reset.
 
 [NOTE]
 ====
@@ -58,9 +59,9 @@ A time point already in the past also completes synchronously.
 == Delaying on a Different Clock
 
 `delay(time_point)` also accepts a time point on clocks other than
-`steady_clock` -- for example `std::chrono::system_clock`, when a
-deadline is naturally expressed as wall-clock time rather than a
-monotonic duration:
+`steady_clock`. One example is `std::chrono::system_clock`, for a
+deadline naturally expressed as wall-clock time rather than a monotonic
+duration:
 
 [source,cpp]
 ----
@@ -68,8 +69,8 @@ include::example$snippets/4h_timers.cpp[tag=delay_wallclock,indent=0]
 ----
 
 Internally this performs one or more bounded `steady_clock` waits,
-re-reading the clock between them, so an adjustment to the clock is
-observed at the next re-check rather than only at the original
+re-reading the clock between them. An adjustment to the clock is
+therefore observed at the next re-check rather than only at the original
 deadline. Pass a custom traits type as `delay<Traits>(time_point)` to
 bound how quickly such an adjustment is observed:
 
@@ -108,9 +109,9 @@ include::example$snippets/4h_timers.cpp[tag=timeout_read,indent=0]
 
 If the inner operation wins, its `io_result` is returned unchanged,
 error or success, payload and all. If the deadline wins, the inner
-operation is cancelled and `timeout()` produces its own result: `ec`
-is `capy::cond::timeout` and any payload (such as a byte count) is
-default-initialized, not whatever the cancelled operation happened
+operation is cancelled and `timeout()` produces its own result. `ec` is
+`capy::cond::timeout`, and any payload such as a byte count is
+default-initialized. It is not whatever the cancelled operation happened
 to leave behind. Because the deadline-win path default-initializes
 that payload, the inner operation's `io_result` payload type must be
 default constructible.
@@ -126,8 +127,8 @@ include::example$snippets/4h_timers.cpp[tag=timeout_deadline,indent=0]
 
 A `timeout()` call sits inside whatever stop token its own coroutine
 is awaited under. If that parent token is stopped, the race ends the
-same way an unguarded operation would: the inner awaitable is
-cancelled and `timeout()` reports `capy::cond::canceled`, not
+same way an unguarded operation would. The inner awaitable is cancelled,
+and `timeout()` reports `capy::cond::canceled`, not
 `capy::cond::timeout`. The two conditions are never ambiguous:
 
 [cols="1,2"]
@@ -149,10 +150,10 @@ include::example$snippets/4h_timers.cpp[tag=timeout_vs_cancel,indent=0]
 == Requires an io_context
 
 Both `delay()` and `timeout()` need a clock service to arm, which
-they obtain from the awaiting coroutine's executor. That executor
-must belong to an `io_context`; awaiting either one from any other
-kind of execution context terminates the program, since silently
-skipping the requested delay would be worse than a hard failure.
+they obtain from the awaiting coroutine's executor. That executor must
+belong to an cpp:io_context[]. Awaiting either one from any other kind
+of execution context terminates the program: silently skipping the
+requested delay would be worse than a hard failure.
 
 == Composing with Other Operations
 

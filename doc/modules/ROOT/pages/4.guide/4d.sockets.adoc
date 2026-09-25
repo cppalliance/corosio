@@ -8,8 +8,9 @@
 //
 
 = Sockets
+:page-mode: how-to
 
-The `tcp_socket` class provides asynchronous TCP networking. It supports
+The cpp:tcp_socket[] class provides asynchronous TCP networking. It supports
 connecting to servers, reading and writing data, and graceful connection
 management.
 
@@ -194,7 +195,7 @@ include::example$snippets/4d_sockets.cpp[tag=read_eof,indent=0]
 
 EOF is signaled only by `ec == capy::cond::eof`. A successful read with
 `n == 0 && !ec` is not EOF: it occurs when the buffer has zero length, and
-the request simply completes with nothing to do.
+the request completes with nothing to do.
 
 === Reading Exact Amounts
 
@@ -276,20 +277,9 @@ NOTE: After a move, the destination uses the source's execution context.
 
 == The io_stream Interface
 
-`tcp_socket` inherits from `io_stream`, which provides:
-
-[source,cpp,role=pseudocode]
-----
-class io_stream : public io_object
-{
-public:
-    template<class MutableBufferSequence>
-    auto read_some(MutableBufferSequence const& buffers);
-
-    template<class ConstBufferSequence>
-    auto write_some(ConstBufferSequence const& buffers);
-};
-----
+cpp:tcp_socket[] inherits from cpp:io_stream[], which combines
+cpp:io_read_stream[] and cpp:io_write_stream[]. The `read_some` and
+`write_some` operations come from those two base classes.
 
 This enables polymorphic use:
 

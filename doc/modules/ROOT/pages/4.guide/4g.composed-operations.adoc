@@ -8,6 +8,7 @@
 //
 
 = Composed Operations
+:page-mode: how-to
 
 Corosio provides composed operations that build on the primitive `read_some()`
 and `write_some()` functions to provide higher-level guarantees.
@@ -43,13 +44,6 @@ The `read()` function reads until the buffer is full or an error occurs:
 include::example$snippets/4g_composed_operations.cpp[tag=read_full,indent=0]
 ----
 
-=== Signature
-
-[source,cpp]
-----
-include::example$snippets/4g_composed_operations.cpp[tag=read_signature]
-----
-
 === Behavior
 
 1. Calls `read_some()` repeatedly until all buffers are filled
@@ -83,13 +77,6 @@ The `write()` function writes all data or fails:
 include::example$snippets/4g_composed_operations.cpp[tag=write_full,indent=0]
 ----
 
-=== Signature
-
-[source,cpp]
-----
-include::example$snippets/4g_composed_operations.cpp[tag=write_signature]
-----
-
 === Behavior
 
 1. Calls `write_some()` repeatedly until all buffers are written
@@ -109,17 +96,10 @@ range, so it can be passed directly to any I/O operation:
 include::example$snippets/4g_composed_operations.cpp[tag=slice_helper,indent=0]
 ----
 
-=== Interface
-
-[source,cpp]
-----
-include::example$snippets/4g_composed_operations.cpp[tag=slice_interface]
-----
-
 The returned `slice_type` models the same buffer-sequence concept as
-`seq` (mutable when `seq` is a mutable buffer sequence): slicing a
-single buffer yields an adjusted buffer of the same kind, while any
-other sequence yields a borrowed view. `offset` is clamped to the total
+`seq`, and is mutable when `seq` is a mutable buffer sequence. Slicing a
+single buffer yields an adjusted buffer of the same kind. Any other
+sequence yields a borrowed view. `offset` is clamped to the total
 size, and `length` defaults to the end of the sequence.
 
 NOTE: Except for the single-buffer case, the result borrows `seq`: it

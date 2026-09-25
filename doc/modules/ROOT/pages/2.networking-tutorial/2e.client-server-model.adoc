@@ -8,6 +8,7 @@
 //
 
 = Clients, Servers, and Ports
+:page-mode: explanation
 
 Every network conversation has two sides. One side initiates the connection -- that is the *client*. The other side waits for someone to connect -- that is the *server*. This asymmetry shapes how you write networked code, and port numbers are the mechanism that keeps it all organized.
 
@@ -37,18 +38,21 @@ Ephemeral ports (49152-65535):: Assigned temporarily by the operating system. Wh
 
 A single TCP connection is uniquely identified by four values:
 
+[role=figure]
 ----
 (source IP, source port, destination IP, destination port)
 ----
 
 Consider a laptop at address `10.0.0.5` connecting to a web server at `203.0.113.80` on port `443`. The operating system assigns ephemeral port `51234` to the client side. The connection's four-tuple is:
 
+[role=figure]
 ----
 (10.0.0.5, 51234, 203.0.113.80, 443)
 ----
 
 If the same laptop opens a second connection to the same server, the OS assigns a different ephemeral port -- say `51235`. The second connection's four-tuple is:
 
+[role=figure]
 ----
 (10.0.0.5, 51235, 203.0.113.80, 443)
 ----
@@ -99,7 +103,7 @@ Fire and forget:: The client sends data without expecting a response. Some loggi
 
 == Why This Matters to You
 
-The client-server model and port numbers are the foundation of every connection your program makes. When you see "connection refused," it means no process was listening on the target port. When you see "address already in use," it means another process (or a lingering socket in TIME_WAIT) is already bound to the port you requested.
+The client-server model and port numbers are the foundation of every connection your program makes. When you see "connection refused," it means no process was listening on the target port. When you see "address already in use," it means another process (or a lingering socket in TIME_WAIT, a brief post-close cleanup state) is already bound to the port you requested.
 
 Understanding the four-tuple explains why a server can accept many connections on a single port, and why the OS assigns ephemeral ports automatically on the client side. Understanding the socket interface tells you what system calls your networking library wraps on your behalf.
 

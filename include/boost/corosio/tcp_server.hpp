@@ -38,7 +38,7 @@ namespace boost::corosio {
 #pragma warning(disable : 4251) // class needs to have dll-interface
 #endif
 
-/** TCP server with pooled workers.
+/** Manages a pool of reusable workers that handle incoming TCP connections.
 
     This class manages a pool of reusable worker objects that handle
     incoming connections. When a connection arrives, an idle worker
@@ -70,13 +70,13 @@ namespace boost::corosio {
     @par !example running_the_server
 
     @par Graceful Shutdown
-    To shut down gracefully, call @ref stop then drain the io_context:
+    To shut down gracefully, call @ref stop then drain the `io_context`:
     @par !example graceful_shutdown
 
     @par Restart After Stop
     The server can be restarted after a complete shutdown cycle.
-    You must drain the io_context, call @ref join, and restart the
-    io_context itself (`ioc.restart()`) before restarting:
+    You must drain the `io_context`, call @ref join, and restart the
+    `io_context` itself (`ioc.restart()`) before restarting:
     @par !example restart_after_stop
 
     @par WARNING: What NOT to Do
@@ -400,11 +400,14 @@ private:
     capy::task<void> do_accept(tcp_acceptor& acc);
 
 public:
-    /** Abstract base class for connection handlers.
+    /** Handles one accepted connection using a socket the derived class owns.
 
         Derive from this class to implement custom connection handling.
         Each worker owns a socket and is reused across multiple
         connections to avoid per-connection allocation.
+
+        @par Thread Safety
+        run() and socket() execute on the server's executor.
 
         @see tcp_server, launcher
     */
@@ -430,7 +433,7 @@ public:
             connection. The implementation must invoke the launcher
             exactly once to start the handling coroutine.
 
-            @param launch Handle to launch the connection coroutine.
+            @param launch Handle to start the connection coroutine.
         */
         virtual void run(launcher launch) = 0;
 
@@ -438,11 +441,12 @@ public:
         virtual corosio::tcp_socket& socket() = 0;
     };
 
-    /** Move-only handle to launch a worker coroutine.
+    /** Starts a worker's connection-handling coroutine and returns the
+        worker to the idle pool automatically.
 
         Passed to @ref worker_base::run to start the connection-handling
         coroutine. The launcher ensures the worker returns to the idle
-        pool when the coroutine completes or if launching fails.
+        pool when the coroutine completes or if starting fails.
 
         The launcher must be invoked exactly once via `operator()`.
         If destroyed without invoking, the worker is returned to the
@@ -462,27 +466,37 @@ public:
         }
 
     public:
-        /// Return the worker to the pool if not launched.
+        /// Return the worker to the pool if not started.
         ~launcher()
         {
             if (w_)
                 srv_->push_sync(*w_);
         }
 
+        /** Move construct, transferring the borrowed worker.
+
+            @param o The launcher to take the worker from. It is left
+            holding none, so only one of the two returns it.
+        */
         launcher(launcher&& o) noexcept
             : srv_(o.srv_)
             , w_(std::exchange(o.w_, nullptr))
         {
         }
-        launcher(launcher const&)            = delete;
+        /// Copy construction is disabled; a launcher holds a borrowed worker it must return exactly once.
+        launcher(launcher const&) = delete;
+        /// Copy assignment is disabled; a launcher holds a borrowed worker it must return exactly once.
         launcher& operator=(launcher const&) = delete;
-        launcher& operator=(launcher&&)      = delete;
+        /// Move assignment is disabled; a launcher is moved, never reassigned.
+        launcher& operator=(launcher&&) = delete;
 
-        /** Launch the connection-handling coroutine.
+        /** Start the connection-handling coroutine.
 
             Starts the given coroutine on the specified executor. When
             the coroutine completes, the worker is automatically returned
             to the idle pool.
+
+            @tparam Executor Executor type satisfying capy::Executor.
 
             @param ex The executor to run the coroutine on.
             @param task The coroutine to execute.
@@ -546,7 +560,9 @@ public:
     /// Destroy the server, stopping all accept loops.
     ~tcp_server();
 
-    tcp_server(tcp_server const&)            = delete;
+    /// Copy construction is disabled; the server owns its worker storage.
+    tcp_server(tcp_server const&) = delete;
+    /// Copy assignment is disabled; the server owns its worker storage.
     tcp_server& operator=(tcp_server const&) = delete;
 
     /** Move construct from another server.
@@ -573,7 +589,8 @@ public:
 
         @param ep The local endpoint to bind to.
 
-        @return The error code if binding fails.
+        @return An error code indicating success, or the reason binding
+            failed.
     */
     [[nodiscard]] std::error_code bind(endpoint ep);
 
@@ -615,16 +632,15 @@ public:
 
     /** Start accepting connections.
 
-        Launches accept loops for all bound endpoints. Incoming
+        Starts accept loops for all bound endpoints. Incoming
         connections are dispatched to idle workers from the pool.
         
         Calling `start()` on an already-running server has no effect.
 
-        @par Preconditions
-        - At least one endpoint bound via @ref bind.
-        - Workers provided via @ref set_workers.
-        - If restarting, @ref join must have completed first, and the
-          io_context must have been restarted (`ioc.restart()`).
+        @pre At least one endpoint bound via @ref bind.
+        @pre Workers provided via @ref set_workers.
+        @pre If restarting, @ref join must have completed first, and the
+            `io_context` must be restarted (`ioc.restart()`).
 
         @par Effects
         Creates one accept coroutine per bound endpoint. Each coroutine
@@ -656,7 +672,7 @@ public:
 
         Requests the accept loops' stop token and requests cancellation
         of active workers via their stop tokens. The acceptors are not
-        closed; a suspended accept completes once more before its loop
+        closed. A suspended accept completes once more before its loop
         observes the stop token and ends.
 
         This function returns immediately; it does not wait for workers
@@ -672,7 +688,7 @@ public:
         - Workers observing their stop token should exit promptly.
 
         @par Postconditions
-        No new connections will be accepted. Active workers continue
+        The server accepts no new connections. Active workers continue
         until they observe their stop token or complete naturally.
 
         @par What Happens Next
@@ -690,13 +706,12 @@ public:
 
     /** Block until all accept loops complete.
 
-        Blocks the calling thread until all accept coroutines launched
+        Blocks the calling thread until all accept coroutines started
         by @ref start have finished executing. This synchronizes the
         shutdown sequence, ensuring the server is fully stopped before
         restarting or destroying it.
 
-        @par Preconditions
-        @ref stop has been called and `ioc.run()` has returned.
+        @pre @ref stop was called and `ioc.run()` returned.
 
         @par Postconditions
         All accept loops have completed. The server is in the stopped
@@ -711,8 +726,8 @@ public:
         @par !example deadlock_scenarios
 
         @par Thread Safety
-        May be called from any thread, but will deadlock if called
-        from within the io_context event loop or from a worker coroutine.
+        May be called from any thread. It deadlocks if called
+        from within the `io_context` event loop or from a worker coroutine.
 
         @see stop, start
     */

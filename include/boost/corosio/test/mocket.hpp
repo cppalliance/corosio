@@ -36,7 +36,7 @@
 
 namespace boost::corosio::test {
 
-/** A mock socket for testing I/O operations.
+/** Stages data for reads and validates data written, to test I/O code.
 
     This class provides a testable socket-like interface where data
     can be staged for reading and expected data can be validated on
@@ -93,6 +93,8 @@ public:
         @param f The fuse for error injection testing.
         @param max_read_size Maximum bytes per read operation.
         @param max_write_size Maximum bytes per write operation.
+
+        @throws std::logic_error if @p max_read_size or @p max_write_size is 0.
     */
     basic_mocket(
         capy::execution_context& ctx,
@@ -162,7 +164,7 @@ public:
     /** Stage data for reads.
 
         Appends the given string to this mocket's provide buffer.
-        When `read_some` is called, it will receive this data first
+        When `read_some` is called, it receives this data first
         before reading from the underlying socket.
 
         @param s The data to provide.
@@ -266,7 +268,10 @@ public:
 
         @param buffers The buffer sequence containing data to write.
 
-        @return An awaitable yielding `(error_code, std::size_t)`.
+        @return An awaitable yielding `(error_code, std::size_t)`. The
+            count is the number of bytes validated against the expect
+            script. It is a partial count when the request is longer than
+            the script has left.
     */
     template<class ConstBufferSequence>
     [[nodiscard]] auto write_some(ConstBufferSequence const& buffers)
@@ -552,7 +557,7 @@ public:
     supports provide/expect buffers for test instrumentation.
     The socket is the "peer" end with no test instrumentation.
 
-    Optional max_read_size and max_write_size parameters limit the
+    Optional `max_read_size` and `max_write_size` parameters limit the
     number of bytes transferred per I/O operation on the mocket,
     simulating chunked network delivery for testing purposes.
 
@@ -565,6 +570,9 @@ public:
     @param max_write_size Maximum bytes per write operation (default unlimited).
 
     @return A pair of (mocket, socket).
+
+    @throws std::runtime_error if opening, binding, listening, accepting,
+        or connecting fails.
 
     @note Mockets are not thread-safe and must be used in a
         single-threaded, deterministic context.

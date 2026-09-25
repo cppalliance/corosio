@@ -1,0 +1,48 @@
+# Deliberately scoped to the two literal tokens doc/STYLE_GUIDE.md Part C4 names
+# ("Avoid needless 'will' and 'has been'") — NOT extended to every perfect-tense
+# form. What this rule does and does not see, re-measured at commit 620fdf2c with
+# cwd=doc and PATH including node_modules/.bin (Vale shells out to asciidoctor for
+# .adoc, and the extracted docstrings are .adoc too):
+#
+# `will\s` IS wrap-tolerant, and that is deliberate. Commit 30464086 changed the
+# token from the space-literal `'will '` to `'will\s'`, so a `will` at the end of a
+# wrapped source line now matches. Fixture proof: `The buffer will\nbe consumed.`
+# is FLAGGED, Match `"will\n"`. Do not "simplify" this back to a literal space.
+#
+# `has been` is NOT wrap-tolerant — a known, open hole. Fixture proof: `The buffer
+# has\nbeen consumed.` is NOT flagged, while the same text on one line is. It costs
+# nothing today (0 occurrences of `has\s*\n\s*been` in either corpus at 620fdf2c),
+# so it is recorded rather than fixed; the fix is the same one-character change
+# (`has\sbeen`) if an instance ever appears.
+#
+# The perfect-tense family this rule deliberately excludes — 17 occurrences on the
+# docstring corpus (`doc/lint/.docstrings/`), plus 4 on the `.adoc` pages:
+#   have been           x12  (ex/this_coro.hpp x4, read_at_least.hpp x3,
+#                             write_at_least.hpp x3, ex/thread_pool.hpp,
+#                             write.hpp)
+#   has already been     x3  (when_any.hpp x2, ex/async_mutex.hpp)
+#   has not been         x1  (write_at_least.hpp)
+#   has now<newline>been x1  (ex/async_waker.hpp — invisible for BOTH reasons:
+#                             an intervening adverb and a line wrap)
+#   (.adoc: have been x2 in 4h.lambda-captures, 9l.RunApi; has <adv> been x2 in
+#    9b.Separation, why-corosio)
+# Maintainer ruling: these stay excluded. Part C4 names only "will" and "has been",
+# so the rule is FAITHFUL to the guide as written; extending `tokens` would be a
+# style-guide change smuggled in as a lint fix, and would surface ~17 new prose
+# findings at once. A future editor who wants broader coverage changes Part C4
+# first, then this file.
+extends: existence
+message: "Avoid needless future/perfect tense — prefer present simple (style guide C4): '%s'."
+level: warning
+ignorecase: true
+# `have been` and `had been` are the same present/past-perfect construct as
+# `has been`, which C4 names explicitly. Matching only the singular left a blind
+# spot a future author could write into freely: a raw grep found 8 live sites the
+# rule could not see (6 in published docstrings, 2 on pages), including one CI
+# surfaced only because a long single-line paragraph parses differently there.
+# All 8 were fixed when these tokens were added, so the rule stays at zero.
+tokens:
+  - 'will\s'
+  - 'has been'
+  - 'have been'
+  - 'had been'

@@ -23,7 +23,7 @@
 
 namespace boost::corosio {
 
-/** A Unix domain socket endpoint (filesystem path).
+/** Holds the filesystem path that names a Unix domain socket.
 
     Stores the path in a fixed-size buffer, avoiding heap
     allocation. The object is trivially copyable.
@@ -33,7 +33,7 @@ namespace boost::corosio {
     null byte is stored.
 
     The library does NOT automatically unlink the socket path on
-    close — callers are responsible for cleanup.
+    close. Callers are responsible for cleanup.
 
     @par Thread Safety
     Distinct objects: Safe.@n
@@ -55,8 +55,8 @@ public:
 
     /** Construct from a path.
 
-        An over-long path is a precondition violation: the limit is
-        the public @ref max_path_length constant, so callers with
+        An over-long path causes the constructor to throw; the limit
+        is the public @ref max_path_length constant, so callers with
         runtime-derived paths can check
         `path.size() <= max_path_length` before constructing.
 

@@ -37,7 +37,7 @@
 
 namespace boost::corosio {
 
-/** An asynchronous Unix stream socket for coroutine I/O.
+/** Reads and writes a Unix domain stream, from a coroutine.
 
     This class provides asynchronous Unix domain stream socket
     operations that return awaitable types. Each operation
@@ -57,7 +57,7 @@ namespace boost::corosio {
 
     @par Semantics
     Wraps the platform Unix domain socket stack. Operations
-    dispatch to OS socket APIs via the io_context backend
+    dispatch to OS socket APIs via the `io_context` backend
     (epoll, kqueue, select, or IOCP). Satisfies @ref capy::Stream.
 
     @par Example
@@ -69,6 +69,7 @@ public:
     /// The endpoint type used by this socket.
     using endpoint_type = corosio::local_endpoint;
 
+    /// The shutdown direction type used by this socket.
     using shutdown_type = corosio::shutdown_type;
     using enum corosio::shutdown_type;
 
@@ -192,8 +193,8 @@ public:
     /// Represent the awaitable returned by @ref connect.
     struct connect_awaitable : detail::void_op_base<connect_awaitable>
     {
-        local_stream_socket& s_;
-        corosio::local_endpoint endpoint_;
+    private:
+        friend local_stream_socket;
 
         connect_awaitable(
             local_stream_socket& s, corosio::local_endpoint ep) noexcept
@@ -201,6 +202,11 @@ public:
             , endpoint_(ep)
         {
         }
+
+        friend detail::void_op_base<connect_awaitable>;
+
+        local_stream_socket& s_;
+        corosio::local_endpoint endpoint_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -212,14 +218,19 @@ public:
     /// Represent the awaitable returned by @ref wait.
     struct wait_awaitable : detail::void_op_base<wait_awaitable>
     {
-        local_stream_socket& s_;
-        wait_type w_;
+    private:
+        friend local_stream_socket;
 
         wait_awaitable(local_stream_socket& s, wait_type w) noexcept
             : s_(s)
             , w_(w)
         {
         }
+
+        friend detail::void_op_base<wait_awaitable>;
+
+        local_stream_socket& s_;
+        wait_type w_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -237,7 +248,7 @@ public:
 
     /** Construct a socket from an execution context.
 
-        @param ctx The execution context that will own this socket.
+        @param ctx The execution context that owns this socket.
     */
     explicit local_stream_socket(capy::execution_context& ctx);
 
@@ -245,7 +256,9 @@ public:
 
         The socket is associated with the executor's context.
 
-        @param ex The executor whose context will own the socket.
+        @tparam Ex A type satisfying capy::Executor.
+
+        @param ex The executor whose context owns the socket.
     */
     template<class Ex>
         requires(!std::same_as<std::remove_cvref_t<Ex>, local_stream_socket>) &&
@@ -293,7 +306,9 @@ public:
         return *this;
     }
 
-    local_stream_socket(local_stream_socket const&)            = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    local_stream_socket(local_stream_socket const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     local_stream_socket& operator=(local_stream_socket const&) = delete;
 
     /** Open the socket.
@@ -362,8 +377,7 @@ public:
 
         A closed socket completes with `errc::bad_file_descriptor`.
 
-        @par Preconditions
-        This socket must outlive the returned awaitable.
+        @pre This socket must outlive the returned awaitable.
     */
     [[nodiscard]] auto wait(wait_type w)
     {
@@ -424,8 +438,8 @@ public:
         returned error code. A closed socket reports
         `errc::bad_file_descriptor`.
 
-        @param what Determines what operations will no longer
-            be allowed.
+        @param what Determines which operations are no longer
+            allowed.
 
         @return The error code, empty on success.
     */
@@ -504,7 +518,7 @@ public:
         ownership of `fd`.
 
         @param fd The native socket to adopt. On success the object
-            owns it and will close it.
+            owns it and closes it.
 
         @return The error code, empty on success. Validation and
             registration failures are normal runtime conditions when
@@ -533,8 +547,13 @@ public:
     corosio::local_endpoint remote_endpoint() const noexcept;
 
 protected:
+    /// Default construct a closed socket for a derived class to open.
     local_stream_socket() noexcept = default;
 
+    /** Adopt an existing handle.
+
+        @param h The handle the socket takes ownership of.
+    */
     explicit local_stream_socket(handle h) noexcept : io_object(std::move(h)) {}
 
 private:

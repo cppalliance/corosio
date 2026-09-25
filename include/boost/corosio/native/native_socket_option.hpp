@@ -246,8 +246,8 @@ public:
 /** A boolean socket option with single-byte storage.
 
     Some BSD-derived kernels (macOS, FreeBSD) require certain IPv4 multicast
-    options (`IP_MULTICAST_LOOP`) to be set with a one-byte value and return
-    `EINVAL` for the four-byte form that Linux accepts. This template
+    options (`IP_MULTICAST_LOOP`) to be set with a one-byte value. They
+    return `EINVAL` for the four-byte form that Linux accepts. This template
     provides `unsigned char` storage so the option works on every platform.
 
     @tparam Level The protocol level.
@@ -490,7 +490,7 @@ using reuse_port = boolean<SOL_SOCKET, SO_REUSEPORT>;
 /** Enable loopback of outgoing multicast (IP_MULTICAST_LOOP /
     IPV6_MULTICAST_LOOP).
 
-    The socket's family selects the wire rendering: a single byte
+    The socket's family selects the wire rendering. A single byte
     at `IPPROTO_IP` for IPv4 (BSD-derived kernels reject the
     four-byte form), an `int` at `IPPROTO_IPV6` for IPv6.
 */
@@ -670,10 +670,10 @@ public:
 
 /** A multicast membership request.
 
-    The group's family — not the socket's — selects the wire
-    struct and protocol level: a v4 group renders as an `ip_mreq`
-    at the IPv4 level even when applied to a dual-stack v6 socket,
-    which is the level such a join actually targets.
+    The group's family — not the socket's — selects the wire struct and
+    protocol level. A v4 group renders as an `ip_mreq` at the IPv4 level
+    even when applied to a dual-stack v6 socket. That is the level such a
+    join actually targets.
 
     @tparam Level4 The IPv4 protocol level.
     @tparam Name4 The IPv4 option name.
@@ -793,10 +793,10 @@ using leave_group = membership_request<
 /** Set the outgoing multicast interface (IP_MULTICAST_IF /
     IPV6_MULTICAST_IF).
 
-    The two families name interfaces differently on the wire — IPv4
-    by interface address, IPv6 by interface index — so the option
-    stores both renderings and the socket's family selects one; the
-    other stays at its default (any address, kernel-chosen index).
+    The two families name interfaces differently on the wire: IPv4 by
+    interface address, IPv6 by interface index. The option stores both
+    renderings and the socket's family selects one; the other stays at its
+    default (any address, kernel-chosen index).
 */
 class multicast_interface
 {

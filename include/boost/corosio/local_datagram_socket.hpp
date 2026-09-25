@@ -41,7 +41,7 @@
 
 namespace boost::corosio {
 
-/** An asynchronous Unix datagram socket for coroutine I/O.
+/** Sends and receives datagrams over a Unix domain socket, from a coroutine.
 
     This class provides asynchronous Unix domain datagram socket
     operations that return awaitable types. Each operation
@@ -61,7 +61,7 @@ namespace boost::corosio {
 
     @note Not available on Windows. Windows does not support
         AF_UNIX datagram sockets (SOCK_DGRAM). Attempting to
-        open this socket on Windows will fail.
+        open this socket on Windows fails.
 
     @par Cancellation
     All asynchronous operations support cancellation through
@@ -74,10 +74,10 @@ namespace boost::corosio {
     Distinct objects: Safe.@n
     Shared objects: Unsafe. A socket must not have concurrent
     operations of the same type (e.g., two simultaneous
-    recv_from). One send and one recv may be in flight
-    simultaneously. Note that recv and recv_from share the
-    same internal read slot, so they must not overlap; likewise
-    send and send_to share the write slot.
+    `recv_from`). One send and one `recv` may be in flight
+    simultaneously. Both `recv` and `recv_from` share the
+    same internal read slot, so they must not overlap. Likewise,
+    send and `send_to` share the write slot.
 
     @par Example
     @par !example connectionless_and_connected
@@ -96,12 +96,13 @@ public:
     */
     struct implementation : io_object::implementation
     {
-        /** Initiate an asynchronous send_to operation.
+        /** Initiate an asynchronous `send_to` operation.
 
             @param h Coroutine handle to resume on completion.
             @param ex Executor for dispatching the completion.
             @param buf The buffer data to send.
             @param dest The destination endpoint.
+            @param flags Message flags (e.g. `message_flags::do_not_route`).
             @param token Stop token for cancellation.
             @param ec Output error code.
             @param bytes_out Output bytes transferred.
@@ -118,12 +119,13 @@ public:
             std::error_code* ec,
             std::size_t* bytes_out) = 0;
 
-        /** Initiate an asynchronous recv_from operation.
+        /** Initiate an asynchronous `recv_from` operation.
 
             @param h Coroutine handle to resume on completion.
             @param ex Executor for dispatching the completion.
             @param buf The buffer to receive into.
             @param source Output endpoint for the sender's address.
+            @param flags Message flags (e.g. `message_flags::peek`).
             @param token Stop token for cancellation.
             @param ec Output error code.
             @param bytes_out Output bytes transferred.
@@ -162,6 +164,7 @@ public:
             @param h Coroutine handle to resume on completion.
             @param ex Executor for dispatching the completion.
             @param buf The buffer data to send.
+            @param flags Message flags (e.g. `message_flags::do_not_route`).
             @param token Stop token for cancellation.
             @param ec Output error code.
             @param bytes_out Output bytes transferred.
@@ -177,12 +180,12 @@ public:
             std::error_code* ec,
             std::size_t* bytes_out) = 0;
 
-        /** Initiate an asynchronous connected recv operation.
+        /** Initiate an asynchronous connected `recv` operation.
 
             @param h Coroutine handle to resume on completion.
             @param ex Executor for dispatching the completion.
             @param buf The buffer to receive into.
-            @param flags Message flags (e.g. MSG_PEEK).
+            @param flags Message flags (e.g. `message_flags::peek`).
             @param token Stop token for cancellation.
             @param ec Output error code.
             @param bytes_out Output bytes transferred.
@@ -219,7 +222,12 @@ public:
             std::stop_token token,
             std::error_code* ec) = 0;
 
-        /// Shut down part or all of the socket.
+        /** Shut down part or all of the socket.
+
+            @param what Which directions to disable.
+
+            @return The error code, empty on success.
+        */
         virtual std::error_code shutdown(shutdown_type what) noexcept = 0;
 
         /// Return the platform socket descriptor.
@@ -302,10 +310,8 @@ public:
     */
     struct send_to_awaitable : detail::bytes_op_base<send_to_awaitable>
     {
-        local_datagram_socket& s_;
-        buffer_param buf_;
-        corosio::local_endpoint dest_;
-        int flags_;
+    private:
+        friend local_datagram_socket;
 
         send_to_awaitable(
             local_datagram_socket& s,
@@ -318,6 +324,13 @@ public:
             , flags_(flags)
         {
         }
+
+        friend detail::bytes_op_base<send_to_awaitable>;
+
+        local_datagram_socket& s_;
+        buffer_param buf_;
+        corosio::local_endpoint dest_;
+        int flags_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -334,10 +347,8 @@ public:
     */
     struct recv_from_awaitable : detail::bytes_op_base<recv_from_awaitable>
     {
-        local_datagram_socket& s_;
-        buffer_param buf_;
-        corosio::local_endpoint& source_;
-        int flags_;
+    private:
+        friend local_datagram_socket;
 
         recv_from_awaitable(
             local_datagram_socket& s,
@@ -350,6 +361,13 @@ public:
             , flags_(flags)
         {
         }
+
+        friend detail::bytes_op_base<recv_from_awaitable>;
+
+        local_datagram_socket& s_;
+        buffer_param buf_;
+        corosio::local_endpoint& source_;
+        int flags_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -366,8 +384,8 @@ public:
     */
     struct connect_awaitable : detail::void_op_base<connect_awaitable>
     {
-        local_datagram_socket& s_;
-        corosio::local_endpoint endpoint_;
+    private:
+        friend local_datagram_socket;
 
         connect_awaitable(
             local_datagram_socket& s, corosio::local_endpoint ep) noexcept
@@ -375,6 +393,11 @@ public:
             , endpoint_(ep)
         {
         }
+
+        friend detail::void_op_base<connect_awaitable>;
+
+        local_datagram_socket& s_;
+        corosio::local_endpoint endpoint_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -386,14 +409,19 @@ public:
     /// Represent the awaitable returned by @ref wait.
     struct wait_awaitable : detail::void_op_base<wait_awaitable>
     {
-        local_datagram_socket& s_;
-        wait_type w_;
+    private:
+        friend local_datagram_socket;
 
         wait_awaitable(local_datagram_socket& s, wait_type w) noexcept
             : s_(s)
             , w_(w)
         {
         }
+
+        friend detail::void_op_base<wait_awaitable>;
+
+        local_datagram_socket& s_;
+        wait_type w_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -409,9 +437,8 @@ public:
     */
     struct send_awaitable : detail::bytes_op_base<send_awaitable>
     {
-        local_datagram_socket& s_;
-        buffer_param buf_;
-        int flags_;
+    private:
+        friend local_datagram_socket;
 
         send_awaitable(
             local_datagram_socket& s, buffer_param buf, int flags = 0) noexcept
@@ -420,6 +447,12 @@ public:
             , flags_(flags)
         {
         }
+
+        friend detail::bytes_op_base<send_awaitable>;
+
+        local_datagram_socket& s_;
+        buffer_param buf_;
+        int flags_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -435,9 +468,8 @@ public:
     */
     struct recv_awaitable : detail::bytes_op_base<recv_awaitable>
     {
-        local_datagram_socket& s_;
-        buffer_param buf_;
-        int flags_;
+    private:
+        friend local_datagram_socket;
 
         recv_awaitable(
             local_datagram_socket& s, buffer_param buf, int flags = 0) noexcept
@@ -446,6 +478,12 @@ public:
             , flags_(flags)
         {
         }
+
+        friend detail::bytes_op_base<recv_awaitable>;
+
+        local_datagram_socket& s_;
+        buffer_param buf_;
+        int flags_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -463,7 +501,7 @@ public:
 
     /** Construct a socket from an execution context.
 
-        @param ctx The execution context that will own this socket.
+        @param ctx The execution context that owns this socket.
     */
     explicit local_datagram_socket(capy::execution_context& ctx);
 
@@ -471,7 +509,9 @@ public:
 
         The socket is associated with the executor's context.
 
-        @param ex The executor whose context will own the socket.
+        @tparam Ex A type satisfying capy::Executor.
+
+        @param ex The executor whose context owns the socket.
     */
     template<class Ex>
         requires(!std::
@@ -510,7 +550,9 @@ public:
         return *this;
     }
 
-    local_datagram_socket(local_datagram_socket const&)            = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    local_datagram_socket(local_datagram_socket const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     local_datagram_socket& operator=(local_datagram_socket const&) = delete;
 
     /** Open the socket.
@@ -555,7 +597,7 @@ public:
     /** Bind the socket to a local endpoint.
 
         Associates the socket with a local address (filesystem path).
-        Required before calling recv_from in connectionless mode.
+        Required before calling `recv_from` in connectionless mode.
 
         @param ep The local endpoint to bind to.
 
@@ -603,8 +645,7 @@ public:
 
         A closed socket completes with `errc::bad_file_descriptor`.
 
-        @par Preconditions
-        This socket must outlive the returned awaitable.
+        @pre This socket must outlive the returned awaitable.
     */
     [[nodiscard]] auto wait(wait_type w)
     {
@@ -613,12 +654,13 @@ public:
 
     /** Send a datagram to the specified destination.
 
-        Completes when the entire datagram has been accepted
-        by the kernel. The bytes_transferred value equals the
+        Completes when the transport accepts the entire datagram
+        by the kernel. The `bytes_transferred` value equals the
         datagram size on success.
 
         @param buf The buffer containing data to send.
         @param dest The destination endpoint.
+        @param flags Message flags (e.g. message_flags::do_not_route).
 
         @par Cancellation
         Supports cancellation via stop_token or cancel().
@@ -649,14 +691,14 @@ public:
 
     /** Receive a datagram and capture the sender's endpoint.
 
-        Completes when one datagram has been received. The
-        bytes_transferred value is the number of bytes copied
+        Completes when one datagram arrives. The
+        `bytes_transferred` value is the number of bytes copied
         into the buffer. If the buffer is smaller than the
         datagram, excess bytes are discarded (datagram
         semantics).
 
         @param buf The buffer to receive data into.
-        @param source Reference to an endpoint that will be set to
+        @param source Reference to an endpoint that receives
             the sender's address on successful completion.
         @param flags Message flags (e.g. message_flags::peek).
 
@@ -690,7 +732,7 @@ public:
 
     /** Send a datagram to the connected peer.
 
-        @pre connect() has been called successfully.
+        @pre connect() succeeded.
 
         @param buf The buffer containing data to send.
         @param flags Message flags.
@@ -721,7 +763,7 @@ public:
 
     /** Receive a datagram from the connected peer.
 
-        @pre connect() has been called successfully.
+        @pre connect() succeeded.
 
         @param buf The buffer to receive data into.
         @param flags Message flags (e.g. message_flags::peek).
@@ -859,8 +901,8 @@ public:
         library — from `socketpair()`, received over `SCM_RIGHTS`,
         or made natively — and registers it with the backend. The
         socket must be a datagram socket in the `AF_UNIX` family.
-        Adoption never alters the descriptor's flags or options; the
-        fd must already be non-blocking.
+        Adoption never alters the descriptor's flags or options.
+        The fd must already be non-blocking.
 
         If this object is already open, pending operations complete
         with `errc::operation_canceled` and the held socket is
@@ -874,7 +916,7 @@ public:
         ownership of `fd`.
 
         @param fd The native socket to adopt. On success the object
-            owns it and will close it.
+            owns it and closes it.
 
         @return The error code, empty on success. Validation and
             registration failures are normal runtime conditions when

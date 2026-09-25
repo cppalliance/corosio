@@ -35,19 +35,18 @@
 
 namespace boost::corosio {
 
-/** Options for @ref local_stream_acceptor::bind().
-
-    Controls filesystem cleanup behavior before binding
-    to a Unix domain socket path.
+/** Controls whether @ref local_stream_acceptor::bind() unlinks
+    an existing socket path before binding.
 */
 enum class bind_option
 {
+    /// Bind without touching the socket path.
     none,
     /// Unlink the socket path before binding (ignored for abstract paths).
     unlink_existing
 };
 
-/** An asynchronous Unix domain stream acceptor for coroutine I/O.
+/** Accepts inbound Unix domain stream connections, from a coroutine.
 
     This class provides asynchronous Unix domain stream accept
     operations that return awaitable types. The acceptor binds
@@ -71,14 +70,19 @@ class BOOST_COROSIO_DECL local_stream_acceptor : public io_object
 {
     struct wait_awaitable : detail::void_op_base<wait_awaitable>
     {
-        local_stream_acceptor& acc_;
-        wait_type w_;
+    private:
+        friend local_stream_acceptor;
 
         wait_awaitable(local_stream_acceptor& acc, wait_type w) noexcept
             : acc_(acc)
             , w_(w)
         {
         }
+
+        friend detail::void_op_base<wait_awaitable>;
+
+        local_stream_acceptor& acc_;
+        wait_type w_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -89,6 +93,10 @@ class BOOST_COROSIO_DECL local_stream_acceptor : public io_object
 
     struct move_accept_awaitable : detail::void_op_base<move_accept_awaitable>
     {
+    private:
+        friend local_stream_acceptor;
+        friend detail::void_op_base<move_accept_awaitable>;
+
         local_stream_acceptor& acc_;
         mutable io_object::implementation* peer_impl_ = nullptr;
 
@@ -97,6 +105,14 @@ class BOOST_COROSIO_DECL local_stream_acceptor : public io_object
         {
         }
 
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        {
+            return acc_.get().accept(
+                h, ex, this->token_, &this->ec_, &peer_impl_);
+        }
+
+    public:
         [[nodiscard]] capy::io_result<local_stream_socket>
         await_resume() const noexcept
         {
@@ -107,17 +123,14 @@ class BOOST_COROSIO_DECL local_stream_acceptor : public io_object
             reset_peer_impl(peer, peer_impl_);
             return {this->ec_, std::move(peer)};
         }
-
-        std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
-        {
-            return acc_.get().accept(
-                h, ex, this->token_, &this->ec_, &peer_impl_);
-        }
     };
 
     struct accept_awaitable : detail::void_op_base<accept_awaitable>
     {
+    private:
+        friend local_stream_acceptor;
+        friend detail::void_op_base<accept_awaitable>;
+
         local_stream_acceptor& acc_;
         local_stream_socket& peer_;
         mutable io_object::implementation* peer_impl_ = nullptr;
@@ -129,31 +142,30 @@ class BOOST_COROSIO_DECL local_stream_acceptor : public io_object
         {
         }
 
-        [[nodiscard]] capy::io_result<> await_resume() const noexcept
-        {
-            if (!this->ec_ && peer_impl_)
-                peer_.h_.reset(peer_impl_);
-            return {this->ec_};
-        }
-
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
             return acc_.get().accept(
                 h, ex, this->token_, &this->ec_, &peer_impl_);
         }
+
+    public:
+        [[nodiscard]] capy::io_result<> await_resume() const noexcept
+        {
+            if (!this->ec_ && peer_impl_)
+                peer_.h_.reset(peer_impl_);
+            return {this->ec_};
+        }
     };
 
 public:
-    /** Destructor.
-
-        Closes the acceptor if open, cancelling any pending operations.
+    /** Closes the acceptor if open, cancelling any pending operations.
     */
     ~local_stream_acceptor() override;
 
     /** Construct an acceptor from an execution context.
 
-        @param ctx The execution context that will own this acceptor.
+        @param ctx The execution context that owns this acceptor.
     */
     explicit local_stream_acceptor(capy::execution_context& ctx);
 
@@ -163,7 +175,7 @@ public:
         expression, throwing the codes the piecewise `open()` +
         `bind()` + `listen()` path returns.
 
-        @param ctx The execution context that will own this acceptor.
+        @param ctx The execution context that owns this acceptor.
         @param ep The local endpoint to bind to.
         @param backlog The maximum pending connection queue length.
 
@@ -178,7 +190,7 @@ public:
 
         The acceptor is associated with the executor's context.
 
-        @param ex The executor whose context will own the acceptor.
+        @param ex The executor whose context owns the acceptor.
 
         @tparam Ex A type satisfying @ref capy::Executor. Must not
             be `local_stream_acceptor` itself (disables implicit
@@ -195,9 +207,11 @@ public:
 
     /** Convenience constructor from an executor.
 
-        @param ex The executor whose context will own the acceptor.
+        @param ex The executor whose context owns the acceptor.
         @param ep The local endpoint to bind to.
         @param backlog The maximum pending connection queue length.
+
+        @tparam Ex A type satisfying @ref capy::Executor.
 
         @throws std::system_error on open, bind, or listen failure.
     */
@@ -209,9 +223,8 @@ public:
     {
     }
 
-    /** Move constructor.
-
-        Transfers ownership of the acceptor resources.
+    /** Transfers ownership of the acceptor resources from another
+        acceptor.
 
         @param other The acceptor to move from.
 
@@ -224,10 +237,9 @@ public:
     {
     }
 
-    /** Move assignment operator.
-
-        Closes any existing acceptor and transfers ownership.
-        Both acceptors must share the same execution context.
+    /** Closes any existing acceptor and transfers ownership from
+        another acceptor. Both acceptors must share the same
+        execution context.
 
         @param other The acceptor to move from.
 
@@ -250,7 +262,9 @@ public:
         return *this;
     }
 
-    local_stream_acceptor(local_stream_acceptor const&)            = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    local_stream_acceptor(local_stream_acceptor const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     local_stream_acceptor& operator=(local_stream_acceptor const&) = delete;
 
     /** Create the acceptor socket.
@@ -298,7 +312,10 @@ public:
     */
     void close() noexcept;
 
-    /// Check if the acceptor has an open socket handle.
+    /** Check if the acceptor has an open socket handle.
+
+        @return `true` if the acceptor holds an open handle.
+    */
     bool is_open() const noexcept
     {
         return h_ && get().is_open();
@@ -333,8 +350,8 @@ public:
 
         Suspends until the listen socket is ready in the
         requested direction. For `wait_type::read`, completion
-        signals that a subsequent @ref accept will succeed
-        without blocking; a connection already queued when the
+        signals that a subsequent @ref accept succeeds
+        without blocking. A connection already queued when the
         wait begins completes it immediately. No connection is
         consumed.
 
@@ -349,8 +366,7 @@ public:
 
         A closed acceptor completes with `errc::bad_file_descriptor`.
 
-        @par Preconditions
-        This acceptor must outlive the returned awaitable.
+        @pre This acceptor must outlive the returned awaitable.
     */
     [[nodiscard]] auto wait(wait_type w)
     {
@@ -371,7 +387,7 @@ public:
         a default-constructed socket.
 
         @return An awaitable that completes with
-            io_result<local_stream_socket>.
+            io_result<`local_stream_socket`>.
 
         A closed acceptor reports `errc::bad_file_descriptor`.
         On failure the returned socket is default-constructed and
@@ -413,8 +429,7 @@ public:
         @return The native socket handle, or -1/INVALID_SOCKET if not
             open.
 
-        @par Preconditions
-        None. May be called on closed acceptors.
+        @pre None. May be called on closed acceptors.
     */
     native_handle_type native_handle() const noexcept;
 
@@ -443,7 +458,7 @@ public:
         ownership of `fd`.
 
         @param fd The native socket to adopt. On success the object
-            owns it and will close it.
+            owns it and closes it.
 
         @return The error code, empty on success. Validation and
             registration failures are normal runtime conditions when
@@ -453,9 +468,10 @@ public:
 
     /** Return the local endpoint the acceptor is bound to.
 
-        Returns a default-constructed (empty) endpoint if the
-        acceptor is not open or not yet bound. Safe to call in
-        any state.
+        Safe to call in any state.
+
+        @return The bound local endpoint, or a default-constructed
+            endpoint if the acceptor is not open or not yet bound.
     */
     corosio::local_endpoint local_endpoint() const noexcept;
 
@@ -518,10 +534,8 @@ public:
         return opt;
     }
 
-    /** Backend hooks for local stream acceptor operations.
-
-        Platform backends derive from this to implement
-        accept, option, and lifecycle management.
+    /** Backends derive from this to implement accept, option, and
+        lifecycle management.
     */
     struct implementation : io_object::implementation
     {
@@ -539,16 +553,24 @@ public:
             @return Coroutine handle to resume immediately.
         */
         virtual std::coroutine_handle<> accept(
-            std::coroutine_handle<>,
-            capy::executor_ref,
-            std::stop_token,
-            std::error_code*,
-            io_object::implementation**) = 0;
+            std::coroutine_handle<> h,
+            capy::executor_ref ex,
+            std::stop_token token,
+            std::error_code* ec,
+            io_object::implementation** impl_out) = 0;
 
         /** Initiate an asynchronous wait for acceptor readiness.
 
             Completes when the listen socket becomes ready for
             the specified direction. No connection is consumed.
+
+            @param h Coroutine handle to resume on completion.
+            @param ex Executor for dispatching the completion.
+            @param w The direction to wait on.
+            @param token Stop token for cancellation.
+            @param ec Output error code.
+
+            @return Coroutine handle to resume immediately.
         */
         virtual std::coroutine_handle<> wait(
             std::coroutine_handle<> h,
@@ -582,26 +604,54 @@ public:
         /// Cancel pending accept operations.
         virtual void cancel() noexcept = 0;
 
-        /// Set a raw socket option.
+        /** Set a raw socket option.
+
+            @param level The protocol level (e.g. `SOL_SOCKET`).
+            @param optname The option name.
+            @param data Pointer to the option value.
+            @param size Size of the option value in bytes.
+
+            @return The error code, empty on success.
+        */
         virtual std::error_code set_option(
             int level,
             int optname,
             void const* data,
             std::size_t size) noexcept = 0;
 
-        /// Get a raw socket option.
+        /** Get a raw socket option.
+
+            @param level The protocol level (e.g. `SOL_SOCKET`).
+            @param optname The option name.
+            @param data Pointer to storage for the option value.
+            @param size In/out size of the storage, in bytes.
+
+            @return The error code, empty on success.
+        */
         virtual std::error_code
         get_option(int level, int optname, void* data, std::size_t* size)
             const noexcept = 0;
     };
 
 protected:
+    /** Adopt an existing handle bound to a context.
+
+        @param h The handle the acceptor takes ownership of.
+
+        @param ctx The context the acceptor draws its service from.
+    */
     local_stream_acceptor(handle h, capy::execution_context& ctx) noexcept
         : io_object(std::move(h))
         , ctx_(ctx)
     {
     }
 
+    /** Move construct, rebinding to a context.
+
+        @param ctx The context the acceptor draws its service from.
+
+        @param other The acceptor to take the handle from.
+    */
     local_stream_acceptor(
         capy::execution_context& ctx, local_stream_acceptor&& other) noexcept
         : io_object(std::move(other))
@@ -609,6 +659,16 @@ protected:
     {
     }
 
+    /** Install an accepted implementation into the peer socket.
+
+        Derived acceptors call this to hand the accepted connection to
+        the caller's socket, which cannot reach @ref io_object::handle
+        itself.
+
+        @param peer The socket receiving the accepted connection.
+
+        @param impl The accepted implementation, or `nullptr` on failure.
+    */
     static void reset_peer_impl(
         local_stream_socket& peer, io_object::implementation* impl) noexcept
     {

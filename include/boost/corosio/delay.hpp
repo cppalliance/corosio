@@ -75,9 +75,7 @@ emplace_delay_timer(std::optional<timer>& t, capy::execution_context& ctx)
 
 } // namespace detail
 
-/** IoAwaitable returned by @ref delay.
-
-    Suspends the calling coroutine until the deadline elapses or
+/** Suspends the calling coroutine until the deadline elapses or
     the environment's stop token is activated, whichever comes
     first. A deadline already elapsed at suspension, or a stop
     token already active, resumes the coroutine inline, without
@@ -85,25 +83,23 @@ emplace_delay_timer(std::optional<timer>& t, capy::execution_context& ctx)
     coroutine resumes through the executor once the timer fires
     or a mid-wait cancellation arrives.
 
-    Not intended to be named directly; use the @ref delay factory
+    Not intended to be named directly. Use the @ref delay factory
     overloads instead.
 
-    @par Preconditions
-    The awaiting coroutine's executor must belong to an
-    `io_context`. Any other execution context terminates with a
-    diagnostic, because silently running without a timer would
-    drop the requested delay.
+    @pre The awaiting coroutine's executor must belong to an
+        `io_context`. Any other execution context terminates with a
+        diagnostic, because silently running without a timer would
+        drop the requested delay.
 
     @par Cancellation
     If stop is already requested before suspension, the coroutine
     resumes immediately with `error::canceled`. If stop is
     requested while suspended, the pending wait is cancelled and
-    the coroutine resumes with `error::canceled`. Requesting stop
-    from another thread while the io_context runs in
-    single_threaded mode (auto-enabled at concurrency_hint == 1)
-    is not permitted by io_context's threading rules;
-    cross-thread cancellation requires a multi-threaded-capable
-    context.
+    the coroutine resumes with `error::canceled`. Requesting stop from
+    another thread while the `io_context` runs in `single_threaded` mode is
+    not permitted by `io_context`'s threading rules. That mode is
+    auto-enabled at `concurrency_hint` == 1. Cross-thread cancellation
+    requires a multi-threaded-capable context.
 
     @see delay
 */
@@ -133,13 +129,16 @@ public:
     {
     }
 
-    /// Construct by transferring state from `other`.
     // Only moved before await_suspend; wait_ is engaged after.
+    /// Construct by transferring state from `other`.
     delay_awaitable(delay_awaitable&&) = default;
 
-    delay_awaitable(delay_awaitable const&)            = delete;
+    /// Copy construction is disabled; an awaitable owns its timer.
+    delay_awaitable(delay_awaitable const&) = delete;
+    /// Copy assignment is disabled; an awaitable owns its timer.
     delay_awaitable& operator=(delay_awaitable const&) = delete;
-    delay_awaitable& operator=(delay_awaitable&&)      = delete;
+    /// Move assignment is disabled; an awaitable is moved only before it is awaited.
+    delay_awaitable& operator=(delay_awaitable&&) = delete;
 
     /// Return false unconditionally; see await_suspend.
     // The elapsed-deadline fast path must run after the stop-token
@@ -149,7 +148,15 @@ public:
         return false;
     }
 
-    /// Resume inline if stopped or elapsed; else wait on a timer.
+    /** Resume inline if stopped or elapsed; else wait on a timer.
+
+        @param h Coroutine handle to resume on completion.
+        @param env The I/O environment, carrying the executor, stop token
+            and frame allocator.
+
+        @return The handle to resume immediately, or `noop_coroutine()` when
+            the wait was published to the timer service.
+    */
     std::coroutine_handle<>
     await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
     {
@@ -187,24 +194,23 @@ public:
     }
 };
 
-/** IoAwaitable returned by the clock overloads of @ref delay.
+/** Suspends the calling coroutine until `Clock::now()` reaches the
+    deadline or the environment's stop token is activated. The wait is a
+    sequence of steady-clock timer waits. After each expiry the clock is
+    re-read. If the deadline is unreached, the same frame-embedded
+    waiter is re-published for the next `Traits::to_wait_duration` cap.
+    That re-publish neither resumes the coroutine nor allocates.
 
-    Suspends the calling coroutine until `Clock::now()` reaches the
-    deadline or the environment's stop token is activated. The wait
-    is a sequence of steady-clock timer waits: after each expiry the
-    clock is re-read and, if the deadline is unreached, the same
-    frame-embedded waiter is re-published for the next
-    `Traits::to_wait_duration` cap — without resuming the coroutine
-    and without allocating.
-
-    Not intended to be named directly; use the @ref delay factory
+    Not intended to be named directly. Use the @ref delay factory
     overloads instead.
 
-    @par Preconditions
-    The awaiting coroutine's executor must belong to an
-    `io_context`. Any other execution context terminates with a
-    diagnostic, because silently running without a timer would
-    drop the requested delay.
+    @tparam Clock The clock the deadline is expressed in.
+    @tparam Traits The wait-traits policy bounding each steady-clock wait.
+
+    @pre The awaiting coroutine's executor must belong to an
+        `io_context`. Any other execution context terminates with a
+        diagnostic, because silently running without a timer would
+        drop the requested delay.
 
     @par Cancellation
     Identical to @ref delay_awaitable: stop already requested
@@ -256,16 +262,19 @@ public:
     {
     }
 
-    /// Construct by transferring the deadline from `other`.
     // Only moved before await_suspend; w_ is quiescent until then.
+    /// Construct by transferring the deadline from `other`.
     clock_delay_awaitable(clock_delay_awaitable&& other) noexcept
         : deadline_(other.deadline_)
     {
     }
 
-    clock_delay_awaitable(clock_delay_awaitable const&)            = delete;
+    /// Copy construction is disabled; an awaitable owns its timer.
+    clock_delay_awaitable(clock_delay_awaitable const&) = delete;
+    /// Copy assignment is disabled; an awaitable owns its timer.
     clock_delay_awaitable& operator=(clock_delay_awaitable const&) = delete;
-    clock_delay_awaitable& operator=(clock_delay_awaitable&&)      = delete;
+    /// Move assignment is disabled; an awaitable is moved only before it is awaited.
+    clock_delay_awaitable& operator=(clock_delay_awaitable&&) = delete;
 
     /// Return false unconditionally; see await_suspend.
     // The elapsed-deadline fast path must run after the stop-token
@@ -275,7 +284,15 @@ public:
         return false;
     }
 
-    /// Resume inline if stopped or reached; else wait on a timer.
+    /** Resume inline if stopped or reached; else wait on a timer.
+
+        @param h Coroutine handle to resume on completion.
+        @param env The I/O environment, carrying the executor, stop token
+            and frame allocator.
+
+        @return The handle to resume immediately, or `noop_coroutine()` when
+            the wait was published to the timer service.
+    */
     std::coroutine_handle<>
     await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
     {
@@ -356,20 +373,25 @@ delay(std::chrono::steady_clock::time_point tp) noexcept
     observation of `Clock::now() >= tp`, or earlier if the
     environment's stop token is activated. The wait is one or more
     bounded steady-clock waits, re-reading `Clock::now()` after
-    each; `Traits::to_wait_duration` bounds each one. With the
-    default @ref wait_traits a single full-length wait is used, so
-    an adjustment of `Clock` mid-wait is observed only at natural
-    wakeup; supply capping traits to bound that latency. Time
+    each. `Traits::to_wait_duration` bounds each one. With the default
+    @ref wait_traits a single full-length wait is used. An adjustment of
+    `Clock` mid-wait is therefore observed only at natural wakeup.
+    Supply capping traits to bound that latency. Time
     points already reached complete synchronously.
 
     @note `Clock::now()` and `Traits::to_wait_duration` are invoked
-    on the io_context's run thread and must not throw or block.
+    on the `io_context`'s run thread and must not throw or block.
 
     @par Example
     @par !example system_clock_deadline
 
     @tparam Traits The wait-traits policy; `void` selects
         @ref wait_traits.
+
+    @tparam Clock The clock type. This overload does not participate
+        when `Clock` is `std::chrono::steady_clock`. The dedicated
+        @ref delay overload taking a `steady_clock::time_point` handles
+        that case.
 
     @param tp The time point to wait until.
 

@@ -24,7 +24,7 @@
 
 namespace boost::corosio {
 
-/** Abstract base for asynchronous signal sets.
+/** Delivers a registered signal to the waiting coroutine.
 
     Provides the common signal set interface: `wait` and `cancel`.
     Concrete classes like @ref signal_set add signal registration
@@ -40,6 +40,10 @@ class BOOST_COROSIO_DECL io_signal_set : public io_object
 {
     struct wait_awaitable : detail::value_op_base<wait_awaitable, int>
     {
+    private:
+        friend io_signal_set;
+        friend detail::value_op_base<wait_awaitable, int>;
+
         io_signal_set& s_;
 
         explicit wait_awaitable(io_signal_set& s) noexcept : s_(s) {}
@@ -123,6 +127,10 @@ protected:
     /** Dispatch cancel to the concrete implementation. */
     virtual void do_cancel() noexcept = 0;
 
+    /** Adopt an existing handle.
+
+        @param h The handle the signal set takes ownership of.
+    */
     explicit io_signal_set(handle h) noexcept : io_object(std::move(h)) {}
 
     /// Move construct.
@@ -138,7 +146,9 @@ protected:
         return *this;
     }
 
-    io_signal_set(io_signal_set const&)            = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    io_signal_set(io_signal_set const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     io_signal_set& operator=(io_signal_set const&) = delete;
 
 private:

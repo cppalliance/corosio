@@ -30,20 +30,19 @@ namespace boost::corosio {
     `ec` compares equal to `capy::cond::timeout` (with a
     default-initialized payload) is produced.
 
-    Exceptions from the inner awaitable always propagate; they are
-    never swallowed by the timer.
+    Exceptions from the inner awaitable always propagate to the caller.
 
-    @par Preconditions
-    The awaiting coroutine's executor must belong to an
-    `io_context`; any other execution context terminates with a
-    diagnostic.
+    @pre The awaiting coroutine's executor must belong to an
+        `io_context`. Any other execution context terminates with a
+        diagnostic, because silently running without a timer would
+        drop the requested timeout.
 
     @par Cancellation
     If the parent's stop token is activated, the inner awaitable
     is cancelled and its cancellation result is returned. Requesting
     stop from another thread requires a multi-threaded-capable
-    io_context; a context running in single_threaded mode
-    (auto-enabled at concurrency_hint == 1) does not permit
+    `io_context`. A context running in `single_threaded` mode
+    (auto-enabled at `concurrency_hint` == 1) does not permit
     cross-thread cancellation.
 
     @par Example

@@ -9,10 +9,11 @@
 //
 
 = Mock Sockets
+:page-mode: how-to
 
-The `mocket` class is a testable wrapper around a `tcp_socket` that lets
-you stage bytes for reads and assert on bytes written, without giving up
-real socket semantics when you don't need them. Mockets are the main tool
+The cpp:mocket[] class wraps a cpp:tcp_socket[] for testing. It lets you stage
+bytes for reads and assert on bytes written, without giving up real socket
+semantics where you still want them. Mockets are the main tool
 for byte-level deterministic tests of corosio I/O code.
 
 [NOTE]
@@ -34,8 +35,7 @@ include::example$snippets/5a_mocket.cpp[tag=assume]
   before passing through.
 
 Once both buffers are empty, I/O passes through to the underlying socket
-unchanged. The default alias is `using mocket = basic_mocket<>;`, which
-uses `tcp_socket`.
+unchanged. cpp:mocket[] is the default alias, using cpp:tcp_socket[].
 
 == Creating Mockets
 
@@ -46,13 +46,13 @@ Mockets are created paired with a peer socket, connected via loopback:
 include::example$snippets/5a_mocket.cpp[tag=creating,indent=0]
 ----
 
-`make_mocket_pair` returns `std::pair<basic_mocket<Socket>, Socket>`. The
-first element is the mocket (test-instrumented). The second is the peer
-(a plain `Socket`). Both are open and immediately usable.
+cpp:make_mocket_pair[] returns a pair. The first element is the mocket
+(test-instrumented). The second is the peer (a plain `Socket`). Both are
+open and immediately usable.
 
 == Staging Data for Reads
 
-Use `provide()` to stage bytes that the mocket itself will hand back from
+Use `provide()` to stage bytes that the mocket itself hands back from
 `read_some`:
 
 [source,cpp]
@@ -84,7 +84,7 @@ at `max_write_size`), not the length of the matched prefix.
 == Chunked I/O
 
 `make_mocket_pair` accepts `max_read_size` and `max_write_size` to cap
-the bytes a single `read_some` / `write_some` will deliver. This is the
+the bytes a single `read_some` / `write_some` delivers. This is the
 right tool for forcing your code's read/write loops to handle short
 transfers:
 
@@ -98,10 +98,11 @@ the constructor. The default is `std::size_t(-1)` (unlimited).
 
 == Closing and Verification
 
-`verify()` checks that both staging buffers were fully consumed and
-returns `error::test_failure` if either holds leftover data; `close()`
+`verify()` checks that both staging buffers were fully consumed, and
+returns `error::test_failure` if either holds leftover data. `close()`
 shuts the underlying socket, running the same check through the fuse
-on the way out:
+(the `capy::test::fuse` fault-injection object passed to
+`make_mocket_pair`) on the way out:
 
 [source,cpp]
 ----
@@ -116,8 +117,8 @@ fails the test.
 
 == Templated over Socket
 
-`basic_mocket` is a template; the default alias only specializes it for
-`tcp_socket`. For backend-specific tests (`native_tcp_socket<Backend>`,
+cpp:basic_mocket[] is a template; the default alias only specializes it for
+cpp:tcp_socket[]. For backend-specific tests (`native_tcp_socket<Backend>`,
 etc.), name the specialization explicitly:
 
 [source,cpp]
@@ -138,10 +139,9 @@ include::example$snippets/5a_mocket.cpp[tag=socket_access,indent=0]
 [IMPORTANT]
 ====
 I/O performed through the returned raw socket *bypasses* the mocket's
-`provide()` / `expect()` scripting. Those stages run only inside the
-mocket's own `read_some` / `write_some`; a stream built on `socket()`
-talks to the underlying socket directly. To script bytes for a
-higher-level stream, drive the mocket directly instead.
+`provide()` / `expect()` scripting. See
+xref:5.testing/5c.patterns.adoc[Testing Patterns] ("Layering Streams on
+a Mocket") for the full explanation.
 ====
 
 See xref:5.testing/5c.patterns.adoc[Testing Patterns] for a TLS-over-mocket

@@ -19,7 +19,9 @@
 
 namespace boost::corosio {
 
-/** Base class for platform I/O objects.
+/** Owns the platform-specific handle and execution context that a derived
+    socket, timer, signal handler, or acceptor type uses to dispatch
+    operations.
 
     Provides common infrastructure for I/O objects that wrap kernel
     resources (sockets, timers, signal handlers, acceptors). Derived
@@ -46,39 +48,35 @@ class BOOST_COROSIO_DECL io_object
 public:
     class handle;
 
-    /** Base interface for platform I/O implementations.
-
-        Derived classes provide platform-specific operation dispatch.
+    /** Derived types dispatch platform-specific I/O operations through it.
     */
     struct implementation
     {
+        /// Destroy the implementation; called only through @ref io_service.
         virtual ~implementation() = default;
     };
 
-    /** Service interface for I/O object lifecycle management.
-
-        Platform backends implement this interface to manage the
-        creation, closing, and destruction of I/O object
-        implementations.
+    /** Constructs, closes, and destroys platform implementations on
+        behalf of an I/O object. Platform backends implement this
+        interface.
     */
     struct BOOST_COROSIO_DECL io_service
     {
+        /// Destroy the service; the execution context outlives it.
         virtual ~io_service() = default;
 
         /// Construct a new implementation instance.
         virtual implementation* construct() = 0;
 
         /// Destroy the implementation, closing kernel resources and freeing memory.
-        virtual void destroy(implementation*) = 0;
+        virtual void destroy(implementation* impl) = 0;
 
         /// Close the I/O object, releasing kernel resources without deallocating.
-        virtual void close(handle&) {}
+        virtual void close([[maybe_unused]] handle& h) {}
     };
 
-    /** RAII wrapper for I/O object implementation lifetime.
-
-        Manages ownership of the platform-specific implementation,
-        automatically destroying it when the handle goes out of scope.
+    /** Owns a platform-specific I/O implementation and destroys it
+        when the handle goes out of scope.
     */
     class handle
     {
@@ -133,7 +131,9 @@ public:
             return *this;
         }
 
-        handle(handle const&)            = delete;
+        /// Copy construction is disabled; the implementation is uniquely owned.
+        handle(handle const&) = delete;
+        /// Copy assignment is disabled; the implementation is uniquely owned.
         handle& operator=(handle const&) = delete;
 
         /// Return true if the handle owns an implementation.
@@ -182,6 +182,7 @@ public:
     }
 
 protected:
+    /// Destroy the object; protected, so only a derived type destroys one.
     virtual ~io_object() = default;
 
     /// Default construct for virtual base initialization.
@@ -220,7 +221,9 @@ protected:
         return *this;
     }
 
-    io_object(io_object const&)            = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    io_object(io_object const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     io_object& operator=(io_object const&) = delete;
 
     /// The platform I/O handle owned by this object.

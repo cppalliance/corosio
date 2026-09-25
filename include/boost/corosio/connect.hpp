@@ -100,19 +100,25 @@ connect(Socket& s, Iter begin, Iter end, ConnectCondition cond);
 
     @param s The socket to connect. Must have a `connect(endpoint)`
         member returning an awaitable, plus `close()` and `is_open()`.
-        If the socket is already open, it will be closed before the
+        If the socket is already open, it is closed before the
         first attempt.
     @param endpoints A range of candidate endpoints. Taken by value
         so temporaries (e.g. the `std::vector<endpoint>` returned from
         `resolver::resolve`) remain alive for the coroutine's lifetime.
+        Passing an lvalue copies the range; pass an rvalue
+        (`std::move(endpoints)`) or use the iterator overload
+        (`connect(s, begin, end)`) to avoid the copy.
 
     @return An awaitable completing with
         `capy::io_result<typename Socket::endpoint_type>`:
-        - on success: default error_code and the connected endpoint;
+        - on success: default `error_code` and the connected endpoint;
         - on failure of all attempts: the error from the last attempt
           and a default-constructed endpoint;
         - on empty range: `std::errc::no_such_device_or_address` and a
           default-constructed endpoint.
+
+    @throws std::bad_alloc if copying an lvalue `endpoints` fails to
+        allocate.
 
     @note The socket is closed and re-opened before each attempt, so
         any socket options set by the caller (e.g. `no_delay`,
@@ -143,8 +149,8 @@ connect(Socket& s, Range endpoints)
     For each candidate the condition is invoked as
     `cond(last_ec, ep)` where `last_ec` is the error from the most
     recent attempt (default-constructed before the first attempt). If
-    the condition returns `false` the candidate is skipped; otherwise a
-    connect is attempted.
+    the condition returns `false`, the candidate is skipped. Otherwise,
+    a connect is attempted.
 
     @param s The socket to connect. See the non-condition overload for
         requirements.
@@ -216,7 +222,7 @@ connect(Socket& s, Range endpoints, ConnectCondition cond)
     @param end One past the last candidate.
 
     @return An awaitable completing with `capy::io_result<Iter>`:
-        - on success: default error_code and the iterator of the
+        - on success: default `error_code` and the iterator of the
           successful endpoint;
         - on failure of all attempts: the error from the last attempt
           and `end`;
@@ -240,6 +246,12 @@ connect(Socket& s, Iter begin, Iter end)
 
 /** Asynchronously connect a socket by trying each endpoint in an
     iterator range, filtered by a user-supplied condition.
+
+    @par Cancellation
+    Supports cancellation via the affine awaitable protocol. If a
+    per-endpoint connect completes with `capy::cond::canceled` the
+    operation completes immediately with that error and `end`, without
+    trying further endpoints.
 
     @param s The socket to connect.
     @param begin The first candidate.

@@ -8,6 +8,7 @@
 //
 
 = TCP: Reliable Byte Streams
+:page-mode: explanation
 
 TCP is the protocol that makes the internet useful for most applications. It takes the unreliable, unordered packet delivery that IP provides and builds something much more powerful on top: a reliable, ordered stream of bytes that flows in both directions between two machines. Your program writes bytes into one end, and they come out at the other end in exactly the same order, even if the underlying packets were lost, duplicated, reordered, or delayed.
 
@@ -64,7 +65,7 @@ Window size (16 bits):: The number of bytes the sender is willing to accept. Thi
 
 Checksum (16 bits):: Covers the TCP header, the payload, and a pseudo-header derived from the IP addresses and protocol number. If the checksum fails, the segment is discarded silently.
 
-The sequence and acknowledgment numbers are the core of TCP's reliability. By tracking which bytes have been sent and which have been acknowledged, TCP can detect gaps (lost packets) and fill them with retransmissions.
+The sequence and acknowledgment numbers are the core of TCP's reliability. By tracking which bytes it sent and which the peer acknowledged, TCP can detect gaps (lost packets) and fill them with retransmissions.
 
 == TCP vs. UDP: Choosing
 

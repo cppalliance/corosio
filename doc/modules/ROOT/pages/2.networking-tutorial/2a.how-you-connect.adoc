@@ -8,6 +8,7 @@
 //
 
 = What Happens When You Connect
+:page-mode: explanation
 
 Your program calls `connect`, and a moment later bytes arrive on a machine halfway around the world. Between those two events, a handful of protocols cooperate to make it happen. Understanding what each one does -- and where your code fits in the picture -- is the foundation for everything that follows.
 

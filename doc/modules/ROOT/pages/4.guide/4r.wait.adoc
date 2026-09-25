@@ -8,12 +8,13 @@
 //
 
 = Readiness Wait
+:page-mode: how-to
 
 The `wait()` method on every socket and acceptor suspends until the
 underlying file descriptor becomes ready in a chosen direction, without
 transferring any bytes. Use it to integrate with C libraries that own
-the I/O on a nonblocking file descriptor and only need notification
-that data is available or that the descriptor is writable.
+the I/O on a nonblocking file descriptor. Such libraries need only
+notification that data is available, or that the descriptor is writable.
 
 [NOTE]
 ====
@@ -26,16 +27,10 @@ include::example$snippets/4r_wait.cpp[tag=assume]
 
 == Overview
 
-Three directions are exposed via the `wait_type` enum:
-
-[source,cpp]
-----
-include::example$snippets/4r_wait.cpp[tag=wait_type_enum,indent=0]
-----
+Three directions are exposed via the cpp:wait_type[] enum.
 
 The awaitable yields an `error_code` with no `bytes_transferred`. On
-success the socket is observed to be ready; no data has been consumed
-from it.
+success the socket is ready; the wait consumes no data from it.
 
 [source,cpp]
 ----
@@ -46,19 +41,19 @@ include::example$snippets/4r_wait.cpp[tag=wait_read,indent=0]
 
 The original motivation is libraries such as libssh and libpq that
 manage their own buffers and do their own I/O on an `O_NONBLOCK`
-socket. They need two things from the surrounding event loop: "tell
-me when the fd is ready" without stealing bytes from the stream, and
-"never touch my descriptor".
+socket. They need two things from the surrounding event loop. First,
+"tell me when the fd is ready" without stealing bytes from the stream.
+Second, "never touch my descriptor".
 
-`wait()` provides the first: it never reads, writes, or consumes the
+`wait()` provides the first. It never reads, writes, or consumes the
 socket's pending error, so the library's next `PQconsumeInput` (or
-equivalent) sees everything the kernel has delivered. Adoption
-provides the second, with one rule to follow: `assign()` takes
-ownership and will close the descriptor, so adopt a `dup()` of the
-library's fd rather than the fd itself. Readiness lives on the open
-file description, which both descriptors share — the duplicate
-reports exactly the library's readiness, and closing it can never
-close the library's connection. Neither `assign()` nor `wait()`
+equivalent) sees everything the kernel has delivered. Adoption provides
+the second, with one rule to follow. `assign()` takes ownership and
+closes the descriptor, so adopt a `dup()` of the library's fd rather
+than the fd itself. Readiness lives on the open file description, which
+both descriptors share. The duplicate therefore reports exactly the
+library's readiness, and closing it can never close the library's
+connection. Neither `assign()` nor `wait()`
 alters the descriptor's flags, so the library's non-blocking
 configuration is untouched.
 
@@ -72,14 +67,14 @@ the library owns the byte stream; corosio supplies readiness only.
 
 On Windows, `dup()` does not duplicate a `SOCKET`. Either adopt the
 library's socket directly and `release()` it before the library needs
-exclusive ownership again, or create a true duplicate with
+exclusive ownership again. Or create a true duplicate with
 `WSADuplicateSocketW` and adopt that.
 
 == Acceptors
 
-`tcp_acceptor` and `local_stream_acceptor` expose the same `wait()`.
+cpp:tcp_acceptor[] and cpp:local_stream_acceptor[] expose the same `wait()`.
 For `wait_type::read`, completion signals that a connection is pending
-on the listen socket. A subsequent `accept()` will succeed without
+on the listen socket. A subsequent `accept()` succeeds without
 blocking:
 
 [source,cpp]
@@ -93,7 +88,7 @@ signaling) without holding an `accept()` call open.
 
 A connection already queued when the wait begins completes it
 immediately — including on an adopted listener whose backlog predates
-the adoption, the socket-activation handoff shape.
+the adoption.
 
 == Cancellation
 
@@ -119,13 +114,14 @@ include::example$snippets/4r_wait.cpp[tag=wait_timeout,indent=0]
 
 `wait(wait_type::write)` completes when the socket can accept a
 non-blocking write. On a socket that is not backpressured this is
-immediate; once the send buffer is full the wait parks until the peer
+immediate. Once the send buffer is full, the wait parks until the peer
 drains enough of it for a write to make progress again.
 
-That is the signal an external flush loop needs: code that owns its
-own buffers and retries "when the socket is writable" would busy-spin
-if the wait completed unconditionally, precisely when the socket is
-congested. Code that hands its buffers to `write_some()` does not need
+That is the signal an external flush loop needs. Code that owns its own
+buffers and retries "when the socket is writable" would busy-spin if the
+wait completed unconditionally. That would happen precisely when the
+socket is congested.
+Code that hands its buffers to `write_some()` does not need
 `wait(wait_type::write)` at all — `write_some()` already parks on the
 same condition.
 
@@ -143,10 +139,10 @@ parked write wait.
 
 On Windows (IOCP), stream-socket `wait_read` uses a zero-byte
 `WSARecv`: the kernel signals completion when data is available
-without consuming bytes. All other waits (datagram-read,
-acceptor-read, write-wait, error-wait) route through an auxiliary
-`WSAPoll`-based reactor that runs on a dedicated thread and bridges
-into the IOCP via `PostQueuedCompletionStatus`. The public API is
+without consuming bytes. All other waits — datagram-read, acceptor-read,
+write-wait, error-wait — route through an auxiliary `WSAPoll`-based
+reactor. That reactor runs on a dedicated thread and bridges into the
+IOCP via `PostQueuedCompletionStatus`. The public API is
 uniform across platforms.
 
 == See Also

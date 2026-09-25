@@ -39,19 +39,19 @@
 
 namespace boost::corosio {
 
-/** An asynchronous TCP socket with devirtualized I/O operations.
+/** Connects, reads, and writes over TCP, calling the backend directly.
 
-    This class template inherits from @ref tcp_socket and shadows
-    the async operations (`read_some`, `write_some`, `connect`) with
-    versions that call the backend implementation directly, allowing
-    the compiler to inline through the entire call chain.
+    This class template inherits from @ref tcp_socket. It shadows the
+    async operations (`read_some`, `write_some`, `connect`) with
+    versions that call the backend implementation directly. The compiler
+    can then inline through the entire call chain.
 
     Non-async operations (`open`, `close`, `cancel`, socket options)
     remain unchanged and dispatch through the compiled library.
 
     A `native_tcp_socket` IS-A `tcp_socket` and can be passed to
-    any function expecting `tcp_socket&` or `io_stream&`, in which
-    case virtual dispatch is used transparently.
+    any function expecting `tcp_socket&` or `io_stream&`. In that
+    case, virtual dispatch is used transparently.
 
     @tparam Backend A backend tag value (e.g., `epoll`,
         `iocp`) whose type provides the concrete implementation
@@ -162,7 +162,7 @@ class native_tcp_socket : public tcp_socket
 public:
     /** Construct a native socket from an execution context.
 
-        @param ctx The execution context that will own this socket.
+        @param ctx The execution context that owns this socket.
     */
     explicit native_tcp_socket(capy::execution_context& ctx)
         : io_object(create_handle<service_type>(ctx))
@@ -171,7 +171,11 @@ public:
 
     /** Construct a native socket from an executor.
 
-        @param ex The executor whose context will own the socket.
+        @param ex The executor whose context owns the socket.
+
+        @tparam Ex A type satisfying @ref capy::Executor. Must not
+            be `native_tcp_socket` itself (disables implicit
+            conversion from move).
     */
     template<class Ex>
         requires(!std::same_as<std::remove_cvref_t<Ex>, native_tcp_socket>) &&
@@ -205,7 +209,9 @@ public:
     */
     native_tcp_socket& operator=(native_tcp_socket&&) noexcept = default;
 
-    native_tcp_socket(native_tcp_socket const&)            = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    native_tcp_socket(native_tcp_socket const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     native_tcp_socket& operator=(native_tcp_socket const&) = delete;
 
     /** Asynchronously read data from the socket.

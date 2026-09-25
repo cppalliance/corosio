@@ -8,6 +8,7 @@
 //
 
 = Unix Domain Sockets
+:page-mode: how-to
 
 Unix domain sockets provide inter-process communication (IPC) on the same
 machine without going through the TCP/IP network stack. They use filesystem
@@ -43,11 +44,11 @@ Corosio provides two Unix socket types, mirroring the TCP/UDP split:
 |===
 | Class | Protocol | Description
 
-| `local_stream_socket`
+| cpp:local_stream_socket[]
 | `SOCK_STREAM`
 | Reliable, ordered byte stream (like TCP). Supports connect/accept.
 
-| `local_datagram_socket`
+| cpp:local_datagram_socket[]
 | `SOCK_DGRAM`
 | Message-oriented datagrams (like UDP). Preserves message boundaries.
 |===
@@ -94,12 +95,12 @@ include::example$snippets/4p_unix_sockets.cpp[tag=stream_pair,indent=0]
 
 == Datagram Sockets
 
-Datagram sockets preserve message boundaries. Each `send` delivers exactly
-one message that the receiver gets as a complete unit from `recv`.
+Datagram sockets preserve message boundaries. Each cpp:local_datagram_socket::send[send] delivers exactly
+one message that the receiver gets as a complete unit from cpp:local_datagram_socket::recv[recv].
 
 === Connectionless Mode
 
-Both sides bind to paths, then use `send_to`/`recv_from`:
+Both sides bind to paths, then use cpp:local_datagram_socket::send_to[send_to]/cpp:local_datagram_socket::recv_from[recv_from]:
 
 [source,cpp]
 ----
@@ -108,7 +109,7 @@ include::example$snippets/4p_unix_sockets.cpp[tag=datagram_connectionless,indent
 
 === Connected Mode
 
-After calling `connect()`, use `send`/`recv` without specifying the peer:
+After calling cpp:local_datagram_socket::connect[connect], use cpp:local_datagram_socket::send[send]/cpp:local_datagram_socket::recv[recv] without specifying the peer:
 
 [source,cpp]
 ----
@@ -127,7 +128,7 @@ include::example$snippets/4p_unix_sockets.cpp[tag=endpoints,indent=0]
 The maximum path length is 103 bytes. This is the portable minimum across
 platforms: the `sun_path` field in `sockaddr_un` is 108 bytes on Linux but
 only 104 on macOS and FreeBSD. Corosio uses a 104-byte buffer with a 103-char
-limit (one byte reserved for the null terminator) so a `local_endpoint` is
+limit (one byte reserved for the null terminator) so a cpp:local_endpoint[] is
 portable across all three. Paths longer than this throw
 `std::errc::filename_too_long`.
 
@@ -146,7 +147,7 @@ include::example$snippets/4p_unix_sockets.cpp[tag=abstract,indent=0]
 
 [cols="1,1,1"]
 |===
-| Feature | TCP (`tcp_socket`) | Unix (`local_stream_socket`)
+| Feature | TCP (cpp:tcp_socket[]) | Unix (cpp:local_stream_socket[])
 
 | Addressing
 | IP address + port
@@ -169,7 +170,7 @@ include::example$snippets/4p_unix_sockets.cpp[tag=abstract,indent=0]
 | File permissions
 
 | DNS resolution
-| Yes (via `resolver`)
+| Yes (via cpp:resolver[])
 | No (direct paths)
 
 | Platform

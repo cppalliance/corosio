@@ -10,6 +10,26 @@ file-patterns:
 # Filters
 include-symbols:
   - 'boost::corosio::**'
+# `io_context::sched_` and the copy its executor holds are `protected:`, which
+# `extract-private` does not filter -- protected members are part of the
+# interface a derived class sees. This one is not: it is the scheduler pointer
+# the backend installs during construction.
+exclude-symbols:
+  - 'boost::corosio::io_context::sched_'
+  - 'boost::corosio::io_context::executor_type::sched_'
+# The five socket-option accessors are the contract `set_option`/`get_option`
+# run on the caller's behalf, not calls a user makes: across the whole guide
+# they appear zero times, and `boolean_option` documents them at implementers
+# ("Derived types provide `level()` and `name()`"). They are public only
+# because `set_option` is an unconstrained template, so the contract is
+# duck-typed, and because the concrete options inherit them. Documenting all
+# sixteen copies presents plumbing as API, and on the thirteen options that
+# ignore the family argument the parameter text would say nothing true.
+  - 'boost::corosio::socket_option::*::level'
+  - 'boost::corosio::socket_option::*::name'
+  - 'boost::corosio::socket_option::*::data'
+  - 'boost::corosio::socket_option::*::size'
+  - 'boost::corosio::socket_option::*::resize'
 implementation-defined:
   - 'boost::corosio::detail'
   - 'boost::corosio::*::detail'
@@ -32,6 +52,21 @@ multipage: true
 
 # Sorting
 sort-members-relational-last: false
+
+# Warnings. These feed doc/lint/mrdocs-warnings.mjs, which parses the build log.
+# Adopted for parity with Capy, whose config enables the same set. MrDocs turns
+# warn-if-undocumented and warn-no-paramdoc on by default, so those were already
+# in force here; warn-unnamed-param, warn-broken-ref and warn-if-doc-error were
+# not, and each surfaces a class of finding Corosio was previously blind to.
+# Deliberately not warn-as-error: the mrdocs_warnings gate reports rather than
+# blocks (see .github/workflows/docs.yml), because MrDocs is a rolling
+# develop-release build whose output moves on its own.
+warnings: true
+warn-if-undocumented: true
+warn-no-paramdoc: true
+warn-unnamed-param: true
+warn-broken-ref: true
+warn-if-doc-error: true
 
 # Reference examples are injected by addons/extensions/reference-snippets.lua.
 # MrDocs loads extensions from <install>/share/mrdocs/addons/extensions, so the

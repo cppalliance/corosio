@@ -8,8 +8,9 @@
 //
 
 = I/O Context
+:page-mode: how-to
 
-The `io_context` class is the heart of Corosio. It's an event loop that
+The cpp:io_context[] class is the event loop every Corosio program needs: it
 processes asynchronous I/O operations, manages timers, and coordinates
 coroutine execution.
 
@@ -24,14 +25,14 @@ include::example$snippets/4c_io_context.cpp[tag=assume]
 
 == Overview
 
-Every Corosio program needs at least one `io_context`:
+Every Corosio program needs at least one cpp:io_context[]:
 
 [source,cpp]
 ----
 include::example$snippets/4c_io_context.cpp[tag=overview,indent=0]
 ----
 
-The `io_context`:
+The cpp:io_context[]:
 
 * Owns the platform-specific I/O backend (IOCP on Windows)
 * Maintains a queue of pending work items
@@ -47,9 +48,9 @@ The `io_context`:
 include::example$snippets/4c_io_context.cpp[tag=construct_default,indent=0]
 ----
 
-Creates an `io_context` with a concurrency hint of
+Creates an cpp:io_context[] with a concurrency hint of
 `std::max(1u, std::thread::hardware_concurrency())` and the default, fully
-thread-safe locking tier. Thread safety is governed by the `locking` option
+thread-safe locking tier. Thread safety is governed by the cpp:io_context_options::locking[locking] option
 (see xref:4.guide/4c2.configuration.adoc#single-threaded-mode[Locking Tiers]).
 
 === With Concurrency Hint
@@ -68,11 +69,12 @@ are expected to call `run()`. It tunes:
 * On Windows, it is passed to `CreateIoCompletionPort` as
   `NumberOfConcurrentThreads`, bounding how many completion threads may run
   concurrently. It is not a library-managed thread pool, and it is distinct
-  from `thread_pool_size`.
+  from cpp:io_context_options::thread_pool_size[thread_pool_size].
 
-The hint does not affect thread safety, which is governed by the `locking`
-tier. To reduce synchronization overhead in a single-threaded program, select a
-lockless `locking` tier (see
+The hint does not affect thread safety, which is governed by the cpp:io_context_options::locking[locking]
+tier. A lockless cpp:io_context_options::locking[locking] tier (`unsafe_io` or `unsafe`) overrides
+the effective hint to 1 regardless of the value passed. To reduce synchronization overhead in a
+single-threaded program, select a lockless cpp:io_context_options::locking[locking] tier (see
 xref:4.guide/4c2.configuration.adoc#single-threaded-mode[Locking Tiers]).
 
 == Running the Event Loop
@@ -143,7 +145,7 @@ queued but won't be processed.
 
 === stopped()
 
-Check if the context has been stopped:
+Check whether the context stopped:
 
 [source,cpp]
 ----
@@ -202,7 +204,7 @@ include::example$programs/4c_io_context_typical.cpp[tag=full]
 
 == Thread Safety
 
-The `io_context` is thread-safe by default, regardless of the concurrency hint:
+The cpp:io_context[] is thread-safe by default, regardless of the concurrency hint:
 multiple threads may call `run()` concurrently, and any thread may `post()` work
 into it.
 
@@ -211,9 +213,9 @@ into it.
 include::example$snippets/4c_io_context.cpp[tag=multithreaded,indent=0]
 ----
 
-Multiple threads can call `run()` concurrently. The `io_context` distributes
-work across threads. The one exception is a lockless `locking` tier: constructing
-with `io_context_options::locking` set to `unsafe_io` or `unsafe` drops these
+Multiple threads can call `run()` concurrently. The cpp:io_context[] distributes
+work across threads. The one exception is a lockless cpp:io_context_options::locking[locking] tier: constructing
+with cpp:io_context_options::locking[locking] set to `unsafe_io` or `unsafe` drops these
 guarantees (see
 xref:4.guide/4c2.configuration.adoc#single-threaded-mode[Locking Tiers]).
 
@@ -222,15 +224,15 @@ Don't access the same socket from multiple threads without synchronization.
 
 == Lifetime and Teardown
 
-The `io_context` must outlive every operation posted or dispatched through its
-executor, and no thread may still be inside a `run()` call when the context is
+The cpp:io_context[] must outlive every operation posted or dispatched through its
+executor. No thread may still be inside a `run()` call when the context is
 destroyed. Posting to the context — from a thread it does not track —
 concurrently with, or after, its destruction is undefined behavior.
 
-Work launched with `capy::run` / `capy::run_async` is work-tracked, so a normal
+Work started with `capy::run` / `capy::run_async` is work-tracked, so a normal
 `run()` completion already waits for it to finish. The safe teardown pattern is
-therefore: stop submitting new work, let every `run()` return, join the threads
-that ran the loop, and only then destroy the context.
+therefore to stop submitting new work and let every `run()` return. Join the
+threads that ran the loop, and only then destroy the context.
 
 [source,cpp]
 ----
@@ -243,7 +245,7 @@ behavior — join those threads first.
 
 == Inheritance from execution_context
 
-`io_context` inherits from `capy::execution_context`, providing service
+cpp:io_context[] inherits from `capy::execution_context`, providing service
 management:
 
 [source,cpp]
@@ -251,21 +253,21 @@ management:
 include::example$snippets/4c_io_context.cpp[tag=services,indent=0]
 ----
 
-Services are destroyed when the `io_context` is destroyed.
+Services are destroyed when the cpp:io_context[] is destroyed.
 
 == Platform Details
 
 === Windows (IOCP)
 
-On Windows, the `io_context` uses I/O Completion Ports:
+On Windows, the cpp:io_context[] uses I/O Completion Ports:
 
 * Scalable to thousands of concurrent connections
 * Efficient thread pool utilization
-* Native async I/O with zero-copy potential
+* Native async I/O
 
 === Linux (epoll)
 
-On Linux, the `io_context` uses epoll:
+On Linux, the cpp:io_context[] uses epoll:
 
 * Scalable to large numbers of file descriptors
 * Edge-triggered notifications
@@ -281,7 +283,7 @@ Linux also provides an io_uring backend:
 
 === macOS / FreeBSD (kqueue)
 
-On macOS and FreeBSD, the `io_context` uses kqueue:
+On macOS and FreeBSD, the cpp:io_context[] uses kqueue:
 
 * Efficient event notification
 * File descriptor monitoring

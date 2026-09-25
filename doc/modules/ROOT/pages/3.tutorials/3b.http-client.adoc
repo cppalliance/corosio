@@ -8,6 +8,7 @@
 //
 
 = HTTP Client Tutorial
+:page-mode: tutorial
 
 This tutorial builds a simple HTTP client that connects to a server, sends
 a GET request, and reads the response. You'll learn socket connection,
@@ -72,7 +73,7 @@ include::example$client/http_client.cpp[tag=run_client]
 ----
 
 `connect()` opens the socket automatically. We pass the socket as an
-`io_stream&` to `do_request`, so the same function works with any plain
+cpp:io_stream[] to `do_request`, so the same function works with any plain
 socket. TLS streams have a different type and need their own overload, as
 shown below.
 
@@ -104,7 +105,7 @@ This:
 
 This example uses exceptions because:
 
-* Connection errors are fatal—we want to abort
+* Connection errors are fatal. We want to abort.
 * The code is more linear without error checks
 
 Compare structured bindings:
@@ -128,7 +129,7 @@ bindings when errors are expected (like EOF during reading).
 
 First, find an IP address for a website:
 
-[source,bash]
+[role=output]
 ----
 $ nslookup www.example.com
 ...
@@ -137,7 +138,7 @@ Address: 93.184.215.14
 
 Then run the client:
 
-[source,bash]
+[role=output]
 ----
 $ ./http_client 93.184.215.14 80
 HTTP/1.1 200 OK
@@ -151,9 +152,9 @@ Content-Type: text/html; charset=UTF-8
 
 == Adding TLS Support
 
-To make HTTPS requests, wrap the connected socket in a `wolfssl_stream`.
-A `wolfssl_stream` is not an `io_stream`, so it needs its own
-`do_request` overload taking `corosio::tls_stream&`:
+To make HTTPS requests, wrap the connected socket in a cpp:wolfssl_stream[].
+A cpp:wolfssl_stream[] is not an cpp:io_stream[], so it needs its own
+`do_request` overload taking cpp:tls_stream[]:
 
 [source,cpp]
 ----
@@ -163,7 +164,7 @@ include::example$https-client/https_client.cpp[tag=tls_client]
 ----
 
 The TLS overload mirrors the plain one: `capy::read` and `capy::write`
-work with `tls_stream` exactly as they do with `io_stream`. Only the
+work with cpp:tls_stream[] exactly as they do with cpp:io_stream[]. Only the
 parameter type and the surrounding handshake/shutdown differ.
 
 == Next Steps

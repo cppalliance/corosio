@@ -186,8 +186,7 @@ public:
         operations are added to the global queue under mutex and a
         waiter is signaled.
 
-        @par Preconditions
-        work_started() must have been called for each operation.
+        @pre work_started() must have been called for each operation.
 
         @param ops Queue of operations to post.
     */

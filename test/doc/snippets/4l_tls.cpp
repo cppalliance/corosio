@@ -50,7 +50,6 @@
 
 namespace corosio = boost::corosio;
 namespace capy    = boost::capy;
-using namespace boost::corosio;
 // end::assume[]
 
 #include <boost/corosio/io/io_stream.hpp>
@@ -77,9 +76,10 @@ namespace {
 verified_client(corosio::io_context& ioc)
 {
     // tag::verified_client[]
-    tls_context ctx;
-    ctx.set_default_verify_paths();             // trust the system CAs
-    ctx.set_verify_mode(tls_verify_mode::peer); // require + verify the peer
+    corosio::tls_context ctx;
+    ctx.set_default_verify_paths(); // trust the system CAs
+    ctx.set_verify_mode(
+        corosio::tls_verify_mode::peer); // require + verify the peer
 
     corosio::tcp_socket sock(ioc);
     corosio::wolfssl_stream secure(&sock, ctx);
@@ -96,10 +96,10 @@ typical_flow(
 {
     // tag::typical_flow[]
     // 1. Configure a context
-    tls_context ctx;
+    corosio::tls_context ctx;
     if (auto ec = ctx.set_default_verify_paths(); ec)
         throw std::system_error(ec);
-    if (auto ec = ctx.set_verify_mode(tls_verify_mode::peer); ec)
+    if (auto ec = ctx.set_verify_mode(corosio::tls_verify_mode::peer); ec)
         throw std::system_error(ec);
 
     // 2. Connect a socket (connect() opens it automatically)
@@ -110,7 +110,7 @@ typical_flow(
     // 3. Wrap the connected socket (pointer form; does not take ownership)
     corosio::wolfssl_stream secure(&sock, ctx);
     secure.set_hostname("api.example.com");
-    if (auto [ec] = co_await secure.handshake(tls_role::client); ec)
+    if (auto [ec] = co_await secure.handshake(corosio::tls_role::client); ec)
         throw std::system_error(ec);
 
     // 4. Use encrypted I/O
@@ -164,7 +164,7 @@ wolfssl_construction(corosio::io_context& ioc)
     corosio::tcp_socket sock(ioc);
     // ... connect sock ...
 
-    tls_context ctx;
+    corosio::tls_context ctx;
     // ... configure ctx ...
 
     // Reference form: sock must outlive secure
@@ -177,7 +177,7 @@ wolfssl_construction(corosio::io_context& ioc)
 #endif
 
 [[maybe_unused]] void
-alpn_read_back(tls_context& ctx, corosio::tls_stream& stream)
+alpn_read_back(corosio::tls_context& ctx, corosio::tls_stream& stream)
 {
     // tag::alpn_config[]
     // Prefer HTTP/2, fall back to HTTP/1.1
@@ -200,7 +200,7 @@ hostname_verification(corosio::tls_stream& secure)
 client_handshake(corosio::tls_stream& secure)
 {
     // tag::client_handshake[]
-    auto [ec] = co_await secure.handshake(tls_role::client);
+    auto [ec] = co_await secure.handshake(corosio::tls_role::client);
     if (ec)
     {
         std::cerr << "Handshake failed: " << ec.message() << "\n";
@@ -213,7 +213,7 @@ client_handshake(corosio::tls_stream& secure)
 server_handshake(corosio::tls_stream& secure)
 {
     // tag::server_handshake[]
-    auto [ec] = co_await secure.handshake(tls_role::server);
+    auto [ec] = co_await secure.handshake(corosio::tls_role::server);
     // end::server_handshake[]
 }
 
@@ -293,7 +293,7 @@ send_request(corosio::tls_stream& stream)
 // at column zero even though they live inside a scaffolding coroutine
 // (Asciidoctor concatenates same-name tag regions).
 [[maybe_unused]] capy::task<>
-overload_selection(corosio::io_context& ioc, tls_context& ctx)
+overload_selection(corosio::io_context& ioc, corosio::tls_context& ctx)
 {
     // tag::stream_overloads[]
 
@@ -332,16 +332,16 @@ https_get(
     }
 
     // Configure TLS
-    tls_context ctx;
+    corosio::tls_context ctx;
     if (auto ec = ctx.set_default_verify_paths(); ec)
         throw std::system_error(ec);
-    if (auto ec = ctx.set_verify_mode(tls_verify_mode::peer); ec)
+    if (auto ec = ctx.set_verify_mode(corosio::tls_verify_mode::peer); ec)
         throw std::system_error(ec);
 
     // Wrap the connected socket (pointer form) and handshake
     corosio::wolfssl_stream secure(&sock, ctx);
     secure.set_hostname(hostname);
-    if (auto [ec] = co_await secure.handshake(tls_role::client); ec)
+    if (auto [ec] = co_await secure.handshake(corosio::tls_role::client); ec)
         throw std::system_error(ec);
 
     // Send HTTP request
@@ -381,7 +381,8 @@ https_get(
 }
 // end::https_get[]
 
-capy::task<void> handle_tls_client(corosio::tcp_socket sock, tls_context ctx);
+capy::task<void>
+handle_tls_client(corosio::tcp_socket sock, corosio::tls_context ctx);
 
 // Binds a port and accepts forever; compiled but never executed.
 // tag::tls_server[]
@@ -389,9 +390,9 @@ capy::task<void>
 tls_server(corosio::io_context& ioc, std::uint16_t port)
 {
     // Configure server TLS context
-    tls_context ctx;
+    corosio::tls_context ctx;
     ctx.use_certificate_chain_file("server-fullchain.pem");
-    ctx.use_private_key_file("server.key", tls_file_format::pem);
+    ctx.use_private_key_file("server.key", corosio::tls_file_format::pem);
 
     // Set up acceptor
     corosio::tcp_acceptor acc(ioc, corosio::endpoint(port));
@@ -410,12 +411,12 @@ tls_server(corosio::io_context& ioc, std::uint16_t port)
 }
 
 capy::task<void>
-handle_tls_client(corosio::tcp_socket sock, tls_context ctx)
+handle_tls_client(corosio::tcp_socket sock, corosio::tls_context ctx)
 {
     // Owning form: the handler owns the socket, so move it in
     corosio::wolfssl_stream secure(std::move(sock), ctx);
 
-    auto [ec] = co_await secure.handshake(tls_role::server);
+    auto [ec] = co_await secure.handshake(corosio::tls_role::server);
     if (ec)
         co_return;
 
@@ -440,21 +441,21 @@ struct tls_test
     {
         // tag::default_context[]
         // Default context (TLS 1.2+ enabled)
-        tls_context ctx;
+        corosio::tls_context ctx;
         // end::default_context[]
         BOOST_TEST(true);
     }
 
     void testLoadCertificates()
     {
-        tls_context ctx;
+        corosio::tls_context ctx;
         // tag::load_certificates[]
         // From file
-        ctx.use_certificate_file("server.crt", tls_file_format::pem);
+        ctx.use_certificate_file("server.crt", corosio::tls_file_format::pem);
 
         // From memory
         std::string cert_data = load_cert_pem();
-        ctx.use_certificate(cert_data, tls_file_format::pem);
+        ctx.use_certificate(cert_data, corosio::tls_file_format::pem);
 
         // Certificate chain (cert + intermediates)
         ctx.use_certificate_chain_file("fullchain.pem");
@@ -464,34 +465,35 @@ struct tls_test
 
     void testLoadPrivateKeys()
     {
-        tls_context ctx;
+        corosio::tls_context ctx;
         std::string key_data = load_cert_pem();
         // tag::load_private_keys[]
         // From file
-        ctx.use_private_key_file("server.key", tls_file_format::pem);
+        ctx.use_private_key_file("server.key", corosio::tls_file_format::pem);
 
         // From memory
-        ctx.use_private_key(key_data, tls_file_format::pem);
+        ctx.use_private_key(key_data, corosio::tls_file_format::pem);
         // end::load_private_keys[]
         BOOST_TEST(true);
     }
 
     void testPasswordCallback()
     {
-        tls_context ctx;
+        corosio::tls_context ctx;
         // tag::password_callback[]
         ctx.set_password_callback(
-            [](std::size_t max_len, tls_password_purpose purpose) {
+            [](std::size_t max_len, corosio::tls_password_purpose purpose) {
                 return std::string("my-key-password");
             });
-        ctx.use_private_key_file("encrypted.key", tls_file_format::pem);
+        ctx.use_private_key_file(
+            "encrypted.key", corosio::tls_file_format::pem);
         // end::password_callback[]
         BOOST_TEST(true);
     }
 
     void testPkcs12()
     {
-        tls_context ctx;
+        corosio::tls_context ctx;
         // tag::pkcs12[]
         ctx.use_pkcs12_file("credentials.pfx", "bundle-password");
         // end::pkcs12[]
@@ -500,7 +502,7 @@ struct tls_test
 
     void testSystemTrust()
     {
-        tls_context ctx;
+        corosio::tls_context ctx;
         // tag::system_trust[]
         ctx.set_default_verify_paths();
         // end::system_trust[]
@@ -509,7 +511,7 @@ struct tls_test
 
     void testCustomCas()
     {
-        tls_context ctx;
+        corosio::tls_context ctx;
         std::string ca_pem = load_cert_pem();
         // tag::custom_cas[]
         // Single CA from memory
@@ -528,20 +530,20 @@ struct tls_test
 
     void testProtocolVersions()
     {
-        tls_context ctx;
+        corosio::tls_context ctx;
         // tag::protocol_versions[]
         // Require TLS 1.3 minimum
-        ctx.set_min_protocol_version(tls_version::tls_1_3);
+        ctx.set_min_protocol_version(corosio::tls_version::tls_1_3);
 
         // Cap at TLS 1.2 (unusual, but possible)
-        ctx.set_max_protocol_version(tls_version::tls_1_2);
+        ctx.set_max_protocol_version(corosio::tls_version::tls_1_2);
         // end::protocol_versions[]
         BOOST_TEST(true);
     }
 
     void testCipherSuites()
     {
-        tls_context ctx;
+        corosio::tls_context ctx;
         // tag::cipher_suites[]
         // TLS 1.2-and-below cipher list (OpenSSL syntax)
         ctx.set_ciphersuites("ECDHE+AESGCM:ECDHE+CHACHA20");
@@ -553,23 +555,23 @@ struct tls_test
 
     void testVerifyModes()
     {
-        tls_context ctx;
+        corosio::tls_context ctx;
         // tag::verify_modes[]
         // Don't verify peer (not recommended for clients)
-        ctx.set_verify_mode(tls_verify_mode::none);
+        ctx.set_verify_mode(corosio::tls_verify_mode::none);
 
         // Verify if peer presents certificate
-        ctx.set_verify_mode(tls_verify_mode::peer);
+        ctx.set_verify_mode(corosio::tls_verify_mode::peer);
 
         // Require peer certificate (fail if not presented)
-        ctx.set_verify_mode(tls_verify_mode::require_peer);
+        ctx.set_verify_mode(corosio::tls_verify_mode::require_peer);
         // end::verify_modes[]
-        BOOST_TEST(!ctx.set_verify_mode(tls_verify_mode::peer));
+        BOOST_TEST(!ctx.set_verify_mode(corosio::tls_verify_mode::peer));
     }
 
     void testVerifyDepth()
     {
-        tls_context ctx;
+        corosio::tls_context ctx;
         // tag::verify_depth[]
         ctx.set_verify_depth(10); // Max 10 intermediate certs
         // end::verify_depth[]
@@ -578,7 +580,7 @@ struct tls_test
 
     void testVerifyCallback()
     {
-        tls_context ctx;
+        corosio::tls_context ctx;
         // tag::verify_callback[]
         ctx.set_verify_callback(
             [](bool preverified, corosio::verify_context& ctx) {
@@ -595,7 +597,7 @@ struct tls_test
 
     void testRevocation()
     {
-        tls_context ctx;
+        corosio::tls_context ctx;
         std::string crl_data = load_cert_pem();
         // tag::revocation[]
         // Load a CRL (PEM or DER), from file or memory
@@ -603,7 +605,7 @@ struct tls_test
         ctx.add_crl(crl_data);
 
         // Choose how strict to be
-        ctx.set_revocation_policy(tls_revocation_policy::hard_fail);
+        ctx.set_revocation_policy(corosio::tls_revocation_policy::hard_fail);
         // end::revocation[]
         BOOST_TEST(true);
     }
@@ -611,29 +613,33 @@ struct tls_test
     void testMutualTlsServer()
     {
         // tag::mtls_server[]
-        tls_context server_ctx;
+        corosio::tls_context server_ctx;
         server_ctx.use_certificate_chain_file("server.pem");
-        server_ctx.use_private_key_file("server.key", tls_file_format::pem);
+        server_ctx.use_private_key_file(
+            "server.key", corosio::tls_file_format::pem);
 
         // Require client certificate
-        server_ctx.set_verify_mode(tls_verify_mode::require_peer);
+        server_ctx.set_verify_mode(corosio::tls_verify_mode::require_peer);
         server_ctx.load_verify_file("client-ca.pem");
         // end::mtls_server[]
-        BOOST_TEST(!server_ctx.set_verify_mode(tls_verify_mode::require_peer));
+        BOOST_TEST(!server_ctx.set_verify_mode(
+            corosio::tls_verify_mode::require_peer));
     }
 
     void testMutualTlsClient()
     {
         // tag::mtls_client[]
-        tls_context client_ctx;
+        corosio::tls_context client_ctx;
         client_ctx.set_default_verify_paths();
-        client_ctx.set_verify_mode(tls_verify_mode::peer);
+        client_ctx.set_verify_mode(corosio::tls_verify_mode::peer);
 
         // Provide client certificate
-        client_ctx.use_certificate_file("client.crt", tls_file_format::pem);
-        client_ctx.use_private_key_file("client.key", tls_file_format::pem);
+        client_ctx.use_certificate_file(
+            "client.crt", corosio::tls_file_format::pem);
+        client_ctx.use_private_key_file(
+            "client.key", corosio::tls_file_format::pem);
         // end::mtls_client[]
-        BOOST_TEST(!client_ctx.set_verify_mode(tls_verify_mode::peer));
+        BOOST_TEST(!client_ctx.set_verify_mode(corosio::tls_verify_mode::peer));
     }
 
     void run()

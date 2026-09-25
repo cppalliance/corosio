@@ -25,7 +25,7 @@
 
 namespace boost::corosio {
 
-/** Abstract base for streams that support async reads.
+/** Reads bytes from a stream asynchronously.
 
     Provides the `read_some` operation via a pure virtual
     `do_read_some` dispatch point. Concrete classes override
@@ -49,8 +49,8 @@ protected:
     struct read_some_awaitable
         : detail::bytes_op_base<read_some_awaitable<MutableBufferSequence>>
     {
-        io_read_stream& ios_;
-        MutableBufferSequence buffers_;
+    private:
+        friend io_read_stream;
 
         read_some_awaitable(
             io_read_stream& ios, MutableBufferSequence buffers) noexcept
@@ -58,6 +58,11 @@ protected:
             , buffers_(std::move(buffers))
         {
         }
+
+        friend detail::bytes_op_base<
+            read_some_awaitable<MutableBufferSequence>>;
+        io_read_stream& ios_;
+        MutableBufferSequence buffers_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -79,19 +84,24 @@ protected:
         @return Coroutine handle to resume immediately.
     */
     virtual std::coroutine_handle<> do_read_some(
-        std::coroutine_handle<>,
-        capy::executor_ref,
-        buffer_param,
-        std::stop_token,
-        std::error_code*,
-        std::size_t*) = 0;
+        std::coroutine_handle<> h,
+        capy::executor_ref ex,
+        buffer_param buffers,
+        std::stop_token token,
+        std::error_code* ec,
+        std::size_t* bytes) = 0;
 
+    /// Default construct; the handle is supplied through @ref io_object.
     io_read_stream() noexcept = default;
 
-    io_read_stream(io_read_stream&&) noexcept            = default;
+    /// Move construct; the handle moves with @ref io_object.
+    io_read_stream(io_read_stream&&) noexcept = default;
+    /// Move assignment is disabled; reseating a live stream is not supported.
     io_read_stream& operator=(io_read_stream&&) noexcept = delete;
-    io_read_stream(io_read_stream const&)                = delete;
-    io_read_stream& operator=(io_read_stream const&)     = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    io_read_stream(io_read_stream const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
+    io_read_stream& operator=(io_read_stream const&) = delete;
 
 public:
     /** Asynchronously read data from the stream.

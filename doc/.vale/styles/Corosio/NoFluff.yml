@@ -1,0 +1,14 @@
+extends: existence
+message: "Filler/fluff — delete or rewrite (style guide C5/C9): '%s'."
+level: warning
+ignorecase: true
+tokens:
+  - simply
+  - basically
+  - essentially
+  - obviously
+  - of course
+  - note that
+  - in order to
+  - due to the fact that
+  - utilize

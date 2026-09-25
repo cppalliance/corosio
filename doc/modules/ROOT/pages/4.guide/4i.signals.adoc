@@ -8,8 +8,9 @@
 //
 
 = Signal Handling
+:page-mode: how-to
 
-The `signal_set` class provides asynchronous signal handling. It allows
+The cpp:signal_set[] class provides asynchronous signal handling. It allows
 coroutines to wait for operating system signals like SIGINT (Ctrl+C) or
 SIGTERM.
 
@@ -89,7 +90,7 @@ Add a signal to the set:
 include::example$snippets/4i_signals.cpp[tag=add_signal,indent=0]
 ----
 
-Adding a signal that's already in the set has no effect.
+Adding a signal that's already in the set with the same flags has no effect.
 
 ==== Signal Flags (POSIX)
 
@@ -128,13 +129,13 @@ Available flags:
 | Accept existing flags if signal is already registered
 |===
 
-NOTE: On Windows, only `none` and `dont_care` flags are supported. On some POSIX
-systems, `no_child_wait` may not be available. Using unsupported flags returns
-`operation_not_supported`.
+NOTE: On Windows, only `none` and `dont_care` flags are supported. On POSIX
+systems without `SA_NOCLDWAIT`, `no_child_wait` is unavailable. Using
+unsupported flags returns `operation_not_supported`.
 
 ==== Flag Compatibility
 
-When multiple `signal_set` objects register for the same signal, they must use
+When multiple cpp:signal_set[] objects register for the same signal, they must use
 compatible flags:
 
 [source,cpp]
@@ -203,7 +204,7 @@ include::example$snippets/4i_signals.cpp[tag=stop_token,indent=0]
 
 A stop request cancels only the wait that is pending when it arrives. Unlike
 `cancel()`, whose cancellation is latched and consumed by the next `wait()`,
-a stop request that arrives between waits is discarded: the following
+a stop request that arrives between waits is discarded. The following
 `wait()` starts uncancelled.
 
 NOTE: On Windows the cancelled wait resumes inline, on the thread that
@@ -262,15 +263,15 @@ NOTE: After a move, the destination uses the source's execution context.
 |===
 | Operation | Thread Safety
 
-| Distinct signal_sets
+| Distinct cpp:signal_set[] objects
 | Safe from different threads
 
-| Same signal_set
+| The same cpp:signal_set[]
 | NOT safe for concurrent operations
 |===
 
 Don't call `wait()`, `add()`, `remove()`, `clear()`, or `cancel()`
-concurrently on the same signal_set.
+concurrently on the same cpp:signal_set[].
 
 == Example: Server with Graceful Shutdown
 
@@ -303,7 +304,7 @@ to an internal self-pipe (a `write()`, saving and restoring `errno`). It never
 locks a mutex, allocates memory, or dispatches handlers. The event loop drains
 the pipe and completes waiting `wait()` operations in normal context. As a
 result it is safe for a signal to arrive at any time, including while another
-thread is modifying a `signal_set`.
+thread is modifying a cpp:signal_set[].
 
 == Next Steps
 

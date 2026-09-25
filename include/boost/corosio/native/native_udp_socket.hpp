@@ -39,13 +39,12 @@
 
 namespace boost::corosio {
 
-/** An asynchronous UDP socket with devirtualized I/O operations.
+/** Sends and receives UDP datagrams, calling the backend directly.
 
-    This class template inherits from @ref udp_socket and shadows
-    the async operations (`send_to`, `recv_from`, `connect`, `send`,
-    `recv`) with versions that call the backend implementation
-    directly, allowing the compiler to inline through the entire
-    call chain.
+    This class template inherits from @ref udp_socket. It shadows the
+    async operations (`send_to`, `recv_from`, `connect`, `send`, `recv`)
+    with versions that call the backend implementation directly. The
+    compiler can then inline through the entire call chain.
 
     Non-async operations (`open`, `close`, `cancel`, `bind`,
     socket options) remain unchanged and dispatch through the
@@ -234,7 +233,7 @@ class native_udp_socket : public udp_socket
 public:
     /** Construct a native UDP socket from an execution context.
 
-        @param ctx The execution context that will own this socket.
+        @param ctx The execution context that owns this socket.
     */
     explicit native_udp_socket(capy::execution_context& ctx)
         : udp_socket(create_handle<service_type>(ctx))
@@ -243,7 +242,11 @@ public:
 
     /** Construct a native UDP socket from an executor.
 
-        @param ex The executor whose context will own the socket.
+        @param ex The executor whose context owns the socket.
+
+        @tparam Ex A type satisfying @ref capy::Executor. Must not
+            be `native_udp_socket` itself (disables implicit
+            conversion from move).
     */
     template<class Ex>
         requires(!std::same_as<std::remove_cvref_t<Ex>, native_udp_socket>) &&
@@ -252,13 +255,30 @@ public:
     {
     }
 
-    /// Move construct.
+    /** Move construct.
+
+        @param other The socket to move from.
+
+        @pre No awaitables returned by @p other's methods exist.
+        @pre The execution context associated with @p other must
+            outlive this socket.
+    */
     native_udp_socket(native_udp_socket&&) noexcept = default;
 
-    /// Move assign.
+    /** Move assign.
+
+        @param other The socket to move from.
+
+        @pre No awaitables returned by either `*this` or @p other's
+            methods exist.
+        @pre The execution context associated with @p other must
+            outlive this socket.
+    */
     native_udp_socket& operator=(native_udp_socket&&) noexcept = default;
 
-    native_udp_socket(native_udp_socket const&)            = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    native_udp_socket(native_udp_socket const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     native_udp_socket& operator=(native_udp_socket const&) = delete;
 
     /** Send a datagram to the specified destination.
@@ -298,7 +318,7 @@ public:
         dispatch. Otherwise identical to @ref udp_socket::recv_from.
 
         @param buffers The buffer sequence to receive data into.
-        @param source Reference to an endpoint that will be set to
+        @param source Reference to an endpoint that receives
             the sender's address on successful completion.
         @param flags Message flags (e.g. message_flags::peek).
 

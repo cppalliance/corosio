@@ -8,6 +8,7 @@
 //
 
 = Buffer Sequences
+:page-mode: how-to
 
 Corosio I/O operations work with buffer sequences from Boost.Capy. This page
 explains how to use buffers effectively.
@@ -140,7 +141,7 @@ its `data()`.
 
 == buffer_param
 
-The `buffer_param` class type-erases buffer sequences:
+The cpp:buffer_param[] class type-erases buffer sequences:
 
 [source,cpp]
 ----

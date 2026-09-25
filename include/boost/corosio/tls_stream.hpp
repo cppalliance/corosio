@@ -38,17 +38,17 @@ enum class tls_role
     server
 };
 
-/** Abstract base class for TLS streams.
+/** Reads, writes, and manages the handshake lifecycle of a TLS
+    session over an underlying stream.
 
     This class provides a runtime-polymorphic interface for TLS
-    implementations. Derived classes (openssl_stream, wolfssl_stream)
+    implementations. Derived classes (`openssl_stream`, `wolfssl_stream`)
     implement the virtual functions to provide backend-specific
     TLS functionality.
 
-    Unlike @ref io_stream which represents OS-level I/O completed
-    by the kernel, TLS streams are coroutine-based: their operations
-    are implemented as coroutines that orchestrate sub-operations
-    on the underlying stream.
+    An @ref io_stream represents OS-level I/O completed by the kernel.
+    TLS streams are coroutine-based instead: their operations are
+    coroutines that orchestrate sub-operations on the underlying stream.
 
     The non-virtual template wrappers (`read_some`, `write_some`)
     satisfy the `capy::Stream` concept, enabling TLS streams to
@@ -58,10 +58,10 @@ enum class tls_role
     Distinct objects: Safe.@n
     Shared objects: Unsafe, with one exception: one read operation and
     one write operation may be in flight simultaneously. `shutdown()`
-    may overlap a pending read. When the execution context runs on
-    multiple threads, all operations on one stream must be performed
-    within the same `capy::strand` (or otherwise never run
-    concurrently); a single-threaded context needs no strand.
+    may overlap a pending read. On a multi-threaded execution context,
+    all operations on one stream must run within the same
+    `capy::strand`, or must otherwise never run concurrently. A
+    single-threaded context needs no strand.
 
     @see openssl_stream, wolfssl_stream
 */
@@ -71,13 +71,15 @@ public:
     /// Destroy the TLS stream.
     virtual ~tls_stream() = default;
 
-    tls_stream(tls_stream const&)            = delete;
+    /// Copy construction is disabled; copying a stream would slice the derived session.
+    tls_stream(tls_stream const&) = delete;
+    /// Copy assignment is disabled; copying a stream would slice the derived session.
     tls_stream& operator=(tls_stream const&) = delete;
 
     /** Initiate an asynchronous read operation.
 
         Reads decrypted data into the provided buffer sequence. The
-        operation completes when at least one byte has been read,
+        operation completes when it reads at least one byte,
         or an error occurs.
 
         This non-virtual template wrapper satisfies the `capy::Stream`
@@ -102,8 +104,8 @@ public:
     /** Initiate an asynchronous write operation.
 
         Encrypts and writes data from the provided buffer sequence.
-        The operation completes when at least one byte has been
-        written, or an error occurs.
+        The operation completes when it writes at least one byte,
+        or an error occurs.
 
         This non-virtual template wrapper satisfies the `capy::Stream`
         concept by delegating to the virtual `do_write_some`.
@@ -131,14 +133,13 @@ public:
         For server connections, this waits for the ClientHello and
         sends the server's response.
 
-        A handshake attempt, successful or not, consumes the stream
-        state: a subsequent call behaves as if `reset()` had been
-        called first and performs a fresh handshake using the
-        current configuration.
+        A handshake attempt consumes the stream state, whether it
+        succeeds or not. A subsequent call behaves as if `reset()` ran
+        first, and performs a fresh handshake using the current
+        configuration.
 
-        @par Preconditions
-        The underlying stream must be connected. No other TLS
-        operation may be in progress on this stream.
+        @pre The underlying stream must be connected. No other TLS
+            operation may be in progress on this stream.
 
         @param role The handshake role, client or server.
 
@@ -151,17 +152,16 @@ public:
         Initiates the TLS shutdown sequence by sending a close_notify
         alert and waiting for the peer's close_notify response.
 
-        @par Preconditions
-        A handshake must have completed successfully. May overlap
-        a pending read. No concurrent write may be in progress.
+        @pre A handshake must have completed successfully. May overlap
+            a pending read. No concurrent write may be in progress.
 
         @par Postconditions
-        If the transport ends before the peer's close_notify is
-        received, the result is `capy::error::stream_truncated`, not
-        success: an unannounced close is indistinguishable from a
-        truncation attack and must not be reported as a clean
-        shutdown. A shutdown stopped mid-flight reports canceled;
-        any other transport error propagates unchanged.
+        If the transport ends before the peer's close_notify arrives,
+        the result is `capy::error::stream_truncated`, not success. An
+        unannounced close is indistinguishable from a truncation attack,
+        so it must not be reported as a clean shutdown. A shutdown
+        stopped mid-flight reports canceled. Any other transport
+        error propagates unchanged.
 
         @return An awaitable yielding `(error_code)`.
     */
@@ -178,16 +178,15 @@ public:
         implicitly performs a reset first, so explicit calls
         are only needed to eagerly release session state.
 
-        @par Preconditions
-        No TLS operation (handshake, read, write, shutdown) is
-        in progress.
+        @pre No TLS operation (handshake, read, write, shutdown) is
+            in progress.
 
         @par Thread Safety
         Not thread safe. The caller must ensure no concurrent
         operations are in progress on this stream.
 
         @note If called mid-session before `shutdown()`, pending
-            TLS data is discarded and the peer will observe a
+            TLS data is discarded and the peer observes a
             truncated stream.
     */
     virtual void reset() = 0;
@@ -206,8 +205,8 @@ public:
         verification.
 
         If `hostname` is an IP literal (IPv4 or IPv6), it is matched
-        against the certificate's iPAddress entries instead of its
-        DNS names, and no SNI is sent (RFC 6066 excludes literals).
+        against the certificate's iPAddress entries instead of its DNS
+        names. No SNI is sent, because RFC 6066 excludes literals.
         A backend build that cannot match iPAddress entries fails the
         handshake with `std::errc::function_not_supported` rather
         than skip verification.
@@ -257,10 +256,10 @@ public:
         during the TLS handshake, from the list supplied via
         @ref tls_context::set_alpn.
 
-        @return The negotiated protocol, or an empty view if no
-            protocol was negotiated, ALPN was not offered, the
-            handshake has not completed, or the backend/build does
-            not support ALPN.
+        @return The negotiated protocol, or an empty view. It is empty
+        if no protocol was negotiated or ALPN was not offered. It is
+        also empty if the handshake has not completed, or if the build
+        lacks ALPN support.
 
         @par Thread Safety
         Safe to call after the handshake completes; not safe to call
@@ -272,9 +271,10 @@ public:
     } // LCOV_EXCL_LINE every concrete stream overrides this; the base default is never called
 
 protected:
+    /// Default construct; a derived class supplies the session.
     tls_stream() = default;
 
-    /** Virtual read implementation.
+    /** Perform the backend-specific decrypted read.
 
         Derived classes override this to perform TLS decryption
         and read operations.
@@ -287,7 +287,7 @@ protected:
         capy::detail::mutable_buffer_array<capy::detail::max_iovec_>
             buffers) = 0;
 
-    /** Virtual write implementation.
+    /** Perform the backend-specific encrypted write.
 
         Derived classes override this to perform TLS encryption
         and write operations.

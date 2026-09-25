@@ -32,12 +32,12 @@
 
 namespace boost::corosio {
 
-/** A random-access file with devirtualized async I/O operations.
+/** Reads and writes a file at arbitrary offsets, calling the backend directly.
 
-    This class template inherits from @ref random_access_file and
-    shadows `read_some_at` / `write_some_at` with versions that
-    call the backend implementation directly, allowing the compiler
-    to inline through the entire call chain.
+    This class template inherits from @ref random_access_file. It
+    shadows `read_some_at` / `write_some_at` with versions that call the
+    backend implementation directly. The compiler can then inline
+    through the entire call chain.
 
     Non-async operations (`open`, `close`, `size`, `resize`,
     `sync_data`, `sync_all`) remain unchanged and dispatch through
@@ -47,9 +47,9 @@ namespace boost::corosio {
     can be passed to any function expecting `random_access_file&`,
     in which case virtual dispatch is used transparently.
 
-    @note On POSIX platforms, file I/O is dispatched to a thread
-    pool regardless of the chosen reactor backend, so all three
-    reactor tags (`epoll`, `select`, `kqueue`) resolve to the same
+    @note On POSIX platforms, file I/O is dispatched to a thread pool
+    regardless of the chosen reactor backend. All three reactor tags
+    (`epoll`, `select`, `kqueue`) therefore resolve to the same
     underlying implementation. The `Backend` template parameter
     exists for API symmetry with @ref native_tcp_socket and friends.
     The vtable savings are smaller relative to the thread-pool /
@@ -134,7 +134,7 @@ class native_random_access_file : public random_access_file
 public:
     /** Construct a native random-access file from an execution context.
 
-        @param ctx The execution context that will own this file.
+        @param ctx The execution context that owns this file.
     */
     explicit native_random_access_file(capy::execution_context& ctx)
         : random_access_file(create_handle<service_type>(ctx))
@@ -143,7 +143,7 @@ public:
 
     /** Construct a native random-access file from an executor.
 
-        @param ex The executor whose context will own this file.
+        @param ex The executor whose context owns this file.
     */
     template<class Ex>
         requires(!std::same_as<
@@ -162,7 +162,9 @@ public:
     native_random_access_file&
     operator=(native_random_access_file&&) noexcept = default;
 
+    /// Copy construction is disabled; the handle is uniquely owned.
     native_random_access_file(native_random_access_file const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     native_random_access_file&
     operator=(native_random_access_file const&) = delete;
 
@@ -170,6 +172,11 @@ public:
 
         Calls the backend implementation directly, bypassing virtual
         dispatch. Otherwise identical to @ref random_access_file::read_some_at.
+
+        @param offset The byte offset to read at.
+        @param buffers The buffers to read into.
+
+        @return An awaitable yielding the error code and the byte count read.
     */
     template<capy::MutableBufferSequence MB>
     [[nodiscard]] auto read_some_at(std::uint64_t offset, MB const& buffers)
@@ -181,6 +188,11 @@ public:
 
         Calls the backend implementation directly, bypassing virtual
         dispatch. Otherwise identical to @ref random_access_file::write_some_at.
+
+        @param offset The byte offset to write at.
+        @param buffers The buffer data to write.
+
+        @return An awaitable yielding the error code and the byte count written.
     */
     template<capy::ConstBufferSequence CB>
     [[nodiscard]] auto write_some_at(std::uint64_t offset, CB const& buffers)

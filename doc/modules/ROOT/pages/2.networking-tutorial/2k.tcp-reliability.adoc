@@ -8,6 +8,7 @@
 //
 
 = When Packets Go Missing
+:page-mode: explanation
 
 TCP promises reliable delivery, but the network underneath makes no such promise. Routers drop packets when their queues overflow. Links fail mid-transmission. Interference corrupts data. TCP's job is to detect these failures and recover from them -- transparently, without your application ever knowing a packet was lost.
 
@@ -45,6 +46,7 @@ If segment 4 is lost and segments 5, 6, and 7 arrive, the receiver sends three d
 
 TCP treats the arrival of three duplicate ACKs as strong evidence that a specific segment was lost. Rather than waiting for the retransmission timeout, it immediately retransmits the missing segment. This is *fast retransmit*, and it recovers from loss in roughly one round trip instead of waiting for the full RTO.
 
+[role=figure]
 ----
 Sender                              Receiver
   |                                    |
@@ -87,9 +89,9 @@ Flow control, described in the previous section, allows the receiver to advertis
 
 But what if the receiver frees up buffer space and sends an updated window advertisement, and that ACK is lost? The sender would wait forever, believing the window is still zero. The receiver would wait forever, believing it already told the sender to resume.
 
-The *persist timer* breaks this deadlock. When the sender sees a zero window, it starts a timer. When the timer fires, the sender transmits a tiny *window probe* -- a segment with one byte of data. If the receiver's window has opened, the ACK will contain the updated window size and the sender resumes. If the window is still zero, the receiver re-advertises zero and the sender sets the timer again.
+The *persist timer* breaks this deadlock. When the sender sees a zero window, it starts a timer. When the timer fires, the sender transmits a tiny *window probe* -- a segment with one byte of data. If the receiver's window has opened, the ACK carries the updated window size and the sender resumes. If the window is still zero, the receiver re-advertises zero and the sender sets the timer again.
 
-Persist probes use exponential backoff, starting at the RTO value and increasing up to a maximum (typically 60 seconds). The sender will probe indefinitely -- it never gives up on a zero-window connection.
+Persist probes use exponential backoff, starting at the RTO value and increasing up to a maximum (typically 60 seconds). The sender probes indefinitely -- it never gives up on a zero-window connection.
 
 == Silly Window Syndrome
 
@@ -106,7 +108,7 @@ Together, these rules ensure that data flows in reasonably-sized chunks even whe
 
 What happens when a TCP connection is idle -- no data flowing in either direction? The answer is: nothing. TCP sends no packets during idle periods. The connection can sit open for hours, days, or weeks with no traffic.
 
-This is usually fine, but it creates a problem: if the remote machine crashes, reboots, or loses network connectivity during an idle period, the local side has no way to discover it. The connection appears healthy, but the first attempt to send data will fail -- possibly after a long timeout.
+This is usually fine, but it creates a problem: if the remote machine crashes, reboots, or loses network connectivity during an idle period, the local side has no way to discover it. The connection appears healthy, but the first attempt to send data fails -- possibly after a long timeout.
 
 *Keepalive* probes address this. When enabled, TCP periodically sends a tiny probe on idle connections -- typically every two hours. If the remote side responds, the connection is healthy. If no response arrives after several probes, TCP declares the connection dead and reports an error to the application.
 
@@ -114,7 +116,7 @@ Keepalive is not enabled by default on most systems. Applications that need it s
 
 == Why This Matters to You
 
-TCP's reliability mechanisms run inside the kernel, invisible to your application. But understanding them explains behaviors you will observe:
+TCP's reliability mechanisms run inside the kernel, invisible to your application. But understanding them explains behaviors you observe:
 
 * *Brief stalls during data transfer* are often fast retransmit and recovery in action. A single lost packet causes the sender to pause momentarily while it detects the loss and retransmits.
 * *Sudden throughput drops* happen when TCP detects congestion and halves its sending rate. The sawtooth pattern of congestion avoidance is normal, not a bug.
