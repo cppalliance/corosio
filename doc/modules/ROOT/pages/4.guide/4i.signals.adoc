@@ -194,7 +194,21 @@ configured and can be waited on again.
 
 === Stop Token Cancellation
 
-Signal waits support stop token cancellation through the affine protocol.
+Signal waits support stop token cancellation through the affine protocol:
+
+[source,cpp]
+----
+include::example$snippets/4i_signals.cpp[tag=stop_token,indent=0]
+----
+
+A stop request cancels only the wait that is pending when it arrives. Unlike
+`cancel()`, whose cancellation is latched and consumed by the next `wait()`,
+a stop request that arrives between waits is discarded: the following
+`wait()` starts uncancelled.
+
+NOTE: On Windows the cancelled wait resumes inline, on the thread that
+called `request_stop()`. On POSIX it always resumes on a thread running the
+execution context.
 
 == Use Cases
 

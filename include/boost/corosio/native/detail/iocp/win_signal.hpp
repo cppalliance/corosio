@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -25,6 +26,7 @@
 #include <coroutine>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <stop_token>
 #include <system_error>
 
@@ -91,6 +93,35 @@ class win_signal final
     bool waiting_   = false;
     bool cancelled_ = false;
 
+    /** Routes a stop request into the service's per-operation cancel.
+
+        Deliberately NOT `cancel_wait`: that sets the sticky `cancelled_`
+        latch, which belongs to `cancel()` and scopes to the whole set. A
+        stop token scopes to one wait, so a late fire must be a no-op.
+    */
+    struct token_canceller
+    {
+        win_signal* self;
+        void operator()() const noexcept;
+    };
+
+    /** Armed for the duration of one wait; see wait().
+
+        Never reset while the service's mutex is held: ~stop_callback
+        blocks until a concurrently running callback returns, and that
+        callback takes the same mutex.
+    */
+    std::optional<std::stop_callback<token_canceller>> stop_cb_;
+
+    /** Set when a stop request arrives for the current wait.
+
+        Closes the same lost-wakeup race Task 2 documents: the callback is
+        armed before `start_wait` takes the lock, so a request landing in
+        that window would otherwise be dropped and the wait would park
+        forever. Distinct from the sticky per-set `cancelled_`.
+    */
+    bool token_cancelled_ = false;
+
 public:
     explicit win_signal(win_signals& svc) noexcept;
 
@@ -105,6 +136,12 @@ public:
     std::error_code remove(int signal_number) override;
     std::error_code clear() override;
     void cancel() noexcept override;
+
+    /// Disarm the wait's stop callback. Called before teardown.
+    void disarm_stop() noexcept
+    {
+        stop_cb_.reset();
+    }
 };
 
 } // namespace boost::corosio::detail

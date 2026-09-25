@@ -53,6 +53,7 @@ namespace capy    = boost::capy;
 
 #include <atomic>
 #include <iostream>
+#include <stop_token>
 #include <system_error>
 #include <tuple>
 #include <type_traits>
@@ -119,6 +120,18 @@ cancel_result_frag(corosio::signal_set& signals, std::error_code& out)
     if (ec == capy::cond::canceled)
         std::cout << "Wait was cancelled\n";
     // end::cancel_result[]
+    out = ec;
+}
+
+capy::task<>
+stop_token_frag(corosio::signal_set& signals, std::error_code& out)
+{
+    // tag::stop_token[]
+    // Inside a task launched with a stop token:
+    auto [ec, signum] = co_await signals.wait();
+    if (ec == capy::cond::canceled)
+        std::cout << "Wait cancelled by stop request\n";
+    // end::stop_token[]
     out = ec;
 }
 
@@ -382,6 +395,35 @@ struct signals_test
         BOOST_TEST(ec == capy::cond::canceled);
     }
 
+    void testStopToken()
+    {
+        corosio::io_context ioc;
+        corosio::signal_set signals(ioc, SIGINT);
+        std::stop_source src;
+        std::error_code ec;
+
+        capy::run_async(
+            ioc.get_executor(), src.get_token())(stop_token_frag(signals, ec));
+        capy::run_async(ioc.get_executor())(
+            [](std::stop_source& s) -> capy::task<> {
+                s.request_stop();
+                co_return;
+            }(src));
+        ioc.run();
+        BOOST_TEST(ec == capy::cond::canceled);
+
+        // Keeps the page's per-wait scope claim honest: the stop
+        // cancelled that one wait and latched nothing on the set.
+        ioc.restart();
+        std::error_code second_ec =
+            std::make_error_code(std::errc::interrupted);
+        capy::run_async(ioc.get_executor())(
+            stop_token_frag(signals, second_ec));
+        capy::run_async(ioc.get_executor())(raise_signal(SIGINT));
+        ioc.run();
+        BOOST_TEST(!second_ec);
+    }
+
     void run()
     {
         testOverview();
@@ -396,6 +438,7 @@ struct signals_test
         testClear();
         testWaitSwitch();
         testCancel();
+        testStopToken();
     }
 };
 

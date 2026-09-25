@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -212,6 +213,26 @@ public:
     */
     void cancel_wait(win_signal& impl);
 
+    /** Cancel an in-flight wait on behalf of a stop token.
+
+        Identical to @ref cancel_wait except that it does not set the
+        sticky `cancelled_` latch: a stop token scopes to one operation,
+        so a request arriving after the wait completed must do nothing.
+    */
+    void cancel_wait_token(win_signal& impl) noexcept;
+
+    /** Clear the per-operation stop flag before a new wait arms.
+
+        Lives here rather than on the implementation because the mutex is
+        the service's; the service is a friend of `win_signal`, not the
+        reverse.
+    */
+    void reset_token_cancel(win_signal& impl) noexcept
+    {
+        std::lock_guard<win_mutex> lock(mutex_);
+        impl.token_cancelled_ = false;
+    }
+
     /** Start a wait operation.
 
         @param impl The signal implementation.
@@ -339,6 +360,14 @@ win_signal::wait(
     pending_op_.signal_out    = signal_out;
     pending_op_.signal_number = 0;
 
+    // Disarm any callback left over from a previous wait before doing
+    // anything else, including the early return below: otherwise that
+    // path leaves this object owning a callback it no longer uses.
+    // Outside start_wait's lock on purpose: ~stop_callback blocks until a
+    // concurrently running callback returns, and that callback takes the
+    // service mutex.
+    stop_cb_.reset();
+
     // Check for immediate cancellation
     if (token.stop_requested())
     {
@@ -348,12 +377,20 @@ win_signal::wait(
             *signal_out = 0;
         pending_op_.cont.h = h;
         dispatch_coro(d, pending_op_.cont).resume();
-        // completion is always posted to scheduler queue, never inline.
+        // resumed inline for an io_context executor, not posted to the
+        // scheduler queue.
         return std::noop_coroutine();
     }
 
+    // Clearing the flag before arming is load-bearing: reset_token_cancel
+    // must run immediately before emplace, not before the early return
+    // above.
+    svc_.reset_token_cancel(*this);
+    if (token.stop_possible())
+        stop_cb_.emplace(token, token_canceller{this});
+
     svc_.start_wait(*this, &pending_op_);
-    // completion is always posted to scheduler queue, never inline.
+    // cancellation resumes inline here too; only signal delivery is posted.
     return std::noop_coroutine();
 }
 
@@ -402,41 +439,56 @@ inline win_signals::~win_signals()
 inline void
 win_signals::shutdown()
 {
-    signal_detail::signal_state* state = signal_detail::get_signal_state();
-    std::lock_guard<std::mutex> state_lock(state->mutex);
-    std::lock_guard<win_mutex> lock(mutex_);
+    // Collected under the locks below and deleted after they are released:
+    // ~win_signal destroys an armed stop_cb_, and ~stop_callback blocks
+    // until a concurrently running token_canceller returns -- which takes
+    // mutex_. Deleting while still holding mutex_ would self-deadlock the
+    // same way disarm_stop() would if called inside the locked loop.
+    intrusive_list<win_signal> doomed;
 
-    for (auto* impl = impl_list_.pop_front(); impl != nullptr;
-         impl       = impl_list_.pop_front())
     {
-        while (auto* reg = impl->signals_)
+        signal_detail::signal_state* state = signal_detail::get_signal_state();
+        std::lock_guard<std::mutex> state_lock(state->mutex);
+        std::lock_guard<win_mutex> lock(mutex_);
+
+        for (auto* impl = impl_list_.pop_front(); impl != nullptr;
+             impl       = impl_list_.pop_front())
         {
-            int const signal_number = reg->signal_number;
+            while (auto* reg = impl->signals_)
+            {
+                int const signal_number = reg->signal_number;
 
-            // The registration table outlives every io_context, so a set
-            // still registered here has to give its count and handler
-            // back the way clear() would: otherwise the handler stays
-            // installed for a signal no set owns any more. The per-node
-            // table unlink clear() also does is skipped in favour of the
-            // wholesale null-out below.
-            if (state->registration_count[signal_number] == 1)
-                std::ignore = ::signal(signal_number, SIG_DFL);
+                // The registration table outlives every io_context, so a set
+                // still registered here has to give its count and handler
+                // back the way clear() would: otherwise the handler stays
+                // installed for a signal no set owns any more. The per-node
+                // table unlink clear() also does is skipped in favour of the
+                // wholesale null-out below.
+                if (state->registration_count[signal_number] == 1)
+                    std::ignore = ::signal(signal_number, SIG_DFL);
 
-            --state->registration_count[signal_number];
+                --state->registration_count[signal_number];
 
-            impl->signals_ = reg->next_in_set;
-            delete reg;
+                impl->signals_ = reg->next_in_set;
+                delete reg;
+            }
+            doomed.push_back(impl);
         }
-        delete impl;
+
+        // Every live registration hung off an implementation in impl_list_,
+        // so the whole table goes stale at once and can be dropped wholesale
+        // rather than node by node. It has to be dropped: deliver_signal()
+        // walks this service until the destructor unlinks it from the global
+        // list.
+        for (int i = 0; i < max_signal_number; ++i)
+            registrations_[i] = nullptr;
     }
 
-    // Every live registration hung off an implementation in impl_list_,
-    // so the whole table goes stale at once and can be dropped wholesale
-    // rather than node by node. It has to be dropped: deliver_signal()
-    // walks this service until the destructor unlinks it from the global
-    // list.
-    for (int i = 0; i < max_signal_number; ++i)
-        registrations_[i] = nullptr;
+    for (auto* impl = doomed.pop_front(); impl != nullptr;
+         impl       = doomed.pop_front())
+    {
+        delete impl;
+    }
 }
 
 inline io_object::implementation*
@@ -457,6 +509,7 @@ win_signals::destroy(io_object::implementation* p)
 {
     auto& impl = static_cast<win_signal&>(*p);
     impl.clear();
+    impl.disarm_stop();
     impl.cancel();
     destroy_impl(impl);
 }
@@ -650,6 +703,43 @@ win_signals::cancel_wait(win_signal& impl)
 }
 
 inline void
+win_signals::cancel_wait_token(win_signal& impl) noexcept
+{
+    bool was_waiting = false;
+    signal_op* op    = nullptr;
+
+    {
+        std::lock_guard<win_mutex> lock(mutex_);
+        // Persist the request even when no wait is parked yet; start_wait
+        // consumes this flag.
+        impl.token_cancelled_ = true;
+        if (impl.waiting_)
+        {
+            was_waiting   = true;
+            impl.waiting_ = false;
+            op            = &impl.pending_op_;
+        }
+    }
+
+    if (was_waiting)
+    {
+        if (op->ec_out)
+            *op->ec_out = make_error_code(capy::error::canceled);
+        if (op->signal_out)
+            *op->signal_out = 0;
+        op->cont.h = op->h;
+        dispatch_coro(op->d, op->cont).resume();
+        sched_.work_finished();
+    }
+}
+
+inline void
+win_signal::token_canceller::operator()() const noexcept
+{
+    self->svc_.cancel_wait_token(*self);
+}
+
+inline void
 win_signals::start_wait(win_signal& impl, signal_op* op)
 {
     bool was_cancelled = false;
@@ -662,6 +752,20 @@ win_signals::start_wait(win_signal& impl, signal_op* op)
         {
             was_cancelled   = true;
             impl.cancelled_ = false;
+            if (op->ec_out)
+                *op->ec_out = make_error_code(capy::error::canceled);
+            if (op->signal_out)
+                *op->signal_out = 0;
+            op->cont.h = op->h;
+        }
+        else if (impl.token_cancelled_)
+        {
+            // A stop request that arrived between wait() arming the callback
+            // and this lock: complete now rather than parking forever. Filled
+            // in under the lock and dispatched below, outside it, like the
+            // cancelled_ branch above -- see the comment after this block.
+            was_cancelled         = true;
+            impl.token_cancelled_ = false;
             if (op->ec_out)
                 *op->ec_out = make_error_code(capy::error::canceled);
             if (op->signal_out)

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -23,6 +24,7 @@
 
 #include <coroutine>
 #include <cstddef>
+#include <optional>
 #include <stop_token>
 #include <system_error>
 
@@ -82,6 +84,42 @@ class posix_signal final
     bool waiting_   = false;
     bool cancelled_ = false;
 
+    /** Routes a stop request into the service's per-operation cancel.
+
+        Deliberately NOT `cancel_wait`: that sets the sticky `cancelled_`
+        latch, which belongs to `cancel()` and scopes to the whole set. A
+        stop token scopes to one wait, so a late fire must be a no-op
+        rather than poisoning the next wait.
+    */
+    struct token_canceller
+    {
+        posix_signal* self;
+        void operator()() const noexcept;
+    };
+
+    /** Armed for the duration of one wait; see wait().
+
+        Never reset while `posix_signal_service::mutex_` is held:
+        `~stop_callback` blocks until a concurrently running callback
+        returns, and that callback takes the same mutex.
+    */
+    std::optional<std::stop_callback<token_canceller>> stop_cb_;
+
+    /** Set when a stop request arrives for the current wait.
+
+        Closes a lost-wakeup race. The callback is armed before
+        `start_wait` takes the lock, so a request landing in that window
+        finds `waiting_ == false` and would otherwise return having done
+        nothing, leaving `start_wait` to park the wait forever. Every
+        other op survives this because `coro_op::on_cancel()` defaults to
+        `request_cancel()`, which sets a persistent flag the completion
+        decode reads later; this is that flag for the signal path.
+
+        Distinct from `cancelled_` on purpose: `cancelled_` is the sticky
+        per-set latch `cancel()` owns, this is per-operation.
+    */
+    bool token_cancelled_ = false;
+
 public:
     explicit posix_signal(posix_signal_service& svc) noexcept;
 
@@ -96,6 +134,12 @@ public:
     std::error_code remove(int signal_number) override;
     std::error_code clear() override;
     void cancel() noexcept override;
+
+    /// Disarm the wait's stop callback. Called before teardown.
+    void disarm_stop() noexcept
+    {
+        stop_cb_.reset();
+    }
 };
 
 } // namespace detail
