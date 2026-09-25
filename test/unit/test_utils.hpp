@@ -49,6 +49,14 @@ inline constexpr int failsafe_scale = 20;
 inline constexpr int failsafe_scale = 1;
 #endif
 
+// Failsafes are hang detectors, not speed limits: a budget short
+// enough to trip on a slow-but-correct run (instrumented builds,
+// loaded CI hosts) turns a watchdog into a timing assertion. Ten
+// seconds fails a genuine hang just as reliably as 200ms and never
+// fails legitimate slowness.
+inline constexpr auto failsafe_timeout =
+    std::chrono::seconds(10 * failsafe_scale);
+
 namespace boost::corosio::test {
 
 /// Fail the current test if a setup call reports an error.
@@ -1746,8 +1754,7 @@ run_tls_test_fail(
 
     bool failsafe_hit = false;
     auto timeout_task = [&failsafe_hit, &s1, &s2]() -> capy::task<> {
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(200 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec)
         {
             failsafe_hit = true;
@@ -1866,8 +1873,7 @@ run_tls_shutdown_test(
 
     bool failsafe_hit  = false;
     auto failsafe_task = [&failsafe_hit, &done, &s1, &s2]() -> capy::task<> {
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(200 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec && !done)
         {
             failsafe_hit = true;
@@ -1979,8 +1985,7 @@ run_tls_truncation_test(
 
     auto timeout_task = [&failsafe_hit, &s1, &s2]() -> capy::task<> {
         // IOCP peer-close propagation can be bursty under TLS backends.
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(750 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec)
         {
             failsafe_hit = true;
@@ -2208,8 +2213,7 @@ run_connection_reset_test(
 
     bool failsafe_hit = false;
     auto timeout_task = [&failsafe_hit, &s1]() -> capy::task<> {
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(200 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec && s1.is_open())
         {
             failsafe_hit = true;
@@ -2293,8 +2297,7 @@ run_stop_token_handshake_test(
 
     bool failsafe_hit  = false;
     auto failsafe_task = [&failsafe_hit, &s1, &s2]() -> capy::task<> {
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(2000 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec)
         {
             failsafe_hit = true;
@@ -2392,8 +2395,7 @@ run_stop_token_read_test(
 
     bool failsafe_hit  = false;
     auto failsafe_task = [&failsafe_hit, &s1, &s2]() -> capy::task<> {
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(2000 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec)
         {
             failsafe_hit = true;
@@ -2522,8 +2524,7 @@ run_shutdown_cancel_test(
     bool failsafe_hit  = false;
     auto failsafe_task = [&failsafe_hit, &shutdown_done, &s1,
                           &s2]() -> capy::task<> {
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(2000 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec && !shutdown_done)
         {
             failsafe_hit = true;
@@ -2636,8 +2637,7 @@ run_stop_token_write_test(
 
     bool failsafe_hit  = false;
     auto failsafe_task = [&failsafe_hit, &s1, &s2]() -> capy::task<> {
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(2000 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec)
         {
             failsafe_hit = true;
@@ -2719,8 +2719,7 @@ run_socket_cancel_test(
 
     bool failsafe_hit  = false;
     auto failsafe_task = [&failsafe_hit, &s1, &s2]() -> capy::task<> {
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(2000 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec)
         {
             failsafe_hit = true;
