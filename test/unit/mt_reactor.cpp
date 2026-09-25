@@ -119,9 +119,11 @@ struct mt_reactor_test
         };
         std::thread ra(slice), rb(slice);
 
+        // Yield while spinning: under Valgrind's serialized scheduler
+        // a tight spin starves the freshly created runner threads of
+        // their first slice, and the wait never completes.
         while (entered.load() < 2)
-        {
-        }
+            std::this_thread::yield();
         for (int i = 0; i < 20; ++i)
         {
             // The counter travels as a parameter: a loop-scoped
