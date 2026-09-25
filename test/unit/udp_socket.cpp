@@ -1836,25 +1836,41 @@ struct udp_socket_test
         ioc.restart();
         BOOST_TEST(!cec);
 
-        // Loopback queues the port-unreachable error before the recv
-        // initiates; if a platform does not, the canceller keeps the
-        // test bounded and the recv still completes with an error.
+        // Loopback usually queues the port-unreachable error before
+        // the recv initiates, but no interleaving is guaranteed: a
+        // platform may wake the recv without the error on the first
+        // readiness, so benign empty completions are retried, and a
+        // failsafe cancel bounds the wait where the error never
+        // surfaces. Data can never legitimately arrive: nothing sends
+        // to this socket.
         char buf[8];
         std::error_code rec;
+        std::size_t stray_bytes = 0;
+        std::stop_source done;
         auto receiver = [&]() -> capy::task<> {
-            auto [ec, n] =
-                co_await s.recv(capy::mutable_buffer(buf, sizeof(buf)));
-            std::ignore = n;
-            rec         = ec;
+            for (int i = 0; i < 8; ++i)
+            {
+                auto [ec, n] =
+                    co_await s.recv(capy::mutable_buffer(buf, sizeof(buf)));
+                if (ec)
+                {
+                    rec = ec;
+                    break;
+                }
+                stray_bytes += n;
+            }
+            done.request_stop();
         };
-        auto canceller = [&]() -> capy::task<> {
-            s.cancel();
-            co_return;
+        auto failsafe = [&]() -> capy::task<> {
+            auto [dec] = co_await corosio::delay(failsafe_timeout);
+            if (!dec)
+                s.cancel();
         };
         capy::run_async(ex)(receiver());
-        capy::run_async(ex)(canceller());
+        capy::run_async(ex, done.get_token())(failsafe());
         ioc.run();
         BOOST_TEST(!!rec);
+        BOOST_TEST_EQ(stray_bytes, 0u);
     }
 
     void testConnectedShutdownSendSucceeds()
