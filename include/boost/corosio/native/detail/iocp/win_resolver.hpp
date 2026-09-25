@@ -26,7 +26,6 @@
 #include <boost/corosio/detail/thread_pool.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/resolver.hpp>
-#include <boost/corosio/resolver_results.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
@@ -152,13 +151,13 @@ class win_resolver;
 /** Resolve operation state. */
 struct resolve_op : overlapped_op
 {
-    ADDRINFOEXW* results  = nullptr;
+    ADDRINFOEXW* results = nullptr;
 
     // GetAddrInfoExW reads these past the frame that starts the lookup.
     ADDRINFOEXW hints{};
 
-    HANDLE cancel_handle  = nullptr;
-    resolver_results* out = nullptr;
+    HANDLE cancel_handle       = nullptr;
+    std::vector<endpoint>* out = nullptr;
     std::string host;
     std::string service;
     std::wstring host_w;
@@ -180,7 +179,7 @@ struct resolve_op : overlapped_op
 /** Reverse resolve operation state. */
 struct reverse_resolve_op : overlapped_op
 {
-    reverse_resolver_result* result_out = nullptr;
+    endpoint_name* result_out = nullptr;
     endpoint ep;
     reverse_flags flags = reverse_flags::none;
     std::string stored_host;
@@ -268,7 +267,7 @@ public:
         resolve_flags flags,
         std::stop_token,
         std::error_code*,
-        resolver_results*) override;
+        std::vector<endpoint>*) override;
 
     std::coroutine_handle<> reverse_resolve(
         std::coroutine_handle<>,
@@ -277,7 +276,7 @@ public:
         reverse_flags flags,
         std::stop_token,
         std::error_code*,
-        reverse_resolver_result*) override;
+        endpoint_name*) override;
 
     void cancel() noexcept override;
 

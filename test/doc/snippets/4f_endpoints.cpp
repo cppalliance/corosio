@@ -87,24 +87,24 @@ accepting(corosio::io_context& ioc)
 
 // Requires external DNS; compiled but never executed.
 [[maybe_unused]] capy::task<>
-resolver_results_fragment(corosio::io_context& ioc)
+resolved_endpoints_fragment(corosio::io_context& ioc)
 {
-    // tag::resolver_results[]
+    // tag::resolved_endpoints[]
     corosio::resolver r(ioc);
     auto [ec, results] = co_await r.resolve("www.example.com", "80");
 
-    for (auto const& entry : results)
+    for (corosio::endpoint const& ep : results)
     {
-        corosio::endpoint ep = entry.get_endpoint();
         // Try connecting to ep...
+        std::ignore = ep;
     }
-    // end::resolver_results[]
+    // end::resolved_endpoints[]
 }
 
 // Connects to resolved public endpoints; compiled but never executed.
 [[maybe_unused]] capy::task<>
 implicit_conversion(
-    corosio::tcp_socket& s, corosio::resolver_results const& results)
+    corosio::tcp_socket& s, std::vector<corosio::endpoint> const& results)
 {
     // tag::implicit_conversion[]
     for (corosio::endpoint ep : results)

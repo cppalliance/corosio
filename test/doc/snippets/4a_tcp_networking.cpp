@@ -63,10 +63,10 @@ resolve_hostname(corosio::io_context& ioc)
     corosio::resolver r(ioc);
     auto [ec, results] = co_await r.resolve("www.example.com", "https");
 
-    for (auto const& entry : results)
+    for (auto const& ep : results)
     {
-        auto ep = entry.get_endpoint();
         // Try connecting to ep...
+        std::ignore = ep;
     }
     // end::resolver_lookup[]
 }

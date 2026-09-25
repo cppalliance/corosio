@@ -42,9 +42,8 @@ do_lookup(
         std::cout << ":" << service;
     std::cout << "\n";
 
-    for (auto const& entry : results)
+    for (auto const& ep : results)
     {
-        auto ep = entry.get_endpoint();
         std::cout << "  " << (ep.is_v4() ? "IPv4" : "IPv6") << ": "
                   << ep.address().to_string() << ":" << ep.port() << "\n";
     }

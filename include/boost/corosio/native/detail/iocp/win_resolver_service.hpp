@@ -197,30 +197,27 @@ from_wide(std::wstring_view s)
     return result;
 }
 
-// Convert ADDRINFOEXW results to resolver_results
-inline resolver_results
-convert_results(
-    ADDRINFOEXW* ai, std::string_view host, std::string_view service)
+// Convert ADDRINFOEXW results to endpoints
+inline std::vector<endpoint>
+convert_results(ADDRINFOEXW* ai)
 {
-    std::vector<resolver_entry> entries;
+    std::vector<endpoint> endpoints;
 
     for (auto* p = ai; p != nullptr; p = p->ai_next)
     {
         if (p->ai_family == AF_INET)
         {
             auto* addr = reinterpret_cast<sockaddr_in*>(p->ai_addr);
-            auto ep    = from_sockaddr_in(*addr);
-            entries.emplace_back(ep, host, service);
+            endpoints.push_back(from_sockaddr_in(*addr));
         }
         else if (p->ai_family == AF_INET6)
         {
             auto* addr = reinterpret_cast<sockaddr_in6*>(p->ai_addr);
-            auto ep    = from_sockaddr_in6(*addr);
-            entries.emplace_back(ep, host, service);
+            endpoints.push_back(from_sockaddr_in6(*addr));
         }
     }
 
-    return entries;
+    return endpoints;
 }
 
 } // namespace resolver_detail
@@ -300,8 +297,7 @@ resolve_op::do_complete(
     if (op->out && !op->cancelled.load(std::memory_order_acquire) &&
         op->dwError == 0 && op->results)
     {
-        *op->out = resolver_detail::convert_results(
-            op->results, op->host, op->service);
+        *op->out = resolver_detail::convert_results(op->results);
     }
 
     if (op->results)
@@ -362,8 +358,8 @@ reverse_resolve_op::do_complete(
     if (op->result_out && !op->cancelled.load(std::memory_order_acquire) &&
         op->gai_error == 0)
     {
-        *op->result_out = reverse_resolver_result(
-            op->ep, std::move(op->stored_host), std::move(op->stored_service));
+        *op->result_out = endpoint_name{
+            std::move(op->stored_host), std::move(op->stored_service)};
     }
 
     op->cont.h = op->h;
@@ -390,7 +386,7 @@ win_resolver::resolve(
     resolve_flags flags,
     std::stop_token token,
     std::error_code* ec,
-    resolver_results* out)
+    std::vector<endpoint>* out)
 {
     auto& op = op_;
     op.reset();
@@ -466,7 +462,7 @@ win_resolver::reverse_resolve(
     reverse_flags flags,
     std::stop_token token,
     std::error_code* ec,
-    reverse_resolver_result* result_out)
+    endpoint_name* result_out)
 {
     auto& op = reverse_op_;
     op.reset();

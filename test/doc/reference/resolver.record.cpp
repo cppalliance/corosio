@@ -39,8 +39,8 @@ resolve_and_print(corosio::io_context& ioc)
     if (ec)
         co_return;
 
-    for (auto const& entry : results)
-        std::cout << entry.get_endpoint().port() << std::endl;
+    for (auto const& ep : results)
+        std::cout << ep.port() << std::endl;
 
     // Or, to convert errors into exceptions:
     auto [ec2, results2] = co_await r.resolve("www.example.com", "https");

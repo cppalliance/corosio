@@ -42,6 +42,7 @@
 #include <iostream>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 
 #include "test_suite.hpp"
 
@@ -61,24 +62,13 @@ resolver_overview(corosio::io_context& ioc)
 }
 
 std::uint16_t
-inspect_endpoint(corosio::resolver_entry const& entry)
+inspect_endpoint(corosio::endpoint const& ep)
 {
     // tag::entry_endpoint[]
-    auto ep = entry.get_endpoint();
-
-    if (ep.is_v4())
-    {
-        // IPv4 address
-        corosio::ipv4_address addr = ep.address().to_v4();
-    }
-    else
-    {
-        // IPv6 address
-        corosio::ipv6_address addr = ep.address().to_v6();
-    }
-
-    std::uint16_t port = ep.port();
+    corosio::ip_address addr = ep.address(); // IPv4 or IPv6
+    std::uint16_t port       = ep.port();
     // end::entry_endpoint[]
+    std::ignore = addr;
     return port;
 }
 
@@ -117,7 +107,7 @@ connect_to_host(
     std::error_code last_ec;
     for (auto const& entry : results)
     {
-        auto [ec] = co_await sock.connect(entry.get_endpoint());
+        auto [ec] = co_await sock.connect(entry);
         if (!ec)
         {
             std::cout << "Connected to " << host << "\n";
@@ -139,10 +129,8 @@ struct dns_lookup_test
 {
     void testEntryEndpoint()
     {
-        corosio::resolver_entry entry(
-            corosio::endpoint(corosio::ipv4_address::loopback(), 443),
-            "example.com", "https");
-        BOOST_TEST(inspect_endpoint(entry) == 443);
+        corosio::endpoint ep(corosio::ipv4_address::loopback(), 443);
+        BOOST_TEST(inspect_endpoint(ep) == 443);
     }
 
     void testResolveWithFlags()

@@ -71,9 +71,8 @@ overview(corosio::io_context& ioc)
     corosio::resolver r(ioc);
     auto [ec, results] = co_await r.resolve("www.example.com", "https");
 
-    for (auto const& entry : results)
+    for (auto const& ep : results)
     {
-        auto ep = entry.get_endpoint();
         std::cout << ep.address().to_v4().to_string() << ":" << ep.port()
                   << "\n";
     }
@@ -131,56 +130,24 @@ combined_flags(corosio::resolver& r)
     BOOST_TEST(!results.empty());
     if (!results.empty())
     {
-        auto ep = results.front().get_endpoint();
+        auto ep = results.front();
         BOOST_TEST(ep.is_v4());
         BOOST_TEST(ep.address().to_v4().to_string() == "127.0.0.1");
         BOOST_TEST(ep.port() == 8080);
     }
 }
 
-namespace results_synopsis {
-using corosio::resolver_entry;
-// tag::results_alias[]
-using resolver_results = std::vector<resolver_entry>;
-// end::results_alias[]
-} // namespace results_synopsis
-
 void
-iterate_results(corosio::resolver_results const& results)
+iterate_results(std::vector<corosio::endpoint> const& results)
 {
     // tag::iterate_results[]
-    for (auto const& entry : results)
+    for (corosio::endpoint const& ep : results)
     {
-        corosio::endpoint ep = entry.get_endpoint();
-
-        if (ep.is_v4())
-            std::cout << "IPv4: " << ep.address().to_v4().to_string();
-        else
-            std::cout << "IPv6: " << ep.address().to_v6().to_string();
-
-        std::cout << ":" << ep.port() << "\n";
+        std::cout << (ep.is_v4() ? "IPv4" : "IPv6") << ": "
+                  << ep.address().to_string() << ":" << ep.port() << "\n";
     }
     // end::iterate_results[]
 }
-
-// Abridged interface listing; declarations compile, the real class
-// lives in <boost/corosio/resolver_results.hpp>.
-namespace entry_synopsis {
-// tag::entry_synopsis[]
-class resolver_entry
-{
-public:
-    corosio::endpoint get_endpoint() const;
-
-    // Implicit conversion to endpoint
-    operator corosio::endpoint() const;
-
-    // Query strings used in the resolution
-    std::string const& host_name() const;
-    std::string const& service_name() const;
-};
-// end::entry_synopsis[]
-} // namespace entry_synopsis
 
 // tag::connect_to_service[]
 capy::task<void>
@@ -201,9 +168,9 @@ connect_to_service(
     corosio::tcp_socket sock(ioc);
 
     std::error_code last_error;
-    for (auto const& entry : results)
+    for (auto const& ep : results)
     {
-        auto [ec] = co_await sock.connect(entry.get_endpoint());
+        auto [ec] = co_await sock.connect(ep);
         if (!ec)
             co_return; // Connected successfully
 
@@ -347,13 +314,9 @@ struct resolver_test
     {
         // Synthetic results keep the fragment's loop deterministic:
         // no DNS query is needed to exercise it.
-        corosio::resolver_results results;
-        results.emplace_back(
+        std::vector<corosio::endpoint> results{
             corosio::endpoint(corosio::ipv4_address::loopback(), 80),
-            "localhost", "http");
-        results.emplace_back(
-            corosio::endpoint(corosio::ipv6_address::loopback(), 443),
-            "localhost", "https");
+            corosio::endpoint(corosio::ipv6_address::loopback(), 443)};
         iterate_results(results);
         BOOST_TEST(results.size() == 2);
     }

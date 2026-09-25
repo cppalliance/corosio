@@ -17,7 +17,6 @@
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/capy/io_result.hpp>
-#include <boost/corosio/resolver_results.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -156,6 +155,22 @@ operator&=(reverse_flags& a, reverse_flags b) noexcept
     return a;
 }
 
+/** The name of an endpoint.
+
+    Reverse resolution translates an endpoint into its symbolic
+    spelling: the host name and the service name. Both fields carry
+    resolved data; the endpoint they name is the one the caller
+    passed to `resolve`.
+*/
+struct endpoint_name
+{
+    /// The resolved host name.
+    std::string host_name;
+
+    /// The resolved service name.
+    std::string service_name;
+};
+
 /** An asynchronous DNS resolver for coroutine I/O.
 
     This class provides asynchronous DNS resolution operations that return
@@ -178,7 +193,7 @@ operator&=(reverse_flags& a, reverse_flags b) noexcept
 class BOOST_COROSIO_DECL resolver : public io_object
 {
     struct resolve_awaitable
-        : detail::value_op_base<resolve_awaitable, resolver_results>
+        : detail::value_op_base<resolve_awaitable, std::vector<endpoint>>
     {
         resolver& r_;
         std::string host_;
@@ -206,7 +221,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
     };
 
     struct resolve_host_awaitable
-        : detail::value_op_base<resolve_host_awaitable, resolver_results>
+        : detail::value_op_base<resolve_host_awaitable, std::vector<endpoint>>
     {
         resolver& r_;
         std::string host_;
@@ -229,8 +244,8 @@ class BOOST_COROSIO_DECL resolver : public io_object
                 h, ex, host_, {}, flags_, token_, &ec_, &value_);
         }
 
-        // Shadows the base: the endpoint-shaped backend result is
-        // reshaped into the honest address list
+        // Shadows the base: the endpoint result is reshaped into
+        // the honest address list
         [[nodiscard]] capy::io_result<std::vector<ip_address>>
         await_resume() const
         {
@@ -238,7 +253,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
             addrs.reserve(value_.size());
             for (auto const& entry : value_)
             {
-                auto a         = entry.get_endpoint().address();
+                auto a         = entry.address();
                 bool duplicate = false;
                 for (auto const& seen : addrs)
                 {
@@ -259,8 +274,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
     };
 
     struct reverse_resolve_awaitable
-        : detail::
-              value_op_base<reverse_resolve_awaitable, reverse_resolver_result>
+        : detail::value_op_base<reverse_resolve_awaitable, endpoint_name>
     {
         resolver& r_;
         endpoint ep_;
@@ -361,12 +375,8 @@ public:
             be a descriptive name or a numeric string corresponding to a
             port number.
 
-        @return An awaitable that completes with `io_result<resolver_results>`.
-
-        @note `resolver_results` is an alias for `std::vector<resolver_entry>`.
-            Copying it deep-copies every entry (each owns two `std::string`s);
-            move it (`std::move(results)`) or pass iterators when handing it to
-            a by-value sink such as @ref connect.
+        @return An awaitable that completes with
+            `io_result<std::vector<endpoint>>`.
 
         @par Example
         @par !example forward_resolve
@@ -425,7 +435,8 @@ public:
 
         @param flags Flags controlling resolution behavior.
 
-        @return An awaitable that completes with `io_result<resolver_results>`.
+        @return An awaitable that completes with
+            `io_result<std::vector<endpoint>>`.
     */
     [[nodiscard]] auto resolve(
         std::string_view host, std::string_view service, resolve_flags flags)
@@ -443,7 +454,7 @@ public:
         @param ep The endpoint to resolve.
 
         @return An awaitable that completes with
-            `io_result<reverse_resolver_result>`.
+            `io_result<endpoint_name>`.
 
         @par Example
         @par !example reverse_resolve
@@ -465,7 +476,7 @@ public:
         @param flags Flags controlling resolution behavior. See reverse_flags.
 
         @return An awaitable that completes with
-            `io_result<reverse_resolver_result>`.
+            `io_result<endpoint_name>`.
     */
     [[nodiscard]] auto resolve(endpoint const& ep, reverse_flags flags)
     {
@@ -497,7 +508,7 @@ public:
             resolve_flags flags,
             std::stop_token,
             std::error_code*,
-            resolver_results*) = 0;
+            std::vector<endpoint>*) = 0;
 
         /// Initiate an asynchronous reverse DNS resolution.
         virtual std::coroutine_handle<> reverse_resolve(
@@ -507,7 +518,7 @@ public:
             reverse_flags flags,
             std::stop_token,
             std::error_code*,
-            reverse_resolver_result*) = 0;
+            endpoint_name*) = 0;
 
         /// Cancel pending resolve operations.
         virtual void cancel() noexcept = 0;

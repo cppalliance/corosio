@@ -26,7 +26,6 @@
 #include <boost/corosio/native/detail/coro_op.hpp>
 
 #include <boost/corosio/detail/scheduler.hpp>
-#include <boost/corosio/resolver_results.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <coroutine>
 #include <boost/capy/error.hpp>
@@ -104,9 +103,8 @@ int flags_to_hints(resolve_flags flags);
 // Convert reverse_flags to getnameinfo NI_* flags
 int flags_to_ni_flags(reverse_flags flags);
 
-// Convert addrinfo results to resolver_results
-resolver_results convert_results(
-    struct addrinfo* ai, std::string_view host, std::string_view service);
+// Convert addrinfo results to endpoints
+std::vector<endpoint> convert_results(struct addrinfo* ai);
 
 // Convert getaddrinfo error codes to std::error_code
 std::error_code make_gai_error(int gai_err);
@@ -167,7 +165,7 @@ public:
     struct resolve_op : coro_op
     {
         /// Where the endpoints are handed back.
-        resolver_results* out = nullptr;
+        std::vector<endpoint>* out = nullptr;
 
         // Input parameters (owned copies for thread safety)
         std::string host;
@@ -175,7 +173,7 @@ public:
         resolve_flags flags = resolve_flags::none;
 
         // Result storage (populated by worker thread)
-        resolver_results stored_results;
+        std::vector<endpoint> stored_results;
         int gai_error = 0;
 
         resolve_op() = default;
@@ -190,7 +188,7 @@ public:
     struct reverse_resolve_op : coro_op
     {
         /// Where the name is handed back.
-        reverse_resolver_result* result_out = nullptr;
+        endpoint_name* result_out = nullptr;
 
         // Input parameters
         endpoint ep;
@@ -228,7 +226,7 @@ public:
         resolve_flags flags,
         std::stop_token,
         std::error_code*,
-        resolver_results*) override;
+        std::vector<endpoint>*) override;
 
     std::coroutine_handle<> reverse_resolve(
         std::coroutine_handle<>,
@@ -237,7 +235,7 @@ public:
         reverse_flags flags,
         std::stop_token,
         std::error_code*,
-        reverse_resolver_result*) override;
+        endpoint_name*) override;
 
     void cancel() noexcept override;
 

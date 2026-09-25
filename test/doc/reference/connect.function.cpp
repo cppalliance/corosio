@@ -43,8 +43,6 @@ connect_to_first_available(corosio::io_context& ioc)
 
     corosio::tcp_socket s(ioc);
 
-    // std::move avoids a deep copy of results -- resolver_results owns
-    // two std::strings per entry, and results is not used again below.
     auto [cec, ep] = co_await corosio::connect(s, std::move(results));
     if (cec)
         co_return;

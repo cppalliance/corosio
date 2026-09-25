@@ -44,15 +44,9 @@ include::example$nslookup/nslookup.cpp[tag=lookup]
 
 == Understanding Results
 
-The resolver returns a `resolver_results` — an alias for
-`std::vector<resolver_entry>` — containing one `resolver_entry` per resolved
-endpoint. Each entry provides:
-
-* `get_endpoint()` — The resolved endpoint (address + port)
-* `host_name()` — The queried hostname
-* `service_name()` — The queried service
-
-The `endpoint` class supports both IPv4 and IPv6:
+The resolver returns a `std::vector<endpoint>` with one entry per
+resolved address. An endpoint decomposes into an `ip_address` — one
+type that carries either family — and a port:
 
 [source,cpp]
 ----

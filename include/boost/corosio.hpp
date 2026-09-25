@@ -24,7 +24,6 @@
 #include <boost/corosio/message_flags.hpp>
 #include <boost/corosio/random_access_file.hpp>
 #include <boost/corosio/resolver.hpp>
-#include <boost/corosio/resolver_results.hpp>
 #include <boost/corosio/shutdown_type.hpp>
 #include <boost/corosio/signal_set.hpp>
 #include <boost/corosio/socket_option.hpp>
