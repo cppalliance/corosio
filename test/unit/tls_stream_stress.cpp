@@ -364,8 +364,7 @@ struct tls_cancel_handshake_stress_impl
 
             bool failsafe_hit  = false;
             auto failsafe_task = [&failsafe_hit, &s1, &s2]() -> capy::task<> {
-                auto [ec] =
-                    co_await corosio::delay(std::chrono::milliseconds(2000));
+                auto [ec] = co_await corosio::delay(failsafe_timeout);
                 if (!ec)
                 {
                     failsafe_hit = true;

@@ -2295,8 +2295,7 @@ testFullDuplex(StreamFactory make_stream)
     };
 
     auto failsafe_task = [&]() -> capy::task<> {
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(2000 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec)
         {
             failsafe_hit = true;
@@ -2407,8 +2406,7 @@ testFullDuplexBulk(StreamFactory make_stream)
         failsafe_stop.request_stop();
     };
     auto failsafe_task = [&]() -> capy::task<> {
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(5000 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec)
         {
             failsafe_hit = true;
@@ -2517,8 +2515,7 @@ testRecordBoundaryTransfer(StreamFactory make_stream)
         failsafe_stop.request_stop();
     };
     auto failsafe_task = [&]() -> capy::task<> {
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(5000 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec)
         {
             failsafe_hit = true;
@@ -2610,8 +2607,7 @@ testShutdownOverRead(StreamFactory make_stream)
     };
 
     auto failsafe_task = [&]() -> capy::task<> {
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(2000 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec)
         {
             failsafe_hit = true;
@@ -2765,8 +2761,7 @@ testShutdownSimultaneousClose(StreamFactory make_stream)
     };
 
     auto failsafe_task = [&]() -> capy::task<> {
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(2000 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec)
         {
             failsafe_hit = true;
@@ -2911,8 +2906,7 @@ testPartialReadWithError(StreamFactory make_stream)
     };
 
     auto failsafe_task = [&]() -> capy::task<> {
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(2000 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec)
         {
             failsafe_hit = true;
@@ -3032,8 +3026,7 @@ testCancelParkedReader(StreamFactory make_stream)
     };
 
     auto failsafe_task = [&]() -> capy::task<> {
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(2000 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec)
         {
             failsafe_hit = true;
@@ -3165,8 +3158,7 @@ testFullDuplexMtStrand(StreamFactory make_stream)
     };
 
     auto failsafe_task = [&]() -> capy::task<> {
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(5000 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec)
         {
             failsafe_hit = true;
@@ -3287,8 +3279,7 @@ testDeferredFlushError(StreamFactory make_stream)
             failsafe_stop.request_stop();
         };
         auto failsafe_task = [&]() -> capy::task<> {
-            auto [ec] = co_await corosio::delay(
-                std::chrono::milliseconds(2000 * failsafe_scale));
+            auto [ec] = co_await corosio::delay(failsafe_timeout);
             if (!ec)
             {
                 failsafe_hit = true;
@@ -3372,8 +3363,7 @@ testDeferredFlushError(StreamFactory make_stream)
             failsafe_stop.request_stop();
         };
         auto failsafe_task = [&]() -> capy::task<> {
-            auto [ec] = co_await corosio::delay(
-                std::chrono::milliseconds(2000 * failsafe_scale));
+            auto [ec] = co_await corosio::delay(failsafe_timeout);
             if (!ec)
             {
                 failsafe_hit = true;
@@ -3409,8 +3399,7 @@ testDeferredFlushError(StreamFactory make_stream)
             failsafe_stop2.request_stop();
         };
         auto failsafe_task2 = [&]() -> capy::task<> {
-            auto [ec] = co_await corosio::delay(
-                std::chrono::milliseconds(2000 * failsafe_scale));
+            auto [ec] = co_await corosio::delay(failsafe_timeout);
             if (!ec)
             {
                 failsafe_hit2 = true;
@@ -3493,8 +3482,7 @@ testDeferredFlushError(StreamFactory make_stream)
             failsafe_stop.request_stop();
         };
         auto failsafe_task = [&]() -> capy::task<> {
-            auto [ec] = co_await corosio::delay(
-                std::chrono::milliseconds(2000 * failsafe_scale));
+            auto [ec] = co_await corosio::delay(failsafe_timeout);
             if (!ec)
             {
                 failsafe_hit = true;
@@ -3715,8 +3703,7 @@ testTlsLifecycleEdges(StreamFactory make_stream)
             wfailsafe_stop.request_stop();
         };
         auto wfailsafe_task = [&]() -> capy::task<> {
-            auto [ec] = co_await corosio::delay(
-                std::chrono::milliseconds(2000 * failsafe_scale));
+            auto [ec] = co_await corosio::delay(failsafe_timeout);
             if (!ec)
             {
                 wfailsafe_hit = true;
@@ -3858,8 +3845,7 @@ testShutdownTruncation(StreamFactory make_stream)
     // Failsafe deadline in case of bugs, not a timing assertion: the
     // pass/fail signal below is shutdown_ec, not how long it took.
     auto failsafe_task = [&]() -> capy::task<> {
-        auto [ec] = co_await corosio::delay(
-            std::chrono::milliseconds(2000 * failsafe_scale));
+        auto [ec] = co_await corosio::delay(failsafe_timeout);
         if (!ec && !shutdown_done)
         {
             failsafe_hit = true;
