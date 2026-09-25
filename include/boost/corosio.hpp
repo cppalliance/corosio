@@ -21,9 +21,11 @@
 #include <boost/corosio/ip_address.hpp>
 #include <boost/corosio/ipv4_address.hpp>
 #include <boost/corosio/ipv6_address.hpp>
+#include <boost/corosio/message_flags.hpp>
 #include <boost/corosio/random_access_file.hpp>
 #include <boost/corosio/resolver.hpp>
 #include <boost/corosio/resolver_results.hpp>
+#include <boost/corosio/shutdown_type.hpp>
 #include <boost/corosio/signal_set.hpp>
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/stream_file.hpp>
@@ -32,6 +34,8 @@
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/timeout.hpp>
 #include <boost/corosio/udp_socket.hpp>
+#include <boost/corosio/wait_traits.hpp>
+#include <boost/corosio/wait_type.hpp>
 
 #include <boost/corosio/local_connect_pair.hpp>
 #include <boost/corosio/local_endpoint.hpp>
