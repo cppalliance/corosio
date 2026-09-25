@@ -106,6 +106,10 @@ public:
 
         This signal set must outlive the returned awaitable.
 
+        @note On Windows a stop request resumes the awaiting coroutine
+            inline, on the thread that called `request_stop()`. On POSIX
+            it always resumes on a thread running the execution context.
+
         @return An awaitable that completes with `io_result<int>`.
             Returns the signal number when a signal is delivered,
             or an error code on failure.

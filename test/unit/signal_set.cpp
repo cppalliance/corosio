@@ -18,8 +18,10 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include <atomic>
 #include <csignal>
 #include <chrono>
+#include <thread>
 #include <tuple>
 
 #include "context.hpp"
@@ -366,6 +368,301 @@ struct signal_set_test
         ioc.run();
         BOOST_TEST(completed);
         BOOST_TEST(result_ec == capy::cond::canceled);
+    }
+
+    void testMidWaitStopCancellation()
+    {
+        // A stop request that lands while the wait is already pending must
+        // cancel it, the same as every other wait operation in the library.
+        io_context ioc(Backend);
+        signal_set s(ioc, SIGINT);
+
+        std::stop_source src;
+        bool completed = false;
+        std::error_code result_ec;
+
+        auto wait_task = [&]() -> capy::task<> {
+            [[maybe_unused]] auto [ec, signum] = co_await s.wait();
+            result_ec                          = ec;
+            completed                          = true;
+        };
+        capy::run_async(ioc.get_executor(), src.get_token())(wait_task());
+
+        // Delay so the wait is genuinely parked in the service before the
+        // stop lands; a stop requested before wait() begins takes the
+        // existing stop_requested() short-circuit instead, which
+        // testWaitWithPreStoppedToken already covers.
+        auto stop_task = [&]() -> capy::task<> {
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(10));
+            src.request_stop();
+            co_return;
+        };
+        capy::run_async(ioc.get_executor())(stop_task());
+
+        ioc.run();
+        BOOST_TEST(completed);
+        BOOST_TEST(result_ec == capy::cond::canceled);
+    }
+
+    void testStopAfterSignalDelivered()
+    {
+        // Review Focus 1: a stop firing after the wait already completed
+        // must not poison the next wait on the same set. The poisoning
+        // this guards against -- token_cancelled_ left true by a late
+        // fire against waiting_ == false -- is only observable on a
+        // SECOND wait, so this drives one after the late stop lands.
+        io_context ioc(Backend);
+        signal_set s(ioc, SIGINT);
+
+        std::stop_source src;
+        bool first_done          = false;
+        std::error_code first_ec = capy::error::canceled;
+
+        auto wait_task = [&]() -> capy::task<> {
+            auto [ec, signum] = co_await s.wait();
+            (void)signum;
+            first_ec   = ec;
+            first_done = true;
+        };
+        capy::run_async(ioc.get_executor(), src.get_token())(wait_task());
+
+        auto raise_task = [&]() -> capy::task<> {
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(10));
+            std::raise(SIGINT);
+            co_return;
+        };
+        capy::run_async(ioc.get_executor())(raise_task());
+
+        ioc.run();
+        BOOST_TEST(first_done);
+        BOOST_TEST(!first_ec);
+
+        // Ordered after the first wait is observed complete, not after a
+        // fixed delay: the callback is still armed here, so this is the
+        // late fire against waiting_ == false.
+        src.request_stop();
+
+        // reset_token_cancel() must clear token_cancelled_ on the next
+        // wait() rather than leaving it to poison this one.
+        ioc.restart();
+        std::error_code second_ec = capy::error::canceled;
+        bool second_done          = false;
+
+        auto second = [&]() -> capy::task<> {
+            auto [ec, signum] = co_await s.wait();
+            (void)signum;
+            second_ec   = ec;
+            second_done = true;
+        };
+        capy::run_async(ioc.get_executor())(second());
+
+        auto raiser = [&]() -> capy::task<> {
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(10));
+            std::raise(SIGINT);
+            co_return;
+        };
+        capy::run_async(ioc.get_executor())(raiser());
+        ioc.run();
+
+        BOOST_TEST(second_done);
+        BOOST_TEST(!second_ec);
+    }
+
+    void testWaitAgainAfterStopCancel()
+    {
+        // Review Focus 4: the token path must not set the sticky
+        // `cancelled_` latch, so a second wait still works.
+        io_context ioc(Backend);
+        signal_set s(ioc, SIGINT);
+
+        std::stop_source src;
+        std::error_code first_ec;
+        bool first_done = false;
+
+        auto first = [&]() -> capy::task<> {
+            auto [ec, signum] = co_await s.wait();
+            (void)signum;
+            first_ec   = ec;
+            first_done = true;
+        };
+        capy::run_async(ioc.get_executor(), src.get_token())(first());
+
+        auto stopper = [&]() -> capy::task<> {
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(10));
+            src.request_stop();
+            co_return;
+        };
+        capy::run_async(ioc.get_executor())(stopper());
+        ioc.run();
+
+        BOOST_TEST(first_done);
+        BOOST_TEST(first_ec == capy::cond::canceled);
+
+        ioc.restart();
+        std::error_code second_ec = capy::error::canceled;
+        bool second_done          = false;
+
+        auto second = [&]() -> capy::task<> {
+            auto [ec, signum] = co_await s.wait();
+            (void)signum;
+            second_ec   = ec;
+            second_done = true;
+        };
+        capy::run_async(ioc.get_executor())(second());
+
+        auto raiser = [&]() -> capy::task<> {
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(10));
+            std::raise(SIGINT);
+            co_return;
+        };
+        capy::run_async(ioc.get_executor())(raiser());
+        ioc.run();
+
+        BOOST_TEST(second_done);
+        BOOST_TEST(!second_ec);
+    }
+
+    void testNormalDeliveryWithLiveToken()
+    {
+        // Review Focus 5: arming a callback for a token that is never
+        // requested must not disturb normal delivery.
+        io_context ioc(Backend);
+        signal_set s(ioc, SIGINT);
+
+        std::stop_source src;
+        bool completed            = false;
+        std::error_code result_ec = capy::error::canceled;
+        int got                   = 0;
+
+        auto wait_task = [&]() -> capy::task<> {
+            auto [ec, signum] = co_await s.wait();
+            result_ec         = ec;
+            got               = signum;
+            completed         = true;
+        };
+        capy::run_async(ioc.get_executor(), src.get_token())(wait_task());
+
+        auto raiser = [&]() -> capy::task<> {
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(10));
+            std::raise(SIGINT);
+            co_return;
+        };
+        capy::run_async(ioc.get_executor())(raiser());
+
+        ioc.run();
+        BOOST_TEST(completed);
+        BOOST_TEST(!result_ec);
+        BOOST_TEST(got == SIGINT);
+    }
+
+    void testDestroyWithArmedStopToken()
+    {
+        // Review Focus 3: destroying the set while a callback is armed
+        // must not leave a dangling `this`. Under ASAN this is the test
+        // that catches a missing disarm_stop().
+        io_context ioc(Backend);
+        std::stop_source src;
+        bool completed = false;
+
+        {
+            signal_set s(ioc, SIGINT);
+
+            auto wait_task = [&]() -> capy::task<> {
+                [[maybe_unused]] auto [ec, signum] = co_await s.wait();
+                completed                          = true;
+            };
+            capy::run_async(ioc.get_executor(), src.get_token())(wait_task());
+
+            auto canceller = [&]() -> capy::task<> {
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(10));
+                s.cancel();
+                co_return;
+            };
+            capy::run_async(ioc.get_executor())(canceller());
+            ioc.run();
+        }
+
+        src.request_stop();
+        BOOST_TEST(completed);
+    }
+
+    // The token_cancelled_ flag exists for a stop request that lands
+    // between wait() arming the callback and start_wait taking the
+    // service mutex; without it that wait parks forever. The window is
+    // unreachable from the io thread, so drive request_stop() from a
+    // second one. Whether any given iteration lands inside the window is
+    // timing, so assert only what holds either way: the wait always
+    // completes, and always with a cancellation.
+    void testConcurrentStopRequestRace()
+    {
+        constexpr int iterations = 400;
+
+        // Spin first: the window is nanoseconds wide and a yield
+        // overshoots it. Yield after that so an oversubscribed machine
+        // does not burn a timeslice per iteration. Bounded either way so
+        // a regression still terminates.
+        auto spin_until = [](std::atomic<bool> const& flag) {
+            for (int spin = 0; spin < 10000; ++spin)
+                if (flag.load(std::memory_order_acquire))
+                    return;
+            for (int n = 0; n < 100000; ++n)
+            {
+                if (flag.load(std::memory_order_acquire))
+                    return;
+                std::this_thread::yield();
+            }
+        };
+
+        io_context ioc(Backend);
+        signal_set s(ioc, SIGINT);
+
+        for (int i = 0; i < iterations; ++i)
+        {
+            std::stop_source src;
+            std::atomic<bool> stopper_ready{false};
+            std::atomic<bool> arming{false};
+            bool completed            = false;
+            std::error_code result_ec = capy::error::eof;
+
+            auto wait_task = [&]() -> capy::task<> {
+                // Hand off to an already-spinning stopper so thread
+                // startup latency does not swamp the stagger below.
+                spin_until(stopper_ready);
+                arming.store(true, std::memory_order_release);
+                [[maybe_unused]] auto [ec, signum] = co_await s.wait();
+                result_ec                          = ec;
+                completed                          = true;
+            };
+            capy::run_async(ioc.get_executor(), src.get_token())(wait_task());
+
+            std::thread stopper([&] {
+                stopper_ready.store(true, std::memory_order_release);
+                spin_until(arming);
+                // Walk the offset across iterations: a fixed delay would
+                // sit on the same side of the window every time.
+                for (int spin = i % 256; spin > 0; --spin)
+                    (void)arming.load(std::memory_order_relaxed);
+                src.request_stop();
+            });
+
+            ioc.restart();
+            // Bounded so a lost wakeup is the red assertion below rather
+            // than a suite timeout.
+            std::ignore = ioc.run_for(std::chrono::seconds(5));
+            stopper.join();
+
+            BOOST_TEST(completed);
+            BOOST_TEST(result_ec == capy::cond::canceled);
+            if (!completed)
+                return; // a wait still parked would hang every iteration after
+        }
     }
 
     void testShutdownWithPendingSignalSet()
@@ -1117,6 +1414,12 @@ struct signal_set_test
         testCancelNoWaiters();
         testCancelMultipleTimes();
         testWaitWithPreStoppedToken();
+        testMidWaitStopCancellation();
+        testStopAfterSignalDelivered();
+        testWaitAgainAfterStopCancel();
+        testNormalDeliveryWithLiveToken();
+        testDestroyWithArmedStopToken();
+        testConcurrentStopRequestRace();
         testShutdownWithPendingSignalSet();
 
         // Multiple signal set tests
