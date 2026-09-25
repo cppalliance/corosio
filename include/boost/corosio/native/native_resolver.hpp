@@ -60,7 +60,7 @@ class native_resolver : public resolver
     }
 
     struct native_resolve_awaitable
-        : detail::value_op_base<native_resolve_awaitable, resolver_results>
+        : detail::value_op_base<native_resolve_awaitable, std::vector<endpoint>>
     {
         native_resolver& self_;
         std::string host_;
@@ -89,8 +89,7 @@ class native_resolver : public resolver
     };
 
     struct native_reverse_awaitable
-        : detail::
-              value_op_base<native_reverse_awaitable, reverse_resolver_result>
+        : detail::value_op_base<native_reverse_awaitable, endpoint_name>
     {
         native_resolver& self_;
         endpoint ep_;
@@ -163,10 +162,7 @@ public:
         @param host The host name or address string.
         @param service The service name or port string.
 
-        @return An awaitable yielding `io_result<resolver_results>`.
-
-        @note `resolver_results` is an alias for `std::vector<resolver_entry>`;
-            copying it deep-copies every entry. See @ref resolver::resolve.
+        @return An awaitable yielding `io_result<std::vector<endpoint>>`.
     */
     [[nodiscard]] auto resolve(std::string_view host, std::string_view service)
     {
@@ -182,7 +178,8 @@ public:
         @param service The service name or port string.
         @param flags Flags controlling resolution behavior.
 
-        @return An awaitable yielding `io_result<resolver_results>`.
+        @return An awaitable yielding
+            `io_result<std::vector<endpoint>>`.
     */
     [[nodiscard]] auto resolve(
         std::string_view host, std::string_view service, resolve_flags flags)
@@ -201,7 +198,7 @@ public:
         @param ep The endpoint to resolve.
 
         @return An awaitable yielding
-            `io_result<reverse_resolver_result>`.
+            `io_result<endpoint_name>`.
     */
     [[nodiscard]] auto resolve(endpoint const& ep)
     {
@@ -216,7 +213,7 @@ public:
         @param flags Flags controlling resolution behavior.
 
         @return An awaitable yielding
-            `io_result<reverse_resolver_result>`.
+            `io_result<endpoint_name>`.
     */
     [[nodiscard]] auto resolve(endpoint const& ep, reverse_flags flags)
     {

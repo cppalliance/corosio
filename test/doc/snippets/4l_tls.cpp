@@ -324,9 +324,9 @@ https_get(
     // Connect TCP socket (connect() opens it automatically)
     corosio::tcp_socket sock(ioc);
 
-    for (auto const& entry : results)
+    for (auto const& ep : results)
     {
-        auto [ec] = co_await sock.connect(entry.get_endpoint());
+        auto [ec] = co_await sock.connect(ep);
         if (!ec)
             break;
     }

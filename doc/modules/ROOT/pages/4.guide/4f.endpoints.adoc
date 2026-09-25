@@ -177,10 +177,11 @@ The resolver returns endpoints:
 
 [source,cpp]
 ----
-include::example$snippets/4f_endpoints.cpp[tag=resolver_results,indent=0]
+include::example$snippets/4f_endpoints.cpp[tag=resolved_endpoints,indent=0]
 ----
 
-Resolver entries implicitly convert to endpoints:
+The vector can be handed to range-based sinks such as
+`corosio::connect` directly:
 
 [source,cpp]
 ----

@@ -795,7 +795,7 @@ struct win_common_faults
             auto [ec, result] =
                 co_await r.resolve(endpoint(ipv4_address::loopback(), 80));
             rec   = ec;
-            host  = result.host_name();
+            host  = result.host_name;
             fired = f.fired();
         };
         capy::run_async(ioc.get_executor())(t());

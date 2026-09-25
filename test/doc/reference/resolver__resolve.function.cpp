@@ -68,7 +68,7 @@ reverse_resolve(corosio::resolver& r)
     corosio::endpoint ep(corosio::ipv4_address({127, 0, 0, 1}), 80);
     auto [ec, result] = co_await r.resolve(ep);
     if (!ec)
-        std::cout << result.host_name() << ":" << result.service_name();
+        std::cout << result.host_name << ":" << result.service_name;
 }
 // end::reverse_resolve[]
 

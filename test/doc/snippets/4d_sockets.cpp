@@ -186,7 +186,7 @@ connect(Socket& s, Range endpoints);
 
 [[maybe_unused]] capy::task<>
 connect_condition_fragment(
-    corosio::tcp_socket& s, corosio::resolver_results results)
+    corosio::tcp_socket& s, std::vector<corosio::endpoint> results)
 {
     // tag::connect_condition[]
     auto [ec, ep] = co_await corosio::connect(

@@ -123,34 +123,12 @@ include::example$snippets/4j_resolver.cpp[tag=combined_flags,indent=0]
 
 == Working with Results
 
-`resolver_results` is an alias for `std::vector<resolver_entry>`, so it
-supports the full `std::vector` interface (iteration, `size()`, `empty()`,
-indexing, and so on):
-
-[source,cpp]
-----
-include::example$snippets/4j_resolver.cpp[tag=results_alias,indent=0]
-----
+Forward resolution returns a plain `std::vector<endpoint>`, one entry
+per resolved address:
 
 [source,cpp]
 ----
 include::example$snippets/4j_resolver.cpp[tag=iterate_results,indent=0]
-----
-
-[NOTE]
-====
-Copying a `resolver_results` deep-copies every entry, and each entry owns
-two `std::string` query names. When handing the results to a sink that
-takes the range by value — such as `corosio::connect` — pass an rvalue
-(`std::move(results)`) or use the iterator-based overload
-(`connect(s, results.begin(), results.end())`) to avoid the copy.
-====
-
-=== resolver_entry Interface
-
-[source,cpp]
-----
-include::example$snippets/4j_resolver.cpp[tag=entry_synopsis,indent=0]
 ----
 
 == Connecting to Resolved Addresses

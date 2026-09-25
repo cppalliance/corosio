@@ -99,10 +99,10 @@ struct resolver_test
 
         bool completed = false;
         std::error_code result_ec;
-        resolver_results results;
+        std::vector<endpoint> results;
 
         auto task = [](resolver& r_ref, std::error_code& ec_out,
-                       resolver_results& results_out,
+                       std::vector<endpoint>& results_out,
                        bool& done_out) -> capy::task<> {
             auto [ec, res] = co_await r_ref.resolve("localhost", "80");
             ec_out         = ec;
@@ -125,23 +125,15 @@ struct resolver_test
         bool found_valid = false;
         for (auto const& entry : results)
         {
-            auto ep = entry.get_endpoint();
+            auto ep = entry;
             // Port should be 80
             BOOST_TEST_EQ(ep.port(), 80);
 
-            // Should be either 127.0.0.1 (IPv4) or ::1 (IPv6)
-            if (ep.is_v4())
-            {
-                auto addr = ep.address().to_v4();
-                if (addr == ipv4_address({127, 0, 0, 1}))
-                    found_valid = true;
-            }
-            else if (ep.is_v6())
-            {
-                auto addr = ep.address().to_v6();
-                if (addr == ipv6_address::loopback())
-                    found_valid = true;
-            }
+            // Should be either 127.0.0.1 (IPv4) or ::1 (IPv6);
+            // cross-family equality compares the family first
+            if (ep.address() == ip_address(ipv4_address::loopback()) ||
+                ep.address() == ip_address(ipv6_address::loopback()))
+                found_valid = true;
         }
         BOOST_TEST(found_valid);
     }
@@ -153,10 +145,10 @@ struct resolver_test
 
         bool completed = false;
         std::error_code result_ec;
-        resolver_results results;
+        std::vector<endpoint> results;
 
         auto task = [](resolver& r_ref, std::error_code& ec_out,
-                       resolver_results& results_out,
+                       std::vector<endpoint>& results_out,
                        bool& done_out) -> capy::task<> {
             auto [ec, res] = co_await r_ref.resolve(
                 "127.0.0.1", "8080",
@@ -176,7 +168,7 @@ struct resolver_test
         BOOST_TEST_EQ(results.size(), 1u);
 
         auto const& entry = *results.begin();
-        auto ep           = entry.get_endpoint();
+        auto ep           = entry;
         BOOST_TEST(ep.is_v4());
         BOOST_TEST_EQ(ep.port(), 8080);
         BOOST_TEST(ep.address().to_v4() == ipv4_address({127, 0, 0, 1}));
@@ -189,10 +181,10 @@ struct resolver_test
 
         bool completed = false;
         std::error_code result_ec;
-        resolver_results results;
+        std::vector<endpoint> results;
 
         auto task = [](resolver& r_ref, std::error_code& ec_out,
-                       resolver_results& results_out,
+                       std::vector<endpoint>& results_out,
                        bool& done_out) -> capy::task<> {
             auto [ec, res] = co_await r_ref.resolve(
                 "::1", "443",
@@ -212,7 +204,7 @@ struct resolver_test
         BOOST_TEST_EQ(results.size(), 1u);
 
         auto const& entry = *results.begin();
-        auto ep           = entry.get_endpoint();
+        auto ep           = entry;
         BOOST_TEST(ep.is_v6());
         BOOST_TEST_EQ(ep.port(), 443);
         BOOST_TEST(ep.address().to_v6() == ipv6_address::loopback());
@@ -225,10 +217,10 @@ struct resolver_test
 
         bool completed = false;
         std::error_code result_ec;
-        resolver_results results;
+        std::vector<endpoint> results;
 
         auto task = [](resolver& r_ref, std::error_code& ec_out,
-                       resolver_results& results_out,
+                       std::vector<endpoint>& results_out,
                        bool& done_out) -> capy::task<> {
             auto [ec, res] = co_await r_ref.resolve(
                 "127.0.0.1", "http", resolve_flags::numeric_host);
@@ -247,37 +239,11 @@ struct resolver_test
 
         // "http" should resolve to port 80
         auto const& entry = *results.begin();
-        auto ep           = entry.get_endpoint();
+        auto ep           = entry;
         BOOST_TEST_EQ(ep.port(), 80);
     }
 
     // Entry metadata tests
-
-    void testEntryHostName()
-    {
-        io_context ioc;
-        resolver r(ioc);
-
-        bool completed = false;
-        resolver_results results;
-
-        auto task = [](resolver& r_ref, resolver_results& results_out,
-                       bool& done_out) -> capy::task<> {
-            auto [ec, res] = co_await r_ref.resolve("localhost", "80");
-            results_out    = std::move(res);
-            done_out       = true;
-        };
-        capy::run_async(ioc.get_executor())(task(r, results, completed));
-
-        ioc.run();
-
-        BOOST_TEST(completed);
-        BOOST_TEST(!results.empty());
-
-        auto const& entry = *results.begin();
-        BOOST_TEST_EQ(entry.host_name(), "localhost");
-        BOOST_TEST_EQ(entry.service_name(), "80");
-    }
 
     // Error handling tests
 
@@ -423,10 +389,10 @@ struct resolver_test
 
         bool completed = false;
         std::error_code result_ec;
-        resolver_results results;
+        std::vector<endpoint> results;
 
         auto task = [](resolver& r_ref, std::error_code& ec_out,
-                       resolver_results& results_out,
+                       std::vector<endpoint>& results_out,
                        bool& done_out) -> capy::task<> {
             // Use a definitely invalid hostname
             auto [ec, res] = co_await r_ref.resolve(
@@ -452,10 +418,10 @@ struct resolver_test
 
         bool completed = false;
         std::error_code result_ec;
-        resolver_results results;
+        std::vector<endpoint> results;
 
         auto task = [](resolver& r_ref, std::error_code& ec_out,
-                       resolver_results& results_out,
+                       std::vector<endpoint>& results_out,
                        bool& done_out) -> capy::task<> {
             // numeric_host flag with non-numeric hostname should fail
             auto [ec, res] = co_await r_ref.resolve(
@@ -615,10 +581,10 @@ struct resolver_test
         resolver r(ioc);
 
         std::error_code result_ec;
-        reverse_resolver_result result;
+        endpoint_name result;
 
         auto task = [](resolver& r_ref, std::error_code& ec_out,
-                       reverse_resolver_result& res_out) -> capy::task<> {
+                       endpoint_name& res_out) -> capy::task<> {
             endpoint ep(ipv4_address({127, 0, 0, 1}), 53);
             auto [ec, res] = co_await r_ref.resolve(
                 ep,
@@ -631,7 +597,7 @@ struct resolver_test
         ioc.run();
 
         BOOST_TEST(!result_ec);
-        BOOST_TEST_EQ(result.host_name(), "127.0.0.1");
+        BOOST_TEST_EQ(result.host_name, "127.0.0.1");
     }
 
     // Cancellation tests
@@ -901,11 +867,11 @@ struct resolver_test
         BOOST_TEST((flags & resolve_flags::passive) == resolve_flags::none);
     }
 
-    // resolver_results tests
+    // std::vector<endpoint> tests
 
     void testResolverResultsEmpty()
     {
-        resolver_results empty;
+        std::vector<endpoint> empty;
         BOOST_TEST(empty.empty());
         BOOST_TEST_EQ(empty.size(), 0u);
         BOOST_TEST(empty.begin() == empty.end());
@@ -916,10 +882,10 @@ struct resolver_test
         io_context ioc;
         resolver r(ioc);
 
-        resolver_results results;
+        std::vector<endpoint> results;
 
         auto task = [](resolver& r_ref,
-                       resolver_results& results_out) -> capy::task<> {
+                       std::vector<endpoint>& results_out) -> capy::task<> {
             auto [ec, res] = co_await r_ref.resolve("localhost", "80");
             results_out    = std::move(res);
         };
@@ -942,18 +908,11 @@ struct resolver_test
 
     void testResolverResultsSwap()
     {
-        std::vector<resolver_entry> entries1;
-        entries1.emplace_back(
-            endpoint(ipv4_address({127, 0, 0, 1}), 80), "host1", "80");
+        std::vector<endpoint> r1{endpoint(ipv4_address({127, 0, 0, 1}), 80)};
 
-        std::vector<resolver_entry> entries2;
-        entries2.emplace_back(
-            endpoint(ipv4_address({192, 168, 1, 1}), 443), "host2", "443");
-        entries2.emplace_back(
-            endpoint(ipv4_address({192, 168, 1, 2}), 443), "host2", "443");
-
-        resolver_results r1(std::move(entries1));
-        resolver_results r2(std::move(entries2));
+        std::vector<endpoint> r2{
+            endpoint(ipv4_address({192, 168, 1, 1}), 443),
+            endpoint(ipv4_address({192, 168, 1, 2}), 443)};
 
         BOOST_TEST_EQ(r1.size(), 1u);
         BOOST_TEST_EQ(r2.size(), 2u);
@@ -973,10 +932,10 @@ struct resolver_test
 
         bool completed = false;
         std::error_code result_ec;
-        reverse_resolver_result result;
+        endpoint_name result;
 
         auto task = [](resolver& r_ref, std::error_code& ec_out,
-                       reverse_resolver_result& result_out,
+                       endpoint_name& result_out,
                        bool& done_out) -> capy::task<> {
             endpoint ep(ipv4_address({127, 0, 0, 1}), 80);
             auto [ec, res] = co_await r_ref.resolve(ep);
@@ -991,8 +950,8 @@ struct resolver_test
 
         BOOST_TEST(completed);
         BOOST_TEST(!result_ec);
-        BOOST_TEST(!result.host_name().empty());
-        BOOST_TEST(!result.service_name().empty());
+        BOOST_TEST(!result.host_name.empty());
+        BOOST_TEST(!result.service_name.empty());
     }
 
     void testReverseResolveIPv6Localhost()
@@ -1002,10 +961,10 @@ struct resolver_test
 
         bool completed = false;
         std::error_code result_ec;
-        reverse_resolver_result result;
+        endpoint_name result;
 
         auto task = [](resolver& r_ref, std::error_code& ec_out,
-                       reverse_resolver_result& result_out,
+                       endpoint_name& result_out,
                        bool& done_out) -> capy::task<> {
             endpoint ep(ipv6_address::loopback(), 443);
             auto [ec, res] = co_await r_ref.resolve(ep);
@@ -1020,8 +979,8 @@ struct resolver_test
 
         BOOST_TEST(completed);
         BOOST_TEST(!result_ec);
-        BOOST_TEST(!result.host_name().empty());
-        BOOST_TEST(!result.service_name().empty());
+        BOOST_TEST(!result.host_name.empty());
+        BOOST_TEST(!result.service_name.empty());
     }
 
     void testReverseResolveNumericHost()
@@ -1031,10 +990,10 @@ struct resolver_test
 
         bool completed = false;
         std::error_code result_ec;
-        reverse_resolver_result result;
+        endpoint_name result;
 
         auto task = [](resolver& r_ref, std::error_code& ec_out,
-                       reverse_resolver_result& result_out,
+                       endpoint_name& result_out,
                        bool& done_out) -> capy::task<> {
             endpoint ep(ipv4_address({127, 0, 0, 1}), 80);
             auto [ec, res] =
@@ -1051,7 +1010,7 @@ struct resolver_test
         BOOST_TEST(completed);
         BOOST_TEST(!result_ec);
         // With numeric_host flag, should return "127.0.0.1"
-        BOOST_TEST_EQ(result.host_name(), "127.0.0.1");
+        BOOST_TEST_EQ(result.host_name, "127.0.0.1");
     }
 
     void testReverseResolveNumericService()
@@ -1061,10 +1020,10 @@ struct resolver_test
 
         bool completed = false;
         std::error_code result_ec;
-        reverse_resolver_result result;
+        endpoint_name result;
 
         auto task = [](resolver& r_ref, std::error_code& ec_out,
-                       reverse_resolver_result& result_out,
+                       endpoint_name& result_out,
                        bool& done_out) -> capy::task<> {
             endpoint ep(ipv4_address({127, 0, 0, 1}), 8080);
             auto [ec, res] =
@@ -1081,7 +1040,7 @@ struct resolver_test
         BOOST_TEST(completed);
         BOOST_TEST(!result_ec);
         // With numeric_service flag, should return "8080"
-        BOOST_TEST_EQ(result.service_name(), "8080");
+        BOOST_TEST_EQ(result.service_name, "8080");
     }
 
     void testReverseResolveNameRequired()
@@ -1216,16 +1175,15 @@ struct resolver_test
             BOOST_TEST(!ec1);
             BOOST_TEST(!results.empty());
 
-            // Get the endpoint from the result
-            auto ep = results.begin()->get_endpoint();
+            auto ep = *results.begin();
 
             // Reverse resolve
             auto [ec2, result] = co_await r_ref.resolve(
                 ep,
                 reverse_flags::numeric_host | reverse_flags::numeric_service);
             BOOST_TEST(!ec2);
-            BOOST_TEST_EQ(result.host_name(), "127.0.0.1");
-            BOOST_TEST_EQ(result.service_name(), "80");
+            BOOST_TEST_EQ(result.host_name, "127.0.0.1");
+            BOOST_TEST_EQ(result.service_name, "80");
 
             done_out = true;
         };
@@ -1234,28 +1192,6 @@ struct resolver_test
         ioc.run();
 
         BOOST_TEST(completed);
-    }
-
-    // resolver_entry tests
-
-    void testResolverEntryConstruction()
-    {
-        endpoint ep(ipv4_address({127, 0, 0, 1}), 8080);
-        resolver_entry entry(ep, "myhost", "myservice");
-
-        BOOST_TEST(entry.get_endpoint() == ep);
-        BOOST_TEST_EQ(entry.host_name(), "myhost");
-        BOOST_TEST_EQ(entry.service_name(), "myservice");
-    }
-
-    void testResolverEntryImplicitConversion()
-    {
-        endpoint ep(ipv4_address({10, 0, 0, 1}), 9000);
-        resolver_entry entry(ep, "test", "9000");
-
-        // Test implicit conversion to endpoint
-        endpoint converted = entry;
-        BOOST_TEST(converted == ep);
     }
 
     // Destroy the io_context with a resolver the service still owns.
@@ -1493,7 +1429,6 @@ struct resolver_test
         testResolveServiceName();
 
         // Entry metadata
-        testEntryHostName();
 
         // Error handling
         testResolveInvalidHost();
@@ -1526,14 +1461,10 @@ struct resolver_test
         // resolve_flags
         testResolveFlagsOperators();
 
-        // resolver_results
+        // std::vector<endpoint>
         testResolverResultsEmpty();
         testResolverResultsIteration();
         testResolverResultsSwap();
-
-        // resolver_entry
-        testResolverEntryConstruction();
-        testResolverEntryImplicitConversion();
 
         // Reverse resolution
         testReverseResolveLocalhost();

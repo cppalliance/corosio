@@ -151,30 +151,27 @@ posix_resolver_detail::flags_to_ni_flags(reverse_flags flags)
     return ni_flags;
 }
 
-inline resolver_results
-posix_resolver_detail::convert_results(
-    struct addrinfo* ai, std::string_view host, std::string_view service)
+inline std::vector<endpoint>
+posix_resolver_detail::convert_results(struct addrinfo* ai)
 {
-    std::vector<resolver_entry> entries;
-    entries.reserve(4); // Most lookups return 1-4 addresses
+    std::vector<endpoint> endpoints;
+    endpoints.reserve(4); // Most lookups return 1-4 addresses
 
     for (auto* p = ai; p != nullptr; p = p->ai_next)
     {
         if (p->ai_family == AF_INET)
         {
             auto* addr = reinterpret_cast<sockaddr_in*>(p->ai_addr);
-            auto ep    = from_sockaddr_in(*addr);
-            entries.emplace_back(ep, host, service);
+            endpoints.push_back(from_sockaddr_in(*addr));
         }
         else if (p->ai_family == AF_INET6)
         {
             auto* addr = reinterpret_cast<sockaddr_in6*>(p->ai_addr);
-            auto ep    = from_sockaddr_in6(*addr);
-            entries.emplace_back(ep, host, service);
+            endpoints.push_back(from_sockaddr_in6(*addr));
         }
     }
 
-    return entries;
+    return endpoints;
 }
 
 inline std::error_code
@@ -256,7 +253,7 @@ posix_resolver::resolve_op::reset() noexcept
     host.clear();
     service.clear();
     flags          = resolve_flags::none;
-    stored_results = resolver_results{};
+    stored_results = std::vector<endpoint>{};
     gai_error      = 0;
     cancelled.store(false, std::memory_order_relaxed);
     stop_cb.reset();
@@ -337,8 +334,8 @@ posix_resolver::reverse_resolve_op::operator()()
 
     if (result_out && !was_cancelled && gai_error == 0)
     {
-        *result_out = reverse_resolver_result(
-            ep, std::move(stored_host), std::move(stored_service));
+        *result_out =
+            endpoint_name{std::move(stored_host), std::move(stored_service)};
     }
 
     // Hold the keepalive across the dispatch: it may be the last
@@ -370,7 +367,7 @@ posix_resolver::resolve(
     resolve_flags flags,
     std::stop_token token,
     std::error_code* ec,
-    resolver_results* out)
+    std::vector<endpoint>* out)
 {
     if (svc_.resolver_unavailable())
     {
@@ -421,7 +418,7 @@ posix_resolver::reverse_resolve(
     reverse_flags flags,
     std::stop_token token,
     std::error_code* ec,
-    reverse_resolver_result* result_out)
+    endpoint_name* result_out)
 {
     if (svc_.resolver_unavailable())
     {
@@ -491,8 +488,8 @@ posix_resolver::do_resolve_work(pool_work_item* w) noexcept
     {
         if (result == 0 && ai)
         {
-            self->op_.stored_results = posix_resolver_detail::convert_results(
-                ai, self->op_.host, self->op_.service);
+            self->op_.stored_results =
+                posix_resolver_detail::convert_results(ai);
             self->op_.gai_error = 0;
         }
         else
