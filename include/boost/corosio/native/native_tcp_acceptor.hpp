@@ -38,12 +38,12 @@
 
 namespace boost::corosio {
 
-/** An asynchronous TCP acceptor with devirtualized accept operations.
+/** Accepts TCP connections, calling the backend directly.
 
-    This class template inherits from @ref tcp_acceptor and shadows
-    the `accept` operation with a version that calls the backend
-    implementation directly, allowing the compiler to inline through
-    the entire call chain.
+    This class template inherits from @ref tcp_acceptor. It shadows the
+    `accept` operation with a version that calls the backend
+    implementation directly. The compiler can then inline through the
+    entire call chain.
 
     Non-async operations (`listen`, `close`, `cancel`) remain
     unchanged and dispatch through the compiled library.
@@ -148,7 +148,7 @@ class native_tcp_acceptor : public tcp_acceptor
 public:
     /** Construct a native acceptor from an execution context.
 
-        @param ctx The execution context that will own this acceptor.
+        @param ctx The execution context that owns this acceptor.
     */
     explicit native_tcp_acceptor(capy::execution_context& ctx)
         : tcp_acceptor(create_handle<service_type>(ctx))
@@ -157,7 +157,11 @@ public:
 
     /** Construct a native acceptor from an executor.
 
-        @param ex The executor whose context will own the acceptor.
+        @param ex The executor whose context owns the acceptor.
+
+        @tparam Ex A type satisfying @ref capy::Executor. Must not
+            be `native_tcp_acceptor` itself (disables implicit
+            conversion from move).
     */
     template<class Ex>
         requires(!std::same_as<std::remove_cvref_t<Ex>, native_tcp_acceptor>) &&
@@ -188,7 +192,9 @@ public:
     */
     native_tcp_acceptor& operator=(native_tcp_acceptor&&) noexcept = default;
 
-    native_tcp_acceptor(native_tcp_acceptor const&)            = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    native_tcp_acceptor(native_tcp_acceptor const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     native_tcp_acceptor& operator=(native_tcp_acceptor const&) = delete;
 
     /** Asynchronously accept an incoming connection.
@@ -222,7 +228,7 @@ public:
 
         A closed acceptor reports `errc::bad_file_descriptor`.
 
-        @throws std::logic_error If the acceptor has been moved from.
+        @throws std::logic_error If the acceptor is moved-from.
 
         This acceptor must outlive the returned awaitable.
     */

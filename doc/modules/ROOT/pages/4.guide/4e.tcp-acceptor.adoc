@@ -8,8 +8,9 @@
 //
 
 = Acceptors
+:page-mode: how-to
 
-The `tcp_acceptor` class listens for incoming TCP connections and accepts them
+The cpp:tcp_acceptor[] class listens for incoming TCP connections and accepts them
 into socket objects. It's the foundation for building TCP servers.
 
 [NOTE]
@@ -72,7 +73,7 @@ listener on an occupied endpoint throws `errc::address_in_use`.
 === bind() and listen()
 
 For explicit error handling, construct the acceptor, then bind and listen as
-separate steps. Both return a `std::error_code` and are marked `[[nodiscard]]`
+separate steps. Both return a `std::error_code` and are marked `+[[nodiscard]]+`
 to prevent accidentally ignoring errors:
 
 [source,cpp]
@@ -136,7 +137,7 @@ include::example$snippets/4e_tcp_acceptor.cpp[tag=accept_returning,indent=0]
 ----
 
 Prefer the returning overload for the common case: it is simpler and guarantees
-the acceptor and socket use the same `io_context`. Use the 
+the acceptor and socket use the same cpp:io_context[]. Use the 
 `accept(tcp_socket&)` form when you pre-allocate or recycle sockets and want to
 manage their lifetime yourself.
 
@@ -180,8 +181,8 @@ All outstanding `accept()` operations complete with an error matching
 
 === Stop Token Cancellation
 
-Accept operations support `std::stop_token` through the affine awaitable
-protocol:
+Accept operations support `std::stop_token` through the
+xref:4.guide/4b.concurrent-programming.adoc[affine awaitable protocol]:
 
 [source,cpp]
 ----
@@ -279,7 +280,7 @@ provides:
 * Multi-port support
 * Automatic coroutine lifecycle
 
-The `tcp_acceptor` class is the lower-level primitive that `tcp_server` builds
+The cpp:tcp_acceptor[] class is the lower-level primitive that cpp:tcp_server[] builds
 upon.
 
 == Next Steps

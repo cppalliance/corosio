@@ -115,7 +115,7 @@ enum class tls_password_purpose
 
 class tls_context;
 
-/** A non-owning view of certificate verification state.
+/** Exposes the certificate and error state to a verification callback.
 
     An instance is passed to the callback installed via
     tls_context::set_verify_callback during the TLS handshake. It
@@ -175,7 +175,7 @@ public:
     /** Return the DER encoding of the certificate being verified.
 
         This is the portable way to inspect the peer certificate from a
-        verification callback: it works identically on every backend,
+        verification callback. It works identically on every backend,
         without depending on backend-specific build options. A DER
         certificate is an ASN.1 `SEQUENCE`, so the first byte is `0x30`.
 
@@ -199,7 +199,7 @@ tls_context_data const& get_tls_context_data(tls_context const&) noexcept;
 #pragma warning(disable : 4251) // shared_ptr needs dll-interface
 #endif
 
-/** A portable TLS context for certificate and settings storage.
+/** Configures the certificates, keys, and protocol settings a TLS stream uses.
 
     The `tls_context` class provides a backend-agnostic interface for
     configuring TLS connections. It stores credentials (certificates and
@@ -211,13 +211,13 @@ tls_context_data const& get_tls_context_data(tls_context const&) noexcept;
     by value and shared across multiple TLS streams.
 
     This class abstracts the configuration phase of TLS across multiple
-    backend implementations (OpenSSL, WolfSSL, mbedTLS, Schannel, etc.),
-    allowing portable code that works regardless of which TLS library
-    is linked.
+    backend implementations, among them OpenSSL, WolfSSL, mbedTLS and
+    Schannel. Portable code therefore works regardless of which TLS
+    library is linked.
 
     @par Modification After Stream Creation
 
-    Modifying a context after a TLS stream has been created from it
+    Modifying a context after creating a TLS stream from it
     results in undefined behavior. The context's configuration is
     captured when the first stream is constructed, and subsequent
     modifications are not reflected in existing or new streams
@@ -259,18 +259,14 @@ public:
     */
     tls_context();
 
-    /** Copy constructor.
-
-        Creates a new handle that shares ownership of the underlying
+    /** Creates a new handle that shares ownership of the underlying
         TLS context state with `other`.
 
         @param other The context to copy from.
     */
     tls_context(tls_context const& other) = default;
 
-    /** Copy assignment operator.
-
-        Releases the current context's shared ownership and acquires
+    /** Releases the current context's shared ownership and acquires
         shared ownership of `other`'s underlying state.
 
         @param other The context to copy from.
@@ -279,18 +275,14 @@ public:
     */
     tls_context& operator=(tls_context const& other) = default;
 
-    /** Move constructor.
-
-        Transfers ownership of the TLS context from another instance.
+    /** Transfers ownership of the TLS context from another instance.
         After the move, `other` is in a valid but empty state.
 
         @param other The context to move from.
     */
     tls_context(tls_context&& other) noexcept = default;
 
-    /** Move assignment operator.
-
-        Releases the current context's shared ownership and transfers
+    /** Releases the current context's shared ownership and transfers
         ownership from another instance. After the move, `other` is
         in a valid but empty state.
 
@@ -300,9 +292,7 @@ public:
     */
     tls_context& operator=(tls_context&& other) noexcept = default;
 
-    /** Destructor.
-
-        Releases this handle's shared ownership of the underlying
+    /** Releases this handle's shared ownership of the underlying
         context. The context state is destroyed when the last handle
         is released.
     */
@@ -409,9 +399,9 @@ public:
         @param format The encoding format of the key data.
 
         @return Success. The key is recorded and decoded when the native
-            context is first built; a malformed key, a missing password
-            callback for an encrypted key, or a certificate mismatch
-            surfaces as a handshake failure.
+        context is first built. Three faults surface only as a handshake
+        failure: a malformed key, a missing password callback for an
+        encrypted key, and a certificate mismatch.
 
         @see use_private_key_file
         @see set_password_callback
@@ -457,9 +447,9 @@ public:
         @param passphrase The password protecting the bundle.
 
         @return Success. The bundle is recorded and decoded into the
-            certificate, private key, and chain when the native context is
-            first built; a malformed bundle or wrong passphrase surfaces as
-            a handshake failure.
+        certificate, private key, and chain when the native context is
+        first built. A malformed bundle or a wrong passphrase surfaces as a
+        handshake failure.
 
         @note Intermediate certificates inside the bundle are loaded and
             sent during the handshake on both backends.
@@ -544,16 +534,16 @@ public:
         this context.
 
         The expected directory layout depends on the backend. OpenSSL
-        performs on-demand lookups and requires each certificate file to
-        be named by its subject-name hash (as generated by
-        `openssl rehash` or `c_rehash`); WolfSSL loads every certificate
-        file in the directory.
+        performs on-demand lookups. Each certificate file must be named
+        by its subject-name hash, as generated by `openssl rehash` or
+        `c_rehash`. WolfSSL loads every certificate file in the
+        directory.
 
         @param path Path to the directory of CA certificates.
 
         @return Success. The path is recorded and applied when the native
-            context is built; a directory that cannot be read at that time
-            is skipped rather than reported here.
+        context is built. A directory that cannot be read at that time is
+        skipped rather than reported here.
 
         @par Example
         @par !example add_verify_path
@@ -576,10 +566,10 @@ public:
         name, `tls_stream::set_hostname()`.
 
         @return Success. The request is recorded and applied when the
-            native context is built; if the system store cannot be loaded
-            at that time it is skipped rather than reported here, so a
-            context that must reject unverified peers should also use
-            `set_verify_mode( tls_verify_mode::peer )`.
+        native context is built. A system store that cannot be loaded at
+        that time is skipped rather than reported here. A context that
+        must reject unverified peers should therefore also use
+        `set_verify_mode( tls_verify_mode::peer )`.
 
         @note The OpenSSL backend honors the `SSL_CERT_FILE` and
             `SSL_CERT_DIR` environment variables. The WolfSSL backend
@@ -601,7 +591,7 @@ public:
 
     /** Set the minimum TLS protocol version.
 
-        Connections will reject protocol versions older than this.
+        Connections reject protocol versions older than this.
         The default allows TLS 1.2 and newer.
 
         @param v The minimum protocol version to accept.
@@ -618,7 +608,7 @@ public:
 
     /** Set the maximum TLS protocol version.
 
-        Connections will not negotiate protocol versions newer than this.
+        Connections do not negotiate protocol versions newer than this.
         The default allows the newest supported version.
 
         @param v The maximum protocol version to accept.
@@ -627,9 +617,9 @@ public:
             native context is first built.
 
         @note On WolfSSL the ceiling is applied by selecting a
-            version-specific method (no native set-max API exists); an
-            invalid window where the minimum exceeds the maximum yields a
-            context that fails the handshake.
+        version-specific method, because no native set-max API exists. An
+        invalid window, where the minimum exceeds the maximum, yields a
+        context that fails the handshake.
 
         @see set_min_protocol_version
     */
@@ -735,6 +725,9 @@ public:
 
         @return Success. The depth is recorded and applied when the native
             context is first built.
+
+        @par Example
+        @par !example set_verify_depth
     */
     [[nodiscard]] std::error_code set_verify_depth(int depth);
 
@@ -746,7 +739,7 @@ public:
         results.
 
         The callback receives the built-in verification result so far and
-        a verify_context describing the certificate being verified. Return
+        a `verify_context` describing the certificate being verified. Return
         `true` to accept the certificate, `false` to reject. Inspect the
         certificate portably via `verify_context::certificate()` (its DER
         encoding) — for example to pin a specific certificate.
@@ -757,17 +750,18 @@ public:
 
         - OpenSSL: the callback runs once per certificate in the chain,
           including certificates that passed the built-in checks. It can
-          therefore both relax verification (return `true` for a
-          certificate the library rejected) and tighten it (return `false`
-          for a certificate the library accepted, e.g. pinning).
+          therefore relax verification by returning `true` for a
+          certificate the library rejected. It can also tighten
+          verification by returning `false` for a certificate the library
+          accepted, as pinning does.
         - WolfSSL built with `WOLFSSL_ALWAYS_VERIFY_CB` (implied by
           `--enable-opensslextra`): same as OpenSSL.
         - WolfSSL without that option: the library invokes the callback
           only on verification *failure*, so it cannot be honored on a
-          successful handshake. To avoid silently ignoring a
-          verification-tightening callback (which would fail open), a
-          context that carries a callback instead **fails the handshake**
-          with `std::errc::function_not_supported` on such a build. Rebuild
+          successful handshake. Silently ignoring a verification-tightening
+          callback would fail open. On such a build, a context that carries
+          a callback instead **fails the handshake** with
+          `std::errc::function_not_supported`. Rebuild
           WolfSSL with `WOLFSSL_ALWAYS_VERIFY_CB`, or omit the callback.
 
         @tparam Callback A callable with signature
@@ -830,7 +824,7 @@ public:
     /** Add a Certificate Revocation List from memory.
 
         Adds a CRL to the verification store for checking whether
-        certificates have been revoked. CRLs are typically fetched
+        certificates are revoked. CRLs are typically fetched
         from the URLs in a certificate's CRL Distribution Points
         extension.
 
@@ -854,7 +848,7 @@ public:
     /** Add a Certificate Revocation List from a file.
 
         Adds a CRL to the verification store for checking whether
-        certificates have been revoked.
+        certificates are revoked.
 
         @param filename Path to a CRL file (DER or PEM format).
 
@@ -909,7 +903,7 @@ public:
         loading encrypted key material.
 
         @tparam Callback A callable with signature
-            `std::string( std::size_t max_length, password_purpose purpose )`.
+            `std::string( std::size_t max_length, tls_password_purpose purpose )`.
 
         @param callback The password callback. It receives the maximum
             password length and the purpose (reading or writing), and

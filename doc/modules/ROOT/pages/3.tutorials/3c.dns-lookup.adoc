@@ -8,6 +8,7 @@
 //
 
 = DNS Lookup Tutorial
+:page-mode: tutorial
 
 This tutorial builds a command-line DNS lookup tool similar to `nslookup`.
 You'll learn to use the asynchronous resolver to convert hostnames to IP
@@ -25,7 +26,7 @@ include::example$nslookup/nslookup.cpp[tag=assume]
 == Overview
 
 DNS resolution converts a hostname like `www.example.com` to one or more IP
-addresses. The `resolver` class performs this asynchronously:
+addresses. The cpp:resolver[] class performs this asynchronously:
 
 [source,cpp]
 ----
@@ -62,37 +63,20 @@ include::example$nslookup/nslookup.cpp[tag=main]
 
 == Resolver Flags
 
-The resolver accepts optional flags to control behavior:
+The resolver accepts optional flags to control behavior. See the
+xref:../4.guide/4j.resolver.adoc[Resolver Guide] for the full flag reference.
 
 [source,cpp]
 ----
 include::example$snippets/3c_dns_lookup.cpp[tag=resolve_with_flags,indent=0]
 ----
 
-Available flags:
-
-[cols="1,3"]
-|===
-| Flag | Description
-
-| `passive`
-| Return endpoints suitable for binding (server use)
-
-| `numeric_host`
-| Host is a numeric address string, skip DNS
-
-| `numeric_service`
-| Service is a port number string
-
-| `address_configured`
-| Only return addresses if configured on the system
-
-| `v4_mapped`
-| Return IPv4-mapped IPv6 addresses if no IPv6 found
-
-| `all_matching`
-| With `v4_mapped`, return all matching addresses
-|===
+[NOTE]
+====
+`v4_mapped` and `all_matching` are currently inert. The resolver always
+queries with `ai_family = AF_UNSPEC`, but the underlying `AI_V4MAPPED` and
+`AI_ALL` behavior only takes effect for `AF_INET6`-family queries.
+====
 
 == Connecting to Resolved Addresses
 
@@ -105,7 +89,7 @@ include::example$snippets/3c_dns_lookup.cpp[tag=connect_to_host]
 
 == Running the Lookup Tool
 
-[source,bash]
+[role=output]
 ----
 $ ./nslookup www.google.com https
 Results for www.google.com:https
@@ -115,7 +99,7 @@ Results for www.google.com:https
 Total: 2 addresses
 ----
 
-[source,bash]
+[role=output]
 ----
 $ ./nslookup localhost 8080
 Results for localhost:8080
@@ -126,18 +110,19 @@ Total: 1 addresses
 
 == Cancellation
 
-Resolver operations support cancellation via `std::stop_token`:
+Resolver operations support cancellation. Explicit cancellation looks like this:
 
 [source,cpp]
 ----
 include::example$snippets/3c_dns_lookup.cpp[tag=resolver_cancel,indent=0]
 ----
 
-A cancelled resolution completes with `capy::cond::canceled` (the
-underlying value is `capy::error::canceled`), so test for it with
-`ec == capy::cond::canceled`.
+A cancelled resolution completes with `capy::cond::canceled`, so test for it
+with `ec == capy::cond::canceled`. The underlying value depends on the path:
+`cancel()` reports `capy::error::canceled`, and a stop-token request reports
+the generic `std::errc::operation_canceled`.
 
-Or through the affine awaitable protocol, which propagates the stop token from `capy::run_async` to every awaitable in the chain.
+Or through the xref:../4.guide/4b.concurrent-programming.adoc[affine awaitable protocol], which propagates the stop token from `capy::run_async` to every awaitable in the chain.
 
 == Next Steps
 

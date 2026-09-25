@@ -71,23 +71,23 @@ namespace {
 // to compile.
 namespace synopsis {
 
-using namespace boost::capy;
-
 // tag::read_signature[]
-auto read(ReadStream auto& stream, MutableBufferSequence auto buffers)
+auto
+read(capy::ReadStream auto& stream, capy::MutableBufferSequence auto buffers)
     -> capy::io_task<std::size_t>;
 // end::read_signature[]
 
 // tag::write_signature[]
-auto write(WriteStream auto& stream, ConstBufferSequence auto buffers)
+auto
+write(capy::WriteStream auto& stream, capy::ConstBufferSequence auto buffers)
     -> capy::io_task<std::size_t>;
 // end::write_signature[]
 
 // tag::slice_interface[]
 template<class BufferSequence>
-    requires MutableBufferSequence<BufferSequence> ||
-    ConstBufferSequence<BufferSequence>
-slice_type<BufferSequence> buffer_slice(
+    requires capy::MutableBufferSequence<BufferSequence> ||
+    capy::ConstBufferSequence<BufferSequence>
+capy::slice_type<BufferSequence> buffer_slice(
     BufferSequence const& seq,
     std::size_t offset = 0,
     std::size_t length = (std::numeric_limits<std::size_t>::max)());

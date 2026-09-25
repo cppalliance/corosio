@@ -8,10 +8,11 @@
 //
 
 = Making TCP Fast
+:page-mode: explanation
 
 TCP was designed when networks ran at kilobits per second and the entire internet fit on a single backbone. The core protocol -- sequence numbers, acknowledgments, sliding windows -- scales remarkably well, but some of its original parameters do not. A 16-bit window field caps the amount of data in flight at 65,535 bytes. Sequence numbers wrap around on fast links. RTT measurements lose precision when segments fly faster than the clock ticks.
 
-Over the decades, a set of extensions has been added to TCP to remove these bottlenecks. They are negotiated during the handshake and are transparent to your application code, but understanding them tells you where TCP performance comes from and where the limits still lie.
+Over the decades, TCP gained a set of extensions that remove these bottlenecks. They are negotiated during the handshake and are transparent to your application code, but understanding them tells you where TCP performance comes from and where the limits still lie.
 
 == Path MTU Discovery
 
@@ -33,15 +34,16 @@ The maximum throughput of a TCP connection is limited by how much data can be in
 
 Consider a 100 Mbps link with a 50-millisecond RTT. The bandwidth-delay product is:
 
+[role=figure]
 ----
 100,000,000 bits/sec × 0.050 sec = 5,000,000 bits = 625,000 bytes
 ----
 
-To fully utilize this link, the sender must have 625,000 bytes of data in flight simultaneously. If the TCP window is smaller than the BDP, the sender will finish transmitting its window and then sit idle waiting for ACKs, leaving bandwidth unused.
+To use this link fully, the sender must have 625,000 bytes of data in flight simultaneously. If the TCP window is smaller than the BDP, the sender finishes transmitting its window and then sits idle waiting for ACKs, leaving bandwidth unused.
 
 Networks with high bandwidth and high latency -- satellite links, transcontinental fiber, data center interconnects -- have large BDPs. These are sometimes called *long fat networks*, and they expose the original TCP window's 65,535-byte limit as a severe bottleneck.
 
-On a transoceanic link at 10 Gbps with a 100-millisecond RTT, the BDP is 125 megabytes. A 64 KB window would utilize less than 0.05% of the available bandwidth. Without the window scale extension, such a link would be essentially unusable for a single TCP connection.
+On a transoceanic link at 10 Gbps with a 100-millisecond RTT, the BDP is 125 megabytes. A 64 KB window would use about 0.05% of the available bandwidth. Without the window scale extension, such a link would be unusable for a single TCP connection.
 
 == Window Scaling
 

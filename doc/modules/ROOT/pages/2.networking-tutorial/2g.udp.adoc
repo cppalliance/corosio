@@ -8,8 +8,9 @@
 //
 
 = UDP: Fast, Simple, Unreliable
+:page-mode: explanation
 
-UDP is the simplest transport protocol you will encounter. It takes your data, slaps on a small header with source and destination port numbers, and hands it to IP. No connection setup. No acknowledgment. No retransmission. No ordering guarantees. If you want any of those things, you build them yourself.
+UDP is the simplest transport protocol you encounter. It takes your data, slaps on a small header with source and destination port numbers, and hands it to IP. It delivers each datagram best-effort, with no connection setup, acknowledgment, retransmission, or ordering guarantees. If you want any of those things, you build them yourself.
 
 That sounds like a limitation, and it is -- but it is also the point. UDP exists for situations where the overhead of reliability is worse than the occasional lost packet.
 
@@ -21,7 +22,7 @@ Port numbers:: Just like TCP, UDP uses 16-bit source and destination port number
 
 Checksum:: A checksum covers the UDP header and payload. If the data was corrupted in transit, the operating system discards the datagram silently. (In IPv4 the checksum is optional, though universally used in practice. In IPv6 it is mandatory.)
 
-That is the full list. UDP does not establish a connection, does not track what has been sent, and does not guarantee that anything arrives. Each `send` call produces one datagram. Each `recv` call consumes one datagram. The datagrams are independent.
+That is the full list. UDP does not establish a connection, does not track what it sent, and does not guarantee that anything arrives. Each `send` call produces one datagram. Each `recv` call consumes one datagram. The datagrams are independent.
 
 == The UDP Header
 
@@ -58,7 +59,7 @@ For protocols where message framing matters -- where each datagram is a self-con
 
 == Fragmentation and UDP
 
-A UDP datagram can theoretically be up to 65,535 bytes (the maximum IP packet size, minus the IP and UDP headers). In practice, sending anything close to this size is a bad idea.
+A UDP datagram can theoretically be up to 65,535 bytes -- UDP's own 16-bit length field cannot express more. In practice, sending anything close to this size is a bad idea.
 
 When a UDP datagram exceeds the path MTU, IP fragments it into smaller pieces. These fragments travel independently through the network. If every fragment arrives, the destination reassembles the original datagram and delivers it to your application. If *any* fragment is lost, the entire datagram is discarded. Your application receives nothing -- not even the fragments that did arrive.
 
@@ -96,7 +97,7 @@ File transfers, database queries, HTTP requests, and any protocol where data int
 
 == Why This Matters to You
 
-UDP is the faster, leaner transport protocol, and understanding it helps you make informed decisions about when to use it. But its simplicity is a double-edged sword: it gives you freedom and leaves you responsible for everything TCP would handle automatically.
+UDP is the faster, leaner transport protocol, and understanding it helps you make informed decisions about when to use it. But its simplicity gives you freedom and leaves you responsible for everything TCP would handle automatically.
 
 For most application developers, TCP is the default choice. UDP is the right tool for specific problems: latency-sensitive media, lightweight query-response protocols, and situations where the application knows better than TCP what "reliable" means.
 

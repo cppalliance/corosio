@@ -18,7 +18,7 @@
 
 namespace boost::corosio {
 
-/** A type-erased buffer sequence for I/O system call boundaries.
+/** Erases a buffer sequence to the pointer and length a system call takes.
 
     This class enables I/O objects to accept any buffer sequence type
     across a virtual function boundary, while preserving the caller's

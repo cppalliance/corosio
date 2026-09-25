@@ -8,6 +8,7 @@
 //
 
 = Concurrent Programming
+:page-mode: how-to
 
 Network servers often handle many clients simultaneously. This chapter explains
 how Corosio supports concurrency using C++20 coroutines and the strand pattern
@@ -34,8 +35,8 @@ response, another client's request is being sent.
 
 Concurrency increases throughput. A single-threaded server handling one
 connection at a time might manage 100 requests per second. The same server with
-concurrency might handle 10,000—not because any single request is faster, but
-because the server overlaps waiting time with useful work.
+concurrency might handle 10,000. No single request is faster; the server
+overlaps waiting time with useful work.
 
 === Concurrency vs Parallelism
 
@@ -189,7 +190,7 @@ handling.
 === The Reactor Pattern
 
 Corosio uses the reactor pattern: register interest in I/O events, wait for
-events, dispatch handlers. The `io_context::run()` method implements this loop.
+events, dispatch handlers. The cpp:io_context[] `run()` method implements this loop.
 
 The reactor is efficient because it waits for any of many events simultaneously,
 rather than polling each socket individually.
@@ -197,8 +198,8 @@ rather than polling each socket individually.
 == C++20 Coroutines
 
 A coroutine is a function that can suspend and resume execution. Unlike threads,
-coroutines don't block the thread when waiting—they yield control to a
-scheduler.
+coroutines don't block the thread when waiting—they yield control to an
+executor.
 
 === Language Mechanics
 
@@ -285,7 +286,7 @@ necessarily the thread that started the operation.
 include::example$snippets/4b_concurrent_programming.cpp[tag=executor_affinity,indent=0]
 ----
 
-If `io_context::run()` is called from one thread, resumptions happen on that
+If cpp:io_context[] `run()` is called from one thread, resumptions happen on that
 thread. With multiple threads calling `run()`, resumptions happen on whichever
 thread is available.
 
@@ -300,6 +301,7 @@ happens automatically—you don't need explicit dispatch calls.
 A _strand_ guarantees that handlers posted to it don't run concurrently. Even
 with multiple threads, strand operations execute one at a time.
 
+[role=figure]
 ----
         ┌───────────────┐
 Thread A│               │
@@ -371,7 +373,7 @@ sequential `co_await`s naturally serialize:
 include::example$snippets/4b_concurrent_programming.cpp[tag=strand_session]
 ----
 
-With a single-threaded `io_context`, coroutines sharing that executor can
+With a single-threaded cpp:io_context[], coroutines sharing that executor can
 safely access shared state without locks.
 
 == Scaling Strategies
@@ -380,7 +382,7 @@ Different applications need different concurrency strategies.
 
 === Single-Threaded: One Thread, Many Coroutines
 
-The simplest model: one thread runs `io_context::run()`, handling all events.
+The simplest model: one thread runs cpp:io_context[] `run()`, handling all events.
 Coroutines provide concurrency without threads.
 
 Advantages:
@@ -439,7 +441,7 @@ include::example$snippets/4b_concurrent_programming.cpp[tag=accept_loop]
 ----
 
 Each `handle_client` coroutine runs independently. The accept loop continues
-immediately after spawning.
+immediately after starting.
 
 This works well when:
 
@@ -458,7 +460,7 @@ include::example$snippets/4b_concurrent_programming.cpp[tag=worker_pool]
 include::example$snippets/4b_concurrent_programming.cpp[tag=worker_pool_use,indent=0]
 ----
 
-Corosio's `tcp_server` class implements this pattern—see
+Corosio's cpp:tcp_server[] class implements this pattern—see
 xref:4.guide/4k.tcp-server.adoc[TCP Server] for details.
 
 === Pipelines
@@ -488,14 +490,14 @@ from running.
 
 === Dangling References in Async Code
 
-Spawned coroutines must not hold references to destroyed objects:
+Started coroutines must not hold references to destroyed objects:
 
 [source,cpp]
 ----
 include::example$snippets/4b_concurrent_programming.cpp[tag=dangling_reference,indent=0]
 ----
 
-A coroutine may outlive the scope that spawned it. Ensure captured data lives
+A coroutine may outlive the scope that started it. Ensure captured data lives
 long enough.
 
 === Cross-Executor Access

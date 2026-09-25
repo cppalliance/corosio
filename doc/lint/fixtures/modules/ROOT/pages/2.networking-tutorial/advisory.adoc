@@ -1,0 +1,8 @@
+= Advisory-slice fixture
+:page-mode: concept
+
+// This page is under 9.design/, so its findings must be keyed `advisory-C2` and
+// must NOT be reachable from a `--gate 'sentence_length:^C2:'` spec.
+Advisory one two three four five six seven eight nine ten eleven twelve thirteen
+fourteen fifteen sixteen seventeen eighteen nineteen twenty twentyone twentytwo
+twentythree twentyfour twentyfive twentysix twentyseven.

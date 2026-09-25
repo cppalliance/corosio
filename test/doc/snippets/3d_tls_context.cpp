@@ -44,7 +44,6 @@
 #include <boost/corosio/tls_context.hpp>
 
 namespace corosio = boost::corosio;
-using namespace boost::corosio;
 // end::assume[]
 
 #include <boost/corosio/tls_stream.hpp>
@@ -70,13 +69,13 @@ construction()
 {
     // tag::construction[]
     // Create a default context
-    tls_context ctx;
+    corosio::tls_context ctx;
 
     // Copy shares the same underlying state
-    tls_context ctx2 = ctx; // ctx and ctx2 share state
+    corosio::tls_context ctx2 = ctx; // ctx and ctx2 share state
 
     // Move transfers ownership
-    tls_context ctx3 = std::move(ctx);
+    corosio::tls_context ctx3 = std::move(ctx);
     // ctx is now empty
     // end::construction[]
 }
@@ -85,12 +84,13 @@ void
 typical_setup()
 {
     // tag::typical_setup[]
-    tls_context ctx;
+    corosio::tls_context ctx;
 
     // 1. Load credentials (for servers, or clients using client certs)
     if (auto ec = ctx.use_certificate_chain_file("server.crt"))
         return;
-    if (auto ec = ctx.use_private_key_file("server.key", tls_file_format::pem))
+    if (auto ec = ctx.use_private_key_file(
+            "server.key", corosio::tls_file_format::pem))
         return;
 
     // 2. Configure trust anchors (for verifying peer certificates)
@@ -98,17 +98,17 @@ typical_setup()
         return;
 
     // 3. Set verification mode
-    if (auto ec = ctx.set_verify_mode(tls_verify_mode::peer))
+    if (auto ec = ctx.set_verify_mode(corosio::tls_verify_mode::peer))
         return;
 
     // 4. Configure protocol options (optional)
-    if (auto ec = ctx.set_min_protocol_version(tls_version::tls_1_2))
+    if (auto ec = ctx.set_min_protocol_version(corosio::tls_version::tls_1_2))
         return;
     // end::typical_setup[]
 }
 
 void
-load_separate(tls_context& ctx)
+load_separate(corosio::tls_context& ctx)
 {
     // tag::load_separate[]
     // Load certificate chain (leaf + intermediates)
@@ -116,24 +116,27 @@ load_separate(tls_context& ctx)
         return;
 
     // Load the matching private key
-    if (auto ec = ctx.use_private_key_file("privkey.key", tls_file_format::pem))
+    if (auto ec = ctx.use_private_key_file(
+            "privkey.key", corosio::tls_file_format::pem))
         return;
     // end::load_separate[]
 }
 
 void
-load_single(tls_context& ctx)
+load_single(corosio::tls_context& ctx)
 {
     // tag::load_single[]
-    if (auto ec = ctx.use_certificate_file("server.crt", tls_file_format::pem))
+    if (auto ec = ctx.use_certificate_file(
+            "server.crt", corosio::tls_file_format::pem))
         return;
-    if (auto ec = ctx.use_private_key_file("server.key", tls_file_format::pem))
+    if (auto ec = ctx.use_private_key_file(
+            "server.key", corosio::tls_file_format::pem))
         return;
     // end::load_single[]
 }
 
 void
-pkcs12_bundle(tls_context& ctx)
+pkcs12_bundle(corosio::tls_context& ctx)
 {
     // tag::pkcs12_file[]
     if (auto ec = ctx.use_pkcs12_file("credentials.pfx", "bundle-password"))
@@ -154,7 +157,7 @@ fetch_key_from_vault()
 }
 
 void
-load_memory(tls_context& ctx)
+load_memory(corosio::tls_context& ctx)
 {
     // tag::load_memory[]
     std::string cert_pem = fetch_certificate_from_vault();
@@ -162,25 +165,26 @@ load_memory(tls_context& ctx)
 
     if (auto ec = ctx.use_certificate_chain(cert_pem))
         return;
-    if (auto ec = ctx.use_private_key(key_pem, tls_file_format::pem))
+    if (auto ec = ctx.use_private_key(key_pem, corosio::tls_file_format::pem))
         return;
     // end::load_memory[]
 }
 
 void
-der_files(tls_context& ctx)
+der_files(corosio::tls_context& ctx)
 {
     // tag::der_files[]
-    if (auto ec = ctx.use_certificate_file("server.der", tls_file_format::der))
+    if (auto ec = ctx.use_certificate_file(
+            "server.der", corosio::tls_file_format::der))
         return;
-    if (auto ec =
-            ctx.use_private_key_file("server.key.der", tls_file_format::der))
+    if (auto ec = ctx.use_private_key_file(
+            "server.key.der", corosio::tls_file_format::der))
         return;
     // end::der_files[]
 }
 
 void
-system_trust(tls_context& ctx)
+system_trust(corosio::tls_context& ctx)
 {
     // tag::system_trust[]
     if (auto ec = ctx.set_default_verify_paths())
@@ -189,7 +193,7 @@ system_trust(tls_context& ctx)
 }
 
 void
-ca_bundle(tls_context& ctx)
+ca_bundle(corosio::tls_context& ctx)
 {
     // tag::ca_bundle[]
     // Load CA bundle file (may contain multiple CAs)
@@ -199,7 +203,7 @@ ca_bundle(tls_context& ctx)
 }
 
 void
-ca_directory(tls_context& ctx)
+ca_directory(corosio::tls_context& ctx)
 {
     // tag::ca_directory[]
     if (auto ec = ctx.add_verify_path("/etc/ssl/certs"))
@@ -215,7 +219,7 @@ load_ca_from_config()
 
 void
 ca_individual(
-    tls_context& ctx,
+    corosio::tls_context& ctx,
     std::string const& root_ca_pem,
     std::string const& intermediate_ca_pem)
 {
@@ -234,7 +238,7 @@ ca_individual(
 }
 
 void
-combine_trust(tls_context& ctx, std::string const& corporate_ca_pem)
+combine_trust(corosio::tls_context& ctx, std::string const& corporate_ca_pem)
 {
     // tag::combine_trust[]
     // Start with system trust store
@@ -248,23 +252,23 @@ combine_trust(tls_context& ctx, std::string const& corporate_ca_pem)
 }
 
 void
-version_bounds(tls_context& ctx)
+version_bounds(corosio::tls_context& ctx)
 {
     // tag::version_bounds[]
     // Require TLS 1.2 or newer (default)
-    if (auto ec = ctx.set_min_protocol_version(tls_version::tls_1_2))
+    if (auto ec = ctx.set_min_protocol_version(corosio::tls_version::tls_1_2))
         return;
 
     // Require TLS 1.3 only
-    if (auto ec = ctx.set_min_protocol_version(tls_version::tls_1_3))
+    if (auto ec = ctx.set_min_protocol_version(corosio::tls_version::tls_1_3))
         return;
-    if (auto ec = ctx.set_max_protocol_version(tls_version::tls_1_3))
+    if (auto ec = ctx.set_max_protocol_version(corosio::tls_version::tls_1_3))
         return;
     // end::version_bounds[]
 }
 
 void
-cipher_suites(tls_context& ctx)
+cipher_suites(corosio::tls_context& ctx)
 {
     // tag::cipher_suites[]
     // TLS 1.2 and below
@@ -278,7 +282,7 @@ cipher_suites(tls_context& ctx)
 }
 
 void
-alpn_offer(tls_context& ctx)
+alpn_offer(corosio::tls_context& ctx)
 {
     // tag::alpn_offer[]
     // HTTP/2 with HTTP/1.1 fallback
@@ -302,19 +306,19 @@ alpn_read(corosio::tls_stream& stream)
 }
 
 void
-verify_modes(tls_context& ctx)
+verify_modes(corosio::tls_context& ctx)
 {
     // tag::verify_modes[]
     // Don't verify peer (not recommended for production)
-    if (auto ec = ctx.set_verify_mode(tls_verify_mode::none))
+    if (auto ec = ctx.set_verify_mode(corosio::tls_verify_mode::none))
         return;
 
     // Verify peer if certificate is presented
-    if (auto ec = ctx.set_verify_mode(tls_verify_mode::peer))
+    if (auto ec = ctx.set_verify_mode(corosio::tls_verify_mode::peer))
         return;
 
     // Require and verify peer certificate (mTLS server-side)
-    if (auto ec = ctx.set_verify_mode(tls_verify_mode::require_peer))
+    if (auto ec = ctx.set_verify_mode(corosio::tls_verify_mode::require_peer))
         return;
     // end::verify_modes[]
 }
@@ -330,7 +334,7 @@ hostname_setup(corosio::tls_stream& secure)
 }
 
 void
-verify_depth(tls_context& ctx)
+verify_depth(corosio::tls_context& ctx)
 {
     // tag::verify_depth[]
     // Allow up to 3 intermediates (leaf -> 3 intermediates -> root)
@@ -342,7 +346,7 @@ verify_depth(tls_context& ctx)
 std::vector<unsigned char> const expected_pin;
 
 void
-verify_callback(tls_context& ctx)
+verify_callback(corosio::tls_context& ctx)
 {
     // tag::verify_callback[]
     ctx.set_verify_callback(
@@ -358,17 +362,17 @@ verify_callback(tls_context& ctx)
 }
 
 void
-revocation_policy(tls_context& ctx)
+revocation_policy(corosio::tls_context& ctx)
 {
     // tag::revocation_policy[]
     // Don't check revocation (default)
-    ctx.set_revocation_policy(tls_revocation_policy::disabled);
+    ctx.set_revocation_policy(corosio::tls_revocation_policy::disabled);
 
     // Accept unknown status, reject a listed (revoked) certificate
-    ctx.set_revocation_policy(tls_revocation_policy::soft_fail);
+    ctx.set_revocation_policy(corosio::tls_revocation_policy::soft_fail);
 
     // Also reject when status can't be determined (strict)
-    ctx.set_revocation_policy(tls_revocation_policy::hard_fail);
+    ctx.set_revocation_policy(corosio::tls_revocation_policy::hard_fail);
     // end::revocation_policy[]
 }
 
@@ -379,7 +383,7 @@ fetch_crl_from_url(std::string_view)
 }
 
 void
-crl_load(tls_context& ctx, std::string_view crl_url)
+crl_load(corosio::tls_context& ctx, std::string_view crl_url)
 {
     // tag::crl_load[]
     // From file
@@ -391,7 +395,7 @@ crl_load(tls_context& ctx, std::string_view crl_url)
     if (auto ec = ctx.add_crl(crl_data))
         return;
 
-    ctx.set_revocation_policy(tls_revocation_policy::hard_fail);
+    ctx.set_revocation_policy(corosio::tls_revocation_policy::hard_fail);
     // end::crl_load[]
 }
 
@@ -400,34 +404,36 @@ bootstrap_hardened()
 {
     // tag::bootstrap_hardened[]
     // Bootstrap context: for fetching revocation data
-    tls_context bootstrap_ctx;
+    corosio::tls_context bootstrap_ctx;
     bootstrap_ctx.set_default_verify_paths();
-    bootstrap_ctx.set_verify_mode(tls_verify_mode::peer);
-    bootstrap_ctx.set_revocation_policy(tls_revocation_policy::disabled);
+    bootstrap_ctx.set_verify_mode(corosio::tls_verify_mode::peer);
+    bootstrap_ctx.set_revocation_policy(
+        corosio::tls_revocation_policy::disabled);
 
     // Hardened context: for sensitive connections
-    tls_context hardened_ctx;
+    corosio::tls_context hardened_ctx;
     hardened_ctx.set_default_verify_paths();
-    hardened_ctx.set_verify_mode(tls_verify_mode::peer);
+    hardened_ctx.set_verify_mode(corosio::tls_verify_mode::peer);
     hardened_ctx.add_crl_file("cached.crl");
-    hardened_ctx.set_revocation_policy(tls_revocation_policy::hard_fail);
+    hardened_ctx.set_revocation_policy(
+        corosio::tls_revocation_policy::hard_fail);
     // end::bootstrap_hardened[]
 }
 
 void
-password_callback(tls_context& ctx)
+password_callback(corosio::tls_context& ctx)
 {
     // tag::password_callback[]
     // Set callback before loading encrypted key
     ctx.set_password_callback(
-        [](std::size_t max_length, tls_password_purpose purpose) {
+        [](std::size_t max_length, corosio::tls_password_purpose purpose) {
             // purpose: for_reading (decrypt) or for_writing (encrypt)
             return std::string("my-secret-password");
         });
 
     // Now load encrypted private key
-    if (auto ec =
-            ctx.use_private_key_file("encrypted.key", tls_file_format::pem))
+    if (auto ec = ctx.use_private_key_file(
+            "encrypted.key", corosio::tls_file_format::pem))
         return;
     // end::password_callback[]
 }
@@ -439,11 +445,11 @@ prompt_user_for_password()
 }
 
 void
-password_env(tls_context& ctx)
+password_env(corosio::tls_context& ctx)
 {
     // tag::password_env[]
     ctx.set_password_callback(
-        [](std::size_t max_length, tls_password_purpose purpose) {
+        [](std::size_t max_length, corosio::tls_password_purpose purpose) {
             // Read from environment
             if (auto* pw = std::getenv("TLS_KEY_PASSWORD"))
                 return std::string(pw);
@@ -455,7 +461,7 @@ password_env(tls_context& ctx)
 }
 
 void
-pkcs12_memory(tls_context& ctx, std::string_view pkcs12_data)
+pkcs12_memory(corosio::tls_context& ctx, std::string_view pkcs12_data)
 {
     // tag::pkcs12_memory[]
     if (auto ec = ctx.use_pkcs12(pkcs12_data, "bundle-password"))
@@ -466,11 +472,12 @@ pkcs12_memory(tls_context& ctx, std::string_view pkcs12_data)
 // Throws std::system_error when the credential files are absent, as
 // they are under the test runner; compiled but never executed.
 [[maybe_unused]] void
-error_handling(tls_context& ctx)
+error_handling(corosio::tls_context& ctx)
 {
     // tag::error_handling[]
     // Throw on error
-    if (auto ec = ctx.use_certificate_file("cert.pem", tls_file_format::pem))
+    if (auto ec =
+            ctx.use_certificate_file("cert.pem", corosio::tls_file_format::pem))
         throw std::system_error(ec);
 
     // Check error explicitly
@@ -489,7 +496,7 @@ struct tls_context_3d_test
         // Configuration calls record settings and report failures as
         // error codes, so every context-only fragment executes safely
         // without credential files or a TLS peer.
-        tls_context ctx;
+        corosio::tls_context ctx;
         construction();
         typical_setup();
         load_separate(ctx);

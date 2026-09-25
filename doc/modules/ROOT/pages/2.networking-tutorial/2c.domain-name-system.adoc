@@ -8,6 +8,7 @@
 //
 
 = Turning Names into Addresses
+:page-mode: explanation
 
 Nobody memorizes `93.184.215.14`. People remember `www.example.com`. But the network stack operates on IP addresses, not names. Something has to translate between the two, and that something is the Domain Name System -- a distributed database spread across thousands of servers worldwide, answering billions of queries a day.
 
@@ -43,7 +44,7 @@ CNAME:: An alias. It says "this name is actually another name -- go look up that
 
 MX:: Identifies the mail servers responsible for a domain. When someone sends email to `user@mycompany.org`, the sending mail server queries the MX records for `mycompany.org` to find out where to deliver it.
 
-TXT:: A free-form text record. Often used for domain verification, email authentication (SPF, DKIM), and other administrative purposes.
+TXT:: A free-form text record. Often used for domain verification, email authentication schemes such as SPF (Sender Policy Framework) and DKIM (DomainKeys Identified Mail), and other administrative purposes.
 
 NS:: Identifies the authoritative name servers for a domain. These are the servers the resolver contacts in the final step of resolution.
 
@@ -63,7 +64,7 @@ The flip side is that changes do not take effect immediately. If a domain's addr
 
 Most DNS queries travel over UDP. A typical query and response fit within a single datagram, making UDP the natural fit: fast, no connection setup, minimal overhead. Port 53 is the standard port for DNS traffic.
 
-When a response is too large for a single UDP datagram -- which can happen with domains that have many records or with DNSSEC signatures -- the server sets a flag indicating truncation. The client then retries the query over TCP, which can handle arbitrarily large responses by streaming the data.
+When a response is too large for a single UDP datagram -- which can happen with domains that have many records or with DNSSEC (DNS Security Extensions) signatures -- the server sets a flag indicating truncation. The client then retries the query over TCP, which can handle arbitrarily large responses by streaming the data.
 
 The choice between UDP and TCP is handled automatically by the DNS resolver. Your application never needs to think about it.
 

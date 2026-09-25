@@ -30,6 +30,25 @@ on:
       - '*.adoc'
       - 'README.adoc'
       - '.github/workflows/docs.yml'
+  # Manual trigger, for authoring a replacement doc/lint/baseline.json in the CI
+  # environment — see the "Baseline reseed" steps at the end of the antora job.
+  # A reseed REWRITES the reference point of the doc-quality gate, so it must never
+  # happen on push or pull_request: an automatic reseed would absorb real
+  # regressions into the grandfathered backlog, which is precisely what the gate
+  # exists to prevent. workflow_dispatch is the only trigger that reaches those
+  # steps (they are additionally guarded on github.event_name), and they only
+  # upload an artifact for a human to review and commit.
+  workflow_dispatch:
+    inputs:
+      allow_emptied:
+        description: >-
+          Space-separated gated checks whose backlog is genuinely closed.
+          baseline-diff.mjs refuses a candidate where a gated check drops to
+          zero, because a crashed check looks identical -- this is how you say
+          the zero is real. Verify first, then name the check here so the
+          decision is recorded in the run log.
+        required: false
+        default: ''
 
 jobs:
   antora:
@@ -39,10 +58,21 @@ jobs:
       run:
         shell: bash
     steps:
+      # asciidoctor here is the Ruby CLI that Vale 3.x shells out to when linting
+      # .adoc files (its lintAdoc scope). It is NOT the same as the JS
+      # @asciidoctor/core that build_antora.sh pulls in via npm — that provides no
+      # `asciidoctor` binary on PATH. Without the Ruby CLI, `vale modules` and
+      # baseline.mjs's vale_adoc error with "asciidoctor not found" — the check is
+      # marked skipped — and because vale_adoc AND vale_docstrings are both GATED
+      # checks, the gate's gated-skip path fails the job on missing infra rather
+      # than passing a run that measured nothing. The docstring corpus needs it
+      # too: the extracted files are .adoc, so a missing Ruby CLI skips that slice
+      # as well. Installed here, in the first step, so it is on PATH for the
+      # Antora build and every lint step after it.
       - name: Install packages
         uses: alandefreitas/cpp-actions/package-install@v1.9.0
         with:
-          apt-get: git cmake
+          apt-get: git cmake asciidoctor
 
       - name: Clone Boost.Corosio
         uses: actions/checkout@v4
@@ -170,6 +200,321 @@ jobs:
             exit 1
           fi
           echo "the rendered reference carries its injected examples"
+
+      # --- Documentation quality (doc/STYLE_GUIDE.md Part F) -------------------
+      # The enforcement tiers live in doc/lint/; doc/lint/README.md is the operator
+      # guide and carries this repository's F4 bite-test log.
+      #
+      # POSTURE, and it is deliberate: the gate step below REPORTS without --strict,
+      # so it annotates new findings on the diff but does not fail the job, and
+      # selftest.mjs runs continue-on-error. Both flips — adding --strict here and
+      # promoting selftest.mjs to blocking — are the exit criteria of the final
+      # remediation phase in doc/design/style-guide-compliance.md section 6. Until
+      # then a new violation is reported but lands, which the per-phase reseed
+      # cadence in that document is what keeps bounded.
+      #
+      # The accuracy gate for .adoc example code (B2/B3 correctness) is separate and
+      # already hard: the doc snippet/program targets built by test/doc, run from
+      # ci.yml, not this job.
+      - name: "Lint: install Vale"
+        if: always()
+        continue-on-error: true
+        run: |
+          mkdir -p "$RUNNER_TEMP/vale-bin"
+          curl -sSL https://github.com/errata-ai/vale/releases/download/v3.15.1/vale_3.15.1_Linux_64-bit.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/vale-bin" vale
+          echo "$RUNNER_TEMP/vale-bin" >> "$GITHUB_PATH"
+          echo "$(pwd)/boost-root/libs/corosio/doc/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: "Lint: sync Vale styles"
+        if: always()
+        continue-on-error: true
+        working-directory: boost-root/libs/corosio/doc
+        run: vale sync
+
+      # Vale's exit codes: 0 = no alerts, 1 = alerts found, 2 = fatal (e.g. no
+      # asciidoctor on PATH). Only 2 is a tooling failure worth surfacing here; 1
+      # is the backlog, which the gate step below is what judges. So map 1 to
+      # success and let anything else through.
+      - name: "Lint: Vale over pages"
+        if: always()
+        continue-on-error: true
+        working-directory: boost-root/libs/corosio/doc
+        run: |
+          vale modules; s=$?
+          if [ "$s" = "1" ]; then exit 0; else exit "$s"; fi
+
+      - name: "Lint: Vale over docstrings"
+        if: always()
+        continue-on-error: true
+        working-directory: boost-root/libs/corosio/doc
+        run: |
+          node lint/extract-docstrings.mjs
+          vale lint/.docstrings; s=$?
+          if [ "$s" = "1" ]; then exit 0; else exit "$s"; fi
+
+      - name: "Lint: structure (doc-lint.mjs)"
+        if: always()
+        continue-on-error: true
+        working-directory: boost-root/libs/corosio/doc
+        run: node lint/doc-lint.mjs
+
+      - name: "Lint: sentence length (C2)"
+        if: always()
+        continue-on-error: true
+        working-directory: boost-root/libs/corosio/doc
+        run: node lint/sentence-length.mjs
+
+      # BLOCKING, and deliberately outside the baseline/comparator posture above: a
+      # tagged include that no longer resolves renders as an EMPTY code block on the
+      # page, so the reader silently loses the example. There is no backlog to
+      # grandfather here — every tagged include resolved at the port — so this one
+      # stays a hard gate.
+      - name: "Lint: include tags resolve (BLOCKING)"
+        if: always()
+        continue-on-error: false
+        working-directory: boost-root/libs/corosio/doc
+        run: node lint/check-include-tags.mjs
+
+      - name: "Lint: reference warnings (MrDocs)"
+        if: always()
+        continue-on-error: true
+        working-directory: boost-root/libs/corosio/doc
+        run: node lint/mrdocs-warnings.mjs
+
+      # selftest.mjs mutates the linters and asserts they notice. It is the only
+      # standing guard between a silent linter regression and a green run — several
+      # of these checks (A1's value whitelist, A7's numeral match, B2's block walk,
+      # the role=output exemption boundary) were fail-open at some point in Capy and
+      # were only ever found by planting a violation. SHAPE in particular is
+      # advisory and reads 0, so a broken looksLikeCode() is invisible everywhere
+      # else. BLOCKING as of the final remediation phase: it has no baseline and no
+      # environment dependence — it plants violations in throwaway fixtures and
+      # asserts the linters notice — so a red run here means a linter regressed, which
+      # is exactly the failure nothing else can see.
+      - name: "Lint: linter self-test (BLOCKING)"
+        if: always()
+        continue-on-error: false
+        working-directory: boost-root/libs/corosio/doc
+        run: node lint/selftest.mjs
+
+      # The remaining backlog, as warnings: every finding present RIGHT NOW that
+      # baseline.json grandfathers. Not the baseline file's contents — the baseline
+      # is only reseeded when something is ADDED, so it accumulates dead clauses for
+      # findings already fixed. This prints the live intersection, which is the
+      # actual worklist.
+      - name: "Lint: remaining backlog"
+        if: always()
+        continue-on-error: true
+        working-directory: boost-root/libs/corosio/doc
+        run: node lint/check-no-new-violations.mjs --show-baseline
+
+      # The gate: reports any NEW A1/A6/B2/D2/ANCHOR violation, any NEW MrDocs
+      # reference-surface warning, any NEW C2 sentence-length violation in the hard
+      # slice, and any NEW C4/C9/C10 wording violation on EITHER surface.
+      #
+      # THE TWO GATE-SPEC SHAPES DIFFER, AND THE DIFFERENCE IS LOAD-BEARING.
+      # check-no-new-violations.mjs tests each regex against the WHOLE fingerprint.
+      #   * Vale fingerprints are `file:#N:Check.Name` — check name at the TAIL. So the
+      #     Vale specs tail-anchor with `$` and MUST NOT carry a leading `^`. An
+      #     `^`-anchored Vale spec matches nothing and reports `gated: true,
+      #     gatedNew: 0` — a gate that says it is gating while checking nothing. That
+      #     was bite-tested on this corpus (doc/lint/README.md): the `^`-anchored
+      #     form exits 0 against a planted A7 heading, the tail-anchored form exits 1.
+      #   * sentence_length fingerprints are `C2:file:#N:message` — rule at the HEAD.
+      #     So `^C2:` is the correct shape THERE, and it deliberately cannot reach
+      #     the `advisory-C2` slice (doc/STYLE_GUIDE.md C2 relaxes the 25-word limit
+      #     for 2.networking-tutorial/, which is essay-style protocol theory).
+      #   * doc_lint is also rule-at-the-head, hence `^(A1|A6|B2|D2|ANCHOR):`. SHOULD
+      #     a rule be added there, note SHAPE is deliberately excluded: it is an
+      #     advisory content heuristic, not a defect.
+      #
+      # A skip of ANY gated check (doc_lint / vale_adoc / vale_docstrings /
+      # sentence_length / mrdocs_warnings) fails the gate — can't verify a gated rule
+      # = not a pass. Bite-tested: a crashed extract-docstrings.mjs marks
+      # vale_docstrings and sentence_length SKIPPED and exits non-zero, rather than
+      # reading zero findings as success.
+      #
+      # Do NOT reseed baseline.json locally — a local run grandfathers local-vs-CI
+      # drift as if it were the real backlog. Reseed via the workflow_dispatch steps
+      # below, per doc/lint/README.md.
+      # THE GATE IS SPLIT IN TWO. Everything blocks EXCEPT the MrDocs
+      # reference-surface check, and that exception is evidence-based.
+      #
+      # A1/A6/B2/D2/ANCHOR, C2, and the C4/C9/C10/A7 wording rules are all STRICT.
+      # baseline.json is now authored by this job (workflow_dispatch reseed), so a
+      # strict comparison is CI-against-CI and carries no environment drift. The
+      # wording rules additionally have an EMPTY gated subset — zero baselined
+      # C4/C9/C10/A7 fingerprints on either corpus — so any match at all is a real
+      # regression, which is why they were safe to promote even from a local run.
+      #
+      # mrdocs_warnings deliberately stays REPORTING. The baseline is zero, so its
+      # `.*` spec would gate every warning that ever appears — and MrDocs itself is
+      # a rolling `develop-release` build whose output demonstrably moves: the same
+      # asset reported 460 warnings under 0.8.0 and 352 under 2026.9.5, days apart,
+      # on an unchanged tree. Gating `.*` on a tool that rewrites its own output
+      # would fail this job for upstream reasons that have nothing to do with
+      # Corosio's documentation — the same mistake as the version pin that skipped
+      # this check on the first reseed (doc/lint/mrdocs-warnings.mjs). Promote it
+      # only alongside a pinned MrDocs.
+      #
+      # Do NOT "fix" a strict-step failure by reseeding locally. Reseed via the
+      # workflow_dispatch steps below, per doc/lint/README.md.
+      - name: "Lint: gate (BLOCKING)"
+        if: always()
+        continue-on-error: false
+        working-directory: boost-root/libs/corosio/doc
+        run: |
+          node lint/check-no-new-violations.mjs --strict \
+            --gate 'doc_lint:^(A1|A6|B2|D2|ANCHOR):' \
+            --gate 'sentence_length:^C2:' \
+            --gate 'vale_adoc:Corosio\.PartHeadings$' \
+            --gate 'vale_adoc:(Corosio\.SimpleTense|Corosio\.NoFluff|Corosio\.Terminology)$' \
+            --gate 'vale_docstrings:(Corosio\.SimpleTense|Corosio\.NoFluff|Corosio\.Terminology)$'
+
+      - name: "Lint: gate (reference surface, reporting)"
+        if: always()
+        continue-on-error: false
+        working-directory: boost-root/libs/corosio/doc
+        run: |
+          # Reports and annotates; does NOT fail the job (no --strict). See the
+          # rolling-build reasoning above the blocking step.
+          node lint/check-no-new-violations.mjs \
+            --gate 'mrdocs_warnings:.*'
+
+      # --- Baseline reseed (workflow_dispatch only) ---------------------------
+      # doc/lint/baseline.json is the gate's reference point: anything in it is
+      # grandfathered. It goes stale as the backlog is worked down (a fix removes
+      # findings but not their baseline entries), and a stale-high baseline
+      # grandfathers findings that no longer exist — so they can be reintroduced and
+      # the gate stays green. Retiring them needs a regenerated baseline.
+      #
+      # Regenerating on a developer machine is NOT safe: a local run differs from a
+      # CI run (a different MrDocs develop build hash, file-processing order), and
+      # committing those differences would grandfather environment drift as if it
+      # were the real backlog. So the candidate is authored HERE, by the same job,
+      # on the same runner image, with the same PATH the gate above just used.
+      # Reusing the gate's own job — rather than a second job that re-creates its
+      # setup — is deliberate: an imitated environment is exactly the bug this
+      # avoids, and it cannot drift from the gate's environment because it IS that
+      # environment.
+      #
+      # Two safety properties of the ordering and paths below:
+      #   * these steps run AFTER the gate, and
+      #   * the candidate is written to RUNNER_TEMP, never to the checked-out
+      #     doc/lint/baseline.json,
+      # so the gate in this same run still compares against the COMMITTED baseline.
+      # A candidate that overwrote it first would make the gate compare a run
+      # against itself and pass unconditionally.
+      #
+      # The job never commits or pushes. It uploads a candidate for review; a human
+      # reads the diff and commits it.
+      - name: "Reseed: generate candidate"
+        if: always() && github.event_name == 'workflow_dispatch'
+        working-directory: boost-root/libs/corosio/doc
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/baseline-candidate"
+          node lint/baseline.mjs "$RUNNER_TEMP/baseline-candidate/baseline.json"
+
+      # Reports per-check counts before/after and, per check and rule, which
+      # fingerprints the candidate would ADD (grandfather) and REMOVE (retire). Any
+      # ADDED fingerprint matching the gate spec is a finding a reseed would
+      # silently un-gate; those are named individually and fail this step. So do a
+      # SKIPPED check and a GATED check that collapsed to zero findings — both
+      # would wipe a gated check's whole grandfathered backlog.
+      #
+      # The gate spec is EXTRACTED from this workflow file rather than restated
+      # here. A second verbatim copy is a rot hazard with a silent failure mode:
+      # promote a rule in the gate step above, forget this one, and the report keeps
+      # printing "none gated" for a rule that now blocks — the safety net stops
+      # covering exactly the rule just deemed important enough to gate. Extraction
+      # means there is one copy. If extraction yields nothing (someone reformatted
+      # the gate step's arguments), this step FAILS rather than reporting against an
+      # empty gate spec, which would look identical to "no gated additions".
+      - name: "Reseed: report changes"
+        if: always() && github.event_name == 'workflow_dispatch'
+        working-directory: boost-root/libs/corosio/doc
+        env:
+          ALLOW_EMPTIED: ${{ inputs.allow_emptied }}
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/baseline-candidate"
+          workflow=../.github/workflows/docs.yml
+
+          # Read the run blocks of BOTH gate steps: each starts at its `- name:` line
+          # and ends at the next blank line. Two details are load-bearing:
+          #   * the toggle is `inblock = 0`, not `exit` -- the gate is split in two
+          #     steps, and exiting at the first blank line would silently drop the
+          #     second step's specs from this safety net.
+          #   * the pattern is anchored to `^ *- name:`, because this awk program
+          #     CONTAINS the string it searches for. Without the anchor it matches
+          #     its own source line and captures the grep/sed lines below as if they
+          #     were gate specs (measured: two junk entries, one an invalid regex).
+          gate_args=()
+          while IFS= read -r spec; do
+            gate_args+=(--gate "$spec")
+          done < <(
+            awk '/^[[:space:]]*- name: "Lint: gate/ { inblock = 1; next }
+                 inblock && /^[[:space:]]*$/ { inblock = 0 }
+                 inblock' "$workflow" \
+              | grep -o -- "--gate '[^']*'" \
+              | sed "s/^--gate '//; s/'\$//" \
+              | sort -u
+          )
+          if [ "${#gate_args[@]}" -eq 0 ]; then
+            echo "::error title=Gate spec not found::could not extract any --gate spec from $workflow; refusing to report against an empty gate spec"
+            exit 1
+          fi
+          echo "gate spec extracted from $workflow: ${gate_args[*]}"
+
+          # A gated check dropping to zero is refused by default, because that is
+          # indistinguishable from a crash. Naming it here is the acknowledgement,
+          # and it lands in the run log next to the report it authorised.
+          # ALLOW_EMPTIED arrives through `env:` rather than template
+          # interpolation: the value is attacker-chosen text and would otherwise
+          # be pasted straight into this script. Note that a run: block is
+          # scanned for expressions in full, comments included -- writing an
+          # empty expression pair here, even inside a comment, is a parse error
+          # ("An expression was expected") for the whole workflow.
+          # Unquoted on purpose -- word splitting is what turns the space-separated
+          # input into separate checks. An empty value splits to zero words, so the
+          # loop simply does not run.
+          allow_args=()
+          for check in ${ALLOW_EMPTIED:-}; do
+            allow_args+=(--allow-emptied "$check")
+          done
+          if [ "${#allow_args[@]}" -gt 0 ]; then
+            echo "::warning title=Emptied gated check accepted::${ALLOW_EMPTIED}"
+          fi
+
+          status=0
+          node lint/baseline-diff.mjs lint/baseline.json "$out/baseline.json" \
+            "${gate_args[@]}" "${allow_args[@]+"${allow_args[@]}"}" \
+            | tee "$out/baseline-diff.txt" || status=$?
+          diff -u lint/baseline.json "$out/baseline.json" > "$out/baseline.json.diff" || true
+          # GitHub rejects a step summary over 1 MiB, so cap it and point at the
+          # artifact for the full text.
+          {
+            echo '## Candidate doc/lint/baseline.json'
+            echo
+            echo 'Download the `doc-lint-baseline-candidate` artifact. Do not commit it'
+            echo 'without accounting for every ADDED fingerprint below. Full untruncated'
+            echo 'report: `baseline-diff.txt` in that artifact.'
+            echo
+            echo '```'
+            head -c 900000 "$out/baseline-diff.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - name: "Reseed: upload candidate"
+        if: always() && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: doc-lint-baseline-candidate
+          path: ${{ runner.temp }}/baseline-candidate
+          if-no-files-found: error
 
       - name: Create Antora Docs Artifact
         uses: actions/upload-artifact@v4

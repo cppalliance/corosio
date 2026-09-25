@@ -26,7 +26,7 @@
 
 namespace boost::corosio {
 
-/** An IP version 4 style address.
+/** Stores and parses an IP version 4 address.
 
     Objects of this type are used to construct,
     parse, and manipulate IP version 4 addresses.
@@ -243,8 +243,7 @@ public:
 
     /** Format the address to an output stream.
 
-        IPv4 addresses written to output streams
-        are written in their dotted decimal format.
+        This operator writes the address in dotted decimal format.
 
         @param os The output stream.
         @param addr The address to format.

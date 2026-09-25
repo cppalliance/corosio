@@ -32,10 +32,15 @@ namespace boost::corosio::test {
 
     @tparam Socket The socket type (default `tcp_socket`).
     @tparam Acceptor The acceptor type (default `tcp_acceptor`).
+    @tparam Linger Whether to enable `SO_LINGER` with a zero timeout
+        on both sockets (default `true`).
 
     @param ctx The I/O context for the sockets.
 
     @return A pair of connected sockets.
+
+    @throws std::runtime_error if opening, binding, listening,
+        accepting, or connecting fails.
 */
 template<
     class Socket   = tcp_socket,

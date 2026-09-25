@@ -65,19 +65,6 @@ using namespace std::chrono_literals;
 
 namespace {
 
-// The page shows the enum's shape; the real one lives in
-// <boost/corosio/wait_type.hpp>.
-namespace api_sketch {
-// tag::wait_type_enum[]
-enum class wait_type
-{
-    read,
-    write,
-    error
-};
-// end::wait_type_enum[]
-} // namespace api_sketch
-
 capy::task<>
 wait_readable(corosio::tcp_socket& sock, std::error_code& ec_out)
 {

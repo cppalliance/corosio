@@ -8,9 +8,10 @@
 //
 
 = File I/O
+:page-mode: how-to
 
 Corosio provides two classes for asynchronous file operations:
-`stream_file` for sequential access and `random_access_file` for
+cpp:stream_file[] for sequential access and cpp:random_access_file[] for
 offset-based access. Both dispatch I/O to a worker thread on POSIX
 platforms and use native overlapped I/O on Windows.
 
@@ -25,9 +26,9 @@ include::example$snippets/4o_file_io.cpp[tag=assume]
 
 == Stream File
 
-`stream_file` reads and writes sequentially, maintaining an internal
-position that advances after each operation. It inherits from `io_stream`,
-so it works with any algorithm that accepts an `io_stream&`.
+cpp:stream_file[] reads and writes sequentially, maintaining an internal
+position that advances after each operation. It inherits from cpp:io_stream[],
+so it works with any cpp:io_stream[] algorithm.
 
 === Reading a File
 
@@ -54,7 +55,7 @@ include::example$snippets/4o_file_io.cpp[tag=seek,indent=0]
 
 == Random Access File
 
-`random_access_file` reads and writes at explicit byte offsets
+cpp:random_access_file[] reads and writes at explicit byte offsets
 without maintaining an internal position. This is useful for
 databases, indices, or any workload that accesses non-sequential
 regions of a file.
@@ -107,12 +108,12 @@ Both file types provide synchronous metadata operations:
 include::example$snippets/4o_file_io.cpp[tag=metadata,indent=0]
 ----
 
-`stream_file` additionally provides `seek()` for repositioning.
+cpp:stream_file[] additionally provides `seek()` for repositioning.
 
 == Native Handle Access
 
 Both file types support releasing and adopting native handles.
-`release()` transfers ownership out of the file object; the caller
+`release()` transfers ownership out of the file object. The caller
 becomes responsible for closing the handle:
 
 [source,cpp]
@@ -132,7 +133,7 @@ include::example$snippets/4o_file_io.cpp[tag=native_adopt,indent=0]
 ====
 On Windows, `assign` requires a handle that has never been associated
 with an I/O completion port. A handle released from another Corosio
-file object is already associated and cannot be re-adopted there; on
+file object is already associated and cannot be re-adopted there. On
 POSIX platforms no such restriction exists.
 ====
 
@@ -146,21 +147,21 @@ end-of-file return `capy::cond::eof`:
 include::example$snippets/4o_file_io.cpp[tag=error_handling,indent=0]
 ----
 
-Synchronous operations that can fail in normal use — `open`,
-`resize`, `sync_data`, `sync_all`, and `assign` — return a
-`std::error_code`; `seek` returns the code together with the new
-position. Opening a nonexistent file with `read_only` reports
-`no_such_file_or_directory`; use `create` to create files that may
+Synchronous operations that can fail in normal use return a
+`std::error_code`. Those are `open`, `resize`, `sync_data`, `sync_all`,
+and `assign`. `seek` returns the code together with the new position.
+Opening a nonexistent file with `read_only` reports
+`no_such_file_or_directory`. Use `create` to create files that may
 not exist. Only misuse, such as calling `size()` or `release()` on
 a closed file, throws `std::system_error`.
 
 == Thread Safety
 
 * Distinct objects are safe to use concurrently.
-* `random_access_file` supports multiple concurrent reads and writes
+* cpp:random_access_file[] supports multiple concurrent reads and writes
   from coroutines sharing the same file object. Each operation is
   independently heap-allocated.
-* `stream_file` allows at most one asynchronous operation in flight at
+* cpp:stream_file[] allows at most one asynchronous operation in flight at
   a time (same as Asio's stream_file). Sequential access with an
   implicit position makes concurrent ops semantically undefined.
 * Non-async operations (open, close, size, resize, etc.) require
@@ -168,9 +169,10 @@ a closed file, throws `std::system_error`.
 
 == Platform Notes
 
-On Linux, macOS, and BSD, file I/O is dispatched to a shared worker
-thread pool using `preadv`/`pwritev`. This is the same pool used by
-the resolver.
+On Linux, macOS, and BSD, the default epoll/kqueue backend dispatches
+file I/O to a shared worker thread pool using `preadv`/`pwritev`. This
+is the same pool used by the resolver. The io_uring backend submits
+reads and writes directly instead.
 
 On Windows, file I/O uses native IOCP overlapped I/O via
 `ReadFile`/`WriteFile` with `FILE_FLAG_OVERLAPPED`.

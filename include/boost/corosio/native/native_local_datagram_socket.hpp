@@ -39,13 +39,13 @@
 
 namespace boost::corosio {
 
-/** An asynchronous Unix datagram socket with devirtualized I/O.
+/** Sends and receives Unix domain datagrams, calling the backend directly.
 
-    This class template inherits from @ref local_datagram_socket
-    and shadows the async operations (`send_to`, `recv_from`,
-    `connect`, `send`, `recv`) with versions that call the backend
-    implementation directly, allowing the compiler to inline
-    through the entire call chain.
+    This class template inherits from @ref local_datagram_socket. It
+    shadows the async operations (`send_to`, `recv_from`, `connect`,
+    `send`, `recv`) with versions that call the backend implementation
+    directly. The compiler can then inline through the entire call
+    chain.
 
     Non-async operations (`open`, `close`, `cancel`, `bind`,
     socket options) remain unchanged and dispatch through the
@@ -238,7 +238,7 @@ class native_local_datagram_socket : public local_datagram_socket
 public:
     /** Construct a native socket from an execution context.
 
-        @param ctx The execution context that will own this socket.
+        @param ctx The execution context that owns this socket.
     */
     explicit native_local_datagram_socket(capy::execution_context& ctx)
         : local_datagram_socket(create_handle<service_type>(ctx))
@@ -247,7 +247,7 @@ public:
 
     /** Construct a native socket from an executor.
 
-        @param ex The executor whose context will own the socket.
+        @param ex The executor whose context owns the socket.
     */
     template<class Ex>
         requires(!std::same_as<
@@ -267,7 +267,9 @@ public:
     native_local_datagram_socket&
     operator=(native_local_datagram_socket&&) noexcept = default;
 
+    /// Copy construction is disabled; the handle is uniquely owned.
     native_local_datagram_socket(native_local_datagram_socket const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     native_local_datagram_socket&
     operator=(native_local_datagram_socket const&) = delete;
 
@@ -275,6 +277,12 @@ public:
 
         Calls the backend implementation directly, bypassing virtual
         dispatch. Otherwise identical to @ref local_datagram_socket::send_to.
+
+        @param buffers The buffer data to send.
+        @param dest The destination endpoint.
+        @param flags Message flags (e.g. `message_flags::do_not_route`).
+
+        @return An awaitable yielding the error code and the byte count sent.
     */
     template<capy::ConstBufferSequence CB>
     [[nodiscard]] auto send_to(
@@ -300,6 +308,12 @@ public:
 
         Calls the backend implementation directly, bypassing virtual
         dispatch. Otherwise identical to @ref local_datagram_socket::recv_from.
+
+        @param buffers The buffers to receive into.
+        @param source Output endpoint for the sender's address.
+        @param flags Message flags (e.g. `message_flags::peek`).
+
+        @return An awaitable yielding the error code and the byte count received.
     */
     template<capy::MutableBufferSequence MB>
     [[nodiscard]] auto recv_from(
@@ -328,6 +342,10 @@ public:
         dispatch. Otherwise identical to @ref local_datagram_socket::connect.
 
         If the socket is not already open, it is opened automatically.
+
+        @param ep The endpoint to set as the default destination.
+
+        @return An awaitable yielding the error code.
     */
     [[nodiscard]] auto connect(corosio::local_endpoint ep)
     {
@@ -341,6 +359,11 @@ public:
 
         Calls the backend implementation directly, bypassing virtual
         dispatch. Otherwise identical to @ref local_datagram_socket::send.
+
+        @param buffers The buffer data to send.
+        @param flags Message flags (e.g. `message_flags::do_not_route`).
+
+        @return An awaitable yielding the error code and the byte count sent.
     */
     template<capy::ConstBufferSequence CB>
     [[nodiscard]] auto send(CB const& buffers, corosio::message_flags flags)
@@ -362,6 +385,11 @@ public:
 
         Calls the backend implementation directly, bypassing virtual
         dispatch. Otherwise identical to @ref local_datagram_socket::recv.
+
+        @param buffers The buffers to receive into.
+        @param flags Message flags (e.g. `message_flags::peek`).
+
+        @return An awaitable yielding the error code and the byte count received.
     */
     template<capy::MutableBufferSequence MB>
     [[nodiscard]] auto recv(MB const& buffers, corosio::message_flags flags)

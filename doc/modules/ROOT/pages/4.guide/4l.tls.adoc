@@ -10,8 +10,9 @@
 //
 
 = TLS Encryption
+:page-mode: how-to
 
-Corosio provides TLS encryption through the `tls_context` configuration class
+Corosio provides TLS encryption through the cpp:tls_context[] configuration class
 and stream wrappers that add encryption to existing connections. This chapter
 covers context configuration, stream usage, and common TLS patterns.
 
@@ -29,10 +30,10 @@ include::example$snippets/4l_tls.cpp[tag=assume]
 TLS (Transport Layer Security) encrypts data on TCP connections, providing
 confidentiality, integrity, and authentication. Corosio supports TLS through:
 
-* **tls_context** — Portable configuration for certificates, keys, and options
-* **tls_stream** — Abstract base class adding handshake and shutdown
-* **wolfssl_stream** — TLS implementation using WolfSSL
-* **openssl_stream** — TLS implementation using OpenSSL
+* cpp:tls_context[] — Portable configuration for certificates, keys, and options
+* cpp:tls_stream[] — Abstract base class adding handshake and shutdown
+* cpp:wolfssl_stream[] — TLS implementation using WolfSSL
+* cpp:openssl_stream[] — TLS implementation using OpenSSL
 
 A verified-safe client trusts the system CAs, requires a peer certificate,
 and checks the hostname:
@@ -46,12 +47,13 @@ Trust anchors can also be supplied explicitly with
 `add_certificate_authority()`, `load_verify_file()`, or `add_verify_path()`,
 and `set_verify_callback()` installs a custom verification hook.
 
-Protocol version bounds (`set_min_protocol_version()` /
-`set_max_protocol_version()`), cipher suites (`set_ciphersuites()` and
-`set_ciphersuites_tls13()`), ALPN (`set_alpn()`, read back with
-`alpn_protocol()`), PKCS#12 credentials (`use_pkcs12()` /
-`use_pkcs12_file()`), and CRL-based revocation (`add_crl()` /
-`add_crl_file()` with `set_revocation_policy()`) are all supported.
+The following are all supported. Protocol version bounds
+(`set_min_protocol_version()` / `set_max_protocol_version()`), cipher
+suites (`set_ciphersuites()` and `set_ciphersuites_tls13()`), and ALPN
+(`set_alpn()`, read back with `alpn_protocol()`). Also PKCS#12
+credentials (`use_pkcs12()` / `use_pkcs12_file()`) and CRL-based
+revocation (`add_crl()` / `add_crl_file()` with
+`set_revocation_policy()`).
 
 [NOTE]
 ====
@@ -73,7 +75,7 @@ include::example$snippets/4l_tls.cpp[tag=typical_flow,indent=0]
 
 == tls_context
 
-The `tls_context` class stores TLS configuration: certificates, keys, trust
+The cpp:tls_context[] class stores TLS configuration: certificates, keys, trust
 anchors, protocol settings, and verification options. Contexts are shared
 handles—copies share the same underlying state.
 
@@ -144,8 +146,8 @@ include::example$snippets/4l_tls.cpp[tag=system_trust,indent=0]
 ----
 
 On OpenSSL the `SSL_CERT_FILE` and `SSL_CERT_DIR` environment variables are
-honored; the WolfSSL backend requires a build with `WOLFSSL_SYS_CA_CERTS`,
-without which this call has no effect and a CA bundle must be supplied
+honored. The WolfSSL backend requires a build with `WOLFSSL_SYS_CA_CERTS`.
+Without it this call has no effect, and a CA bundle must be supplied
 explicitly via `load_verify_file()` or `add_certificate_authority()`.
 
 ==== Custom CA Certificates
@@ -171,8 +173,8 @@ include::example$snippets/4l_tls.cpp[tag=protocol_versions,indent=0]
 ----
 
 NOTE: On WolfSSL the ceiling is applied by selecting a version-specific
-method (there is no native set-max call); a window whose minimum exceeds
-its maximum yields a context that fails the handshake.
+method, because there is no native set-max call. A window whose minimum
+exceeds its maximum yields a context that fails the handshake.
 
 Available versions:
 
@@ -244,8 +246,8 @@ This does two things:
 2. Verifies the server certificate matches this hostname
 
 An IP literal (IPv4 or IPv6) is verified against the certificate's
-iPAddress entries instead of its DNS names, and no SNI is sent
-(RFC 6066 excludes literals).
+iPAddress entries instead of its DNS names. No SNI is sent, because RFC
+6066 excludes literals.
 
 ==== Verification Depth
 
@@ -274,8 +276,9 @@ include::example$snippets/4l_tls.cpp[tag=verify_callback,indent=0]
 Which certificates the callback sees depends on the backend:
 
 * OpenSSL — invoked for every certificate in the chain, including ones
-  that passed, so it can both *relax* (accept a rejected cert) and
-  *tighten* (reject an otherwise-valid cert, e.g. pinning) verification.
+  that passed. It can therefore both *relax* verification (accept a
+  rejected cert) and *tighten* it (reject an otherwise-valid cert, as
+  pinning does).
 * WolfSSL built with `WOLFSSL_ALWAYS_VERIFY_CB` (via
   `--enable-opensslextra`) — same as OpenSSL.
 * WolfSSL without that option — the library invokes the callback only on
@@ -301,35 +304,34 @@ Under `soft_fail`, a certificate whose status cannot be determined
 revoked is rejected. Under `hard_fail`, an undeterminable status is also
 rejected. `disabled` (the default) skips revocation entirely.
 
-NOTE: On WolfSSL, CRL checking requires a `HAVE_CRL` build; without it,
+NOTE: On WolfSSL, CRL checking requires a `HAVE_CRL` build. Without it,
 supplying a CRL or a non-disabled policy fails the handshake with
 `std::errc::function_not_supported` rather than skip the check silently.
 
 == TLS Streams
 
-TLS streams wrap an underlying stream (like a connected `tcp_socket`) to
+TLS streams wrap an underlying stream (like a connected cpp:tcp_socket[]) to
 provide encrypted I/O.
 
 === tls_stream Base Class
 
-`tls_stream` is a standalone, coroutine-based abstract base class. It does
-*not* derive from `io_stream`: unlike OS-level I/O completed by the kernel,
-its operations are coroutines that orchestrate reads and writes on the
-underlying stream. Its `read_some`/`write_some` template wrappers satisfy
+cpp:tls_stream[] is a standalone, coroutine-based abstract base class. It does
+*not* derive from cpp:io_stream[]. An cpp:io_stream[] is OS-level I/O completed
+by the kernel; these operations are coroutines that orchestrate reads and
+writes on the underlying stream. Its `read_some`/`write_some` template wrappers
+satisfy
 the `capy::Stream` concept, so composed operations like `capy::read` and
-`capy::write` work with it.
-
-[source,cpp]
-----
-include::example$snippets/4l_tls.cpp[tag=tls_stream_interface,indent=0]
-----
+`capy::write` work with it. It also provides `handshake()` to negotiate
+the session, `shutdown()` to close it gracefully, and `next_layer()` to
+reach the underlying stream. See cpp:tls_stream[] for the complete
+interface.
 
 === wolfssl_stream
 
-The WolfSSL-based implementation. Two construction modes are available:
-the *reference* form takes a pointer and does not own the stream (the caller
-keeps it alive), while the *owning* form takes the stream by value and moves
-it. To wrap an already-connected socket, use the pointer form:
+The WolfSSL-based implementation. Two construction modes are available. The
+*reference* form takes a pointer and does not own the stream, so the caller
+keeps it alive. The *owning* form takes the stream by value and moves it. To
+wrap an already-connected socket, use the pointer form:
 
 [source,cpp]
 ----
@@ -349,7 +351,7 @@ The OpenSSL-based implementation, with the same construction modes:
 corosio::openssl_stream secure(&sock, ctx);
 ----
 
-Both implementations provide the same interface through `tls_stream`.
+Both implementations provide the same interface through cpp:tls_stream[].
 
 == Handshake
 
@@ -426,8 +428,8 @@ before the next `handshake()`; `handshake()` also performs this implicitly.
 
 == Plain and Encrypted Connections
 
-A `tls_stream` is *not* an `io_stream`, so a function taking `io_stream&`
-will not accept a TLS stream. Provide a separate overload taking
+A cpp:tls_stream[] is *not* an cpp:io_stream[], so a function taking `io_stream&`
+does not accept a TLS stream. Provide a separate overload taking
 `tls_stream&` for the encrypted case. The bodies are identical because
 `capy::read` and `capy::write` accept either stream:
 
@@ -512,17 +514,17 @@ A TLS stream allows one read operation and one write operation to be in
 flight at the same time. `shutdown()` may overlap a pending read; that
 read completes with an end-of-file error once the peer answers the
 close_notify. Two operations in the same direction, or a handshake
-running alongside any other operation, must not overlap. When the
-`io_context` runs on multiple threads, perform every operation on a
-given stream from within the same `capy::strand` (or otherwise ensure
-they never run concurrently); a single-threaded `io_context` needs no
+running alongside any other operation, must not overlap. On a
+multi-threaded cpp:io_context[], perform every operation on a given
+stream from within the same `capy::strand`. Otherwise ensure they never
+run concurrently. A single-threaded cpp:io_context[] needs no
 strand.
 
 == Building with TLS Libraries
 
 === WolfSSL
 
-[source,cmake]
+[source,cmake,role=external]
 ----
 find_package(WolfSSL REQUIRED)
 target_link_libraries(my_target PRIVATE WolfSSL::WolfSSL)
@@ -530,7 +532,7 @@ target_link_libraries(my_target PRIVATE WolfSSL::WolfSSL)
 
 === OpenSSL
 
-[source,cmake]
+[source,cmake,role=external]
 ----
 find_package(OpenSSL REQUIRED)
 target_link_libraries(my_target PRIVATE OpenSSL::SSL OpenSSL::Crypto)

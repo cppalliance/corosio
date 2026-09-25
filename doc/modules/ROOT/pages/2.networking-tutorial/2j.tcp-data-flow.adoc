@@ -8,6 +8,7 @@
 //
 
 = How TCP Moves Your Data
+:page-mode: explanation
 
 A naive approach to reliable delivery would be: send one segment, wait for the acknowledgment, send the next. That works, but it is painfully slow. If the round trip between your machine and the server takes 50 milliseconds, you can only send 20 segments per second -- regardless of how much bandwidth the network has. Most of the time is spent waiting.
 
@@ -34,6 +35,7 @@ Imagine the sender has 10,000 bytes to transmit and the window size is 4,000 byt
 . An ACK arrives acknowledging bytes 0-999. The window slides forward: the sender can now send bytes 4000-4999.
 . Another ACK arrives acknowledging bytes 1000-1999. The window slides again: bytes 5000-5999 become sendable.
 
+[role=figure]
 ----
 Sent and ACKed  |  Sent, not ACKed  |  Sendable  |  Not yet sendable
                  [     window     ]
@@ -51,7 +53,7 @@ If the receiver's application is reading data quickly, the buffer stays mostly e
 
 If the receiver's application falls behind -- maybe it is busy processing a previous request -- the buffer fills up and the advertised window shrinks. The sender slows down in response. If the window reaches zero, the sender stops entirely and waits for the receiver to free up space.
 
-This feedback loop prevents a fast sender from flooding a slow receiver. It operates automatically, requiring no action from your application code. But it has a practical consequence: if your server reads from the socket slowly, the client's send calls will eventually stall. TCP is applying backpressure through the window mechanism.
+This feedback loop prevents a fast sender from flooding a slow receiver. It operates automatically, requiring no action from your application code. But it has a practical consequence: if your server reads from the socket slowly, the client's send calls eventually stall. TCP is applying backpressure through the window mechanism.
 
 == Delayed Acknowledgments
 

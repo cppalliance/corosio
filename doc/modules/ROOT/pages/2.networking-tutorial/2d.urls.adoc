@@ -8,6 +8,7 @@
 //
 
 = URLs and Resource Identification
+:page-mode: explanation
 
 A URL packs everything your program needs to reach a resource into a single string: which protocol to speak, which machine to contact, and what to ask for once connected. You see URLs constantly -- in browser address bars, configuration files, API documentation, and log messages. Understanding their structure turns an opaque string into a set of actionable instructions.
 
@@ -15,6 +16,7 @@ A URL packs everything your program needs to reach a resource into a single stri
 
 Consider this URL:
 
+[role=figure]
 ----
 https://api.weather.co:443/v2/forecast?city=tokyo&days=5#summary
 ----
@@ -39,17 +41,18 @@ The host and optional port together form the *authority* of the URL. In the exam
 
 When the host is a domain name, your program resolves it through DNS (as described in the previous section) to obtain an IP address. When the host is a literal IPv6 address, it must be enclosed in square brackets to avoid ambiguity with the colons:
 
+[role=figure]
 ----
 http://[2001:db8::1]:8080/status
 ----
 
-The authority can also include user credentials in the form `user:password@host`, but this is deprecated for security reasons and you should not rely on it.
+The authority can also include user credentials in the form `user:password@host`. This is deprecated for security reasons, and you should not rely on it.
 
 == How a URL Drives a Connection
 
 A URL is a recipe, and following it produces a network connection. The steps are:
 
-. *Parse the scheme* to determine the protocol. `https` means you will need a TLS handshake after connecting.
+. *Parse the scheme* to determine the protocol. `https` means you need a TLS handshake after connecting.
 . *Resolve the host* through DNS. `api.weather.co` becomes an IP address, or possibly a list of addresses.
 . *Connect to the port*. If the URL specifies one, use it. Otherwise, use the default for the scheme.
 . *Send the request*. For HTTP, this means sending the method, path, query string, and headers. For other protocols, the format differs.
@@ -82,14 +85,15 @@ URL parsing libraries handle encoding and decoding for you. The important thing 
 
 == URLs vs. URIs
 
-You will sometimes see the term URI (Uniform Resource Identifier) used alongside or instead of URL. The distinction is mostly academic: a URI is the broader category, and a URL is a URI that also tells you *how* to access the resource (via the scheme). A URN (Uniform Resource Name) is a URI that names a resource without providing a location, like an ISBN for a book.
+You sometimes see the term URI (Uniform Resource Identifier) used alongside or instead of URL. The distinction is mostly academic: a URI is the broader category, and a URL is a URI that also tells you *how* to access the resource (via the scheme). A URN (Uniform Resource Name) is a URI that names a resource without providing a location, like an ISBN for a book.
 
-In practice, nearly every URI you encounter is a URL. The terms are used interchangeably in most documentation and APIs, and treating them as equivalent will not cause problems.
+In practice, nearly every URI you encounter is a URL. The terms are used interchangeably in most documentation and APIs, and treating them as equivalent does not cause problems.
 
 == Relative URLs
 
 Not every URL contains all six components. A *relative URL* omits the scheme and authority and is interpreted relative to some base URL. If you are already connected to `https://api.weather.co`, the relative URL `/v2/forecast?city=london` resolves to:
 
+[role=figure]
 ----
 https://api.weather.co/v2/forecast?city=london
 ----

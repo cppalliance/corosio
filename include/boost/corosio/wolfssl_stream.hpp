@@ -25,7 +25,7 @@
 
 namespace boost::corosio {
 
-/** A TLS stream using WolfSSL.
+/** Encrypts and decrypts a stream using WolfSSL.
 
     This class wraps an underlying stream satisfying `capy::Stream`
     and provides TLS encryption using the WolfSSL library.
@@ -38,21 +38,21 @@ namespace boost::corosio {
 
     Two construction modes are supported:
 
-    - **Owning**: Pass stream by value. The wolfssl_stream takes
-      ownership and the stream is moved into internal storage.
+    - **Owning**: Pass stream by value. The `wolfssl_stream` takes
+      ownership. The stream is moved into internal storage.
 
-    - **Reference**: Pass stream by pointer. The wolfssl_stream
-      does not own the stream; the caller must ensure the stream
+    - **Reference**: Pass stream by pointer. The `wolfssl_stream`
+      does not own the stream. The caller must ensure the stream
       outlives this object.
 
     @par Thread Safety
     Distinct objects: Safe.@n
     Shared objects: Unsafe, with one exception: one read operation and
     one write operation may be in flight simultaneously. `shutdown()`
-    may overlap a pending read. When the execution context runs on
-    multiple threads, all operations on one stream must be performed
-    within the same `capy::strand` (or otherwise never run
-    concurrently); a single-threaded context needs no strand.
+    may overlap a pending read. On a multi-threaded execution context,
+    all operations on one stream must run within the same
+    `capy::strand`, or must otherwise never run concurrently. A
+    single-threaded context needs no strand.
 
     @par Example
     @par !example wolfssl_stream
@@ -72,8 +72,8 @@ public:
     /** Construct a WolfSSL stream (owning mode).
 
         Takes ownership of the underlying stream by moving it into
-        internal storage. The stream will be destroyed when this
-        wolfssl_stream is destroyed.
+        internal storage. The stream is destroyed when this
+        `wolfssl_stream` is destroyed.
 
         @param stream The stream to take ownership of. Must satisfy
             `capy::Stream`.
@@ -91,7 +91,7 @@ public:
 
         Wraps the underlying stream without taking ownership. The
         caller must ensure the stream remains valid for the lifetime
-        of this wolfssl_stream.
+        of this `wolfssl_stream`.
 
         @param stream Pointer to the stream to wrap. Must satisfy
             `capy::Stream`.
@@ -104,7 +104,7 @@ public:
     {
     }
 
-    /** Destructor.
+    /** Destroy the WolfSSL stream.
 
         Releases the underlying WolfSSL resources. If constructed
         in owning mode, also destroys the underlying stream.
@@ -133,9 +133,8 @@ public:
         completes, an error occurs, or the operation is
         cancelled via stop token.
 
-        @par Preconditions
-        The underlying stream must be connected. No other
-        TLS operation may be in progress on this stream.
+        @pre The underlying stream must be connected. No other
+            TLS operation may be in progress on this stream.
 
         @param role The handshake role, client or server.
 
@@ -149,16 +148,15 @@ public:
         close_notify response. Supports cancellation via
         stop token.
 
-        @par Preconditions
-        A handshake must have completed successfully. May overlap
-        a pending read; the read completes with `capy::error::eof`
-        when the peer answers the close_notify. No concurrent write
-        may be in progress.
+        @pre A handshake must have completed successfully. May overlap
+            a pending read. That read completes with `capy::error::eof`
+            when the peer answers the close_notify. No concurrent write
+            may be in progress.
 
         @par Postconditions
         If the transport ends before the peer's close_notify is
         received, the result is `capy::error::stream_truncated`, not
-        success. A shutdown stopped mid-flight reports canceled; any
+        success. A shutdown stopped mid-flight reports canceled. Any
         other transport error propagates unchanged.
 
         @return An awaitable yielding `(error_code)`.
@@ -173,12 +171,15 @@ public:
         resumed, so a handshake after `reset()` is always a full
         handshake.
 
-        @par Preconditions
-        No TLS operation may be in progress on this stream.
+        @pre No TLS operation may be in progress on this stream.
     */
     void reset() override;
 
-    /// Set the peer hostname for SNI and certificate verification.
+    /** Set the peer hostname for SNI and certificate verification.
+
+        @param hostname The peer name to send as SNI and match against the
+            certificate.
+    */
     void set_hostname(std::string_view hostname) override;
 
     /// Return the underlying stream.
@@ -200,10 +201,12 @@ public:
     std::string_view alpn_protocol() const noexcept override;
 
 protected:
+    /// @copydoc tls_stream::do_read_some
     capy::io_task<std::size_t> do_read_some(
         capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers)
         override;
 
+    /// @copydoc tls_stream::do_write_some
     capy::io_task<std::size_t> do_write_some(
         capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers)
         override;
@@ -218,8 +221,8 @@ private:
     Errors reported by @ref wolfssl_stream that originate from
     `wolfSSL_get_error` are assigned this category. Its `message()`
     decodes the WolfSSL error code using WolfSSL's own diagnostic
-    strings, so printing such an `error_code` yields a readable
-    description (for example, "ASN no signer error to confirm failure").
+    strings. Printing such an `error_code` therefore yields a readable
+    description, for example "ASN no signer error to confirm failure".
 
     @return A reference to a static category object with name
         `"corosio.wolfssl"`.
@@ -233,14 +236,14 @@ BOOST_COROSIO_DECL std::error_category const& wolfssl_category() noexcept;
     was built with `WOLFSSL_ALWAYS_VERIFY_CB` (implied by
     `--enable-opensslextra`). On a build without it, WolfSSL invokes the
     callback only on verification failure, so a callback that tightens
-    verification would silently fail open; the @ref wolfssl_stream backend
+    verification would silently fail open. The @ref wolfssl_stream backend
     instead fails the handshake with `std::errc::function_not_supported`
     when a callback is present.
 
     This function lets callers detect that situation up front.
 
     @return `true` if verify callbacks are fully supported by this build,
-        `false` if installing one will cause the handshake to fail.
+        `false` if installing one causes the handshake to fail.
 
     @see tls_context::set_verify_callback
 */
@@ -254,7 +257,7 @@ BOOST_COROSIO_DECL bool wolfssl_supports_verify_callback() noexcept;
     silently negotiating nothing.
 
     @return `true` if ALPN is supported by this build, `false` if
-        offering protocols will cause the handshake to fail.
+        offering protocols causes the handshake to fail.
 
     @see tls_context::set_alpn, tls_stream::alpn_protocol
 */
@@ -276,14 +279,14 @@ BOOST_COROSIO_DECL bool wolfssl_supports_crl() noexcept;
 /** Report whether this WolfSSL build can verify IP-literal hostnames.
 
     Matching an IP literal against a certificate's iPAddress entries
-    requires a WolfSSL built with both `OPENSSL_EXTRA` (routes the
-    address into the verify parameters the certificate check consults)
-    and `WOLFSSL_IP_ALT_NAME` (records iPAddress entries during
-    parsing). On a build lacking either, `wolfSSL_check_ip_address`
-    reports success but verification silently checks nothing, so a
-    handshake with an IP literal set via @ref tls_stream::set_hostname
-    fails with `std::errc::function_not_supported` rather than proceed
-    unverified.
+    requires a WolfSSL built with both `OPENSSL_EXTRA` and
+    `WOLFSSL_IP_ALT_NAME`. The first routes the address into the verify
+    parameters the certificate check consults. The second records
+    iPAddress entries during parsing. On a build lacking either,
+    `wolfSSL_check_ip_address` reports success. Verification silently
+    checks nothing. A handshake with an IP literal set via @ref
+    tls_stream::set_hostname therefore fails with
+    `std::errc::function_not_supported` rather than proceed unverified.
 
     @return `true` if IP-literal verification is supported by this build.
 

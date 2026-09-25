@@ -14,9 +14,7 @@
 
 namespace boost::corosio {
 
-/** Common definitions for file I/O objects.
-
-    Provides open flags and seek origin constants shared
+/** Groups the flag and seek-origin constants shared
     by @ref stream_file and @ref random_access_file.
 */
 struct file_base

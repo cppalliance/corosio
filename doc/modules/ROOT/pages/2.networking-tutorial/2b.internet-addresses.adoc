@@ -8,6 +8,7 @@
 //
 
 = Addressing Machines on the Internet
+:page-mode: explanation
 
 Every packet traveling the internet carries two addresses: where it came from and where it is going. These addresses are not arbitrary labels. They have internal structure that routers use to make forwarding decisions, and understanding that structure explains why networks behave the way they do.
 
@@ -15,11 +16,12 @@ Every packet traveling the internet carries two addresses: where it came from an
 
 An IPv4 address is a 32-bit number, written as four decimal values separated by dots. Each value represents one byte, so it ranges from 0 to 255:
 
+[role=figure]
 ----
 192.168.1.42
 ----
 
-That is the human-readable form. Under the hood it is just 32 bits: `11000000.10101000.00000001.00101010`. Four billion possible addresses sounds like a lot until you consider that every phone, laptop, thermostat, and security camera on the planet needs one. The world ran out of fresh IPv4 addresses years ago, and workarounds like network address translation (NAT) keep things functioning -- but the shortage is real.
+That is the human-readable form. Under the hood it is just 32 bits: `11000000.10101000.00000001.00101010`. Four billion possible addresses sounds like a lot until you consider that every phone, laptop, thermostat, and security camera on the planet needs one. The world ran out of fresh IPv4 addresses years ago, and workarounds like network address translation (NAT) keep things functioning. The shortage is real.
 
 == Structure Inside the Address
 
@@ -33,6 +35,7 @@ This division is what makes routing scalable. The internet has billions of devic
 
 The *subnet mask* tells you where the network portion ends and the host portion begins. It is a 32-bit value where all the network bits are set to 1 and all the host bits are set to 0:
 
+[role=figure]
 ----
 Address:     192.168.1.42
 Subnet mask: 255.255.255.0
@@ -48,7 +51,7 @@ Subnet masks also let a single organization divide its address space into smalle
 
 Several address ranges have reserved meanings:
 
-`127.0.0.1` (loopback):: Traffic sent here never leaves the machine. It goes down through the protocol stack, turns around, and comes back up. This is how your program talks to a server running on the same computer. The entire `127.0.0.0/8` range is reserved for loopback, but `127.0.0.1` is the one you will see in practice.
+`127.0.0.1` (loopback):: Traffic sent here never leaves the machine. It goes down through the protocol stack, turns around, and comes back up. This is how your program talks to a server running on the same computer. The entire `127.0.0.0/8` range is reserved for loopback, but `127.0.0.1` is the one you see in practice.
 
 `0.0.0.0`:: When used as a source address, it means "this machine, but I don't know my address yet." When used to bind a socket, it means "listen on every available network interface."
 
@@ -65,12 +68,14 @@ Broadcast:: The address `255.255.255.255` sends a packet to every machine on the
 
 IPv6 replaces the 32-bit address with a 128-bit one, written as eight groups of four hexadecimal digits separated by colons:
 
+[role=figure]
 ----
 2001:0db8:85a3:0000:0000:8a2e:0370:7334
 ----
 
 Leading zeros within a group can be dropped, and a single run of consecutive all-zero groups can be replaced with `::`:
 
+[role=figure]
 ----
 2001:db8:85a3::8a2e:370:7334
 ----

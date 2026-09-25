@@ -1,0 +1,42 @@
+= Hard-slice fixtures
+:page-mode: concept
+
+// BACKTICK GUARD. 30 words, with one STRAY backtick and one balanced span, so the
+// block's backtick count is odd. If the guard breaks, the length-preserving mask
+// pairs the stray backtick with the balanced one and collapses everything between
+// them into a single word: this sentence measures 8, produces NO finding, and
+// nothing says so. Expect: one finding at 30 words AND one BACKTICK diagnostic.
+One two three four five six `seven eight nine ten eleven twelve thirteen fourteen
+fifteen sixteen seventeen eighteen nineteen twenty twentyone twentytwo twentythree
+twentyfour twentyfive twentysix twentyseven twentyeight twentynine `thirty`.
+
+// ELLIPSIS, the only known UNDER-reporting case. 34 words with a mid-sentence
+// `...`. If the boundary guard breaks this splits into 16 + 18 and is missed.
+// The ellipsis is kept off the start of a line on purpose: a leading `... ` is a
+// legitimate AsciiDoc level-3 ordered-list marker, and treating it as one is
+// correct, so a line-initial ellipsis would test the wrong thing.
+Alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi ... omicron
+pi rho sigma tau upsilon phi chi psi omega alef bet gimel dalet he vav zayin
+het tet yod.
+
+// PARENTHESISED ABBREVIATION, the other under-reporting case. 30 words.
+Aone atwo athree afour afive asix aseven aeight anine aten (e.g.) aeleven atwelve
+athirteen afourteen afifteen asixteen aseventeen aeighteen anineteen atwenty
+atwentyone atwentytwo atwentythree atwentyfour atwentyfive atwentysix
+atwentyseven atwentyeight atwentynine athirty.
+
+// BOLD RUN-IN LEAD. The lead is its own sentence; the tail is 12 words. Neither
+// is over the limit, so a merge would be visible as a spurious finding here.
+*The library owns the handles.* Corosio creates and manages the buffer handles and the handle sequences.
+
+// READER WORD COUNTING. 30 tokens under the retired Vale token, 25 as a reader
+// counts: five hyphen compounds, one possessive, one contraction, one slashed
+// list of three, one dotted form and one qualified identifier. Expect NO finding.
+The most-derived fine-grained copy-on-write single-threaded well-known caller's don't read/write/seek buffer_array.hpp this_coro::executor_tag alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu.
+
+// CODE BLOCKS ARE NOT PROSE. If this is ever linted, the identifier below makes
+// it obvious in the finding text.
+[source,cpp]
+----
+auto zzq = utilize_and_leverage(one, two, three, four, five, six, seven, eight, nine, ten, eleven, twelve, thirteen, fourteen, fifteen, sixteen, seventeen, eighteen, nineteen, twenty, twentyone, twentytwo, twentythree, twentyfour, twentyfive, twentysix);
+----

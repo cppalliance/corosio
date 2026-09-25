@@ -29,12 +29,11 @@ namespace boost::corosio {
 
 /** A version-independent IP address.
 
-    This class holds either an IPv4 or an IPv6 address, letting
-    code that works with both families carry one value instead of
-    branching between @ref ipv4_address and @ref ipv6_address.
-    Family-generic queries such as @ref is_loopback dispatch to
-    the held address, and @ref to_v4 / @ref to_v6 recover the
-    family-specific form.
+    This class holds either an IPv4 or an IPv6 address. Code that works with
+    both families carries one value instead of branching between @ref
+    ipv4_address and @ref ipv6_address. Family-generic queries such as @ref
+    is_loopback dispatch to the held address, and @ref to_v4 / @ref to_v6
+    recover the family-specific form.
 
     A v4-mapped IPv6 address (`::ffff:a.b.c.d`) is an IPv6-family
     value: it does not compare equal to the IPv4 address it maps.
@@ -269,7 +268,8 @@ public:
 
         Addresses are equal if they have the same family and the
         same value. A v4-mapped IPv6 address is not equal to the
-        IPv4 address it maps; normalize with @ref to_v4 to compare
+        IPv4 address it maps; normalize with @ref ip_address::to_v4
+        to compare
         across the mapping.
 
         @return `true` if the addresses are equal.
@@ -312,12 +312,12 @@ public:
 
 /** Create an IP address from a string.
 
-    This function parses `s` as an IPv4 address in dotted decimal
-    form, or an IPv6 address in hexadecimal notation, optionally
-    qualified by a `%zone` suffix (a decimal interface index, or an
-    interface name where the platform names interfaces). The string
-    must contain the address alone: port suffixes, surrounding
-    brackets, and host names are not accepted.
+    This function parses `s` as an IPv4 address in dotted decimal form, or
+    an IPv6 address in hexadecimal notation. An IPv6 address may carry a
+    `%zone` suffix: a decimal interface index, or an interface name where
+    the platform names interfaces. The string must contain the address
+    alone: port suffixes, surrounding brackets, and host names are not
+    accepted.
 
     @par Exception Safety
     Throws nothing.

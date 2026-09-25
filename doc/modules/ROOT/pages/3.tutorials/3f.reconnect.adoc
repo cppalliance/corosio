@@ -8,6 +8,7 @@
 //
 
 = Reconnect with Exponential Backoff
+:page-mode: tutorial
 
 This tutorial builds a TCP client that connects to a server and automatically
 reconnects with exponential backoff when the connection fails. You'll learn
@@ -58,8 +59,8 @@ With an initial delay of 500ms and a 30s cap, calling `next()` produces:
 500, 1000, 2000, 4000, 8000, 16000, 30000, 30000, ...
 
 Keeping the policy separate from the `delay()` call means it can be reused
-in any context (synchronous retries, tests, or logging) without pulling in
-async machinery.
+in any context. Synchronous retries, tests, and logging all work without
+pulling in async machinery.
 
 == Session Coroutine
 
@@ -112,7 +113,7 @@ When the stop source is signaled:
 
 1. The loop only inspects the `delay()` call for cancellation, so that is
    where the stop is observed: `delay()` returns `cond::canceled`. A stop
-   requested mid-`connect()` is not checked there; it simply falls through to
+   requested mid-`connect()` is not checked there; it falls through to
    the next `delay()` call, which then returns `cond::canceled`. Either way
    the coroutine exits cleanly.
 2. The coroutine checks the error and executes `co_return`.
@@ -164,7 +165,7 @@ returns.
 
 Start an echo server on one terminal:
 
-[source,bash]
+[role=output]
 ----
 $ ./echo_server 8080 10
 Echo server listening on port 8080 with 10 workers
@@ -172,7 +173,7 @@ Echo server listening on port 8080 with 10 workers
 
 Run the reconnect client on another:
 
-[source,bash]
+[role=output]
 ----
 $ ./reconnect 127.0.0.1 8080
 Connected on attempt 1
@@ -180,7 +181,7 @@ Connected on attempt 1
 
 Stop the server and watch the client retry:
 
-[source,bash]
+[role=output]
 ----
 Attempt 1 failed: Connection refused
 Retrying in 500ms
@@ -194,7 +195,7 @@ Restart the server, and the client reconnects on the next attempt.
 
 To test the no-server case, point the client at a port with nothing listening:
 
-[source,bash]
+[role=output]
 ----
 $ ./reconnect 127.0.0.1 19999
 Attempt 1 failed: Connection refused

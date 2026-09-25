@@ -37,7 +37,7 @@
 
 namespace boost::corosio {
 
-/** An asynchronous TCP acceptor for coroutine I/O.
+/** Accepts inbound TCP connections, from a coroutine.
 
     This class provides asynchronous TCP accept operations that return
     awaitable types. The acceptor binds to a local endpoint and listens
@@ -53,7 +53,7 @@ namespace boost::corosio {
 
     @par Semantics
     Wraps the platform TCP listener. Operations dispatch to
-    OS accept APIs via the io_context reactor.
+    OS accept APIs via the `io_context` reactor.
 
     @par Example
     @par !example convenience_construction
@@ -65,14 +65,19 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
 {
     struct wait_awaitable : detail::void_op_base<wait_awaitable>
     {
-        tcp_acceptor& acc_;
-        wait_type w_;
+    private:
+        friend tcp_acceptor;
 
         wait_awaitable(tcp_acceptor& acc, wait_type w) noexcept
             : acc_(acc)
             , w_(w)
         {
         }
+
+        friend detail::void_op_base<wait_awaitable>;
+
+        tcp_acceptor& acc_;
+        wait_type w_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -83,6 +88,10 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
 
     struct accept_awaitable : detail::void_op_base<accept_awaitable>
     {
+    private:
+        friend tcp_acceptor;
+        friend detail::void_op_base<accept_awaitable>;
+
         tcp_acceptor& acc_;
         tcp_socket& peer_;
         mutable io_object::implementation* peer_impl_ = nullptr;
@@ -93,11 +102,33 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
         {
         }
 
+        std::coroutine_handle<>
+        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        {
+            return acc_.get().accept(
+                h, ex, this->token_, &this->ec_, &peer_impl_);
+        }
+
+    public:
         [[nodiscard]] capy::io_result<> await_resume() const noexcept
         {
             if (!this->ec_ && peer_impl_)
                 peer_.h_.reset(peer_impl_);
             return {this->ec_};
+        }
+    };
+
+    struct accept_value_awaitable : detail::void_op_base<accept_value_awaitable>
+    {
+    private:
+        friend tcp_acceptor;
+        friend detail::void_op_base<accept_value_awaitable>;
+
+        tcp_acceptor& acc_;
+        mutable io_object::implementation* peer_impl_ = nullptr;
+
+        explicit accept_value_awaitable(tcp_acceptor& acc) noexcept : acc_(acc)
+        {
         }
 
         std::coroutine_handle<>
@@ -106,17 +137,8 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
             return acc_.get().accept(
                 h, ex, this->token_, &this->ec_, &peer_impl_);
         }
-    };
 
-    struct accept_value_awaitable : detail::void_op_base<accept_value_awaitable>
-    {
-        tcp_acceptor& acc_;
-        mutable io_object::implementation* peer_impl_ = nullptr;
-
-        explicit accept_value_awaitable(tcp_acceptor& acc) noexcept : acc_(acc)
-        {
-        }
-
+    public:
         [[nodiscard]] capy::io_result<tcp_socket> await_resume() noexcept
         {
             // The peer is built only on success: error paths must not
@@ -128,44 +150,35 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
             peer.h_.reset(peer_impl_);
             return {this->ec_, std::move(peer)};
         }
-
-        std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
-        {
-            return acc_.get().accept(
-                h, ex, this->token_, &this->ec_, &peer_impl_);
-        }
     };
 
 public:
-    /** Destructor.
-
-        Closes the acceptor if open, cancelling any pending operations.
+    /** Closes the acceptor if open, cancelling any pending operations.
     */
     ~tcp_acceptor() override;
 
     /** Construct an acceptor from an execution context.
 
-        @param ctx The execution context that will own this acceptor.
+        @param ctx The execution context that owns this acceptor.
     */
     explicit tcp_acceptor(capy::execution_context& ctx);
 
     /** Convenience constructor: open + configure + bind + listen.
 
-        Creates a fully-bound listening acceptor in a single
+        Creates a fully bound listening acceptor in a single
         expression, throwing the codes the piecewise `open()` +
         `set_option()` + `bind()` + `listen()` path reports. The
         address family is deduced from @p ep.
 
-        Before binding, the constructor configures address reuse so
-        a server can rebind its port immediately after a restart:
-        `SO_REUSEADDR` on POSIX, `SO_EXCLUSIVEADDRUSE` on Windows
-        ( where `SO_REUSEADDR` instead grants other sockets
-        bind-over rights ). A second listener on an occupied
-        endpoint therefore throws `errc::address_in_use` on every
-        platform.
+        Before binding, the constructor configures address reuse so a
+        server can rebind its port immediately after a restart. It
+        sets `SO_REUSEADDR` on POSIX and `SO_EXCLUSIVEADDRUSE` on
+        Windows. Windows does not use `SO_REUSEADDR` because it
+        instead grants other sockets bind-over rights. A second
+        listener on an occupied endpoint therefore throws
+        `errc::address_in_use` on every platform.
 
-        @param ctx The execution context that will own this acceptor.
+        @param ctx The execution context that owns this acceptor.
         @param ep The local endpoint to bind to.
         @param backlog The maximum pending connection queue length.
 
@@ -176,9 +189,10 @@ public:
 
     /** Construct an acceptor from an executor.
 
-        The acceptor is associated with the executor's context.
+        The acceptor is associated with the executor's context. `Ex`
+        must satisfy `capy::Executor`.
 
-        @param ex The executor whose context will own the acceptor.
+        @param ex The executor whose context owns the acceptor.
     */
     template<class Ex>
         requires(!std::same_as<std::remove_cvref_t<Ex>, tcp_acceptor>) &&
@@ -189,7 +203,22 @@ public:
 
     /** Convenience constructor from an executor.
 
-        @param ex The executor whose context will own the acceptor.
+        Creates a fully bound listening acceptor in a single
+        expression, throwing the codes the piecewise `open()` +
+        `set_option()` + `bind()` + `listen()` path reports. The
+        address family is deduced from @p ep.
+
+        Before binding, the constructor configures address reuse so a
+        server can rebind its port immediately after a restart. It
+        sets `SO_REUSEADDR` on POSIX and `SO_EXCLUSIVEADDRUSE` on
+        Windows. Windows does not use `SO_REUSEADDR` because it
+        instead grants other sockets bind-over rights. A second
+        listener on an occupied endpoint therefore throws
+        `errc::address_in_use` on every platform.
+
+        `Ex` must satisfy `capy::Executor`.
+
+        @param ex The executor whose context owns the acceptor.
         @param ep The local endpoint to bind to.
         @param backlog The maximum pending connection queue length.
 
@@ -203,9 +232,7 @@ public:
     {
     }
 
-    /** Move constructor.
-
-        Transfers ownership of the acceptor resources.
+    /** Transfers ownership of the acceptor resources.
 
         @param other The acceptor to move from.
 
@@ -215,9 +242,7 @@ public:
     */
     tcp_acceptor(tcp_acceptor&& other) noexcept : io_object(std::move(other)) {}
 
-    /** Move assignment operator.
-
-        Closes any existing acceptor and transfers ownership.
+    /** Closes any existing acceptor and transfers ownership.
 
         @param other The acceptor to move from.
 
@@ -238,13 +263,15 @@ public:
         return *this;
     }
 
-    tcp_acceptor(tcp_acceptor const&)            = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    tcp_acceptor(tcp_acceptor const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     tcp_acceptor& operator=(tcp_acceptor const&) = delete;
 
     /** Create the acceptor socket without binding or listening.
 
         Creates a TCP socket with dual-stack enabled for IPv6.
-        Does not set SO_REUSEADDR — call `set_option` explicitly
+        Does not set SO_REUSEADDR. Call `set_option` explicitly
         if needed.
 
         If the acceptor is already open, this function is a no-op.
@@ -281,8 +308,7 @@ public:
             on any local interface.
         @li `errc::permission_denied`: Insufficient privileges to bind
             to the endpoint (e.g., privileged port).
-
-        A closed acceptor reports `errc::bad_file_descriptor`.
+        @li `errc::bad_file_descriptor`: The acceptor is not open.
     */
     [[nodiscard]] std::error_code bind(endpoint ep) noexcept;
 
@@ -329,18 +355,17 @@ public:
         `errc::operation_canceled`.
 
         @param peer The socket to receive the accepted connection. Any
-            existing connection on this socket will be closed.
+            existing connection on this socket is closed.
 
         @return An awaitable that completes with `io_result<>`.
             Returns success on successful accept, or an error code on
             failure including:
-            - operation_canceled: Cancelled via stop_token or cancel().
+            - `operation_canceled`: Cancelled via stop_token or cancel().
                 Check `ec == cond::canceled` for portable comparison.
 
         A closed acceptor completes with `errc::bad_file_descriptor`.
 
-        @par Preconditions
-        The peer socket must be associated with the same execution context.
+        @pre The peer socket must be associated with the same execution context.
 
         Both this acceptor and @p peer must outlive the returned
         awaitable.
@@ -364,7 +389,7 @@ public:
         socket for it, associated with this acceptor's execution context.
         The acceptor must be listening before calling this function.
 
-        The caller does not pre-construct the peer socket; the returned
+        The caller does not pre-construct the peer socket. The returned
         socket shares this acceptor's execution context.
 
         The operation supports cancellation via `std::stop_token` through
@@ -376,15 +401,14 @@ public:
             On success the payload is the connected peer socket; on failure
             (including cancellation) the error code is set and the payload
             socket is unconnected. Errors include:
-            - operation_canceled: Cancelled via stop_token or cancel().
+            - `operation_canceled`: Cancelled via stop_token or cancel().
                 Check `ec == cond::canceled` for portable comparison.
 
         A closed acceptor completes with `errc::bad_file_descriptor`.
         On failure the returned socket is default-constructed and
         may only be destroyed or assigned.
 
-        @par Preconditions
-        This acceptor must outlive the returned awaitable.
+        @pre This acceptor must outlive the returned awaitable.
 
         @par Example
         @par !example accept_returning_a_new_socket
@@ -404,7 +428,7 @@ public:
         Suspends until the listen socket is ready in the
         requested direction, or an error condition is reported.
         For `wait_type::read`, completion signals that a
-        subsequent @ref accept will succeed without blocking; a
+        subsequent @ref accept succeeds without blocking. A
         connection already queued when the wait begins completes
         it immediately. No connection is consumed.
 
@@ -419,8 +443,7 @@ public:
 
         A closed acceptor completes with `errc::bad_file_descriptor`.
 
-        @par Preconditions
-        This acceptor must outlive the returned awaitable.
+        @pre This acceptor must outlive the returned awaitable.
     */
     [[nodiscard]] auto wait(wait_type w)
     {
@@ -432,9 +455,10 @@ public:
 
     /** Cancel any pending asynchronous operations.
 
-        Operations still in flight complete with `errc::operation_canceled`;
-        an operation whose result is already decided reports that result.
-        Check `ec == cond::canceled` for portable comparison.
+        Accept and wait transfer no bytes, so a cancellation always wins:
+        an operation reports `errc::operation_canceled` even when it had
+        already succeeded when the cancellation landed. Check
+        `ec == cond::canceled` for portable comparison.
     */
     void cancel() noexcept;
 
@@ -446,17 +470,17 @@ public:
 
         @return The native socket handle, or -1/INVALID_SOCKET if not open.
 
-        @par Preconditions
-        None. May be called on closed acceptors.
+        @pre None. May be called on closed acceptors.
     */
     native_handle_type native_handle() const noexcept;
 
     /** Assign an existing native socket to this acceptor.
 
-        Adopts a listening socket created outside the library —
-        received from a service manager, inherited, or made natively —
-        and registers it with the backend. The socket must be a
-        listening stream socket in the `AF_INET` or `AF_INET6` family.
+        Adopts a listening socket created outside the library. The
+        socket may come from a service manager, be inherited, or be
+        created natively. Adoption registers the socket with the
+        backend. The socket must be a listening stream socket in the
+        `AF_INET` or `AF_INET6` family.
         Adoption never alters the descriptor's flags or options: on
         POSIX the fd must already be non-blocking, and on Windows the
         socket must be overlapped-capable.
@@ -476,7 +500,7 @@ public:
         ownership of `fd`.
 
         @param fd The native socket to adopt. On success the object
-            owns it and will close it.
+            owns it and closes it.
 
         @return The error code, empty on success. Validation and
             registration failures are normal runtime conditions when
@@ -584,13 +608,22 @@ public:
     */
     struct implementation : io_object::implementation
     {
-        /// Initiate an asynchronous accept operation.
+        /** Initiate an asynchronous accept operation.
+
+            @param h Coroutine handle to resume on completion.
+            @param ex Executor for dispatching the completion.
+            @param token Stop token for cancellation.
+            @param ec Output error code.
+            @param impl_out Output implementation for the accepted peer.
+
+            @return Coroutine handle to resume immediately.
+        */
         virtual std::coroutine_handle<> accept(
-            std::coroutine_handle<>,
-            capy::executor_ref,
-            std::stop_token,
-            std::error_code*,
-            io_object::implementation**) = 0;
+            std::coroutine_handle<> h,
+            capy::executor_ref ex,
+            std::stop_token token,
+            std::error_code* ec,
+            io_object::implementation** impl_out) = 0;
 
         /** Initiate an asynchronous wait for acceptor readiness.
 
@@ -598,6 +631,14 @@ public:
             the specified direction (typically `wait_type::read`
             for an incoming connection), or an error condition is
             reported. No connection is consumed.
+
+            @param h Coroutine handle to resume on completion.
+            @param ex Executor for dispatching the completion.
+            @param w The direction to wait on.
+            @param token Stop token for cancellation.
+            @param ec Output error code.
+
+            @return Coroutine handle to resume immediately.
         */
         virtual std::coroutine_handle<> wait(
             std::coroutine_handle<> h,
@@ -606,13 +647,22 @@ public:
             std::stop_token token,
             std::error_code* ec) = 0;
 
-        /// Returns the cached local endpoint.
+        /** Returns the cached local endpoint.
+
+            @return The cached local endpoint.
+        */
         virtual endpoint local_endpoint() const noexcept = 0;
 
-        /// Return true if the acceptor has a kernel resource open.
+        /** Return true if the acceptor has a kernel resource open.
+
+            @return true if the acceptor has a kernel resource open.
+        */
         virtual bool is_open() const noexcept = 0;
 
-        /// Return the native handle, or the platform sentinel if closed.
+        /** Return the native handle, or the platform sentinel if closed.
+
+            @return The native handle, or the platform sentinel if closed.
+        */
         virtual native_handle_type native_handle() const noexcept = 0;
 
         /** Return the socket's address family.
@@ -623,14 +673,17 @@ public:
         */
         virtual corosio::family family() const noexcept = 0;
 
-        /// Release and return the native handle without closing.
+        /** Release and return the native handle without closing.
+
+            @return The native handle.
+        */
         virtual native_handle_type release_socket() noexcept = 0;
 
         /** Cancel any pending asynchronous operations.
 
-            Operations still in flight complete with `operation_canceled`;
-            an operation whose result is already decided reports that
-            result.
+            Accept and wait transfer no bytes, so a cancellation always
+            wins: an operation reports `operation_canceled` even when it
+            had already succeeded when the cancellation landed.
         */
         virtual void cancel() noexcept = 0;
 
@@ -663,9 +716,17 @@ public:
     };
 
 protected:
+    /** Adopt an existing handle.
+
+        @param h The handle the acceptor takes ownership of.
+    */
     explicit tcp_acceptor(handle h) noexcept : io_object(std::move(h)) {}
 
-    /// Transfer accepted peer impl to the peer socket.
+    /** Transfer the accepted peer implementation to the peer socket.
+
+        @param peer The socket that receives the transferred implementation.
+        @param impl The accepted peer implementation, or null to do nothing.
+    */
     static void
     reset_peer_impl(tcp_socket& peer, io_object::implementation* impl) noexcept
     {

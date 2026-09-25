@@ -39,7 +39,7 @@
 
 namespace boost::corosio {
 
-/** An asynchronous TCP socket for coroutine I/O.
+/** Connects, reads, and writes over TCP, from a coroutine.
 
     This class provides asynchronous TCP socket operations that return
     awaitable types. Each operation participates in the affine awaitable
@@ -57,7 +57,7 @@ namespace boost::corosio {
 
     @par Semantics
     Wraps the platform TCP/IP stack. Operations dispatch to
-    OS socket APIs via the io_context reactor (epoll, IOCP,
+    OS socket APIs via the `io_context` reactor (epoll, IOCP,
     kqueue). Satisfies @ref capy::Stream.
 
     @par Example
@@ -69,6 +69,7 @@ public:
     /// The endpoint type used by this socket.
     using endpoint_type = corosio::endpoint;
 
+    /// The shutdown direction type used by this socket.
     using shutdown_type = corosio::shutdown_type;
     using enum corosio::shutdown_type;
 
@@ -191,14 +192,19 @@ public:
     /// Represent the awaitable returned by @ref connect.
     struct connect_awaitable : detail::void_op_base<connect_awaitable>
     {
-        tcp_socket& s_;
-        endpoint endpoint_;
+    private:
+        friend tcp_socket;
 
         connect_awaitable(tcp_socket& s, endpoint ep) noexcept
             : s_(s)
             , endpoint_(ep)
         {
         }
+
+        friend detail::void_op_base<connect_awaitable>;
+
+        tcp_socket& s_;
+        endpoint endpoint_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -210,10 +216,15 @@ public:
     /// Represent the awaitable returned by @ref wait.
     struct wait_awaitable : detail::void_op_base<wait_awaitable>
     {
-        tcp_socket& s_;
-        wait_type w_;
+    private:
+        friend tcp_socket;
 
         wait_awaitable(tcp_socket& s, wait_type w) noexcept : s_(s), w_(w) {}
+
+        friend detail::void_op_base<wait_awaitable>;
+
+        tcp_socket& s_;
+        wait_type w_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -223,15 +234,12 @@ public:
     };
 
 public:
-    /** Destructor.
-
-        Closes the socket if open, cancelling any pending operations.
-    */
+    /** Closes the socket if open, cancelling any pending operations. */
     ~tcp_socket() override;
 
     /** Construct a socket from an execution context.
 
-        @param ctx The execution context that will own this socket.
+        @param ctx The execution context that owns this socket.
     */
     explicit tcp_socket(capy::execution_context& ctx);
 
@@ -239,7 +247,9 @@ public:
 
         The socket is associated with the executor's context.
 
-        @param ex The executor whose context will own the socket.
+        @tparam Ex A type satisfying capy::Executor.
+
+        @param ex The executor whose context owns the socket.
     */
     template<class Ex>
         requires(!std::same_as<std::remove_cvref_t<Ex>, tcp_socket>) &&
@@ -287,16 +297,18 @@ public:
         return *this;
     }
 
-    tcp_socket(tcp_socket const&)            = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    tcp_socket(tcp_socket const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     tcp_socket& operator=(tcp_socket const&) = delete;
 
     /** Open the socket.
 
         Creates a TCP socket and associates it with the platform
         reactor (IOCP on Windows). Calling @ref connect on a closed
-        socket opens it automatically with the endpoint's address family,
-        so explicit `open()` is only needed when socket options must be
-        set before connecting.
+        socket opens it automatically with the endpoint's address family.
+        An explicit `open()` is therefore needed only when socket options
+        must be set before connecting.
 
         Failures such as descriptor exhaustion are normal runtime
         conditions and are reported through the returned error code.
@@ -327,8 +339,7 @@ public:
             available on any local interface.
         @li `errc::permission_denied`: Insufficient privileges to
             bind to the endpoint (e.g., privileged port).
-
-        A closed socket reports `errc::bad_file_descriptor`.
+        @li `errc::bad_file_descriptor`: The socket is closed.
     */
     [[nodiscard]] std::error_code bind(endpoint ep) noexcept;
 
@@ -366,19 +377,18 @@ public:
         @param ep The remote endpoint to connect to.
 
         @return An awaitable that completes with `io_result<>`.
-            Returns success (default error_code) on successful connection,
+            Returns success (default `error_code`) on successful connection,
             or an error code on failure including:
-            - connection_refused: No server listening at endpoint
-            - timed_out: Connection attempt timed out
-            - network_unreachable: No route to host
-            - operation_canceled: Cancelled via stop_token or cancel().
+            - `connection_refused`: No server listening at endpoint
+            - `timed_out`: Connection attempt timed out
+            - `network_unreachable`: No route to host
+            - `operation_canceled`: Cancelled via stop_token or cancel().
                 Check `ec == cond::canceled` for portable comparison.
 
         If the socket needs to be opened and the open fails, the
         awaitable completes immediately with that error.
 
-        @par Preconditions
-        This socket must outlive the returned awaitable.
+        @pre This socket must outlive the returned awaitable.
 
         @par Example
         @par !example connect
@@ -394,10 +404,10 @@ public:
     /** Wait for the socket to become ready in a given direction.
 
         Suspends until the socket is ready for the requested
-        direction, or an error condition is reported. No bytes
-        are transferred — useful for integrating with C libraries
-        that own the I/O on a nonblocking fd and only need
-        readiness notification (e.g. libpq async, libssh).
+        direction, or an error condition is reported. No bytes are
+        transferred. This suits C libraries that own the I/O on a
+        nonblocking fd and need only readiness notification, such as
+        libpq async and libssh.
 
         The operation supports cancellation via `std::stop_token`
         through the affine awaitable protocol. If the associated
@@ -407,14 +417,13 @@ public:
         @param w The wait direction (read, write, or error).
 
         @return An awaitable that completes with `io_result<>`.
-            On success, no bytes have been consumed from the
+            On success, the wait consumes no bytes from the
             stream; a subsequent `read_some` (for read waits)
             returns the available data.
 
         A closed socket completes with `errc::bad_file_descriptor`.
 
-        @par Preconditions
-        This socket must outlive the returned awaitable.
+        @pre This socket must outlive the returned awaitable.
     */
     [[nodiscard]] auto wait(wait_type w)
     {
@@ -437,8 +446,7 @@ public:
 
         @return The native socket handle, or -1/INVALID_SOCKET if not open.
 
-        @par Preconditions
-        None. May be called on closed sockets.
+        @pre None. May be called on closed sockets.
     */
     native_handle_type native_handle() const noexcept;
 
@@ -464,7 +472,7 @@ public:
         ownership of `fd`.
 
         @param fd The native socket to adopt. On success the object
-            owns it and will close it.
+            owns it and closes it.
 
         @return The error code, empty on success. Validation and
             registration failures are normal runtime conditions when
@@ -500,8 +508,8 @@ public:
             close() to ensure graceful connection termination.
 
         @li @ref shutdown_receive disables reading on the socket. This
-            does NOT send anything to the peer - they are not informed
-            and may continue sending data. Subsequent reads will fail
+            does not send anything to the peer. The peer is not informed
+            and may continue sending data. Subsequent reads fail
             or return end-of-file. Incoming data may be discarded or
             buffered depending on the operating system.
 
@@ -509,18 +517,19 @@ public:
             disables reading.
 
         When the peer shuts down their send direction (sends a FIN),
-        subsequent read operations will complete with `capy::cond::eof`.
+        subsequent read operations complete with `capy::cond::eof`.
         Use the portable condition test rather than comparing error
         codes directly:
 
         @par !example shutdown
 
+        @par Error Conditions
         Failures such as a peer that already disconnected are
         normal runtime conditions and are reported through the
         returned error code. A closed socket reports
         `errc::bad_file_descriptor`.
 
-        @param what Determines what operations will no longer be allowed.
+        @param what Determines which operations are no longer allowed.
 
         @return The error code, empty on success.
     */
@@ -617,8 +626,13 @@ public:
     endpoint remote_endpoint() const noexcept;
 
 protected:
+    /// Default construct a closed socket for a derived class to open.
     tcp_socket() noexcept = default;
 
+    /** Adopt an existing handle.
+
+        @param h The handle the socket takes ownership of.
+    */
     explicit tcp_socket(handle h) noexcept : io_object(std::move(h)) {}
 
 private:

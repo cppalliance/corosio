@@ -8,8 +8,9 @@
 //
 
 = TCP Server
+:page-mode: how-to
 
-The `tcp_server` class provides a framework for building TCP servers with
+The cpp:tcp_server[] class provides a framework for building TCP servers with
 connection pooling. It manages acceptors, worker pools, and connection
 lifecycle automatically.
 
@@ -24,7 +25,7 @@ include::example$snippets/4k_tcp_server.cpp[tag=assume]
 
 == Overview
 
-`tcp_server` is a base class designed for inheritance. You derive from it,
+cpp:tcp_server[] is a base class designed for inheritance. You derive from it,
 define your worker type, and implement the connection handling logic. The
 framework handles:
 
@@ -45,17 +46,16 @@ a socket and any state needed for a session.
 
 === worker_base
 
-The `worker_base` class is the foundation. It declares a constructor and a
-virtual destructor, holds private intrusive-list bookkeeping used by the
-server's idle and active pools, and exposes two pure virtuals you must
-override:
+The cpp:tcp_server::worker_base[worker_base] class is the foundation. It declares a constructor and a
+virtual destructor, and holds private intrusive-list bookkeeping used by the server's idle and active
+pools. It exposes two pure virtuals you must override:
 
 [source,cpp]
 ----
 include::example$snippets/4k_tcp_server.cpp[tag=worker_base]
 ----
 
-Your worker inherits from `worker_base`, owns its socket, and implements the
+Your worker inherits from cpp:tcp_server::worker_base[worker_base], owns its socket, and implements the
 required methods:
 
 [source,cpp]
@@ -66,7 +66,7 @@ include::example$snippets/4k_tcp_server.cpp[tag=my_worker]
 === Providing Workers
 
 The worker pool is installed with `set_workers()`. It accepts any forward
-range of pointer-like objects convertible to `worker_base*`, such as a
+range of pointer-like objects convertible to a pointer to cpp:tcp_server::worker_base[], such as a
 `std::vector<std::unique_ptr<worker_base>>`. The server takes ownership of the
 range and reuses each worker across connections:
 
@@ -82,13 +82,13 @@ A small helper that builds the range keeps construction tidy:
 include::example$snippets/4k_tcp_server.cpp[tag=make_workers]
 ----
 
-Because the range holds `unique_ptr<worker_base>`, workers are stored
+Because the range holds a `unique_ptr` to cpp:tcp_server::worker_base[], workers are stored
 polymorphically, allowing different worker types in the same pool if needed.
 
 == The Launcher
 
-When a connection is accepted, `tcp_server` calls your worker's `run()`
-method with a `launcher` object. The launcher manages the coroutine lifecycle:
+When a connection is accepted, cpp:tcp_server[] calls your worker's `run()`
+method with a cpp:tcp_server::launcher[launcher] object. The launcher manages the coroutine lifecycle:
 
 [source,cpp]
 ----
@@ -146,7 +146,7 @@ Begin accepting connections:
 include::example$snippets/4k_tcp_server.cpp[tag=start,indent=0]
 ----
 
-Workers must have been provided via `set_workers()` before calling `start()`,
+Workers must be provided via `set_workers()` before calling `start()`,
 and at least one endpoint must be bound.
 
 After `start()`, the server:
@@ -190,7 +190,7 @@ include::example$snippets/4k_tcp_server.cpp[tag=worker_reuse,indent=0]
 
 === Multiple Ports
 
-`tcp_server` can listen on multiple ports simultaneously. All ports share
+cpp:tcp_server[] can listen on multiple ports simultaneously. All ports share
 the same worker pool:
 
 [source,cpp]
@@ -209,8 +209,8 @@ connection limits at a higher layer.
 
 == Thread Safety
 
-The `tcp_server` class is not thread-safe. All operations on the server
-must occur from coroutines running on its `io_context`. Workers may not be
+The cpp:tcp_server[] class is not thread-safe. All operations on the server
+must occur from coroutines running on its cpp:io_context[]. Workers may not be
 accessed concurrently.
 
 For multi-threaded operation, create one server per thread, or use external

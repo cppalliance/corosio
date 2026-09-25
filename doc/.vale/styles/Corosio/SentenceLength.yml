@@ -1,0 +1,68 @@
+# RETIRED AS AN AUTHORITY — demoted rather than deleted, the same treatment
+# .vale.ini gives the Google house-style pack. `doc/lint/sentence-length.mjs` is
+# the authority for C2 on both surfaces; this rule is kept only so that
+# `vale --minAlertLevel=suggestion` can still show what Vale made of a page.
+# `suggestion` is below .vale.ini's `MinAlertLevel = warning`, so it no longer
+# reaches baseline.json, the gate, or a default `vale modules` run.
+#
+# ============================================================================
+# DO NOT GATE THIS RULE. `--gate 'vale_adoc:Corosio\.SentenceLength$'` — the
+# obvious spec, by analogy with the working `vale_adoc:Corosio\.PartHeadings$` —
+# is VACUOUS. At `suggestion` this rule never enters a Vale fingerprint set, so
+# the spec matches nothing and the gate reports `gated: true, gatedNew: 0` and
+# exits 0 while checking NOTHING. Measured, exactly that. That is the same
+# fail-open shape as the vacuous `Corosio.PartHeadings` rule this branch already
+# had to fix. Gate the script instead:
+#
+#     --gate 'sentence_length:^C2:'
+#
+# which is live in docs.yml since the Phase-4 exit. Re-measured at the Phase-4
+# final fix wave: EXIT=1 / gatedNew=2, both findings the grandfathered
+# `when_any.hpp` refusals, so it still needs a baseline reseed before it can go
+# green. (An earlier version of this comment said gatedNew=135, the figure from
+# before the .adoc hard slice was worked to zero; `doc/lint/README.md` carried
+# the identical staleness and was corrected, this copy was missed.)
+# `^C2:` binds the HARD slice only; the design-essay
+# findings are keyed `advisory-C2` and are deliberately unreachable from a
+# `C2`-prefixed spec (doc/STYLE_GUIDE.md Part C2: hard in API docs, soft in
+# essays).
+# ============================================================================
+#
+# Three measured reasons this rule cannot be the authority, none fixable inside
+# a Vale rule (all `cwd=doc`, vale 3.15.1, target `modules`):
+#
+#   1. UNDER-COUNTS. It runs after .vale.ini's `TokenIgnores` blanks inline code
+#      spans, so a span contributes ZERO words where a reader counts one. Three
+#      measurements of the size of that blind spot, all agreeing:
+#        * task P4-prereq, Vale with rewritten TokenIgnores, on the
+#          pre-BlockIgnores-fix config:            140 -> 170   (+30)
+#        * this task, Vale with the committed TokenIgnores, every backtick span
+#          (2115) and `cpp:` macro (557) outside code blocks replaced by one
+#          word, `--minAlertLevel=suggestion`:     135 -> 164   (+29)
+#        * sentence-length.mjs, spans blanked versus spans as one word, all
+#          slices of `.adoc`:                      125 -> 152   (+27)
+#      An earlier version of this comment claimed "+35, measured twice" by
+#      substituting today's 135 for prereq's 140 and by counting words with
+#      Vale's tokenizer. Both were wrong; the real figure is +27 to +30.
+#   2. MIS-ATTRIBUTES, which is worse: the missed block produces no alert to
+#      chase, so re-running to a fixpoint never finds it. The blanking corrupts
+#      Vale's position mapping for `scope: sentence` rules. Hand-verified case:
+#      `5.buffers/5b.types.adoc` holds two over-limit sentences in list items
+#      (27 and 34 words) and Vale reports NONE. The artifact is not confined to
+#      `scope: sentence` either — a `Corosio.Terminology` alert on
+#      `4.coroutines/4b.launching.adoc` is reported at line 25, an `include::`
+#      line inside a `[source,cpp]` block, when the text that matched is at
+#      line 68.
+#   3. FALSE-POSITIVES on under-segmentation. `4.coroutines/4f.composition.adoc:93`
+#      is flagged as one sentence; its four real sentences are 23, 14, 11 and 6
+#      words. Reproduced with that paragraph alone in a file.
+#
+# Do NOT re-promote this to warning/error without first showing, on a fixture,
+# that Vale's position mapping for `scope: sentence` is fixed. Two checkers
+# reporting different C2 numbers is how a gate loses credibility.
+extends: occurrence
+message: "Sentence over 25 words — split it (style guide C1/C2)."
+level: suggestion
+scope: sentence
+token: \b(\w+)\b
+max: 25

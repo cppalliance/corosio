@@ -51,7 +51,7 @@
 
 namespace boost::corosio {
 
-/** An asynchronous signal set for coroutine I/O.
+/** Waits from a coroutine for one of a registered set of signals.
 
     This class provides the ability to perform an asynchronous wait
     for one or more signals to occur. The signal set registers for
@@ -60,13 +60,13 @@ namespace boost::corosio {
 
     @par Thread Safety
     Distinct objects: Safe.@n
-    Shared objects: Unsafe. A signal_set must not have concurrent
+    Shared objects: Unsafe. A `signal_set` must not have concurrent
     wait operations.
 
     @par Semantics
-    Wraps platform signal handling (sigaction on POSIX, C runtime
+    Wraps platform signal handling (`sigaction` on POSIX, C runtime
     signal() on Windows). Operations dispatch to OS signal APIs
-    via the io_context reactor.
+    via the `io_context` reactor.
 
     @par Supported Signals
     On Windows, the following signals are supported:
@@ -84,7 +84,7 @@ public:
         flags can be combined using the bitwise OR operator.
 
         @note Flags only have effect on POSIX systems. On Windows,
-        only `none` and `dont_care` are supported; other flags return
+        only `none` and `dont_care` are supported. Other flags return
         `operation_not_supported`.
     */
     enum flags_t : unsigned
@@ -154,7 +154,7 @@ public:
     /** Define backend hooks for signal set operations.
 
         Platform backends derive from this to provide signal
-        registration via sigaction (POSIX) or the C runtime
+        registration via `sigaction` (POSIX) or the C runtime
         signal() function (Windows).
     */
     struct implementation : io_signal_set::implementation
@@ -191,13 +191,13 @@ public:
 
     /** Construct an empty signal set.
 
-        @param ctx The execution context that will own this signal set.
+        @param ctx The execution context that owns this signal set.
     */
     explicit signal_set(capy::execution_context& ctx);
 
     /** Construct a signal set with initial signals.
 
-        @param ctx The execution context that will own this signal set.
+        @param ctx The execution context that owns this signal set.
         @param signal First signal number to add.
         @param signals Additional signal numbers to add.
 
@@ -222,7 +222,7 @@ public:
 
         The signal set is associated with the executor's context.
 
-        @param ex The executor whose context will own this signal set.
+        @param ex The executor whose context owns this signal set.
     */
     template<class Ex>
         requires(!std::same_as<std::remove_cvref_t<Ex>, signal_set>) &&
@@ -235,7 +235,7 @@ public:
 
         The signal set is associated with the executor's context.
 
-        @param ex The executor whose context will own this signal set.
+        @param ex The executor whose context owns this signal set.
         @param signal First signal number to add.
         @param signals Additional signal numbers to add.
 
@@ -278,7 +278,9 @@ public:
     */
     signal_set& operator=(signal_set&& other) noexcept;
 
-    signal_set(signal_set const&)            = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    signal_set(signal_set const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     signal_set& operator=(signal_set const&) = delete;
 
     /** Add a signal to the signal set.
@@ -287,20 +289,19 @@ public:
         specified flags. It has no effect if the signal is already
         in the set with the same flags.
 
-        If the signal is already registered globally (by another
-        signal_set) and the flags differ, an error is returned
-        unless one of them has the `dont_care` flag.
+        Another `signal_set` may already have registered the signal
+        globally. If the flags then differ, an error is returned unless
+        one of them has the `dont_care` flag.
 
-        The first signal registration on an execution context
-        installs the process signal-delivery pipe; if that
-        installation fails the error is returned, and the next
-        call retries it.
+        The first signal registration on an execution context installs
+        the process signal-delivery pipe. If that installation fails,
+        the error is returned. The next call retries it.
 
         @param signal_number The signal to be added to the set.
         @param flags The flags to apply when registering the signal.
             On POSIX systems, these map to sigaction() flags.
-            On Windows, only `none` and `dont_care` are supported;
-            other flags cause `errc::operation_not_supported` to
+            On Windows, only `none` and `dont_care` are supported.
+            Other flags cause `errc::operation_not_supported` to
             be returned.
 
         @return Success, or an error if the signal could not be added.
@@ -343,6 +344,10 @@ public:
     [[nodiscard]] std::error_code clear();
 
 protected:
+    /** Adopt an existing handle.
+
+        @param h The handle the signal set takes ownership of.
+    */
     explicit signal_set(handle h) noexcept : io_signal_set(std::move(h)) {}
 
 private:

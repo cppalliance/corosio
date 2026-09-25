@@ -8,14 +8,15 @@
 //
 
 = UDP Sockets
+:page-mode: how-to
 
-UDP is a connectionless, message-oriented transport. Each `send` produces
-exactly one datagram, and each `recv` consumes exactly one datagram. There
+UDP is a connectionless, message-oriented transport. Each cpp:udp_socket::send[send] produces
+exactly one datagram, and each cpp:udp_socket::recv[recv] consumes exactly one datagram. There
 is no handshake, no acknowledgment, and no ordering guarantee.
 
 For the protocol-level fundamentals (header layout, fragmentation, when to
 choose UDP over TCP), see xref:2.networking-tutorial/2g.udp.adoc[UDP: Fast,
-Simple, Unreliable]. This page covers the Corosio API: `udp_socket` and the
+Simple, Unreliable]. This page covers the Corosio API: cpp:udp_socket[] and the
 operations it supports.
 
 [NOTE]
@@ -37,15 +38,14 @@ with — `family::v4` or `family::v6`:
 include::example$snippets/4q_udp.cpp[tag=protocol,indent=0]
 ----
 
-`open()` defaults to `family::v4` when no family is supplied, and
-`connect()` picks the family automatically from the endpoint when the
+`open()` defaults to `family::v4` when no family is supplied. `connect()` picks the family automatically from the endpoint when the
 socket is not yet open — see xref:#connected-mode[Connected Mode] below.
 
 == Opening and Binding
 
-Receiving datagrams requires an open socket bound to a local endpoint
-(`connect()` opens the socket automatically; the other initiators
-complete with `errc::bad_file_descriptor` on a closed socket):
+Receiving datagrams requires an open socket bound to a local endpoint.
+`connect()` opens the socket automatically; the other initiators
+complete with `errc::bad_file_descriptor` on a closed socket:
 
 [source,cpp]
 ----
@@ -60,7 +60,7 @@ use `ipv4_address::any()` or `ipv6_address::any()`. To restrict to loopback,
 use `::loopback()`.
 
 Senders that never need to receive replies on a known port may skip `bind()`;
-the kernel assigns an ephemeral port on the first `send_to`.
+the kernel assigns an ephemeral port on the first cpp:udp_socket::send_to[send_to].
 
 == Connectionless Mode
 
@@ -74,13 +74,13 @@ receive captures the sender's address.
 include::example$snippets/4q_udp.cpp[tag=send_to,indent=0]
 ----
 
-`send_to` either delivers the entire datagram to the network or fails — there
+cpp:udp_socket::send_to[send_to] either delivers the entire datagram to the network or fails — there
 is no partial send for UDP. On success `n` equals the buffer size; on failure
 `ec` carries the reason.
 
 === Receiving
 
-`recv_from` writes the datagram into the buffer and stores the sender's
+cpp:udp_socket::recv_from[recv_from] writes the datagram into the buffer and stores the sender's
 address in the endpoint reference you pass in:
 
 [source,cpp]
@@ -106,7 +106,7 @@ so there is no acceptor and no peer socket to manage.
 == Connected Mode
 
 `connect()` does not perform a handshake — it sets a default peer in the
-kernel. Datagrams from any other source are filtered out, and `send`/`recv`
+kernel. Datagrams from any other source are filtered out, and cpp:udp_socket::send[send]/cpp:udp_socket::recv[recv]
 become available without endpoint arguments:
 
 [source,cpp]
@@ -124,13 +124,13 @@ Connected mode is useful for two reasons:
 
 * **Filtering** — the kernel drops stray datagrams from unrelated senders
   before your code sees them, which simplifies request/response clients.
-* **ICMP error reporting** — when a peer is unreachable, the kernel surfaces
-  the resulting ICMP error on a subsequent `send` or `recv` instead of
-  silently discarding it.
+* **ICMP error reporting** — when a peer is unreachable, the kernel surfaces the resulting ICMP error rather
+  than silently discarding it. It appears on a subsequent cpp:udp_socket::send[send] or
+  cpp:udp_socket::recv[recv].
 
 == Message Flags
 
-`send_to`, `recv_from`, `send`, and `recv` accept an optional
+cpp:udp_socket::send_to[send_to], cpp:udp_socket::recv_from[recv_from], cpp:udp_socket::send[send], and cpp:udp_socket::recv[recv] accept an optional
 `corosio::message_flags`:
 
 [cols="1,3"]
@@ -138,7 +138,7 @@ Connected mode is useful for two reasons:
 | Flag | Effect
 
 | `peek`
-| Return data without removing it from the receive queue. The next `recv`
+| Return data without removing it from the receive queue. The next cpp:udp_socket::recv[recv]
   returns the same datagram.
 
 | `out_of_band`
@@ -168,20 +168,20 @@ Options commonly relevant to UDP:
 |===
 | Option | When to set
 
-| `reuse_address`
+| cpp:socket_option::reuse_address[reuse_address]
 | Multiple sockets on the same address (e.g., a reload swap, or several
   receivers in the same multicast group).
 
-| `broadcast`
+| cpp:socket_option::broadcast[broadcast]
 | Required before sending to a broadcast address such as
   `255.255.255.255`. Off by default.
 
-| `receive_buffer_size` / `send_buffer_size`
+| cpp:socket_option::receive_buffer_size[receive_buffer_size] / cpp:socket_option::send_buffer_size[send_buffer_size]
 | Tune the kernel's per-socket queues. UDP datagrams are dropped when the
   receive queue is full — bursts of inbound traffic argue for a larger
   receive buffer.
 
-| `v6_only`
+| cpp:socket_option::v6_only[v6_only]
 | On an IPv6 socket, refuse IPv4-mapped addresses. Off by default on most
   platforms; enable for IPv6-only services.
 |===
@@ -205,20 +205,20 @@ Related options:
 |===
 | Option | Purpose
 
-| `join_group` / `leave_group`
+| cpp:socket_option::join_group[join_group] / cpp:socket_option::leave_group[leave_group]
 | Subscribe to or unsubscribe from a multicast group. The group's
   family selects the wire form, so one pair serves both families.
 
-| `multicast_loop`
+| cpp:socket_option::multicast_loop[multicast_loop]
 | Enable or disable receiving your own outgoing multicast. One option
   for both families; it renders for the family the socket was opened
   with.
 
-| `multicast_hops`
+| cpp:socket_option::multicast_hops[multicast_hops]
 | Set the multicast TTL (IPv4) / hop limit (IPv6). Default is `1` —
   datagrams stay on the local subnet unless you raise it.
 
-| `multicast_interface`
+| cpp:socket_option::multicast_interface[multicast_interface]
 | Choose the outgoing interface — by address for IPv4, by index for
   IPv6; construct with whichever names your interface.
 |===
@@ -248,11 +248,11 @@ xref:4.guide/4m.error-handling.adoc[Error Handling].
 
 == Concurrent Operations
 
-A `udp_socket` permits one outstanding send and one outstanding receive at
-a time. Two simultaneous `recv_from` calls on the same socket are not
+A cpp:udp_socket[] permits one outstanding send and one outstanding receive at
+a time. Two simultaneous cpp:udp_socket::recv_from[recv_from] calls on the same socket are not
 supported. This is enough for the common pattern of a single coroutine that
-alternates send and receive, or a pair of coroutines where one drives
-outbound traffic and the other drains the receive queue.
+alternates send and receive. It also suits a pair of coroutines where one
+drives outbound traffic and the other drains the receive queue.
 
 For higher concurrency, use multiple sockets — UDP has no per-connection
 cost in the kernel, so a server can run several receivers in parallel.
@@ -261,7 +261,7 @@ cost in the kernel, so a server can run several receivers in parallel.
 
 [cols="1,1,1"]
 |===
-| Aspect | `tcp_socket` | `udp_socket`
+| Aspect | cpp:tcp_socket[] | cpp:udp_socket[]
 
 | Model
 | Reliable byte stream
@@ -269,7 +269,7 @@ cost in the kernel, so a server can run several receivers in parallel.
 
 | Message boundaries
 | Not preserved
-| Preserved (one `recv` = one datagram)
+| Preserved (one cpp:udp_socket::recv[recv] = one datagram)
 
 | Setup
 | Three-way handshake before I/O

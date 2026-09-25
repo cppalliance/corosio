@@ -15,6 +15,10 @@ asciidoc:
   attributes:
     source-language: asciidoc@
     table-caption: false
+    # Style guide E2: the right-rail table of contents is switched on here, not by
+    # the theme.
+    page-toc: ''
+    toclevels: 2
 nav:
   - modules/ROOT/nav.adoc
 ext:

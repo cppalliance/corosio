@@ -184,7 +184,10 @@ public:
 class BOOST_COROSIO_DECL no_delay : public boolean_option
 {
 public:
+    /// Inherit the base constructors.
     using boolean_option::boolean_option;
+
+    /// Inherit assignment from the base.
     using boolean_option::operator=;
 
     /// Return the protocol level.
@@ -202,7 +205,10 @@ public:
 class BOOST_COROSIO_DECL keep_alive : public boolean_option
 {
 public:
+    /// Inherit the base constructors.
     using boolean_option::boolean_option;
+
+    /// Inherit assignment from the base.
     using boolean_option::operator=;
 
     /// Return the protocol level.
@@ -224,7 +230,10 @@ public:
 class BOOST_COROSIO_DECL v6_only : public boolean_option
 {
 public:
+    /// Inherit the base constructors.
     using boolean_option::boolean_option;
+
+    /// Inherit assignment from the base.
     using boolean_option::operator=;
 
     /// Return the protocol level.
@@ -242,7 +251,10 @@ public:
 class BOOST_COROSIO_DECL reuse_address : public boolean_option
 {
 public:
+    /// Inherit the base constructors.
     using boolean_option::boolean_option;
+
+    /// Inherit assignment from the base.
     using boolean_option::operator=;
 
     /// Return the protocol level.
@@ -264,7 +276,10 @@ public:
 class BOOST_COROSIO_DECL broadcast : public boolean_option
 {
 public:
+    /// Inherit the base constructors.
     using boolean_option::boolean_option;
+
+    /// Inherit assignment from the base.
     using boolean_option::operator=;
 
     /// Return the protocol level.
@@ -285,7 +300,10 @@ public:
 class BOOST_COROSIO_DECL reuse_port : public boolean_option
 {
 public:
+    /// Inherit the base constructors.
     using boolean_option::boolean_option;
+
+    /// Inherit assignment from the base.
     using boolean_option::operator=;
 
     /// Return the protocol level.
@@ -303,7 +321,10 @@ public:
 class BOOST_COROSIO_DECL receive_buffer_size : public integer_option
 {
 public:
+    /// Inherit the base constructors.
     using integer_option::integer_option;
+
+    /// Inherit assignment from the base.
     using integer_option::operator=;
 
     /// Return the protocol level.
@@ -321,7 +342,10 @@ public:
 class BOOST_COROSIO_DECL send_buffer_size : public integer_option
 {
 public:
+    /// Inherit the base constructors.
     using integer_option::integer_option;
+
+    /// Inherit assignment from the base.
     using integer_option::operator=;
 
     /// Return the protocol level.
@@ -362,13 +386,19 @@ public:
     /// Return whether linger is enabled.
     bool enabled() const noexcept;
 
-    /// Set whether linger is enabled.
+    /** Set whether linger is enabled.
+
+        @param v `true` to linger on close.
+    */
     void enabled(bool v) noexcept;
 
     /// Return the linger timeout in seconds.
     int timeout() const noexcept;
 
-    /// Set the linger timeout in seconds.
+    /** Set the linger timeout in seconds.
+
+        @param v The timeout in seconds.
+    */
     void timeout(int v) noexcept;
 
     /// Return the protocol level.
@@ -395,8 +425,6 @@ public:
     /** Normalize after `getsockopt`.
 
         No-op — `struct linger` is always returned at full size.
-
-        @param s The number of bytes actually written by `getsockopt`.
     */
     void resize(family, std::size_t) noexcept {}
 };
@@ -404,7 +432,7 @@ public:
 /** Enable loopback of outgoing multicast (IP_MULTICAST_LOOP /
     IPV6_MULTICAST_LOOP).
 
-    The socket's family selects the wire rendering: a single byte
+    The socket's family selects the wire rendering. A single byte
     at the IPv4 level (BSD-derived kernels reject the four-byte
     form), an `int` at the IPv6 level.
 
@@ -577,10 +605,10 @@ public:
 
 /** Join a multicast group (IP_ADD_MEMBERSHIP / IPV6_JOIN_GROUP).
 
-    The group's family — not the socket's — selects the wire
-    struct and protocol level: a v4 group renders as an `ip_mreq`
-    at the IPv4 level even when applied to a dual-stack v6 socket,
-    which is the level such a join actually targets.
+    The group's family — not the socket's — selects the wire struct and
+    protocol level. A v4 group renders as an `ip_mreq` at the IPv4 level
+    even when applied to a dual-stack v6 socket. That is the level such a
+    join actually targets.
 
     @par Example
     @par !example join_group
@@ -702,10 +730,10 @@ public:
 /** Set the outgoing multicast interface (IP_MULTICAST_IF /
     IPV6_MULTICAST_IF).
 
-    The two families name interfaces differently on the wire — IPv4
-    by interface address, IPv6 by interface index — so the option
-    stores both renderings and the socket's family selects one; the
-    other stays at its default (any address, kernel-chosen index).
+    The two families name interfaces differently on the wire: IPv4 by
+    interface address, IPv6 by interface index. The option stores both
+    renderings and the socket's family selects one; the other stays at its
+    default (any address, kernel-chosen index).
 
     @par Example
     @par !example multicast_interface

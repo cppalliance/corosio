@@ -8,18 +8,20 @@
 //
 
 = Tutorials
+:page-mode: explanation
 
-Networked applications come alive when you build them yourself. Reading
-about sockets, protocols, and concurrency only goes so far — the real
+Networked applications are easier to understand once you build them yourself. Reading
+about sockets, protocols, and concurrency only goes so far. The real
 understanding comes from writing code that opens connections, sends data,
 and handles the responses. These tutorials give you that hands-on experience
 with Corosio.
 
 Each tutorial produces a complete, runnable program. You start with source
 code, compile it, and interact with the result. Along the way you encounter
-the patterns that recur throughout real networking code: listening for
-incoming connections, connecting to remote services, formatting and parsing
-protocol messages, and layering encryption on top of a transport.
+the patterns that recur throughout real networking code. Those are
+listening for incoming connections, connecting to remote services,
+formatting and parsing protocol messages, and layering encryption on top of
+a transport.
 
 The progression moves from straightforward client-server interactions toward
 more involved topics. Early tutorials focus on raw TCP communication — reading
@@ -28,7 +30,7 @@ protocols where message framing and request-response semantics matter.
 Security appears naturally as you add TLS to protect data in transit, covering
 certificate management and encrypted streams.
 
-Throughout the tutorials you will see how Corosio's coroutine-based model
+Throughout the tutorials you see how Corosio's coroutine-based model
 keeps asynchronous code readable. Operations that would require callbacks
 or state machines in traditional networking code read as sequential steps
 in a coroutine body. Error handling follows consistent patterns whether

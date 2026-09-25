@@ -343,12 +343,11 @@ public:
 
     /** Return the pool, creating it if this is the first use.
 
-        @par Preconditions
-        For the throwing clauses below to be unreachable, the owning
-        context must already hold the pool service. Every `io_context`
-        constructor installs it — what waits for a first post is the
-        service's workers, not the service — so the creating branch is
-        reached only by a scheduler driven without one.
+        @pre For the throwing clauses below to be unreachable, the owning
+            context must already hold the pool service. Every `io_context`
+            constructor installs it — what waits for a first post is the
+            service's workers, not the service — so the creating branch is
+            reached only by a scheduler driven without one.
 
         @par Exception Safety
         Strong guarantee.

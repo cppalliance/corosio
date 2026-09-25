@@ -38,7 +38,7 @@
 
 namespace boost::corosio {
 
-/** An I/O context with devirtualized event loop methods.
+/** Runs asynchronous operations, calling the backend event loop directly.
 
     This class template inherits from @ref io_context and shadows
     all public methods with versions that call the concrete
@@ -46,7 +46,7 @@ namespace boost::corosio {
     is added.
 
     A `native_io_context` IS-A `io_context` and can be passed
-    anywhere an `io_context&` is accepted, in which case virtual
+    anywhere an `io_context&` is accepted. In that case, virtual
     dispatch is used transparently.
 
     @tparam Backend A backend tag value (e.g., `epoll`,
@@ -78,7 +78,7 @@ public:
     /** Construct with a concurrency hint.
 
         @param concurrency_hint Hint for the number of threads that
-            will call `run()`.
+            call `run()`.
     */
     explicit native_io_context(unsigned concurrency_hint)
         : io_context(Backend, concurrency_hint)
@@ -90,7 +90,7 @@ public:
         @param opts Runtime options controlling scheduler and
             service behavior.
         @param concurrency_hint Hint for the number of threads that
-            will call `run()`.
+            call `run()`.
     */
     explicit native_io_context(
         io_context_options const& opts,
@@ -100,7 +100,9 @@ public:
     }
 
     // Non-copyable, non-movable
-    native_io_context(native_io_context const&)            = delete;
+    /// Copy construction is disabled; the context owns its services.
+    native_io_context(native_io_context const&) = delete;
+    /// Copy assignment is disabled; the context owns its services.
     native_io_context& operator=(native_io_context const&) = delete;
 
     /// Signal the context to stop processing.
@@ -109,7 +111,10 @@ public:
         sched().stop();
     }
 
-    /// Return whether the context has been stopped.
+    /** Return whether the context stopped.
+
+        @return `true` if the context has stopped.
+    */
     bool stopped() const noexcept
     {
         return const_cast<native_io_context*>(this)->sched().stopped();

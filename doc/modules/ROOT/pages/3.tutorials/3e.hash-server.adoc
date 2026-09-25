@@ -8,10 +8,11 @@
 //
 
 = Hash Server Tutorial
+:page-mode: tutorial
 
 This tutorial builds a TCP server that reads data from clients, computes a
 hash on a thread pool, and sends the result back. You'll learn how to combine
-an `io_context` for network I/O with a `thread_pool` for CPU-bound work,
+an cpp:io_context[] for network I/O with a `thread_pool` for CPU-bound work,
 switching between them mid-coroutine with `capy::run()`.
 
 [NOTE]
@@ -26,20 +27,20 @@ include::example$hash-server/hash_server.cpp[tag=assume]
 == Overview
 
 Most servers spend their time waiting on the network. When the work between
-reads and writes is cheap, a single-threaded `io_context` handles thousands
-of connections without breaking a sweat. But some operations — cryptographic
+reads and writes is cheap, a single-threaded cpp:io_context[] handles thousands
+of connections. But some operations — cryptographic
 hashes, compression, image processing — consume real CPU time. Running those
 inline blocks the event loop and starves every other connection.
 
-The solution is to keep I/O on the `io_context` and offload heavy computation
-to a `thread_pool`. Capy's `run()` function makes this seamless: a single
+The solution is to keep I/O on the cpp:io_context[] and offload heavy computation
+to a `thread_pool`. Capy's `run()` function makes this seamless. A single
 `co_await` switches the coroutine to the pool, runs the work, and resumes
 back on the original executor when it finishes.
 
 This tutorial demonstrates:
 
-* Accepting connections with `tcp_acceptor`
-* Spawning independent session coroutines with `run_async`
+* Accepting connections with cpp:tcp_acceptor[]
+* Starting independent session coroutines with `run_async`
 * Switching executors with `capy::run()` for CPU-bound work
 * The trampoline that returns the coroutine to its home executor
 
@@ -69,13 +70,13 @@ include::example$hash-server/hash_server.cpp[tag=session]
 
 Three things happen in sequence, but on two different executors:
 
-1. **Read** — runs on the `io_context` thread. The socket awaitable suspends
+1. **Read** — runs on the cpp:io_context[] thread. The socket awaitable suspends
    the coroutine until data arrives from the kernel.
 2. **Hash** — `capy::run( pool.get_executor() )` posts `compute_fnv1a` to the
-   thread pool. The coroutine suspends on the `io_context` and resumes on a
+   thread pool. The coroutine suspends on the cpp:io_context[] and resumes on a
    pool thread. When the task completes, a trampoline posts the
-   coroutine back to the `io_context`.
-3. **Write** — back on the `io_context` thread, the hex result is sent to the
+   coroutine back to the cpp:io_context[].
+3. **Write** — back on the cpp:io_context[] thread, the hex result is sent to the
    client.
 
 The executor switch is invisible at the call site — it reads like straight-line
@@ -96,20 +97,20 @@ Behind the scenes:
 2. On `co_await`, the awaitable's `await_suspend` posts the inner task
    through `pool_executor.post(task_handle)` — the task is queued for a worker
    thread.
-3. The calling coroutine suspends (the `io_context` is free to process other
+3. The calling coroutine suspends (the cpp:io_context[] is free to process other
    connections).
 4. A pool thread picks up the task and runs it to completion.
 5. The task's `final_suspend` resumes a trampoline, which calls
    `io_context_executor.post(caller_handle)` to post the caller back
-   to the `io_context`.
-6. The caller resumes on the `io_context` thread with the hash result.
+   to the cpp:io_context[].
+6. The caller resumes on the cpp:io_context[] thread with the hash result.
 
 The key insight: the caller's executor is captured before the switch and
 restored automatically after. You never need to manually post back.
 
 == Accept Loop
 
-The accept loop creates a socket per connection and spawns a session:
+The accept loop creates a socket per connection and starts a session:
 
 [source,cpp]
 ----
@@ -117,7 +118,7 @@ include::example$hash-server/hash_server.cpp[tag=accept]
 ----
 
 `run_async` is fire-and-forget — each session runs independently on the
-`io_context`. The accept loop immediately continues waiting for the next
+cpp:io_context[]. The accept loop immediately continues waiting for the next
 connection.
 
 == Main Function
@@ -127,7 +128,7 @@ connection.
 include::example$hash-server/hash_server.cpp[tag=main]
 ----
 
-The `io_context` drives all network I/O on the main thread. The thread pool
+The cpp:io_context[] drives all network I/O on the main thread. The thread pool
 runs four worker threads for hash computation. `pool.join()` waits for any
 in-flight pool work after the event loop exits.
 
@@ -149,7 +150,7 @@ These two functions serve different purposes:
   caller on its original executor
 |===
 
-In this example, `run_async` launches the accept loop from `main`, and
+In this example, `run_async` starts the accept loop from `main`, and
 `run` switches individual hash computations to the thread pool from within
 a session coroutine.
 
@@ -157,7 +158,7 @@ a session coroutine.
 
 Start the server:
 
-[source,bash]
+[role=output]
 ----
 $ ./hash_server 8080
 Hash server listening on port 8080
@@ -165,7 +166,7 @@ Hash server listening on port 8080
 
 Send data with netcat:
 
-[source,bash]
+[role=output]
 ----
 $ echo "hello world" | nc -q1 localhost 8080
 782e1488cd5a68b7

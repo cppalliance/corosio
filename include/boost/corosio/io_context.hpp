@@ -26,14 +26,14 @@
 
 namespace boost::corosio {
 
-/** Locking-safety tier for an @ref io_context.
+/** Selects which internal locks the scheduler and reactor elide,
+    trading thread-safety guarantees for reduced synchronization
+    overhead.
 
-    Selects which internal locks the scheduler and reactor elide, trading
-    thread-safety guarantees for reduced synchronization overhead. This is
-    the analog of Boost.Asio's `SAFE` / `UNSAFE_IO` / `UNSAFE` concurrency
-    hint constants. The tier is chosen explicitly, not derived from the
-    `concurrency_hint`. (The reverse does apply: a lockless tier reduces the
-    effective hint used for performance tuning to 1.)
+    This is the analog of Boost.Asio's `SAFE` / `UNSAFE_IO` / `UNSAFE`
+    concurrency hint constants. The tier is chosen explicitly, not derived
+    from the `concurrency_hint`. (The reverse does apply: a lockless tier
+    reduces the effective hint used for performance tuning to 1.)
 
     @see io_context_options::locking
 */
@@ -44,10 +44,10 @@ enum class locking_mode
     safe,
 
     /** Disable only the per-descriptor I/O locks; keep scheduler locking.
-        Equivalent to Boost.Asio's `UNSAFE_IO`. The context must be run
-        and driven by a single thread, but resolver and POSIX file
-        services remain available (they rely on scheduler locking, which
-        stays on). */
+        Equivalent to Boost.Asio's `UNSAFE_IO`. A single thread must run
+        and drive the context. Resolver and POSIX file services remain
+        available, because they rely on scheduler locking, which stays
+        on. */
     unsafe_io,
 
     /** Disable all locking (fully lockless). Equivalent to Boost.Asio's
@@ -62,7 +62,7 @@ enum class locking_mode
     unsafe
 };
 
-/** Runtime tuning options for @ref io_context.
+/** Configures scheduler and reactor tuning for an @ref io_context.
 
     All fields have defaults that match the library's built-in
     values, so constructing a default `io_context_options` produces
@@ -82,7 +82,7 @@ struct io_context_options
 
         Controls the buffer size passed to `epoll_wait()` or
         `kevent()`. Larger values reduce syscall frequency under
-        high load; smaller values improve fairness between
+        high load. Smaller values improve fairness between
         connections. Ignored on IOCP and select backends.
     */
     unsigned max_events_per_poll = 128;
@@ -94,10 +94,10 @@ struct io_context_options
         re-queue. Applies to reactor backends only.
 
         @note Constructing an `io_context` with `concurrency_hint > 1`
-            and all three budget fields at their defaults overrides
-            them to disable inline completion (post-everything mode),
-            since multi-thread workloads benefit from cross-thread
-            work-stealing. Setting any budget field to a non-default
+        and all three budget fields at their defaults overrides them to
+        disable inline completion, giving post-everything mode.
+        Multi-thread workloads benefit from cross-thread work-stealing.
+        Setting any budget field to a non-default
             value disables the override.
     */
     unsigned inline_budget_initial = 2;
@@ -134,8 +134,8 @@ struct io_context_options
     /** Enable IORING_SETUP_SQPOLL on the io_uring backend.
 
         With SQPOLL, the kernel forks a thread that busy-polls the
-        submission ring; submission becomes a userspace-only memory
-        store, eliminating the io_uring_enter syscall on the submit
+        submission ring. Submission becomes a userspace-only memory
+        store, which eliminates the `io_uring_enter` syscall on the submit
         path. Most useful for sustained traffic. Idle thread parks
         after `sq_thread_idle_ms` of no activity.
 
@@ -148,7 +148,7 @@ struct io_context_options
     /** SQ-poll idle timeout in milliseconds.
 
         After this many ms of no submissions, the kernel polling
-        thread sleeps; next submit re-wakes it via SQ_WAKEUP. 0
+        thread sleeps. The next submit re-wakes it via SQ_WAKEUP. 0
         means use the kernel default (1ms). Recommended for bursty
         workloads: 100-1000ms (avoids park/unpark thrash).
 
@@ -183,9 +183,9 @@ effective_concurrency_hint(
 }
 } // namespace detail
 
-/** An I/O context for running asynchronous operations.
+/** Runs asynchronous operations and owns the I/O backend that drives them.
 
-    The io_context provides an execution environment for async
+    The `io_context` provides an execution environment for async
     operations. It maintains a queue of pending work items and
     processes them when `run()` is called.
 
@@ -202,24 +202,23 @@ effective_concurrency_hint(
     @par Example
     @par !example construct
 
-    @par Preconditions
-    The context must outlive every operation posted or dispatched
-    through its executor, and no thread may be executing a run
-    variant when the context is destroyed. Posting to the context
-    concurrently with, or after, its destruction is undefined
-    behavior. The safe teardown pattern is to stop submitting new
-    work, let every `run()` call return (each returns once no
-    outstanding work remains), and join the threads that ran the
-    loop before destroying the context. Work launched with
-    `capy::run` / `capy::run_async` is work-tracked, so a normal
-    `run()` completion already waits for it.
+    @pre The context must outlive every operation posted or dispatched
+    through its executor. No thread may be executing a run variant when
+    the context is destroyed. Posting to the context
+        concurrently with, or after, its destruction is undefined
+        behavior. For a safe teardown, first stop submitting new work.
+        Then let every `run()` call return; each returns once no
+        outstanding work remains. Finally join the threads that ran the
+        loop. Only then destroy the context. Work started with
+        `capy::run` / `capy::run_async` is work-tracked, so a normal
+        `run()` completion already waits for it.
 
     @par Exception Safety
-    A context that constructs is usable. The infrastructure its
-    backend needs — the completion port, the ring, the reactor's
-    wakeup channel — is created during construction, so a system that
-    refuses it throws from the constructor rather than from the first
-    operation, and the failed construction leaves nothing open.
+    A context that constructs is usable. The infrastructure its backend
+    needs — the completion port, the ring, the reactor's wakeup channel
+    — is created during construction. A system that refuses it therefore
+    throws from the constructor rather than from the first operation.
+    The failed construction leaves nothing open.
 
     @par Thread Safety
     Distinct objects: Safe.@n
@@ -236,7 +235,7 @@ class BOOST_COROSIO_DECL io_context : public capy::execution_context
 
     /** Create the blocking-I/O thread pool, apply runtime tuning to the
         scheduler and finish bringing the backend up. The tail of every
-        options constructor: the backend infrastructure whose setup reads
+        options constructor. The backend infrastructure whose setup reads
         these options is created here, so a failure to create it throws
         from the constructor. */
     void apply_options_post_(
@@ -244,8 +243,8 @@ class BOOST_COROSIO_DECL io_context : public capy::execution_context
 
     /** Create the blocking-I/O thread pool and apply only the decomposed
         threading configuration (locking tiers), then finish bringing the
-        backend up. The tail of every plain constructor, which — unlike
-        the options constructors — deliberately leaves the reactor budget
+        backend up. The tail of every plain constructor. Unlike the
+        options constructors, it deliberately leaves the reactor budget
         at its defaults rather than engaging the multi-thread
         post-everything heuristic. */
     void apply_threading_(io_context_options const& opts);
@@ -254,7 +253,8 @@ protected:
     detail::scheduler* sched_;
 
 public:
-    /** The executor type for this context. */
+    /** Dispatches and posts work to this context; see the
+        executor_type definition below. */
     class executor_type;
 
     /** Construct with default concurrency and platform backend.
@@ -272,7 +272,7 @@ public:
     /** Construct with a concurrency hint and platform backend.
 
         @param concurrency_hint Hint for the number of threads
-            that will call `run()`.
+            that calls `run()`.
 
         @throws std::system_error If the backend's infrastructure
             could not be created.
@@ -284,7 +284,7 @@ public:
         @param opts Runtime options controlling scheduler and
             service behavior.
         @param concurrency_hint Hint for the number of threads
-            that will call `run()`.
+            that calls `run()`.
 
         @throws std::invalid_argument If `opts.thread_pool_size` is
             less than 1 (POSIX).
@@ -298,10 +298,14 @@ public:
 
     /** Construct with an explicit backend tag.
 
+        @tparam Backend A backend tag type that provides a static
+            `construct(capy::execution_context&, unsigned)` factory
+            used to build the scheduler.
+
         @param backend The backend tag value selecting the I/O
             multiplexer (e.g. `corosio::epoll`).
         @param concurrency_hint Hint for the number of threads
-            that will call `run()`.
+            that calls `run()`.
 
         @throws std::system_error If the backend's infrastructure
             could not be created.
@@ -322,12 +326,16 @@ public:
 
     /** Construct with an explicit backend tag and runtime options.
 
+        @tparam Backend A backend tag type that provides a static
+            `construct(capy::execution_context&, unsigned)` factory
+            used to build the scheduler.
+
         @param backend The backend tag value selecting the I/O
             multiplexer (e.g. `corosio::epoll`).
         @param opts Runtime options controlling scheduler and
             service behavior.
         @param concurrency_hint Hint for the number of threads
-            that will call `run()`.
+            that calls `run()`.
 
         @throws std::invalid_argument If `opts.thread_pool_size` is
             less than 1 (POSIX).
@@ -352,9 +360,12 @@ public:
         apply_options_post_(opts, eff);
     }
 
+    /// Destroy the context; stops the loop and destroys every service.
     ~io_context();
 
-    io_context(io_context const&)            = delete;
+    /// Copy construction is disabled; the context owns its services.
+    io_context(io_context const&) = delete;
+    /// Copy assignment is disabled; the context owns its services.
     io_context& operator=(io_context const&) = delete;
 
     /** Return an executor for this context.
@@ -376,10 +387,10 @@ public:
         sched_->stop();
     }
 
-    /** Return whether the context has been stopped.
+    /** Return whether the context stopped.
 
-        @return `true` if `stop()` has been called and `restart()`
-            has not been called since.
+        @return `true` after a call to `stop()` with no later
+            call to `restart()`.
     */
     bool stopped() const noexcept
     {
@@ -389,7 +400,7 @@ public:
     /** Restart the context after being stopped.
 
         This function must be called before `run()` can be called
-        again after `stop()` has been called.
+        again after a call to `stop()`.
     */
     void restart()
     {
@@ -398,8 +409,8 @@ public:
 
     /** Process all pending work items.
 
-        This function blocks until all pending work items have been
-        executed or `stop()` is called. The context is stopped
+        This function blocks until it executes all pending work items,
+        or until `stop()` is called. The context is stopped
         when there is no more outstanding work.
 
         @note The context must be restarted with `restart()` before
@@ -414,7 +425,7 @@ public:
 
     /** Process at most one pending work item.
 
-        This function blocks until one work item has been executed
+        This function blocks until it executes one work item
         or `stop()` is called. The context is stopped when there
         is no more outstanding work.
 
@@ -430,8 +441,8 @@ public:
 
     /** Process work items for the specified duration.
 
-        This function blocks until work items have been executed for
-        the specified duration, or `stop()` is called. The context
+        This function blocks until it has executed work items for the
+        specified duration, or until `stop()` is called. The context
         is stopped when there is no more outstanding work.
 
         @note The context must be restarted with `restart()` before
@@ -473,7 +484,7 @@ public:
 
     /** Process at most one work item for the specified duration.
 
-        This function blocks until one work item has been executed,
+        This function blocks until it executes one work item,
         the specified duration has elapsed, or `stop()` is called.
         The context is stopped when there is no more outstanding work.
 
@@ -492,7 +503,7 @@ public:
 
     /** Process at most one work item until the specified time.
 
-        This function blocks until one work item has been executed,
+        This function blocks until it executes one work item,
         the specified time is reached, or `stop()` is called.
         The context is stopped when there is no more outstanding work.
 
@@ -565,7 +576,7 @@ public:
     }
 };
 
-/** An executor for dispatching work to an I/O context.
+/** Dispatches and posts work to an I/O context.
 
     The executor provides the interface for posting work items and
     dispatching coroutines to the associated context. It satisfies
@@ -584,10 +595,7 @@ class io_context::executor_type
     io_context* ctx_ = nullptr;
 
 public:
-    /** Default constructor.
-
-        Constructs an executor not associated with any context.
-    */
+    /** Constructs an executor not associated with any context. */
     executor_type() = default;
 
     /** Construct an executor from a context.
@@ -625,8 +633,7 @@ public:
 
     /** Informs the executor that work has completed.
 
-        @par Preconditions
-        A preceding call to `on_work_started()` on an equal executor.
+        @pre A preceding call to `on_work_started()` on an equal executor.
     */
     void on_work_finished() const noexcept
     {
@@ -643,10 +650,9 @@ public:
 
         @return A handle for symmetric transfer or `std::noop_coroutine()`.
 
-        @par Preconditions
-        The associated context must outlive this call. Dispatching
-        concurrently with, or after, the context's destruction is
-        undefined behavior.
+        @pre The associated context must outlive this call. Dispatching
+            concurrently with, or after, the context's destruction is
+            undefined behavior.
     */
     std::coroutine_handle<> dispatch(capy::continuation& c) const
     {
@@ -661,10 +667,11 @@ public:
         Enqueues `c` directly on the scheduler's ready queue.
         No heap allocation occurs.
 
-        @par Preconditions
-        The associated context must outlive this call. Posting
-        concurrently with, or after, the context's destruction is
-        undefined behavior.
+        @param c The continuation to enqueue.
+
+        @pre The associated context must outlive this call. Posting
+            concurrently with, or after, the context's destruction is
+            undefined behavior.
     */
     void post(capy::continuation& c) const
     {
@@ -673,16 +680,16 @@ public:
 
     /** Post a bare coroutine handle for deferred execution.
 
-        Heap-allocates a scheduler_op to wrap the handle. A caller
-        that already owns a `scheduler_op` can post it directly via
-        the `post(scheduler_op*)` overload to avoid the allocation.
+        Heap-allocates a `scheduler_op` to wrap the handle. A caller
+        that already owns a `capy::continuation` can post it directly
+        via the `post(capy::continuation&)` overload to avoid the
+        allocation.
 
         @param h The coroutine handle to post.
 
-        @par Preconditions
-        The associated context must outlive this call. Posting
-        concurrently with, or after, the context's destruction is
-        undefined behavior.
+        @pre The associated context must outlive this call. Posting
+            concurrently with, or after, the context's destruction is
+            undefined behavior.
     */
     void post(std::coroutine_handle<> h) const
     {

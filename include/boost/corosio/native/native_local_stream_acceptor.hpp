@@ -39,13 +39,13 @@
 
 namespace boost::corosio {
 
-/** An asynchronous Unix stream acceptor with devirtualized accept.
+/** Accepts Unix domain stream connections, calling the backend directly.
 
-    This class template inherits from @ref local_stream_acceptor
-    and shadows both `accept` overloads (the peer-reference form
-    and the move-return form) with versions that call the backend
-    implementation directly, allowing the compiler to inline
-    through the entire call chain. The move-return form yields a
+    This class template inherits from @ref local_stream_acceptor. It
+    shadows both `accept` overloads (the peer-reference form and the
+    move-return form) with versions that call the backend implementation
+    directly. The compiler can then inline through the entire call
+    chain. The move-return form yields a
     @ref native_local_stream_socket so subsequent I/O on the peer
     is also devirtualized.
 
@@ -161,7 +161,7 @@ class native_local_stream_acceptor : public local_stream_acceptor
 public:
     /** Construct a native acceptor from an execution context.
 
-        @param ctx The execution context that will own this acceptor.
+        @param ctx The execution context that owns this acceptor.
     */
     explicit native_local_stream_acceptor(capy::execution_context& ctx)
         : local_stream_acceptor(create_handle<service_type>(ctx), ctx)
@@ -170,7 +170,7 @@ public:
 
     /** Construct a native acceptor from an executor.
 
-        @param ex The executor whose context will own the acceptor.
+        @param ex The executor whose context owns the acceptor.
     */
     template<class Ex>
         requires(!std::same_as<
@@ -190,7 +190,9 @@ public:
     native_local_stream_acceptor&
     operator=(native_local_stream_acceptor&&) noexcept = default;
 
+    /// Copy construction is disabled; the handle is uniquely owned.
     native_local_stream_acceptor(native_local_stream_acceptor const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     native_local_stream_acceptor&
     operator=(native_local_stream_acceptor const&) = delete;
 
@@ -228,7 +230,7 @@ public:
 
         A closed acceptor reports `errc::bad_file_descriptor`.
 
-        @throws std::logic_error If the acceptor has been moved from.
+        @throws std::logic_error If the acceptor is moved-from.
 
         This acceptor must outlive the returned awaitable.
     */

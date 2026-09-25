@@ -79,10 +79,9 @@ public:
     /** The number of characters in the longest possible IPv6 string.
 
         The longest address body is the IPv4-mapped form
-        `ffff:ffff:ffff:ffff:ffff:ffff:255.255.255.255` (45
-        characters), and a numeric zone suffix adds up to eleven
-        more (`%4294967295`), for a worst case of 56; the constant
-        carries a little slack.
+        `ffff:ffff:ffff:ffff:ffff:ffff:255.255.255.255` (45 characters). A
+        numeric zone suffix adds up to eleven more (`%4294967295`), for a
+        worst case of 56; the constant carries a little slack.
     */
     static constexpr std::size_t max_str_len = 60;
 
@@ -129,11 +128,11 @@ public:
 
     /** Return the zone the address belongs to.
 
-        Link-local addresses (`fe80::/10`) are unique only per
-        network link, so the address bits alone do not identify a
-        destination; the zone — an interface index, written with a
-        `%` suffix in text form — disambiguates. For global
-        addresses the zone is 0 and has no meaning.
+        Link-local addresses (`fe80::/10`) are unique only per network link,
+        so the address bits alone do not identify a destination. The zone —
+        an interface index, written with a `%` suffix in text form —
+        disambiguates. For global addresses the zone is 0 and has no
+        meaning.
 
         @return The zone as an interface index; 0 if unscoped.
 
@@ -383,9 +382,8 @@ private:
 
 /** Create an IPv6 address from a string.
 
-    This function attempts to parse the string
-    as an IPv6 address and returns an error code
-    if the string does not contain a valid IPv6 address.
+    This function attempts to parse the string as an IPv6 address. It
+    returns an error code if the string holds no valid IPv6 address.
 
     @par Exception Safety
     Throws nothing.

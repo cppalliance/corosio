@@ -25,7 +25,7 @@
 
 namespace boost::corosio {
 
-/** A TLS stream using OpenSSL.
+/** Encrypts and decrypts a stream using OpenSSL.
 
     This class wraps an underlying stream satisfying `capy::Stream`
     and provides TLS encryption using the OpenSSL library.
@@ -38,21 +38,21 @@ namespace boost::corosio {
 
     Two construction modes are supported:
 
-    - **Owning**: Pass stream by value. The openssl_stream takes
-      ownership and the stream is moved into internal storage.
+    - **Owning**: Pass stream by value. The `openssl_stream` takes
+      ownership. The stream is moved into internal storage.
 
-    - **Reference**: Pass stream by pointer. The openssl_stream
-      does not own the stream; the caller must ensure the stream
+    - **Reference**: Pass stream by pointer. The `openssl_stream`
+      does not own the stream. The caller must ensure the stream
       outlives this object.
 
     @par Thread Safety
     Distinct objects: Safe.@n
     Shared objects: Unsafe, with one exception: one read operation and
     one write operation may be in flight simultaneously. `shutdown()`
-    may overlap a pending read. When the execution context runs on
-    multiple threads, all operations on one stream must be performed
-    within the same `capy::strand` (or otherwise never run
-    concurrently); a single-threaded context needs no strand.
+    may overlap a pending read. On a multi-threaded execution context,
+    all operations on one stream must run within the same
+    `capy::strand`, or must otherwise never run concurrently. A
+    single-threaded context needs no strand.
 
     @par Example
     @par !example openssl_stream
@@ -72,11 +72,12 @@ public:
     /** Construct an OpenSSL stream (owning mode).
 
         Takes ownership of the underlying stream by moving it into
-        internal storage. The stream will be destroyed when this
-        openssl_stream is destroyed.
+        internal storage. The stream is destroyed when this
+        `openssl_stream` is destroyed.
 
         @param stream The stream to take ownership of. Must satisfy
-            `capy::Stream`.
+            `capy::Stream` and must not be an `openssl_stream`; that
+            case binds to the move constructor instead.
         @param ctx The TLS context containing configuration.
     */
     template<capy::Stream S>
@@ -91,7 +92,7 @@ public:
 
         Wraps the underlying stream without taking ownership. The
         caller must ensure the stream remains valid for the lifetime
-        of this openssl_stream.
+        of this `openssl_stream`.
 
         @param stream Pointer to the stream to wrap. Must satisfy
             `capy::Stream`.
@@ -104,7 +105,7 @@ public:
     {
     }
 
-    /** Destructor.
+    /** Destroy the OpenSSL stream.
 
         Releases the underlying OpenSSL resources. If constructed
         in owning mode, also destroys the underlying stream.
@@ -133,9 +134,8 @@ public:
         completes, an error occurs, or the operation is
         cancelled via stop token.
 
-        @par Preconditions
-        The underlying stream must be connected. No other
-        TLS operation may be in progress on this stream.
+        @pre The underlying stream must be connected. No other
+            TLS operation may be in progress on this stream.
 
         @param role The handshake role, client or server.
 
@@ -149,16 +149,15 @@ public:
         close_notify response. Supports cancellation via
         stop token.
 
-        @par Preconditions
-        A handshake must have completed successfully. May overlap
-        a pending read; the read completes with `capy::error::eof`
-        when the peer answers the close_notify. No concurrent write
-        may be in progress.
+        @pre A handshake must have completed successfully. May overlap
+            a pending read. That read completes with `capy::error::eof`
+            when the peer answers the close_notify. No concurrent write
+            may be in progress.
 
         @par Postconditions
         If the transport ends before the peer's close_notify is
         received, the result is `capy::error::stream_truncated`, not
-        success. A shutdown stopped mid-flight reports canceled; any
+        success. A shutdown stopped mid-flight reports canceled. Any
         other transport error propagates unchanged.
 
         @return An awaitable yielding `(error_code)`.
@@ -173,8 +172,7 @@ public:
         resumed, so a handshake after `reset()` is always a full
         handshake.
 
-        @par Preconditions
-        No TLS operation may be in progress on this stream.
+        @pre No TLS operation may be in progress on this stream.
 
         @note If the backend cannot restore a clean session state,
         subsequent handshakes fail rather than proceed on a
@@ -182,7 +180,11 @@ public:
     */
     void reset() override;
 
-    /// Set the peer hostname for SNI and certificate verification.
+    /** Set the peer hostname for SNI and certificate verification.
+
+        @param hostname The peer name to send as SNI and match against the
+            certificate.
+    */
     void set_hostname(std::string_view hostname) override;
 
     /// Return the underlying stream.
@@ -204,10 +206,12 @@ public:
     std::string_view alpn_protocol() const noexcept override;
 
 protected:
+    /// @copydoc tls_stream::do_read_some
     capy::io_task<std::size_t> do_read_some(
         capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers)
         override;
 
+    /// @copydoc tls_stream::do_write_some
     capy::io_task<std::size_t> do_write_some(
         capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers)
         override;
@@ -222,8 +226,8 @@ private:
     Errors reported by @ref openssl_stream that originate from the OpenSSL
     error queue (`ERR_get_error`) are assigned this category. Its
     `message()` decodes the packed OpenSSL error code using OpenSSL's own
-    diagnostic strings, so printing such an `error_code` yields a readable
-    description (for example, "certificate verify failed").
+    diagnostic strings. Printing such an `error_code` therefore yields a
+    readable description, for example "certificate verify failed".
 
     OpenSSL errors whose library is `ERR_LIB_SYS` are reported with
     `std::system_category()` instead, since their reason code is a genuine

@@ -1,0 +1,8 @@
+= Look-alike directory fixture
+:page-mode: concept
+
+// `9.designish/` is NOT `9.design/`. The advisory test matches a whole path
+// segment, so this page's finding must stay in the HARD slice.
+Lookalike one two three four five six seven eight nine ten eleven twelve thirteen
+fourteen fifteen sixteen seventeen eighteen nineteen twenty twentyone twentytwo
+twentythree twentyfour twentyfive twentysix twentyseven.

@@ -9,9 +9,10 @@
 //
 
 = TLS Context Configuration
+:page-mode: tutorial
 
 This tutorial covers how to configure TLS contexts for secure connections.
-A `tls_context` stores certificates, keys, and settings that define how
+A cpp:tls_context[] stores certificates, keys, and settings that define how
 TLS connections are established and verified.
 
 [NOTE]
@@ -25,7 +26,7 @@ include::example$snippets/3d_tls_context.cpp[tag=assume]
 
 == Introduction
 
-The `tls_context` class is a portable abstraction for TLS configuration that
+The cpp:tls_context[] class is a portable abstraction for TLS configuration that
 works across multiple TLS backends (WolfSSL, OpenSSL, mbedTLS, etc.). It
 handles:
 
@@ -35,24 +36,29 @@ handles:
 * Configuring certificate verification behavior
 * Managing revocation checking (CRLs)
 
-Use `tls_context` to configure TLS settings once, then pass it to TLS streams
+Use cpp:tls_context[] to configure TLS settings once, then pass it to TLS streams
 for establishing secure connections.
 
 [NOTE]
 ====
-Two implemented features depend on how WolfSSL was built:
+Two implemented features depend on how WolfSSL was built.
 `set_default_verify_paths()` needs `WOLFSSL_SYS_CA_CERTS` to load the system
-store, and `set_verify_callback()` needs `WOLFSSL_ALWAYS_VERIFY_CB`
-(otherwise installing a callback fails the handshake with
-`std::errc::function_not_supported` rather than failing open). Both are
+store. `set_verify_callback()` needs `WOLFSSL_ALWAYS_VERIFY_CB`; without it,
+installing a callback fails the handshake with
+`std::errc::function_not_supported` rather than failing open. Both are
 enabled by `--enable-opensslextra`.
 ====
 
 == Construction
 
-A `tls_context` is a shared handle to an opaque implementation. Copies share
+A cpp:tls_context[] is a shared handle to an opaque implementation. Copies share
 the same underlying state, making it easy to pass contexts by value and share
 them across multiple TLS streams.
+
+IMPORTANT: Don't modify a context after creating a stream from it. The
+configuration is captured when the first stream is constructed, so later
+changes reach neither existing nor new streams. If you need a different
+configuration, create a separate context.
 
 [source,cpp]
 ----
@@ -137,7 +143,7 @@ loading. See <<Password Handling>> for details.
 == Trust Anchors
 
 Trust anchors are root CA certificates used to verify peer certificates.
-Without trust anchors, certificate verification will fail.
+Without trust anchors, certificate verification fails.
 
 === Using System Trust Store
 
@@ -221,8 +227,8 @@ include::example$snippets/3d_tls_context.cpp[tag=version_bounds,indent=0]
 ----
 
 NOTE: On WolfSSL the ceiling is enforced by selecting a version-specific
-method (no native set-max call exists); a window whose minimum exceeds its
-maximum yields a context that fails the handshake.
+method, because no native set-max call exists. A window whose minimum
+exceeds its maximum yields a context that fails the handshake.
 
 === Cipher Suites
 
@@ -322,9 +328,9 @@ include::example$snippets/3d_tls_context.cpp[tag=verify_callback,indent=0]
 ====
 Which certificates the callback sees depends on the backend:
 
-* OpenSSL — invoked for every certificate, including ones that passed, so
-  it can both relax verification (accept a rejected cert) and tighten it
-  (reject an otherwise-valid cert, e.g. pinning).
+* OpenSSL — invoked for every certificate, including ones that passed. It
+  can therefore both relax verification (accept a rejected cert) and
+  tighten it (reject an otherwise-valid cert, as pinning does).
 * WolfSSL with `WOLFSSL_ALWAYS_VERIFY_CB` (via `--enable-opensslextra`) —
   same as OpenSSL.
 * WolfSSL without it — the library invokes the callback only on failure,

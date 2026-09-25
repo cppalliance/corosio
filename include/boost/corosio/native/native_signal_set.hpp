@@ -27,12 +27,12 @@
 
 namespace boost::corosio {
 
-/** An asynchronous signal set with devirtualized wait operations.
+/** Waits for a registered signal, calling the backend directly.
 
-    This class template inherits from @ref signal_set and shadows
-    the `wait` operation with a version that calls the backend
-    implementation directly, allowing the compiler to inline
-    through the entire call chain.
+    This class template inherits from @ref signal_set. It shadows the
+    `wait` operation with a version that calls the backend
+    implementation directly. The compiler can then inline through the
+    entire call chain.
 
     Non-async operations (`add`, `remove`, `clear`, `cancel`)
     remain unchanged and dispatch through the compiled library.
@@ -79,7 +79,7 @@ class native_signal_set : public signal_set
 public:
     /** Construct a native signal set from an execution context.
 
-        @param ctx The execution context that will own this signal set.
+        @param ctx The execution context that owns this signal set.
     */
     explicit native_signal_set(capy::execution_context& ctx) : signal_set(ctx)
     {
@@ -87,7 +87,7 @@ public:
 
     /** Construct a native signal set with initial signals.
 
-        @param ctx The execution context that will own this signal set.
+        @param ctx The execution context that owns this signal set.
         @param signal First signal number to add.
         @param signals Additional signal numbers to add.
 
@@ -105,26 +105,24 @@ public:
 
     /** Move construct.
 
-        @param other The signal set to move from.
-
-        @pre No awaitables returned by @p other's methods exist.
-        @pre The execution context associated with @p other must
+        @pre No awaitables returned by the source's methods exist.
+        @pre The execution context associated with the source must
             outlive this signal set.
     */
     native_signal_set(native_signal_set&&) noexcept = default;
 
     /** Move assign.
 
-        @param other The signal set to move from.
-
-        @pre No awaitables returned by either `*this` or @p other's
+        @pre No awaitables returned by either `*this` or the source's
             methods exist.
-        @pre The execution context associated with @p other must
+        @pre The execution context associated with the source must
             outlive this signal set.
     */
     native_signal_set& operator=(native_signal_set&&) noexcept = default;
 
-    native_signal_set(native_signal_set const&)            = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    native_signal_set(native_signal_set const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     native_signal_set& operator=(native_signal_set const&) = delete;
 
     /** Wait for a signal to be delivered.

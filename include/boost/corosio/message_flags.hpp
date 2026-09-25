@@ -12,7 +12,7 @@
 
 namespace boost::corosio {
 
-/** Flags for datagram send/recv operations.
+/** Flags for datagram send/`recv` operations.
 
     Platform-agnostic flag values that are mapped to native
     constants (MSG_PEEK, MSG_OOB, MSG_DONTROUTE) at the

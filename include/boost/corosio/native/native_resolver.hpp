@@ -28,12 +28,12 @@
 
 namespace boost::corosio {
 
-/** An asynchronous DNS resolver with devirtualized operations.
+/** Resolves host names to endpoints, calling the backend directly.
 
-    This class template inherits from @ref resolver and shadows
-    the `resolve` operations with versions that call the backend
-    implementation directly, allowing the compiler to inline
-    through the entire call chain.
+    This class template inherits from @ref resolver. It shadows the
+    `resolve` operations with versions that call the backend
+    implementation directly. The compiler can then inline through the
+    entire call chain.
 
     Non-async operations (`cancel`) remain unchanged and dispatch
     through the compiled library.
@@ -116,13 +116,13 @@ class native_resolver : public resolver
 public:
     /** Construct a native resolver from an execution context.
 
-        @param ctx The execution context that will own this resolver.
+        @param ctx The execution context that owns this resolver.
     */
     explicit native_resolver(capy::execution_context& ctx) : resolver(ctx) {}
 
     /** Construct a native resolver from an executor.
 
-        @param ex The executor whose context will own the resolver.
+        @param ex The executor whose context owns the resolver.
     */
     template<class Ex>
         requires(!std::same_as<std::remove_cvref_t<Ex>, native_resolver>) &&
@@ -133,14 +133,16 @@ public:
 
     /** Move construct.
 
-        @pre No awaitables returned by @p other's `resolve` methods
+        @pre No awaitables returned by the source's `resolve` methods
             exist.
-        @pre The execution context associated with @p other must
+        @pre The execution context associated with the source must
             outlive this resolver.
     */
     native_resolver(native_resolver&&) noexcept = default;
 
     /** Move assign.
+
+        @return Reference to this resolver.
 
         @pre No awaitables returned by either `*this` or the source's
             `resolve` methods exist.
@@ -149,7 +151,9 @@ public:
     */
     native_resolver& operator=(native_resolver&&) noexcept = default;
 
-    native_resolver(native_resolver const&)            = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    native_resolver(native_resolver const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     native_resolver& operator=(native_resolver const&) = delete;
 
     /** Asynchronously resolve a host and service to endpoints.

@@ -220,7 +220,7 @@ public:
     /** Wait for readiness on the listen socket.
 
         For `wait_type::read`, completion signals that an incoming
-        connection is pending and a subsequent accept will succeed
+        connection is pending and a subsequent accept succeeds
         without blocking; a connection already queued when the wait
         begins completes it immediately via an initiation probe.
 

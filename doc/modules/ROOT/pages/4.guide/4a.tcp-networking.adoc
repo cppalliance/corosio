@@ -8,6 +8,7 @@
 //
 
 = TCP/IP Networking
+:page-mode: how-to
 
 This chapter introduces the networking concepts you need to understand before
 using Corosio. If you're already comfortable with TCP/IP, sockets, and the
@@ -15,9 +16,9 @@ client-server model, you can skip to xref:4.guide/4c.io-context.adoc[I/O Context
 
 == What is a Network?
 
-A network is simply computers talking to each other. Your laptop sending a
-request to a web server, two game consoles playing together, a phone streaming
-video—all involve computers exchanging data over a network.
+A network is computers talking to each other. Consider a laptop sending a
+request to a web server, two game consoles playing together, or a phone
+streaming video. All involve computers exchanging data over a network.
 
 === Local vs Remote Communication
 
@@ -148,6 +149,7 @@ abstractions.
 
 When you send data, each layer wraps it with its own header:
 
+[role=figure]
 ----
 Application Data: "Hello"
          ↓
@@ -204,7 +206,7 @@ Networks are divided into subnets using a _netmask_. The netmask defines which
 bits of the address identify the network versus the host.
 
 CIDR (Classless Inter-Domain Routing) notation combines the address and prefix
-length: `192.168.1.0/24` means the first 24 bits identify the network, leaving
+length. `192.168.1.0/24` means the first 24 bits identify the network, leaving
 8 bits (256 addresses) for hosts.
 
 Common prefix lengths:
@@ -300,20 +302,10 @@ contrasts with UDP, which just sends packets without setup.
 
 === Three-Way Handshake
 
-TCP connections begin with a three-way handshake:
-
-----
-Client                     Server
-  |                          |
-  |------ SYN seq=x -------->|  "I want to connect, my sequence starts at x"
-  |                          |
-  |<-- SYN-ACK seq=y ack=x+1-|  "OK, my sequence starts at y, I got your x"
-  |                          |
-  |------ ACK ack=y+1 ------>|  "I got your y, connection established"
-  |                          |
-----
-
-After the handshake, both sides can send and receive data.
+TCP connections begin with a three-way handshake. After the handshake, both
+sides can send and receive data. For the segment exchange, see
+xref:2.networking-tutorial/2i.tcp-connections.adoc[Opening and Closing TCP
+Connections].
 
 === Sequence Numbers and Acknowledgments
 
@@ -327,22 +319,17 @@ in sequence and discard duplicates.
 
 === Flow Control
 
-The receiver advertises a _window size_: how many bytes it can buffer. The
-sender must not have more unacknowledged bytes in flight than the receiver's
-window allows. This prevents a fast sender from overwhelming a slow receiver.
-
-The window size dynamically adjusts. When the receiver processes data, it opens
-the window; when it falls behind, the window shrinks.
+The receiver advertises a _window size_: how many bytes it can buffer. This
+prevents a fast sender from overwhelming a slow receiver. For the
+sliding-window mechanism, see
+xref:2.networking-tutorial/2j.tcp-data-flow.adoc[How TCP Moves Your Data].
 
 === Congestion Control
 
-TCP also limits sending rate to avoid overwhelming the network itself. Algorithms
-like slow start, congestion avoidance, and fast retransmit probe for available
-bandwidth.
-
-When packet loss occurs (detected by missing acknowledgments), TCP assumes
-network congestion and reduces its sending rate. This is why TCP throughput can
-vary significantly depending on network conditions.
+TCP also limits sending rate to avoid overwhelming the network itself. This is
+why TCP throughput can vary significantly depending on network conditions. For
+slow start, congestion avoidance, and fast retransmit, see
+xref:2.networking-tutorial/2k.tcp-reliability.adoc[When Packets Go Missing].
 
 === Retransmission
 
@@ -357,6 +344,7 @@ multiple times before giving up.
 
 TCP connections close with a four-way handshake:
 
+[role=figure]
 ----
 Client                     Server
   |                          |
@@ -378,39 +366,9 @@ handshake, used when something goes wrong.
 
 === TCP States
 
-A TCP connection moves through states:
-
-[cols="1,3"]
-|===
-| State | Meaning
-
-| LISTEN
-| Server waiting for connections
-
-| SYN_SENT
-| Client has sent SYN, waiting for response
-
-| SYN_RECEIVED
-| Server has received SYN, sent SYN-ACK
-
-| ESTABLISHED
-| Connection open, data can flow
-
-| FIN_WAIT_1
-| Sent FIN, waiting for ACK
-
-| FIN_WAIT_2
-| FIN acknowledged, waiting for peer's FIN
-
-| CLOSE_WAIT
-| Received peer's FIN, waiting for application to close
-
-| TIME_WAIT
-| Waiting to ensure peer received final ACK
-
-| CLOSED
-| Connection fully terminated
-|===
+A TCP connection moves through a series of states. For the full state machine,
+see xref:2.networking-tutorial/2i.tcp-connections.adoc[Opening and Closing TCP
+Connections].
 
 The TIME_WAIT state lasts 2× the maximum segment lifetime (typically 1-2
 minutes). This prevents old packets from a closed connection being mistaken
@@ -471,7 +429,7 @@ TCP is appropriate for most applications where correctness matters.
 
 UDP includes a checksum covering the header and data. The receiver verifies
 the checksum and discards corrupted packets. Unlike TCP, UDP doesn't
-retransmit—the data is simply lost.
+retransmit—the data is lost.
 
 Corosio supports TCP, UDP, and Unix domain sockets. See
 xref:4.guide/4p.unix-sockets.adoc[Unix Domain Sockets] for local inter-process
@@ -616,7 +574,7 @@ database.
 DNS responses often include multiple addresses (for load balancing or
 redundancy). Your application should try each address until one succeeds.
 
-Corosio provides the `resolver` class for asynchronous DNS lookups:
+Corosio provides the cpp:resolver[] class for asynchronous DNS lookups:
 
 [source,cpp]
 ----
@@ -684,16 +642,16 @@ When a socket closes, its address may remain in TIME_WAIT state for minutes.
 This is essential for servers that restart—without it, the restart fails with
 "address already in use" until TIME_WAIT expires.
 
-The flag means something different on Windows: there it grants a socket the
+The flag means something different on Windows. There it grants a socket the
 right to bind over an address another socket actively holds, silently
-splitting incoming connections between the two. Windows servers that want
-the POSIX contract set `SO_EXCLUSIVEADDRUSE` instead — the `tcp_acceptor`
+splitting incoming connections between the two. Windows servers that want the
+POSIX contract set `SO_EXCLUSIVEADDRUSE` instead. The cpp:tcp_acceptor[]
 convenience constructor does this automatically, so a second listener fails
 with `errc::address_in_use` on every platform.
 
 === SO_REUSEPORT
 
-`SO_REUSEPORT` (available on some operating systems) allows multiple sockets
+`SO_REUSEPORT` (not available on Windows) allows multiple sockets
 to bind to the same address and port. The operating system distributes incoming
 connections among them.
 
@@ -704,14 +662,14 @@ listening socket.
 
 Corosio wraps the complexity of TCP programming in a coroutine-friendly API:
 
-* **tcp_socket** — Connect to servers, send and receive data over TCP
-* **udp_socket** — Send and receive datagrams over UDP
-* **tcp_acceptor** — Listen for and accept incoming TCP connections
-* **local_stream_socket** — Stream-oriented Unix domain sockets for local IPC
-* **local_datagram_socket** — Datagram-oriented Unix domain sockets for local IPC
-* **resolver** — Translate hostnames to IP addresses
-* **endpoint** — Represent IP addresses and ports
-* **local_endpoint** — Represent Unix socket paths
+* cpp:tcp_socket[] — Connect to servers, send and receive data over TCP
+* cpp:udp_socket[] — Send and receive datagrams over UDP
+* cpp:tcp_acceptor[] — Listen for and accept incoming TCP connections
+* cpp:local_stream_socket[] — Stream-oriented Unix domain sockets for local IPC
+* cpp:local_datagram_socket[] — Datagram-oriented Unix domain sockets for local IPC
+* cpp:resolver[] — Translate hostnames to IP addresses
+* cpp:endpoint[] — Represent IP addresses and ports
+* cpp:local_endpoint[] — Represent Unix socket paths
 
 All operations are asynchronous and return awaitables. You don't manage raw
 socket handles or deal with platform-specific APIs directly.

@@ -37,7 +37,7 @@ namespace boost::corosio {
 
 /** Bitmask flags for resolver queries.
 
-    These flags correspond to the hints parameter of getaddrinfo.
+    These flags correspond to the hints parameter of `getaddrinfo`.
 */
 enum class resolve_flags : unsigned int
 {
@@ -69,7 +69,7 @@ enum class resolve_flags : unsigned int
     all_matching = 0x100
 };
 
-/** Combine two resolve_flags. */
+/** Combine two `resolve_flags`. */
 inline resolve_flags
 operator|(resolve_flags a, resolve_flags b) noexcept
 {
@@ -77,7 +77,7 @@ operator|(resolve_flags a, resolve_flags b) noexcept
         static_cast<unsigned int>(a) | static_cast<unsigned int>(b));
 }
 
-/** Combine two resolve_flags. */
+/** Combine two `resolve_flags`. */
 inline resolve_flags&
 operator|=(resolve_flags& a, resolve_flags b) noexcept
 {
@@ -85,7 +85,7 @@ operator|=(resolve_flags& a, resolve_flags b) noexcept
     return a;
 }
 
-/** Intersect two resolve_flags. */
+/** Intersect two `resolve_flags`. */
 inline resolve_flags
 operator&(resolve_flags a, resolve_flags b) noexcept
 {
@@ -93,7 +93,7 @@ operator&(resolve_flags a, resolve_flags b) noexcept
         static_cast<unsigned int>(a) & static_cast<unsigned int>(b));
 }
 
-/** Intersect two resolve_flags. */
+/** Intersect two `resolve_flags`. */
 inline resolve_flags&
 operator&=(resolve_flags& a, resolve_flags b) noexcept
 {
@@ -103,7 +103,7 @@ operator&=(resolve_flags& a, resolve_flags b) noexcept
 
 /** Bitmask flags for reverse resolver queries.
 
-    These flags correspond to the flags parameter of getnameinfo.
+    These flags correspond to the flags parameter of `getnameinfo`.
 */
 enum class reverse_flags : unsigned int
 {
@@ -123,7 +123,7 @@ enum class reverse_flags : unsigned int
     datagram_service = 0x08
 };
 
-/** Combine two reverse_flags. */
+/** Combine two `reverse_flags`. */
 inline reverse_flags
 operator|(reverse_flags a, reverse_flags b) noexcept
 {
@@ -131,7 +131,7 @@ operator|(reverse_flags a, reverse_flags b) noexcept
         static_cast<unsigned int>(a) | static_cast<unsigned int>(b));
 }
 
-/** Combine two reverse_flags. */
+/** Combine two `reverse_flags`. */
 inline reverse_flags&
 operator|=(reverse_flags& a, reverse_flags b) noexcept
 {
@@ -139,7 +139,7 @@ operator|=(reverse_flags& a, reverse_flags b) noexcept
     return a;
 }
 
-/** Intersect two reverse_flags. */
+/** Intersect two `reverse_flags`. */
 inline reverse_flags
 operator&(reverse_flags a, reverse_flags b) noexcept
 {
@@ -147,7 +147,7 @@ operator&(reverse_flags a, reverse_flags b) noexcept
         static_cast<unsigned int>(a) & static_cast<unsigned int>(b));
 }
 
-/** Intersect two reverse_flags. */
+/** Intersect two `reverse_flags`. */
 inline reverse_flags&
 operator&=(reverse_flags& a, reverse_flags b) noexcept
 {
@@ -171,7 +171,7 @@ struct endpoint_name
     std::string service_name;
 };
 
-/** An asynchronous DNS resolver for coroutine I/O.
+/** Resolves host names and services to endpoints, from a coroutine.
 
     This class provides asynchronous DNS resolution operations that return
     awaitable types. Each operation participates in the affine awaitable
@@ -183,8 +183,8 @@ struct endpoint_name
     operations.
 
     @par Semantics
-    Wraps platform DNS resolution (getaddrinfo/getnameinfo).
-    Operations dispatch to OS resolver APIs via the io_context
+    Wraps platform DNS resolution (`getaddrinfo`/`getnameinfo`).
+    Operations dispatch to OS resolver APIs via the `io_context`
     thread pool.
 
     @par Example
@@ -195,10 +195,8 @@ class BOOST_COROSIO_DECL resolver : public io_object
     struct resolve_awaitable
         : detail::value_op_base<resolve_awaitable, std::vector<endpoint>>
     {
-        resolver& r_;
-        std::string host_;
-        std::string service_;
-        resolve_flags flags_;
+    private:
+        friend resolver;
 
         resolve_awaitable(
             resolver& r,
@@ -212,6 +210,12 @@ class BOOST_COROSIO_DECL resolver : public io_object
         {
         }
 
+        friend detail::value_op_base<resolve_awaitable, std::vector<endpoint>>;
+        resolver& r_;
+        std::string host_;
+        std::string service_;
+        resolve_flags flags_;
+
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
         {
@@ -223,9 +227,8 @@ class BOOST_COROSIO_DECL resolver : public io_object
     struct resolve_host_awaitable
         : detail::value_op_base<resolve_host_awaitable, std::vector<endpoint>>
     {
-        resolver& r_;
-        std::string host_;
-        resolve_flags flags_;
+    private:
+        friend resolver;
 
         resolve_host_awaitable(
             resolver& r, std::string_view host, resolve_flags flags) noexcept
@@ -234,6 +237,12 @@ class BOOST_COROSIO_DECL resolver : public io_object
             , flags_(flags)
         {
         }
+
+        friend detail::
+            value_op_base<resolve_host_awaitable, std::vector<endpoint>>;
+        resolver& r_;
+        std::string host_;
+        resolve_flags flags_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -244,6 +253,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
                 h, ex, host_, {}, flags_, token_, &ec_, &value_);
         }
 
+    public:
         // Shadows the base: the endpoint result is reshaped into
         // the honest address list
         [[nodiscard]] capy::io_result<std::vector<ip_address>>
@@ -276,9 +286,8 @@ class BOOST_COROSIO_DECL resolver : public io_object
     struct reverse_resolve_awaitable
         : detail::value_op_base<reverse_resolve_awaitable, endpoint_name>
     {
-        resolver& r_;
-        endpoint ep_;
-        reverse_flags flags_;
+    private:
+        friend resolver;
 
         reverse_resolve_awaitable(
             resolver& r, endpoint const& ep, reverse_flags flags) noexcept
@@ -287,6 +296,12 @@ class BOOST_COROSIO_DECL resolver : public io_object
             , flags_(flags)
         {
         }
+
+        friend detail::value_op_base<reverse_resolve_awaitable, endpoint_name>;
+
+        resolver& r_;
+        endpoint ep_;
+        reverse_flags flags_;
 
         std::coroutine_handle<>
         dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
@@ -305,7 +320,7 @@ public:
 
     /** Construct a resolver from an execution context.
 
-        @param ctx The execution context that will own this resolver.
+        @param ctx The execution context that owns this resolver.
     */
     explicit resolver(capy::execution_context& ctx);
 
@@ -313,7 +328,7 @@ public:
 
         The resolver is associated with the executor's context.
 
-        @param ex The executor whose context will own the resolver.
+        @param ex The executor whose context owns the resolver.
     */
     template<class Ex>
         requires(!std::same_as<std::remove_cvref_t<Ex>, resolver>) &&
@@ -359,7 +374,9 @@ public:
         return *this;
     }
 
-    resolver(resolver const&)            = delete;
+    /// Copy construction is disabled; the handle is uniquely owned.
+    resolver(resolver const&) = delete;
+    /// Copy assignment is disabled; the handle is uniquely owned.
     resolver& operator=(resolver const&) = delete;
 
     /** Initiate an asynchronous resolve operation.
@@ -485,46 +502,74 @@ public:
 
     /** Cancel any pending asynchronous operations.
 
-        Operations still in flight complete with `errc::operation_canceled`;
-        an operation whose result is already decided reports that result.
-        Check `ec == cond::canceled` for portable comparison.
+        A resolve transfers no bytes, so a cancellation always wins. An
+        operation reports `errc::operation_canceled` even when the lookup
+        had already completed when the cancellation landed. Check
+        `ec == cond::canceled` for a portable comparison.
     */
     void cancel() noexcept;
 
 public:
-    /** Backend interface for DNS resolution operations.
+    /** Define backend hooks for DNS resolution operations.
 
         Platform backends derive from this to implement forward and
-        reverse DNS resolution via getaddrinfo/getnameinfo.
+        reverse DNS resolution via `getaddrinfo`/`getnameinfo`.
     */
     struct implementation : io_object::implementation
     {
-        /// Initiate an asynchronous forward DNS resolution.
+        /** Initiate an asynchronous forward DNS resolution.
+
+            @param h Coroutine handle to resume on completion.
+            @param ex Executor for dispatching the completion.
+            @param host The host name or address literal to resolve.
+            @param service The service name or port number.
+            @param flags Flags controlling the lookup.
+            @param token Stop token for cancellation.
+            @param ec Output error code.
+            @param results Output resolver results.
+
+            @return Coroutine handle to resume immediately.
+        */
         virtual std::coroutine_handle<> resolve(
-            std::coroutine_handle<>,
-            capy::executor_ref,
+            std::coroutine_handle<> h,
+            capy::executor_ref ex,
             std::string_view host,
             std::string_view service,
             resolve_flags flags,
-            std::stop_token,
-            std::error_code*,
-            std::vector<endpoint>*) = 0;
+            std::stop_token token,
+            std::error_code* ec,
+            std::vector<endpoint>* results) = 0;
 
-        /// Initiate an asynchronous reverse DNS resolution.
+        /** Initiate an asynchronous reverse DNS resolution.
+
+            @param h Coroutine handle to resume on completion.
+            @param ex Executor for dispatching the completion.
+            @param ep The endpoint to resolve.
+            @param flags Flags controlling the lookup.
+            @param token Stop token for cancellation.
+            @param ec Output error code.
+            @param result Output reverse-resolution result.
+
+            @return Coroutine handle to resume immediately.
+        */
         virtual std::coroutine_handle<> reverse_resolve(
-            std::coroutine_handle<>,
-            capy::executor_ref,
+            std::coroutine_handle<> h,
+            capy::executor_ref ex,
             endpoint const& ep,
             reverse_flags flags,
-            std::stop_token,
-            std::error_code*,
-            endpoint_name*) = 0;
+            std::stop_token token,
+            std::error_code* ec,
+            endpoint_name* result) = 0;
 
         /// Cancel pending resolve operations.
         virtual void cancel() noexcept = 0;
     };
 
 protected:
+    /** Adopt an existing handle.
+
+        @param h The handle the resolver takes ownership of.
+    */
     explicit resolver(handle h) noexcept : io_object(std::move(h)) {}
 
 private:

@@ -8,8 +8,9 @@
 //
 
 = Endpoints
+:page-mode: how-to
 
-The `endpoint` class represents a network endpoint: an IP address (IPv4 or
+The cpp:endpoint[] class represents a network endpoint: an IP address (IPv4 or
 IPv6) combined with a port number. Endpoints are used for connecting sockets
 and binding acceptors.
 
@@ -138,7 +139,7 @@ include::example$snippets/4f_endpoints.cpp[tag=make_addresses,indent=0]
 ----
 
 You can also create an endpoint from a full `address:port` string
-using `make_endpoint()`, or the `endpoint` constructor that accepts a
+using `make_endpoint()`, or the cpp:endpoint[] constructor that accepts a
 `std::string_view` and throws on failure:
 
 [source,cpp]
@@ -197,8 +198,11 @@ The endpoint stores:
 * Port number (16-bit, host byte order)
 * Address type flag (is_v4)
 
+[NOTE]
+====
 Both address types are stored to avoid needing a union or variant. The
 `is_v4` flag indicates which address is active.
+====
 
 == Thread Safety
 
