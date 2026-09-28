@@ -314,8 +314,8 @@ class BOOST_COROSIO_DECL uring_random_access_file_service final
 
 public:
     explicit uring_random_access_file_service(
-        capy::execution_context& /*ctx*/, uring_scheduler& sched)
-        : base_service(sched)
+        capy::execution_context& ctx)
+        : base_service(ctx.use_service<uring_scheduler>())
     {
     }
 

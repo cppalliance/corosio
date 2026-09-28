@@ -32,8 +32,8 @@ namespace boost::corosio::detail {
 class BOOST_COROSIO_DECL posix_stream_file_service final : public file_service
 {
 public:
-    posix_stream_file_service(capy::execution_context& ctx, scheduler& sched)
-        : sched_(&sched)
+    explicit posix_stream_file_service(capy::execution_context& ctx)
+        : sched_(&get_scheduler(ctx))
         , pool_(ctx)
     {
     }
@@ -148,13 +148,6 @@ private:
     std::unordered_map<posix_stream_file*, std::shared_ptr<posix_stream_file>>
         file_ptrs_;
 };
-
-/** Get or create the stream file service for the given context. */
-inline posix_stream_file_service&
-get_stream_file_service(capy::execution_context& ctx, scheduler& sched)
-{
-    return ctx.make_service<posix_stream_file_service>(sched);
-}
 
 // ---------------------------------------------------------------------------
 // posix_stream_file inline implementations (require complete service type)

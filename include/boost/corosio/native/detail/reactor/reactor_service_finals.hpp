@@ -436,9 +436,11 @@ class reactor_acceptor_service_impl
     explicit reactor_acceptor_service_impl(capy::execution_context& ctx)
         : base_service(ctx)
     {
-        // Look up the concrete stream service directly by its type.
+        // The acceptor hands accepted fds to the stream service, so
+        // get-or-create it: with services created on first use it may
+        // not exist yet when the acceptor service comes up.
         this->stream_svc_ =
-            this->ctx_.template find_service<StreamServiceFinal>();
+            &this->ctx_.template use_service<StreamServiceFinal>();
     }
 
 public:

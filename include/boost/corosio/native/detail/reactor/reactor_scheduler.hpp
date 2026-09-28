@@ -107,10 +107,8 @@ reactor_find_context(reactor_scheduler const* self) noexcept
 */
 class reactor_scheduler
     : public scheduler
-    , public capy::execution_context::service
 {
 public:
-    using key_type     = scheduler;
     using context_type = reactor_scheduler_context;
     using mutex_type   = conditionally_enabled_mutex;
     using lock_type    = mutex_type::scoped_lock;

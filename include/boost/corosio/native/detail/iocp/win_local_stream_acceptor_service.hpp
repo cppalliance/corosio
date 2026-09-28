@@ -43,8 +43,8 @@ class BOOST_COROSIO_DECL win_local_stream_acceptor_service final
     : public local_stream_acceptor_service
 {
 public:
-    win_local_stream_acceptor_service(
-        capy::execution_context& ctx, win_local_stream_service& svc);
+    explicit win_local_stream_acceptor_service(
+        capy::execution_context& ctx);
 
     io_object::implementation* construct() override;
 
@@ -577,8 +577,8 @@ win_local_stream_acceptor::get_internal() const noexcept
 // ============================================================
 
 inline win_local_stream_acceptor_service::win_local_stream_acceptor_service(
-    capy::execution_context& /*ctx*/, win_local_stream_service& svc)
-    : svc_(svc)
+    capy::execution_context& ctx)
+    : svc_(ctx.use_service<win_local_stream_service>())
 {
 }
 

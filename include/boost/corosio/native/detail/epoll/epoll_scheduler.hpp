@@ -24,10 +24,6 @@
 #include <boost/corosio/native/detail/epoll/epoll_traits.hpp>
 #include <boost/corosio/detail/timer_service.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
-#include <boost/corosio/native/detail/posix/posix_resolver_service.hpp>
-#include <boost/corosio/native/detail/posix/posix_signal_service.hpp>
-#include <boost/corosio/native/detail/posix/posix_stream_file_service.hpp>
-#include <boost/corosio/native/detail/posix/posix_random_access_file_service.hpp>
 
 #include <boost/corosio/detail/except.hpp>
 
@@ -214,11 +210,6 @@ inline epoll_scheduler::epoll_scheduler(capy::execution_context& ctx, int)
             self->timerfd_stale_.store(true, std::memory_order_release);
             self->interrupt_reactor();
         }));
-
-    get_resolver_service(ctx, *this);
-    get_signal_service(ctx, *this);
-    get_stream_file_service(ctx, *this);
-    get_random_access_file_service(ctx, *this);
 
     completed_ops_.push(&task_op_);
 }

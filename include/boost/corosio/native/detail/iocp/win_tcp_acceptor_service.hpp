@@ -47,8 +47,7 @@ class BOOST_COROSIO_DECL win_tcp_acceptor_service final
 public:
     using key_type = win_tcp_acceptor_service;
 
-    win_tcp_acceptor_service(
-        capy::execution_context& ctx, win_tcp_service& svc);
+    explicit win_tcp_acceptor_service(capy::execution_context& ctx);
 
     io_object::implementation* construct() override;
 
@@ -1737,8 +1736,8 @@ win_tcp_acceptor::get_internal() const noexcept
 // win_tcp_acceptor_service
 
 inline win_tcp_acceptor_service::win_tcp_acceptor_service(
-    [[maybe_unused]] capy::execution_context& ctx, win_tcp_service& svc)
-    : svc_(svc)
+    capy::execution_context& ctx)
+    : svc_(ctx.use_service<win_tcp_service>())
 {
 }
 

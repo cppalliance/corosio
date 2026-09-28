@@ -14,6 +14,8 @@
 #include <boost/corosio/local_datagram_socket.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/local_datagram_service.hpp>
+
+#include "src/detail/use_backend_service.hpp"
 #include <boost/corosio/native/detail/make_err.hpp>
 
 #include <sys/ioctl.h>
@@ -27,7 +29,11 @@ local_datagram_socket::~local_datagram_socket()
 }
 
 local_datagram_socket::local_datagram_socket(capy::execution_context& ctx)
-    : io_object(create_handle<detail::local_datagram_service>(ctx))
+    : io_object(handle(
+          ctx,
+          detail::use_backend_service<
+              detail::local_datagram_service_of,
+              detail::local_datagram_service>(ctx)))
 {
 }
 

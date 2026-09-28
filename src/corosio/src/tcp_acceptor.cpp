@@ -21,6 +21,8 @@
 
 #include <boost/corosio/detail/except.hpp>
 
+#include "src/detail/use_backend_service.hpp"
+
 namespace boost::corosio {
 
 #if BOOST_COROSIO_HAS_IOCP
@@ -61,11 +63,16 @@ tcp_acceptor::~tcp_acceptor()
 }
 
 tcp_acceptor::tcp_acceptor(capy::execution_context& ctx)
+    : io_object(handle(
+          ctx,
+          detail::use_backend_service<
+              detail::tcp_acceptor_service_of,
 #if BOOST_COROSIO_HAS_IOCP
-    : io_object(create_handle<detail::win_tcp_acceptor_service>(ctx))
+              detail::win_tcp_acceptor_service
 #else
-    : io_object(create_handle<detail::tcp_acceptor_service>(ctx))
+              detail::tcp_acceptor_service
 #endif
+              >(ctx)))
 {
 }
 

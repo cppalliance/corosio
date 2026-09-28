@@ -37,8 +37,8 @@
 
     Concrete signal service implementation for POSIX backends. Manages signal
     registrations via sigaction() and dispatches completions through the
-    scheduler. One instance per execution_context, created by
-    get_signal_service().
+    scheduler. One instance per execution_context, created on first use
+    by the public signal_set.
 
     See the block comment further down for the full architecture overview.
 */
@@ -157,7 +157,7 @@ class BOOST_COROSIO_DECL posix_signal_service final
 public:
     using key_type = posix_signal_service;
 
-    posix_signal_service(capy::execution_context& ctx, scheduler& sched);
+    explicit posix_signal_service(capy::execution_context& ctx);
     ~posix_signal_service() override;
 
     posix_signal_service(posix_signal_service const&)            = delete;
@@ -245,18 +245,6 @@ private:
     posix_signal_service* next_ = nullptr;
     posix_signal_service* prev_ = nullptr;
 };
-
-/** Get or create the signal service for the given context.
-
-    This function is called by the concrete scheduler during initialization
-    to create the signal service with a reference to itself.
-
-    @param ctx Reference to the owning execution_context.
-    @param sched Reference to the scheduler for posting completions.
-    @return Reference to the signal service.
-*/
-posix_signal_service&
-get_signal_service(capy::execution_context& ctx, scheduler& sched);
 
 } // namespace detail
 
@@ -519,8 +507,8 @@ posix_signal::cancel() noexcept
 // posix_signal_service implementation
 
 inline posix_signal_service::posix_signal_service(
-    capy::execution_context&, scheduler& sched)
-    : sched_(&sched)
+    capy::execution_context& ctx)
+    : sched_(&get_scheduler(ctx))
 {
     for (int i = 0; i < max_signal_number; ++i)
     {
@@ -1046,14 +1034,6 @@ posix_signal_service::remove_service(posix_signal_service* service)
         service->next_ = nullptr;
         service->prev_ = nullptr;
     }
-}
-
-// get_signal_service - factory function
-
-inline posix_signal_service&
-get_signal_service(capy::execution_context& ctx, scheduler& sched)
-{
-    return ctx.make_service<posix_signal_service>(sched);
 }
 
 } // namespace detail

@@ -241,7 +241,7 @@ public:
         @param ctx The execution context that owns this socket.
     */
     explicit native_local_datagram_socket(capy::execution_context& ctx)
-        : local_datagram_socket(create_handle<service_type>(ctx))
+        : local_datagram_socket(handle(ctx, ctx.use_service<service_type>()))
     {
     }
 

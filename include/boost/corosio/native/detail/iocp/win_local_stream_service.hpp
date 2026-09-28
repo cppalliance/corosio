@@ -20,7 +20,7 @@
 #include <boost/corosio/native/detail/iocp/win_dissociate.hpp>
 #include <boost/corosio/native/detail/iocp/win_local_stream_acceptor.hpp>
 #include <boost/corosio/native/detail/iocp/win_local_stream_socket.hpp>
-#include <boost/corosio/native/detail/iocp/win_tcp_service.hpp>
+#include <boost/corosio/native/detail/iocp/win_tcp_acceptor_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
 #include <boost/corosio/native/detail/iocp/win_completion_key.hpp>
 #include <boost/corosio/native/detail/iocp/win_mutex.hpp>
@@ -55,8 +55,7 @@ public:
 
     void close(io_object::handle& h) override;
 
-    explicit win_local_stream_service(
-        capy::execution_context& ctx, win_tcp_service& tcp_svc);
+    explicit win_local_stream_service(capy::execution_context& ctx);
 
     ~win_local_stream_service();
 
@@ -877,8 +876,8 @@ win_local_stream_socket::get_internal() const noexcept
 // ============================================================
 
 inline win_local_stream_service::win_local_stream_service(
-    capy::execution_context& ctx, win_tcp_service& tcp_svc)
-    : tcp_svc_(tcp_svc)
+    capy::execution_context& ctx)
+    : tcp_svc_(ctx.use_service<win_tcp_service>())
     , sched_(ctx.use_service<win_scheduler>())
     , iocp_(sched_.native_handle())
 {

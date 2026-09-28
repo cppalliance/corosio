@@ -17,6 +17,7 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include <boost/corosio/native/detail/iocp/win_resolver.hpp>
+#include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/thread_pool.hpp>
 
 #include <unordered_map>
@@ -60,9 +61,8 @@ public:
     /** Construct the resolver service.
 
         @param ctx Reference to the owning execution_context.
-        @param sched Reference to the scheduler for posting completions.
     */
-    win_resolver_service(capy::execution_context& ctx, scheduler& sched);
+    explicit win_resolver_service(capy::execution_context& ctx);
 
     /** Destroy the resolver service. */
     ~win_resolver_service();
@@ -580,8 +580,8 @@ win_resolver::do_reverse_resolve_work(pool_work_item* w) noexcept
 // win_resolver_service
 
 inline win_resolver_service::win_resolver_service(
-    capy::execution_context& ctx, scheduler& sched)
-    : sched_(sched)
+    capy::execution_context& ctx)
+    : sched_(get_scheduler(ctx))
     , pool_(ctx)
 {
 }

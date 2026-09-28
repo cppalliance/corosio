@@ -13,6 +13,8 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
+#include "src/detail/use_backend_service.hpp"
+
 #if BOOST_COROSIO_HAS_IOCP
 #include <boost/corosio/native/detail/iocp/win_tcp_acceptor_service.hpp>
 #else
@@ -21,17 +23,26 @@
 
 namespace boost::corosio {
 
+namespace {
+
+#if BOOST_COROSIO_HAS_IOCP
+using tcp_service_key = detail::win_tcp_service;
+#else
+using tcp_service_key = detail::tcp_service;
+#endif
+
+} // namespace
+
 tcp_socket::~tcp_socket()
 {
     close();
 }
 
 tcp_socket::tcp_socket(capy::execution_context& ctx)
-#if BOOST_COROSIO_HAS_IOCP
-    : io_object(create_handle<detail::win_tcp_service>(ctx))
-#else
-    : io_object(create_handle<detail::tcp_service>(ctx))
-#endif
+    : io_object(handle(
+          ctx,
+          detail::use_backend_service<detail::tcp_service_of, tcp_service_key>(
+              ctx)))
 {
 }
 
