@@ -387,7 +387,29 @@ epoll_scheduler::run_task(lock_type& lock, context_type& ctx, long timeout_us)
 
         auto* desc =
             static_cast<reactor_descriptor_state*>(event_buffer_[i].data.ptr);
-        desc->add_ready_events(event_buffer_[i].events);
+
+        // A pipe or tty whose peer closed reports EPOLLHUP on its own --
+        // no EPOLLIN, no EPOLLERR -- and EPOLLHUP maps to no
+        // reactor_event_* bit, so invoke_deferred_io() would take no
+        // branch and, the registration being edge-triggered, never get
+        // another chance.
+        //
+        // Sockets are unaffected because they never report EPOLLHUP
+        // alone. tcp_poll() and unix_poll() raise it only once
+        // sk_shutdown is SHUTDOWN_MASK (or the state is TCP_CLOSE), and
+        // both also report the socket readable and writable there --
+        // tcp_poll() takes an explicit `else mask |= EPOLLOUT` branch
+        // once SEND_SHUTDOWN is set, because a send on a shut-down
+        // socket fails fast rather than blocking. Measured on every
+        // state that produces EPOLLHUP -- peer close plus local
+        // SHUT_WR/SHUT_RDWR, RST, RST with the send buffer full, and
+        // the AF_UNIX equivalents -- the mask is always IN|OUT|HUP
+        // (0x15), or IN|OUT|ERR|HUP (0x1d) for a reset. The forced bits
+        // are therefore already set on every socket path.
+        std::uint32_t ev = event_buffer_[i].events;
+        if (ev & EPOLLHUP)
+            ev |= EPOLLIN | EPOLLOUT;
+        desc->add_ready_events(ev);
 
         bool expected = false;
         if (desc->is_enqueued_.compare_exchange_strong(

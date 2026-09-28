@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -39,6 +40,8 @@ class epoll_local_stream_acceptor;
 class epoll_local_stream_acceptor_service;
 class epoll_local_datagram_socket;
 class epoll_local_datagram_service;
+class epoll_descriptor;
+class epoll_descriptor_service;
 class epoll_scheduler;
 
 class posix_signal;
@@ -83,6 +86,11 @@ struct epoll_t
     using local_datagram_socket_type = detail::epoll_local_datagram_socket;
     /// The service that owns the Unix domain datagram implementations.
     using local_datagram_service_type = detail::epoll_local_datagram_service;
+
+    /// The concrete adopted-descriptor type.
+    using descriptor_type = detail::epoll_descriptor;
+    /// The service that owns the descriptor implementations.
+    using descriptor_service_type = detail::epoll_descriptor_service;
 
     /// The concrete signal set type.
     using signal_type = detail::posix_signal;
@@ -141,6 +149,8 @@ class select_local_stream_acceptor;
 class select_local_stream_acceptor_service;
 class select_local_datagram_socket;
 class select_local_datagram_service;
+class select_descriptor;
+class select_descriptor_service;
 class select_scheduler;
 
 class posix_signal;
@@ -185,6 +195,11 @@ struct select_t
     using local_datagram_socket_type = detail::select_local_datagram_socket;
     /// The service that owns the Unix domain datagram implementations.
     using local_datagram_service_type = detail::select_local_datagram_service;
+
+    /// The concrete adopted-descriptor type.
+    using descriptor_type = detail::select_descriptor;
+    /// The service that owns the descriptor implementations.
+    using descriptor_service_type = detail::select_descriptor_service;
 
     /// The concrete signal set type.
     using signal_type = detail::posix_signal;
@@ -243,6 +258,8 @@ class kqueue_local_stream_acceptor;
 class kqueue_local_stream_acceptor_service;
 class kqueue_local_datagram_socket;
 class kqueue_local_datagram_service;
+class kqueue_descriptor;
+class kqueue_descriptor_service;
 class kqueue_scheduler;
 
 class posix_signal;
@@ -287,6 +304,11 @@ struct kqueue_t
     using local_datagram_socket_type = detail::kqueue_local_datagram_socket;
     /// The service that owns the Unix domain datagram implementations.
     using local_datagram_service_type = detail::kqueue_local_datagram_service;
+
+    /// The concrete adopted-descriptor type.
+    using descriptor_type = detail::kqueue_descriptor;
+    /// The service that owns the descriptor implementations.
+    using descriptor_service_type = detail::kqueue_descriptor_service;
 
     /// The concrete signal set type.
     using signal_type = detail::posix_signal;
@@ -345,6 +367,8 @@ class uring_local_stream_acceptor;
 class uring_local_stream_acceptor_service;
 class uring_local_datagram_socket;
 class uring_local_datagram_service;
+class uring_descriptor;
+class uring_descriptor_service;
 class uring_stream_file;
 class uring_stream_file_service;
 class uring_random_access_file;
@@ -389,6 +413,11 @@ struct uring_t
     using local_datagram_socket_type = detail::uring_local_datagram_socket;
     /// The service that owns the Unix domain datagram implementations.
     using local_datagram_service_type = detail::uring_local_datagram_service;
+
+    /// The concrete adopted-descriptor type.
+    using descriptor_type = detail::uring_descriptor;
+    /// The service that owns the descriptor implementations.
+    using descriptor_service_type = detail::uring_descriptor_service;
 
     /// The concrete signal set type.
     using signal_type = detail::posix_signal;

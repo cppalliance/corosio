@@ -88,7 +88,7 @@ Both file types accept a bitmask of `file_base::flags` when opening:
 | `create` | Create the file if it does not exist
 | `exclusive` | Fail if the file already exists (requires `create`)
 | `truncate` | Truncate the file to zero length on open
-| `append` | Seek to end on open (stream_file only)
+| `append` | Seek to end on open (cpp:stream_file[] only)
 | `sync_all_on_write` | Synchronize data to disk on each write
 |===
 
@@ -136,6 +136,20 @@ with an I/O completion port. A handle released from another Corosio
 file object is already associated and cannot be re-adopted there. On
 POSIX platforms no such restriction exists.
 ====
+
+On POSIX, `assign()` accepts only what a file object can position:
+regular files, block devices, and character devices. A pipe or socket is
+rejected with `errc::operation_not_supported` — adopt those into a
+xref:4.guide/4s.native-descriptors.adoc[`posix_descriptor`] instead; a
+directory is not adoptable by either type.
+
+A character device that cannot seek, such as a tty, passes adoption on
+every backend. What happens next is backend-specific: the POSIX
+backends issue `preadv`/`pwritev` and fail at the first read or write
+with `ESPIPE`. io_uring submits `READV`/`WRITEV` at offset `-1` for a
+`stream_file` and reads the tty successfully. Adopt one into a
+xref:4.guide/4s.native-descriptors.adoc[`posix_descriptor`] if you want
+the same behavior everywhere.
 
 == Error Handling
 

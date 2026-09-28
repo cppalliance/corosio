@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -20,6 +21,7 @@
 #include <boost/corosio/native/detail/uring/uring_file_service_base.hpp>
 #include <boost/corosio/native/detail/uring/uring_scheduler.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
+#include <boost/corosio/native/detail/validate_fd.hpp>
 #include <boost/corosio/stream_file.hpp>
 
 #include <cstdint>
@@ -161,6 +163,20 @@ public:
 
     std::error_code assign(native_handle_type handle) noexcept override
     {
+        // handle >= 0 guard: an unset impl reports native_handle() == -1,
+        // and a caller-supplied -1 must fail as a bad fd, not a
+        // self-assign.
+        if (handle >= 0 && handle == fd_)
+            return std::make_error_code(std::errc::invalid_argument);
+
+        // Validate before touching the held fd: a failed assign must
+        // leave this object unchanged and the caller still owning handle.
+        if (auto ec = validate_file_fd(handle))
+            return ec;
+
+        // No cancel() before this, unlike the POSIX twin: close_file()
+        // calls cancel_and_flush(fd_) itself, so the mandatory
+        // cancel-before-close pairing is already there.
         close_file();
         fd_ = handle;
         return {};

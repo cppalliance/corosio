@@ -26,6 +26,7 @@
 #include <boost/corosio/native/detail/coro_op.hpp>
 #include <boost/corosio/native/detail/coro_op_complete.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
+#include <boost/corosio/native/detail/validate_fd.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/buffers.hpp>
@@ -328,6 +329,23 @@ posix_stream_file::release()
 inline std::error_code
 posix_stream_file::assign(native_handle_type handle) noexcept
 {
+    // handle >= 0 guard: an unset impl reports native_handle() == -1, and a
+    // caller-supplied -1 must fail as a bad fd, not a self-assign.
+    if (handle >= 0 && handle == fd_)
+        return std::make_error_code(std::errc::invalid_argument);
+
+    // Validate before touching the held fd: a failed assign must leave
+    // this object unchanged and the caller still owning handle.
+    if (auto ec = validate_file_fd(handle))
+        return ec;
+
+    // cancel() first: an in-flight read/write's pool-thread completion
+    // reads fd_/offset_ at execution time, not at post time, so without
+    // this a pending op silently completes against the newly adopted
+    // file instead of being cancelled. The service's close(handle) /
+    // destroy() normally pair cancel()+close_file(); assign() bypasses
+    // that path and must do the same pairing itself.
+    cancel();
     close_file();
     fd_     = handle;
     offset_ = 0;

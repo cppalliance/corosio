@@ -17,6 +17,7 @@
 #include <boost/corosio/local_datagram_socket.hpp>
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
+#include <boost/corosio/posix_descriptor.hpp>
 #include <boost/corosio/random_access_file.hpp>
 #include <boost/corosio/resolver.hpp>
 #include <boost/corosio/signal_set.hpp>
@@ -38,6 +39,7 @@
 #include <boost/corosio/native/detail/iocp/win_tcp_acceptor_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_udp_service.hpp>
 #else
+#include <boost/corosio/detail/descriptor_service.hpp>
 #include <boost/corosio/detail/file_service.hpp>
 #include <boost/corosio/detail/local_datagram_service.hpp>
 #include <boost/corosio/detail/local_stream_acceptor_service.hpp>
@@ -82,6 +84,7 @@ using local_stream_service_t = detail::local_stream_service;
 using local_stream_acceptor_service_t =
     detail::local_stream_acceptor_service;
 using local_datagram_service_t = detail::local_datagram_service;
+using descriptor_service_t     = detail::descriptor_service;
 using resolver_service_t       = detail::posix_resolver_service;
 using signal_service_t         = detail::posix_signal_service;
 using file_service_t           = detail::file_service;
@@ -109,6 +112,8 @@ struct lazy_services_test
 #if !BOOST_COROSIO_HAS_IOCP
         BOOST_TEST(
             ioc.template find_service<local_datagram_service_t>() == nullptr);
+        BOOST_TEST(
+            ioc.template find_service<descriptor_service_t>() == nullptr);
 #endif
         BOOST_TEST(ioc.template find_service<resolver_service_t>() == nullptr);
         BOOST_TEST(ioc.template find_service<signal_service_t>() == nullptr);
@@ -157,6 +162,10 @@ struct lazy_services_test
         local_datagram_socket ld(ioc);
         BOOST_TEST(
             ioc.template find_service<local_datagram_service_t>() != nullptr);
+
+        posix_descriptor pd(ioc);
+        BOOST_TEST(
+            ioc.template find_service<descriptor_service_t>() != nullptr);
 #endif
 
         resolver res(ioc);
