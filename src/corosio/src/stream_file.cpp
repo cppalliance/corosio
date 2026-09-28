@@ -17,6 +17,8 @@
 #include <boost/corosio/detail/file_service.hpp>
 #endif
 
+#include "src/detail/use_backend_service.hpp"
+
 namespace boost::corosio {
 
 stream_file::~stream_file()
@@ -25,11 +27,16 @@ stream_file::~stream_file()
 }
 
 stream_file::stream_file(capy::execution_context& ctx)
+    : io_object(handle(
+          ctx,
+          detail::use_backend_service<
+              detail::stream_file_service_of,
 #if BOOST_COROSIO_HAS_IOCP
-    : io_object(create_handle<detail::win_file_service>(ctx))
+              detail::win_file_service
 #else
-    : io_object(create_handle<detail::file_service>(ctx))
+              detail::file_service
 #endif
+              >(ctx)))
 {
 }
 

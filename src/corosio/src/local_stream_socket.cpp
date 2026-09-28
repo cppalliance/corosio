@@ -14,6 +14,8 @@
 #include <boost/corosio/local_stream_socket.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/local_stream_service.hpp>
+
+#include "src/detail/use_backend_service.hpp"
 #include <boost/corosio/native/detail/make_err.hpp>
 
 #if BOOST_COROSIO_POSIX
@@ -34,7 +36,11 @@ local_stream_socket::~local_stream_socket()
 }
 
 local_stream_socket::local_stream_socket(capy::execution_context& ctx)
-    : io_object(create_handle<detail::local_stream_service>(ctx))
+    : io_object(handle(
+          ctx,
+          detail::use_backend_service<
+              detail::local_stream_service_of,
+              detail::local_stream_service>(ctx)))
 {
 }
 

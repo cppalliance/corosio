@@ -425,12 +425,13 @@ struct iocp_faults
     void testTcpExtensionPointerMissing()
     {
         // load_extension_functions runs once, from the tcp service's
-        // constructor, so the arm has to precede the io_context.
+        // constructor, which runs when the first tcp object is
+        // created, so the arm has to precede the acceptor.
         fault_scope f(sys::WSAIoctl, WSAEOPNOTSUPP);
         io_context ioc(iocp);
-        BOOST_TEST(f.fired());
 
         tcp_acceptor acc(ioc, loopback());
+        BOOST_TEST(f.fired());
         auto port = acc.local_endpoint().port();
         tcp_socket s(ioc);
         BOOST_TEST(!s.open(family::v4));
@@ -1750,16 +1751,18 @@ struct iocp_faults
     */
     void testExtensionPointersMissing()
     {
-        // The bootstrap's socket is the first WSASocketW of the
-        // construction; the wakeup pair uses ::socket. The arm is
-        // spent by the time the rest of the test runs.
+        // The bootstrap's socket is the first WSASocketW after the
+        // arm: services are created on first use, so it runs when the
+        // first tcp object is created, not at context construction.
+        // The wakeup pair uses ::socket. The arm is spent by the time
+        // the rest of the test runs.
         fault_scope arm(sys::WSASocketW, WSAEMFILE);
         io_context ioc(iocp);
-        BOOST_TEST(arm.fired());
 
         temp_socket_dir dir;
         auto const ep = corosio::local_endpoint(dir.path());
         tcp_acceptor acc(ioc, loopback());
+        BOOST_TEST(arm.fired());
         local_stream_acceptor lacc(ioc);
         BOOST_TEST(!lacc.open());
         BOOST_TEST(!lacc.bind(ep, bind_option::unlink_existing));

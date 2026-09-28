@@ -298,7 +298,9 @@ to_sockaddr(local_endpoint const& ep, sockaddr_storage& storage) noexcept
     un_sa_t sa{};
     sa.sun_family = AF_UNIX;
     auto path     = ep.path();
-    auto copy_len = (std::min)(path.size(), sizeof(sa.sun_path));
+    auto copy_len = (std::min)(
+        path.size(),
+        (std::min)(local_endpoint::max_path_length, sizeof(sa.sun_path)));
     if (copy_len > 0)
         std::memcpy(sa.sun_path, path.data(), copy_len);
     std::memcpy(&storage, &sa, sizeof(sa));

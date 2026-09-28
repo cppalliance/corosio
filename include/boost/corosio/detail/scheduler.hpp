@@ -13,12 +13,14 @@
 #define BOOST_COROSIO_DETAIL_SCHEDULER_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/except.hpp>
 
-#include <system_error>
 #include <boost/capy/continuation.hpp>
-#include <coroutine>
+#include <boost/capy/ex/execution_context.hpp>
 
+#include <coroutine>
 #include <cstddef>
+#include <system_error>
 
 namespace boost::corosio::detail {
 
@@ -30,11 +32,18 @@ class scheduler_op;
     this to implement the reactor/proactor event loop. The
     @ref io_context delegates all scheduling operations here.
 
+    The scheduler is a registry service keyed under this abstract
+    type, so services created on first use can locate it without
+    naming a concrete backend.
+
     @see io_context
 */
 struct BOOST_COROSIO_DECL scheduler
+    : capy::execution_context::service
 {
-    virtual ~scheduler() = default;
+    using key_type = scheduler;
+
+    ~scheduler() override = default;
 
     /// Post a coroutine handle for deferred execution.
     virtual void post(std::coroutine_handle<>) const = 0;
@@ -125,6 +134,19 @@ struct BOOST_COROSIO_DECL scheduler
     /// Apply @ref threading_config.
     virtual void configure_threading(threading_config) noexcept = 0;
 };
+
+/** Return the scheduler registered with the context.
+
+    @throws std::logic_error If the context has no backend installed.
+*/
+inline scheduler&
+get_scheduler(capy::execution_context& ctx)
+{
+    auto* sched = ctx.find_service<scheduler>();
+    if (!sched)
+        throw_logic_error("no scheduler installed");
+    return *sched;
+}
 
 } // namespace boost::corosio::detail
 

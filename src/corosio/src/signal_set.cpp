@@ -59,7 +59,7 @@ get_signal_state()
 signal_set::~signal_set() = default;
 
 signal_set::signal_set(capy::execution_context& ctx)
-    : io_signal_set(create_handle<signal_service>(ctx))
+    : io_signal_set(handle(ctx, ctx.use_service<signal_service>()))
 {
 }
 

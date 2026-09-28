@@ -236,7 +236,7 @@ public:
         @param ctx The execution context that owns this socket.
     */
     explicit native_udp_socket(capy::execution_context& ctx)
-        : udp_socket(create_handle<service_type>(ctx))
+        : udp_socket(handle(ctx, ctx.use_service<service_type>()))
     {
     }
 

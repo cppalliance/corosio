@@ -35,8 +35,8 @@ class BOOST_COROSIO_DECL posix_resolver_service final
 public:
     using key_type = posix_resolver_service;
 
-    posix_resolver_service(capy::execution_context& ctx, scheduler& sched)
-        : sched_(&sched)
+    explicit posix_resolver_service(capy::execution_context& ctx)
+        : sched_(&get_scheduler(ctx))
         , pool_(ctx)
     {
     }
@@ -94,18 +94,6 @@ private:
     std::unordered_map<posix_resolver*, std::shared_ptr<posix_resolver>>
         resolver_ptrs_;
 };
-
-/** Get or create the resolver service for the given context.
-
-    This function is called by the concrete scheduler during initialization
-    to create the resolver service with a reference to itself.
-
-    @param ctx Reference to the owning execution_context.
-    @param sched Reference to the scheduler for posting completions.
-    @return Reference to the resolver service.
-*/
-posix_resolver_service&
-get_resolver_service(capy::execution_context& ctx, scheduler& sched);
 
 // ---------------------------------------------------------------------------
 // Inline implementation
@@ -606,14 +594,6 @@ inline void
 posix_resolver_service::post(scheduler_op* op)
 {
     sched_->post(op);
-}
-
-// Free function to get/create the resolver service
-
-inline posix_resolver_service&
-get_resolver_service(capy::execution_context& ctx, scheduler& sched)
-{
-    return ctx.make_service<posix_resolver_service>(sched);
 }
 
 } // namespace boost::corosio::detail

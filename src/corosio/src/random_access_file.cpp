@@ -17,6 +17,8 @@
 #include <boost/corosio/detail/random_access_file_service.hpp>
 #endif
 
+#include "src/detail/use_backend_service.hpp"
+
 namespace boost::corosio {
 
 random_access_file::~random_access_file()
@@ -25,11 +27,16 @@ random_access_file::~random_access_file()
 }
 
 random_access_file::random_access_file(capy::execution_context& ctx)
+    : io_object(handle(
+          ctx,
+          detail::use_backend_service<
+              detail::random_access_file_service_of,
 #if BOOST_COROSIO_HAS_IOCP
-    : io_object(create_handle<detail::win_random_access_file_service>(ctx))
+              detail::win_random_access_file_service
 #else
-    : io_object(create_handle<detail::random_access_file_service>(ctx))
+              detail::random_access_file_service
 #endif
+              >(ctx)))
 {
 }
 

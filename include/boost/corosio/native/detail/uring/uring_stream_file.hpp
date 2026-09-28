@@ -330,9 +330,8 @@ class BOOST_COROSIO_DECL uring_stream_file_service final
         uring_stream_file>;
 
 public:
-    explicit uring_stream_file_service(
-        capy::execution_context& /*ctx*/, uring_scheduler& sched)
-        : base_service(sched)
+    explicit uring_stream_file_service(capy::execution_context& ctx)
+        : base_service(ctx.use_service<uring_scheduler>())
     {
     }
 

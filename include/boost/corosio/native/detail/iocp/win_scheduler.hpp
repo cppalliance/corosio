@@ -30,7 +30,6 @@
 #include <boost/corosio/native/detail/iocp/win_overlapped_op.hpp>
 #include <boost/corosio/native/detail/iocp/win_timers.hpp>
 #include <boost/corosio/detail/timer_service.hpp>
-#include <boost/corosio/native/detail/iocp/win_resolver_service.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/thread_local_ptr.hpp>
@@ -53,10 +52,8 @@ class win_wait_reactor;
 
 class BOOST_COROSIO_DECL win_scheduler final
     : public scheduler
-    , public capy::execution_context::service
 {
 public:
-    using key_type = scheduler;
 
     win_scheduler(capy::execution_context& ctx, int concurrency_hint = -1);
     ~win_scheduler();
@@ -726,7 +723,6 @@ inline win_scheduler::win_scheduler(
     {
         timers_ = make_win_timers(iocp_, &dispatch_required_);
         set_timer_service(&get_timer_service(ctx, *this));
-        ctx.make_service<win_resolver_service>(*this);
 
         // A scheduler whose wait reactor could not be built would
         // answer every wait with a parked op, so it refuses to exist

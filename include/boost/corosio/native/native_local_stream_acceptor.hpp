@@ -164,7 +164,7 @@ public:
         @param ctx The execution context that owns this acceptor.
     */
     explicit native_local_stream_acceptor(capy::execution_context& ctx)
-        : local_stream_acceptor(create_handle<service_type>(ctx), ctx)
+        : local_stream_acceptor(handle(ctx, ctx.use_service<service_type>()), ctx)
     {
     }
 

@@ -14,6 +14,8 @@
 
 #include <boost/corosio/detail/udp_service.hpp>
 
+#include "src/detail/use_backend_service.hpp"
+
 namespace boost::corosio {
 
 udp_socket::~udp_socket()
@@ -22,7 +24,11 @@ udp_socket::~udp_socket()
 }
 
 udp_socket::udp_socket(capy::execution_context& ctx)
-    : io_object(create_handle<detail::udp_service>(ctx))
+    : io_object(handle(
+          ctx,
+          detail::use_backend_service<
+              detail::udp_service_of,
+              detail::udp_service>(ctx)))
 {
 }
 

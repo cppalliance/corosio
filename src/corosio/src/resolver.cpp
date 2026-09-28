@@ -48,7 +48,7 @@ using resolver_service = detail::posix_resolver_service;
 resolver::~resolver() = default;
 
 resolver::resolver(capy::execution_context& ctx)
-    : io_object(create_handle<resolver_service>(ctx))
+    : io_object(handle(ctx, ctx.use_service<resolver_service>()))
 {
 }
 

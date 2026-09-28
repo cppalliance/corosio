@@ -165,7 +165,7 @@ public:
         @param ctx The execution context that owns this socket.
     */
     explicit native_tcp_socket(capy::execution_context& ctx)
-        : io_object(create_handle<service_type>(ctx))
+        : io_object(handle(ctx, ctx.use_service<service_type>()))
     {
     }
 

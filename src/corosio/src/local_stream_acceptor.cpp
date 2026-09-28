@@ -12,6 +12,8 @@
 #include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/detail/local_stream_acceptor_service.hpp>
 
+#include "src/detail/use_backend_service.hpp"
+
 #include <cstring>
 
 #if BOOST_COROSIO_POSIX
@@ -39,7 +41,11 @@ local_stream_acceptor::~local_stream_acceptor()
 }
 
 local_stream_acceptor::local_stream_acceptor(capy::execution_context& ctx)
-    : io_object(create_handle<detail::local_stream_acceptor_service>(ctx))
+    : io_object(handle(
+          ctx,
+          detail::use_backend_service<
+              detail::local_stream_acceptor_service_of,
+              detail::local_stream_acceptor_service>(ctx)))
     , ctx_(ctx)
 {
 }

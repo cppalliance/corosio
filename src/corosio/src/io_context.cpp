@@ -17,36 +17,23 @@
 #include <thread>
 
 #if BOOST_COROSIO_HAS_EPOLL
-#include <boost/corosio/native/detail/epoll/epoll_types.hpp>
+#include <boost/corosio/native/detail/epoll/epoll_scheduler.hpp>
 #endif
 
 #if BOOST_COROSIO_HAS_SELECT
-#include <boost/corosio/native/detail/select/select_types.hpp>
+#include <boost/corosio/native/detail/select/select_scheduler.hpp>
 #endif
 
 #if BOOST_COROSIO_HAS_KQUEUE
-#include <boost/corosio/native/detail/kqueue/kqueue_types.hpp>
+#include <boost/corosio/native/detail/kqueue/kqueue_scheduler.hpp>
 #endif
 
 #if BOOST_COROSIO_HAS_URING
-#include <boost/corosio/native/detail/uring/uring_acceptor_ops.hpp>
-#include <boost/corosio/native/detail/uring/uring_buffer.hpp>
-#include <boost/corosio/native/detail/uring/uring_dgram_ops.hpp>
-#include <boost/corosio/native/detail/uring/uring_multishot_acceptor.hpp>
-#include <boost/corosio/native/detail/uring/uring_random_access_file.hpp>
 #include <boost/corosio/native/detail/uring/uring_scheduler.hpp>
-#include <boost/corosio/native/detail/uring/uring_stream_file.hpp>
-#include <boost/corosio/native/detail/uring/uring_types.hpp>
 #endif
 
 #if BOOST_COROSIO_HAS_IOCP
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
-#include <boost/corosio/native/detail/iocp/win_tcp_acceptor_service.hpp>
-#include <boost/corosio/native/detail/iocp/win_udp_service.hpp>
-#include <boost/corosio/native/detail/iocp/win_local_stream_acceptor_service.hpp>
-#include <boost/corosio/native/detail/iocp/win_signals.hpp>
-#include <boost/corosio/native/detail/iocp/win_file_service.hpp>
-#include <boost/corosio/native/detail/iocp/win_random_access_file_service.hpp>
 #endif
 
 namespace boost::corosio {
@@ -57,14 +44,6 @@ epoll_t::construct(capy::execution_context& ctx, unsigned concurrency_hint)
 {
     auto& sched = ctx.make_service<detail::epoll_scheduler>(
         static_cast<int>(concurrency_hint));
-
-    ctx.make_service<detail::epoll_tcp_service>();
-    ctx.make_service<detail::epoll_tcp_acceptor_service>();
-    ctx.make_service<detail::epoll_udp_service>();
-    ctx.make_service<detail::epoll_local_stream_service>();
-    ctx.make_service<detail::epoll_local_stream_acceptor_service>();
-    ctx.make_service<detail::epoll_local_datagram_service>();
-
     return sched;
 }
 #endif
@@ -75,14 +54,6 @@ select_t::construct(capy::execution_context& ctx, unsigned concurrency_hint)
 {
     auto& sched = ctx.make_service<detail::select_scheduler>(
         static_cast<int>(concurrency_hint));
-
-    ctx.make_service<detail::select_tcp_service>();
-    ctx.make_service<detail::select_tcp_acceptor_service>();
-    ctx.make_service<detail::select_udp_service>();
-    ctx.make_service<detail::select_local_stream_service>();
-    ctx.make_service<detail::select_local_stream_acceptor_service>();
-    ctx.make_service<detail::select_local_datagram_service>();
-
     return sched;
 }
 #endif
@@ -93,14 +64,6 @@ kqueue_t::construct(capy::execution_context& ctx, unsigned concurrency_hint)
 {
     auto& sched = ctx.make_service<detail::kqueue_scheduler>(
         static_cast<int>(concurrency_hint));
-
-    ctx.make_service<detail::kqueue_tcp_service>();
-    ctx.make_service<detail::kqueue_tcp_acceptor_service>();
-    ctx.make_service<detail::kqueue_udp_service>();
-    ctx.make_service<detail::kqueue_local_stream_service>();
-    ctx.make_service<detail::kqueue_local_stream_acceptor_service>();
-    ctx.make_service<detail::kqueue_local_datagram_service>();
-
     return sched;
 }
 #endif
@@ -111,17 +74,6 @@ iocp_t::construct(capy::execution_context& ctx, unsigned concurrency_hint)
 {
     auto& sched = ctx.make_service<detail::win_scheduler>(
         static_cast<int>(concurrency_hint));
-
-    auto& tcp_svc = ctx.make_service<detail::win_tcp_service>();
-    ctx.make_service<detail::win_tcp_acceptor_service>(tcp_svc);
-    ctx.make_service<detail::win_udp_service>();
-    auto& local_svc =
-        ctx.make_service<detail::win_local_stream_service>(tcp_svc);
-    ctx.make_service<detail::win_local_stream_acceptor_service>(local_svc);
-    ctx.make_service<detail::win_signals>();
-    ctx.make_service<detail::win_file_service>();
-    ctx.make_service<detail::win_random_access_file_service>();
-
     return sched;
 }
 #endif
@@ -132,16 +84,6 @@ uring_t::construct(capy::execution_context& ctx, unsigned concurrency_hint)
 {
     auto& sched = ctx.make_service<detail::uring_scheduler>(
         static_cast<int>(concurrency_hint));
-
-    ctx.make_service<detail::uring_tcp_service>();
-    ctx.make_service<detail::uring_tcp_acceptor_service>();
-    ctx.make_service<detail::uring_local_stream_service>();
-    ctx.make_service<detail::uring_local_stream_acceptor_service>();
-    ctx.make_service<detail::uring_udp_service>();
-    ctx.make_service<detail::uring_local_datagram_service>();
-    ctx.make_service<detail::uring_stream_file_service>(sched);
-    ctx.make_service<detail::uring_random_access_file_service>(sched);
-
     return sched;
 }
 #endif

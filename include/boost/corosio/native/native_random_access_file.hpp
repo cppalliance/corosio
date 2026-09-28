@@ -137,7 +137,7 @@ public:
         @param ctx The execution context that owns this file.
     */
     explicit native_random_access_file(capy::execution_context& ctx)
-        : random_access_file(create_handle<service_type>(ctx))
+        : random_access_file(handle(ctx, ctx.use_service<service_type>()))
     {
     }
 

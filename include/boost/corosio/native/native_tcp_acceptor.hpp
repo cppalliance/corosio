@@ -151,7 +151,7 @@ public:
         @param ctx The execution context that owns this acceptor.
     */
     explicit native_tcp_acceptor(capy::execution_context& ctx)
-        : tcp_acceptor(create_handle<service_type>(ctx))
+        : tcp_acceptor(handle(ctx, ctx.use_service<service_type>()))
     {
     }
 

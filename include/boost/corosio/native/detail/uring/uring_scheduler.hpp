@@ -29,7 +29,6 @@
 #include <boost/corosio/detail/timer_service.hpp>
 #include <boost/corosio/native/detail/uring/uring_op.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
-#include <boost/corosio/native/detail/posix/posix_resolver_service.hpp>
 #include <boost/corosio/native/detail/posix/posix_signal_service.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
@@ -119,10 +118,8 @@ extern thread_local uring_scheduler_frame* tl_running_scheduler_frame_;
 */
 class BOOST_COROSIO_DECL uring_scheduler final
     : public scheduler
-    , public capy::execution_context::service
 {
 public:
-    using key_type   = scheduler;
     using mutex_type = conditionally_enabled_mutex;
     using lock_type  = mutex_type::scoped_lock;
     using event_type = conditionally_enabled_event;
@@ -596,9 +593,6 @@ inline uring_scheduler::uring_scheduler(
         timer_service::callback(this, [](void* p) {
             static_cast<uring_scheduler*>(p)->interrupt_reactor();
         }));
-
-    get_resolver_service(ctx, *this);
-    get_signal_service(ctx, *this);
 
     // Ring init is deferred so the options the io_context applies
     // after this constructor — the locking tier and SQPOLL — can feed

@@ -30,9 +30,8 @@ class BOOST_COROSIO_DECL posix_random_access_file_service final
     : public random_access_file_service
 {
 public:
-    posix_random_access_file_service(
-        capy::execution_context& ctx, scheduler& sched)
-        : sched_(&sched)
+    explicit posix_random_access_file_service(capy::execution_context& ctx)
+        : sched_(&get_scheduler(ctx))
         , pool_(ctx)
     {
     }
@@ -151,13 +150,6 @@ private:
         std::shared_ptr<posix_random_access_file>>
         file_ptrs_;
 };
-
-/** Get or create the random-access file service for the given context. */
-inline posix_random_access_file_service&
-get_random_access_file_service(capy::execution_context& ctx, scheduler& sched)
-{
-    return ctx.make_service<posix_random_access_file_service>(sched);
-}
 
 // ---------------------------------------------------------------------------
 // posix_random_access_file inline implementations (require complete service)
