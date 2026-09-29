@@ -1,0 +1,381 @@
+#
+# Copyright (c) 2026 Steve Gerbino
+#
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Official repository: https://github.com/cppalliance/corosio/
+#
+# Per-PR performance benchmarks on dedicated self-hosted runners.
+# Advisory only. See issue #343.
+#
+# Runner prerequisites (per machine, maintained by the infra admin):
+#   all      : git, cmake >= 3.20, ninja or make/msbuild, python3
+#   linux    : gcc or clang, liburing-dev
+#   windows  : MSVC (vcvars auto-detected by cmake), python3 on PATH,
+#              Git Bash (for shell: bash steps)
+#   macos    : Xcode command line tools
+
+name: benchmarks
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, labeled]
+    paths:
+      - 'include/**'
+      - 'src/**'
+      - 'bench/**'
+      - '.github/workflows/benchmarks.yml'
+      - '.github/bench/**'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "ab = head vs merge-base, aa = base vs itself"
+        type: choice
+        options: [ab, aa]
+        default: ab
+      iterations:
+        description: "override BENCH_ITERATIONS"
+        default: ""
+      duration:
+        description: "override BENCH_DURATION"
+        default: ""
+      category:
+        description: "run only this benchmark category (default: all)"
+        default: ""
+
+concurrency:
+  group: benchmarks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      head_sha: ${{ steps.decide.outputs.head_sha }}
+      base_sha: ${{ steps.decide.outputs.base_sha }}
+      tools_sha: ${{ steps.decide.outputs.tools_sha }}
+      pr: ${{ steps.decide.outputs.pr }}
+      mode: ${{ steps.decide.outputs.mode }}
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_LABEL: ${{ github.event.label.name }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -e
+          # Resolve head/base entirely via the API (no checkout needed).
+          # PR events compare against the PR's base branch; dispatch
+          # compares against develop and can also validate A/A (base vs itself).
+          #
+          # tools_sha always names the commit that triggered this run, even
+          # in A/A mode where head_sha is overwritten to equal base_sha: the
+          # comparison script lives alongside the workflow file itself, and
+          # a merge-base predating this workflow's own introduction (as when
+          # A/A-validating the PR that adds benchmarking CI) may not have it.
+          if [ "${{ github.event_name }}" = "pull_request_target" ]; then
+            action="${{ github.event.action }}"
+            # Routed through env, not interpolated directly into the script,
+            # so an attacker-chosen label name can't break out of the string
+            # literal (only triage+ actors can name labels, but harden anyway).
+            event_label="$EVENT_LABEL"
+            # Unrelated label churn (e.g. "documentation") on a qualifying
+            # collaborator PR must not re-run benchmarks or, via
+            # cancel-in-progress, kill one already running. Checked before
+            # author association so it applies regardless of who the
+            # author is, and labels are left untouched here.
+            if [ "$action" = "labeled" ] && [ "$event_label" != "benchmark" ]; then
+              echo "run=false" >> "$GITHUB_OUTPUT"
+              echo "pr=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+              echo "mode=ab" >> "$GITHUB_OUTPUT"
+            else
+              assoc="${{ github.event.pull_request.author_association }}"
+              label_present="${{ contains(github.event.pull_request.labels.*.name, 'benchmark') }}"
+              run=false
+              # COLLABORATOR = added to this repo; MEMBER (any cppalliance
+              # org member) is deliberately excluded — org membership is a
+              # wider circle than the people trusted with these machines.
+              # Members use the benchmark-label path like everyone else.
+              case "$assoc" in
+                OWNER|COLLABORATOR) run=true ;;
+                *)
+                  # Test the label that fired THIS event, not "is benchmark
+                  # present anywhere in the current label set" — the latter
+                  # would let a stale label (e.g. a failed delete below) grant
+                  # a run on ANY later labeled event, such as someone adding
+                  # "needs-info", since the payload still lists "benchmark"
+                  # among the PR's labels. Honoring only the labeled event
+                  # itself also means a later synchronize can't ride an
+                  # approval granted for an earlier diff.
+                  if [ "$action" = "labeled" ] && [ "$event_label" = "benchmark" ]; then
+                    run=true
+                  fi
+                  ;;
+              esac
+              # Strip the label whenever present, for any author — collaborators
+              # don't need it, and either way a lingering label is a stale-
+              # trigger reservoir. No `|| true`: under `set -e` a failed delete
+              # aborts here, before `run` is emitted, so bench's `run == 'true'`
+              # check sees an empty output and skips — a visible red gate job
+              # beats a silently stale label authorizing a future run.
+              if [ "$label_present" = "true" ]; then
+                gh api -X DELETE \
+                  "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels/benchmark"
+              fi
+              echo "run=$run" >> "$GITHUB_OUTPUT"
+              head_sha="${{ github.event.pull_request.head.sha }}"
+              base_sha=$(gh api "repos/${{ github.repository }}/compare/${BASE_REF}...${head_sha}" \
+                           --jq .merge_base_commit.sha)
+              # pull_request_target runs workflow + job steps from the base
+              # branch, but env/expression context still carries PR data —
+              # tooling must come from the trusted base commit, never the
+              # untrusted PR head, or a malicious head could smuggle changes
+              # into compare.py/resolve-capy that this gate never reviewed.
+              tools_sha="${{ github.sha }}"
+              echo "pr=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+              echo "mode=ab" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            head_sha="${{ github.sha }}"
+            base_sha=$(gh api "repos/${{ github.repository }}/compare/develop...${head_sha}" \
+                         --jq .merge_base_commit.sha)
+            tools_sha="$head_sha"
+            if [ "${{ inputs.mode }}" = "aa" ]; then
+              head_sha="$base_sha"      # A/A: both sides identical
+            fi
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "pr=" >> "$GITHUB_OUTPUT"
+            echo "mode=${{ inputs.mode }}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+          echo "tools_sha=$tools_sha" >> "$GITHUB_OUTPUT"
+
+  bench:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            labels: '["self-hosted", "Linux", "X64"]'
+            backends: "epoll uring"
+          - platform: windows
+            labels: '["self-hosted", "Windows", "X64"]'
+            backends: "iocp"
+          - platform: macos
+            labels: '["self-hosted", "macOS", "ARM64"]'
+            backends: "kqueue"
+    name: bench-${{ matrix.platform }}
+    runs-on: ${{ fromJSON(matrix.labels) }}
+    timeout-minutes: 150
+    env:
+      BENCH_ITERATIONS: ${{ inputs.iterations || '5' }}
+      BENCH_DURATION: ${{ inputs.duration || '1.5' }}
+      BENCH_CATEGORY: ${{ inputs.category || '' }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Clean workspace
+        run: rm -rf results build-base build-head ws && mkdir -p results
+
+      - name: Checkout head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.head_sha }}
+          path: ws/head
+          persist-credentials: false
+
+      - name: Checkout base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.base_sha }}
+          path: ws/base
+          persist-credentials: false
+
+      - name: Checkout tools (for compare.py)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.tools_sha }}
+          path: ws/tools
+          persist-credentials: false
+
+      - name: Resolve Capy branch
+        id: capy-ref
+        # Action definition must come from the trusted tools checkout, not
+        # the untrusted PR head, or a malicious head could rewrite this
+        # action to run arbitrary code under pull_request_target.
+        uses: ./ws/tools/.github/actions/resolve-capy
+
+      - name: Checkout capy
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.capy-ref.outputs.repo }}
+          ref: ${{ steps.capy-ref.outputs.ref }}
+          path: ws/capy
+          persist-credentials: false
+
+      - name: Create capy provider
+        run: |
+          # Git Bash's `pwd` prints an MSYS path (e.g. /d/a/...) that the
+          # native cmake.exe can't resolve when embedded in a generated
+          # file; cygpath -m gives the drive-letter form cmake expects.
+          capy_dir="$(pwd)/ws/capy"
+          if command -v cygpath > /dev/null 2>&1; then
+            capy_dir="$(cygpath -m "$capy_dir")"
+          fi
+          cat > ws/provide-capy.cmake << EOF
+          set(BOOST_CAPY_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+          set(BOOST_CAPY_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+          add_subdirectory("$capy_dir"
+              "\${CMAKE_BINARY_DIR}/_deps/capy-build" EXCLUDE_FROM_ALL)
+          EOF
+
+      - name: Put common toolchain dirs on PATH
+        run: |
+          # Self-hosted runner service shells are often non-login/non-interactive
+          # and don't source the profile files an admin's interactive install
+          # left PATH changes in (.bashrc/.zprofile/etc). Widen discovery to the
+          # usual install locations without installing anything ourselves.
+          for dir in /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" /snap/bin /opt/cmake/bin; do
+            if [ -d "$dir" ]; then
+              echo "$dir" >> "$GITHUB_PATH"
+            fi
+          done
+
+      - name: Toolchain diagnostics
+        run: |
+          echo "PATH=$PATH"
+          echo "-- command -v --"
+          command -v cmake || true
+          command -v git || true
+          command -v python3 || true
+          for dir in /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" /snap/bin /opt/cmake/bin; do
+            echo "-- ls $dir --"
+            ls -la "$dir" 2>/dev/null || echo "(missing)"
+          done
+
+      - name: Build head and base
+        run: |
+          set -e
+          for side in head base; do
+            cmake -S "ws/$side" -B "build-$side" \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBOOST_COROSIO_BUILD_BENCH=ON \
+              -DBOOST_COROSIO_BUILD_TESTS=OFF \
+              -DBOOST_COROSIO_BUILD_EXAMPLES=OFF \
+              -DCMAKE_PROJECT_boost_corosio_INCLUDE="$(pwd)/ws/provide-capy.cmake"
+            cmake --build "build-$side" --config Release \
+              --target corosio_bench --parallel
+          done
+
+      - name: Locate binaries
+        id: bins
+        run: |
+          set -e
+          for side in head base; do
+            bin=$(find "build-$side/bench" -type f \
+                    \( -name corosio_bench -o -name corosio_bench.exe \) | head -1)
+            test -n "$bin"
+            echo "$side=$bin" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Run interleaved benchmarks
+        run: |
+          set -e
+          cat_flag=""
+          if [ -n "$BENCH_CATEGORY" ]; then
+            cat_flag="--category $BENCH_CATEGORY"
+          fi
+          for i in $(seq 1 "$BENCH_ITERATIONS"); do
+            # ABBA: odd iterations base first, even iterations head first
+            if [ $((i % 2)) -eq 1 ]; then order="base head"; else order="head base"; fi
+            for side in $order; do
+              if [ "$side" = base ]; then bin="${{ steps.bins.outputs.base }}";
+              else bin="${{ steps.bins.outputs.head }}"; fi
+              for b in ${{ matrix.backends }}; do
+                "$bin" --library corosio --backend "$b" \
+                  --duration "$BENCH_DURATION" $cat_flag \
+                  --output "results/$side-$b-$i.json"
+              done
+            done
+          done
+
+      - name: Summarize
+        run: |
+          python3 ws/tools/.github/bench/compare.py summarize \
+            --platform "${{ matrix.platform }}" \
+            --input-dir results \
+            --output results/summary.json \
+            --mode "${{ needs.gate.outputs.mode }}"
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ matrix.platform }}
+          path: results/
+
+  report:
+    needs: [gate, bench]
+    # !cancelled(): still report when a bench job fails (partial results are
+    # useful), but never when the run is canceled — a superseded run must not
+    # overwrite the previous good comment with "no results".
+    if: ${{ !cancelled() && needs.gate.result == 'success' && needs.gate.outputs.run == 'true' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout tools (for compare.py)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.tools_sha }}
+          persist-credentials: false
+
+      - name: Download summaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bench-*
+          path: artifacts
+
+      - name: Build report
+        run: |
+          python3 .github/bench/compare.py report \
+            --summaries artifacts \
+            --expect linux,windows,macos \
+            --base-sha "${{ needs.gate.outputs.base_sha }}" \
+            --head-sha "${{ needs.gate.outputs.head_sha }}" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --output comment.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ needs.gate.outputs.pr }}
+        run: |
+          set -e
+          if [ -z "$PR" ]; then
+            cat comment.md >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          marker="<!-- corosio-bench-report -->"
+          cid=$(gh api "repos/${{ github.repository }}/issues/$PR/comments?per_page=100" \
+                  --jq "[.[] | select(.user.login == \"github-actions[bot]\")
+                             | select(.body | startswith(\"$marker\"))] | first | .id // empty")
+          if [ -n "$cid" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$cid" \
+              -F body=@comment.md
+          else
+            gh api "repos/${{ github.repository }}/issues/$PR/comments" \
+              -F body=@comment.md
+          fi
