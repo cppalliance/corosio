@@ -92,36 +92,37 @@
   ],
   "msvc": [
     {
-      "version": "14.34",
-      "cxxstd": "20",
-      "latest_cxxstd": "20",
-      "runs_on": "windows-2022",
-      "b2_toolset": "msvc-14.3",
-      "generator": "Visual Studio 17 2022",
-      "is_earliest": true
-    },
-    {
       "version": "14.44",
       "cxxstd": "20",
       "latest_cxxstd": "20",
       "runs_on": "windows-2022",
       "b2_toolset": "msvc-14.4",
       "generator": "Visual Studio 17 2022",
-      "is_latest": true
+      "is_earliest": true
     },
     {
-      "version": "14.34",
+      "version": "14.51",
       "cxxstd": "20",
       "latest_cxxstd": "20",
-      "runs_on": "windows-11-arm",
-      "b2_toolset": "msvc-14.3"
+      "runs_on": "windows-2025-vs2026",
+      "b2_toolset": "msvc-14.5",
+      "generator": "Ninja",
+      "is_latest": true
     },
     {
       "version": "14.44",
       "cxxstd": "20",
       "latest_cxxstd": "20",
-      "runs_on": "windows-11-arm",
-      "b2_toolset": "msvc-14.4"
+      "runs_on": "windows-11-vs2026-arm",
+      "b2_toolset": "msvc-14.4",
+      "msvc_toolset": "14.44"
+    },
+    {
+      "version": "14.51",
+      "cxxstd": "20",
+      "latest_cxxstd": "20",
+      "runs_on": "windows-11-vs2026-arm",
+      "b2_toolset": "msvc-14.5"
     }
   ],
   "clang-cl": [
