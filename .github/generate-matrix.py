@@ -72,6 +72,8 @@ def make_entry(compiler_family, spec, **overrides):
         entry["shared"] = spec["shared"]
     if spec.get("vcpkg_triplet"):
         entry["vcpkg-triplet"] = spec["vcpkg_triplet"]
+    if spec.get("msvc_toolset"):
+        entry["msvc-toolset"] = spec["msvc_toolset"]
 
     # CMake builds only on earliest/latest compilers, unless explicitly disabled
     if spec.get("build_cmake") is False:

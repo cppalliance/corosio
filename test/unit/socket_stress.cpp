@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2026 Vinnie Falco
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -375,6 +376,85 @@ struct cancel_close_stress_test
         std::atomic<std::size_t> cancel_writes{0};
         std::atomic<bool> stop_flag{false};
 
+        // One cancel cycle. It is a separate coroutine rather than
+        // inline in worker's try block because MSVC 19.51.36257 x64
+        // hits an internal compiler error (C1001, Utc\src\p2\main.cpp
+        // line 262) at /O2 when a co_await of corosio::delay sits in
+        // a loop inside a coroutine's try block.
+        auto iteration = [&](int i) -> capy::task<> {
+            // Start a blocking read - use atomic for thread-safe signaling
+            char buf[32];
+            std::atomic<bool> read_done{false};
+            std::error_code read_ec;
+
+            auto read_coro = [&read_done, &read_ec, &s2,
+                              &buf]() -> capy::task<> {
+                auto [ec, n] = co_await s2.read_some(
+                    capy::mutable_buffer(buf, sizeof(buf)));
+                read_ec = ec;
+                read_done.store(true, std::memory_order_release);
+            };
+
+            capy::run_async(ex)(read_coro());
+
+            // Vary the cancellation method
+            switch (i % 3)
+            {
+            case 0:
+            {
+                // Yield to let the posted read_coro start
+                std::ignore =
+                    co_await corosio::delay(std::chrono::microseconds(1));
+                // Cancel via tcp_socket.cancel()
+                s2.cancel();
+                ++cancels;
+                break;
+            }
+            case 1:
+                // Write data to complete the read normally
+                {
+                    [[maybe_unused]] auto [ec, n] =
+                        co_await s1.write_some(capy::const_buffer("data", 4));
+                }
+                ++writes;
+                break;
+            case 2:
+                // Cancel then immediately write (race)
+                s2.cancel();
+                {
+                    [[maybe_unused]] auto [ec, n] =
+                        co_await s1.write_some(capy::const_buffer("data", 4));
+                }
+                ++cancel_writes;
+                break;
+            }
+
+            // Poll for read completion with timeout (max 1 second)
+            for (int wait = 0; wait < 100; ++wait)
+            {
+                if (read_done.load(std::memory_order_acquire))
+                    break;
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(10));
+            }
+
+            if (!read_done.load(std::memory_order_acquire))
+            {
+                std::fprintf(
+                    stderr,
+                    "  cancel_close_stress: read hung on case %d, "
+                    "iter %d\n",
+                    i % 3, i);
+                BOOST_TEST(read_done.load(std::memory_order_acquire));
+                // Force cancel
+                s2.cancel();
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(100));
+            }
+
+            ++iterations;
+        };
+
         // Worker: rapidly cancel operations on pre-created sockets
         auto worker = [&]() -> capy::task<> {
             while (!stop_flag.load(std::memory_order_relaxed))
@@ -385,80 +465,7 @@ struct cancel_close_stress_test
                          i < 50 && !stop_flag.load(std::memory_order_relaxed);
                          ++i)
                     {
-                        // Start a blocking read - use atomic for thread-safe signaling
-                        char buf[32];
-                        std::atomic<bool> read_done{false};
-                        std::error_code read_ec;
-
-                        auto read_coro = [&read_done, &read_ec, &s2,
-                                          &buf]() -> capy::task<> {
-                            auto [ec, n] = co_await s2.read_some(
-                                capy::mutable_buffer(buf, sizeof(buf)));
-                            read_ec = ec;
-                            read_done.store(true, std::memory_order_release);
-                        };
-
-                        capy::run_async(ex)(read_coro());
-
-                        // Vary the cancellation method
-                        switch (i % 3)
-                        {
-                        case 0:
-                        {
-                            // Yield to let the posted read_coro start
-                            std::ignore = co_await corosio::delay(
-                                std::chrono::microseconds(1));
-                            // Cancel via tcp_socket.cancel()
-                            s2.cancel();
-                            ++cancels;
-                            break;
-                        }
-                        case 1:
-                            // Write data to complete the read normally
-                            {
-                                [[maybe_unused]] auto [ec, n] =
-                                    co_await s1.write_some(
-                                        capy::const_buffer("data", 4));
-                            }
-                            ++writes;
-                            break;
-                        case 2:
-                            // Cancel then immediately write (race)
-                            s2.cancel();
-                            {
-                                [[maybe_unused]] auto [ec, n] =
-                                    co_await s1.write_some(
-                                        capy::const_buffer("data", 4));
-                            }
-                            ++cancel_writes;
-                            break;
-                        }
-
-                        // Poll for read completion with timeout (max 1 second)
-                        for (int wait = 0; wait < 100; ++wait)
-                        {
-                            if (read_done.load(std::memory_order_acquire))
-                                break;
-                            std::ignore = co_await corosio::delay(
-                                std::chrono::milliseconds(10));
-                        }
-
-                        if (!read_done.load(std::memory_order_acquire))
-                        {
-                            std::fprintf(
-                                stderr,
-                                "  cancel_close_stress: read hung on case %d, "
-                                "iter %d\n",
-                                i % 3, i);
-                            BOOST_TEST(
-                                read_done.load(std::memory_order_acquire));
-                            // Force cancel
-                            s2.cancel();
-                            std::ignore = co_await corosio::delay(
-                                std::chrono::milliseconds(100));
-                        }
-
-                        ++iterations;
+                        co_await iteration(i);
                     }
                 }
                 catch (const std::exception& e)

@@ -83,6 +83,51 @@ jobs:
           check-latest: true
           trace-commands: true
 
+      # setup-cpp ignores the MSVC version and loads the image's default
+      # toolset, so without this check the matrix version is only a label.
+      # A side-by-side toolset (msvc-toolset) is pinned for B2 through a
+      # setup script, because B2 re-runs vcvarsall before building.
+      - name: Configure MSVC
+        id: msvc
+        if: matrix.compiler == 'msvc'
+        env:
+          MSVC_VERSION: ${{ matrix.version }}
+          MSVC_TOOLSET: ${{ matrix.msvc-toolset }}
+          B2_TOOLSET: ${{ matrix.b2-toolset }}
+        run: |
+          set -euo pipefail
+          # Not PROCESSOR_ARCHITECTURE: on ARM64 runners this bash step
+          # does not see ARM64 there, and picked the x64 toolset.
+          case "$RUNNER_ARCH" in
+            ARM64) arch=arm64; bin=HostARM64/ARM64; target=ARM64 ;;
+            X64)   arch=amd64; bin=Hostx64/x64;     target=x64 ;;
+            *)     echo "::error::Unsupported runner architecture: $RUNNER_ARCH"; exit 1 ;;
+          esac
+          check="$RUNNER_TEMP/msvc-banner.bat"
+          if [ -n "$MSVC_TOOLSET" ]; then
+            setup="$RUNNER_TEMP/vcvars-$MSVC_TOOLSET.bat"
+            printf '@call "%sAuxiliary\\Build\\vcvarsall.bat" %%* -vcvars_ver=%s\r\n' \
+              "$VCINSTALLDIR" "$MSVC_TOOLSET" > "$setup"
+            tools=( "$(cygpath -m "$VCINSTALLDIR")Tools/MSVC/$MSVC_TOOLSET."* )
+            cl="${tools[-1]}/bin/$bin/cl.exe"
+            test -f "$cl"
+            user_config="$RUNNER_TEMP/user-config.jam"
+            echo "using msvc : ${B2_TOOLSET#msvc-} : \"$cl\" : <setup>\"$(cygpath -m "$setup")\" ;" \
+              > "$user_config"
+            cat "$user_config"
+            echo "user-config=$(cygpath -m "$user_config")" >> "$GITHUB_OUTPUT"
+            printf '@call "%s" %s >nul\r\n@cl\r\n' "$(cygpath -w "$setup")" "$arch" > "$check"
+          else
+            printf '@cl\r\n' > "$check"
+          fi
+          out=$(cmd //c "$(cygpath -w "$check")" 2>&1 || true)
+          banner=$(printf '%s\n' "$out" | tr -d '\r' | grep -m1 'Compiler Version' || true)
+          echo "$banner"
+          case "$banner" in
+            *"Version 19.${MSVC_VERSION#14.}."*" for $target") ;;
+            *) echo "::error::Expected MSVC $MSVC_VERSION for $target, got: $banner"; exit 1 ;;
+          esac
+
       - name: Install packages
         uses: alandefreitas/cpp-actions/package-install@v1.9.0
         id: package-install
@@ -494,6 +539,10 @@ jobs:
           source-dir: boost-root
           modules: corosio
           toolset: ${{ matrix.b2-toolset }}
+          # Set only for a pinned msvc-toolset. B2 then reads this file
+          # instead of any other user-config.jam, so a pinned x64 toolset
+          # must also carry the "using openssl" line.
+          user-config: ${{ steps.msvc.outputs.user-config }}
           build-variant: ${{ (matrix.compiler == 'msvc' && 'debug,release') || matrix.build-type }}
           cxx: ${{ matrix.cxx || steps.setup-cpp.outputs.cxx || '' }}
           cxxstd: ${{ matrix.cxxstd }}
