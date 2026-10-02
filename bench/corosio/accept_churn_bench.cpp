@@ -43,6 +43,17 @@ configure_churn_socket(corosio::tcp_socket& s)
     s.set_option(corosio::native_socket_option::linger(true, 0));
 }
 
+// Accepted sockets inherit buffer sizes and linger from the listener,
+// so the server side of each churn connection needs no per-accept setup
+template<class Acceptor>
+static void
+configure_churn_acceptor(Acceptor& acc)
+{
+    acc.set_option(corosio::native_socket_option::send_buffer_size(1024));
+    acc.set_option(corosio::native_socket_option::receive_buffer_size(1024));
+    acc.set_option(corosio::native_socket_option::linger(true, 0));
+}
+
 // Single connect/accept/1-byte-exchange/close loop
 template<auto Backend>
 void
@@ -55,6 +66,7 @@ bench_sequential_churn(bench::state& state)
     acceptor_type acc(ioc);
     std::ignore = acc.open();
     acc.set_option(corosio::native_socket_option::reuse_address(true));
+    configure_churn_acceptor(acc);
 
     if (auto ec =
             acc.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0)))
@@ -77,7 +89,8 @@ bench_sequential_churn(bench::state& state)
 
             socket_type client(ioc);
             socket_type server(ioc);
-            std::ignore = client.open();
+            if (client.open())
+                co_return;
             configure_churn_socket(client);
 
             capy::run_async(ioc.get_executor())(
@@ -137,6 +150,7 @@ bench_sequential_churn_lockless(bench::state& state)
     acceptor_type acc(ioc);
     std::ignore = acc.open();
     acc.set_option(corosio::native_socket_option::reuse_address(true));
+    configure_churn_acceptor(acc);
 
     if (auto ec =
             acc.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0)))
@@ -159,7 +173,8 @@ bench_sequential_churn_lockless(bench::state& state)
 
             socket_type client(ioc);
             socket_type server(ioc);
-            std::ignore = client.open();
+            if (client.open())
+                co_return;
             configure_churn_socket(client);
 
             capy::run_async(ioc.get_executor())(
@@ -227,6 +242,7 @@ bench_concurrent_churn(bench::state& state)
         auto& acc   = acceptors.back();
         std::ignore = acc.open();
         acc.set_option(corosio::native_socket_option::reuse_address(true));
+    configure_churn_acceptor(acc);
         if (auto ec = acc.bind(
                 corosio::endpoint(corosio::ipv4_address::loopback(), 0)))
         {
@@ -250,7 +266,8 @@ bench_concurrent_churn(bench::state& state)
 
             socket_type client(ioc);
             socket_type server(ioc);
-            std::ignore = client.open();
+            if (client.open())
+                co_return;
             configure_churn_socket(client);
 
             capy::run_async(ioc.get_executor())(
@@ -314,6 +331,7 @@ bench_burst_churn(bench::state& state)
     acceptor_type acc(ioc);
     std::ignore = acc.open();
     acc.set_option(corosio::native_socket_option::reuse_address(true));
+    configure_churn_acceptor(acc);
 
     if (auto ec =
             acc.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0)))
@@ -342,7 +360,8 @@ bench_burst_churn(bench::state& state)
             for (int i = 0; i < burst_size; ++i)
             {
                 clients.emplace_back(ioc);
-                std::ignore = clients.back().open();
+                if (clients.back().open())
+                    co_return;
                 configure_churn_socket(clients.back());
                 capy::run_async(ioc.get_executor())(
                     [](socket_type& c, corosio::endpoint ep) -> capy::task<> {
@@ -399,6 +418,7 @@ bench_burst_churn_lockless(bench::state& state)
     acceptor_type acc(ioc);
     std::ignore = acc.open();
     acc.set_option(corosio::native_socket_option::reuse_address(true));
+    configure_churn_acceptor(acc);
 
     if (auto ec =
             acc.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0)))
@@ -427,7 +447,8 @@ bench_burst_churn_lockless(bench::state& state)
             for (int i = 0; i < burst_size; ++i)
             {
                 clients.emplace_back(ioc);
-                std::ignore = clients.back().open();
+                if (clients.back().open())
+                    co_return;
                 configure_churn_socket(clients.back());
                 capy::run_async(ioc.get_executor())(
                     [](socket_type& c, corosio::endpoint ep) -> capy::task<> {
@@ -476,13 +497,33 @@ make_accept_churn_suite()
 {
     using F = bench::bench_flags;
     return bench::benchmark_suite("accept_churn", F::needs_conntrack_drain)
+        .category_description(
+            "Rate of setting up and tearing down short-lived TCP "
+            "connections: connect, accept, close.")
         .add("sequential", bench_sequential_churn<Backend>)
+        .describe(
+            "Single connect/accept/close loop with a one-way one-byte "
+            "transfer (client writes, server reads) per connection, one "
+            "connection at a time.")
         .add("sequential_lockless", bench_sequential_churn_lockless<Backend>)
+        .describe(
+            "Same as sequential, with the context in single-threaded "
+            "lockless mode.")
         .add("concurrent", bench_concurrent_churn<Backend>)
+        .describe(
+            "N independent accept loops run on separate listeners at once, "
+            "each doing a one-way one-byte transfer (client writes, server "
+            "reads) per connection; N is the number of loops.")
         .args({1, 4, 16})
         .add("burst", bench_burst_churn<Backend>)
+        .describe(
+            "N connects are fired at once, then all N are accepted before "
+            "closing; N is the burst size.")
         .args({10, 100})
         .add("burst_lockless", bench_burst_churn_lockless<Backend>)
+        .describe(
+            "Same as burst, with the context in single-threaded lockless "
+            "mode; N is the burst size.")
         .args({10, 100});
 }
 

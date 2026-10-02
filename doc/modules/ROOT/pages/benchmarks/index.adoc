@@ -1,0 +1,40 @@
+= Boost.Corosio Performance Benchmarks
+:page-aliases: benchmark-report.adoc
+:page-mode: explanation
+:toc: left
+
+_Generated 2026-10-02 from corosio `e2de06fda069` — https://github.com/cppalliance/corosio/actions/runs/37015995763[benchmark run]. This page is fully generated; do not edit by hand (see <<Reproducing>>)._
+
+This report compares Boost.Corosio against Boost.Asio using coroutines (the `asio` configuration) and Boost.Asio using callback-based handlers (`asio_callback`) across the corosio benchmark suite. Its purpose is to track corosio's performance relative to an established async I/O library as both evolve, not to crown a universal winner.
+
+== Methodology
+
+This run measured 113 benchmarks across 7 categories on Linux; 77 benchmarks across 5 categories on Windows; 113 benchmarks across 7 categories on macOS.
+
+Each benchmark runs several iterations of a fixed duration, interleaved across configurations. Drift from thermal throttling or background load therefore lands on every configuration alike, rather than skewing one of them. The reported figure for a benchmark/configuration pair is the median across its iterations, which resists a single outlier iteration. The coefficient of variation (CV) across those iterations appears alongside it as a measure of run-to-run noise. See each platform page's Test Environment section for the exact iteration count and duration used there.
+
+Metric selection and the higher/lower-is-better direction follow the same rules as the PR comparison bot (`.github/bench/compare.py`). Latency categories compare `latency_mean_ns` (lower is better); everything else compares `bytes_per_sec`, then `items_per_sec`, then `ops_per_sec` (higher is better). Percentages on this page are sign-normalized so that a positive value always means corosio performed better than asio.
+
+Every percentage on these pages is measured against Boost.Asio with callback handlers on the same reactor. Boost.Asio's own coroutine frontend (the `asio` configuration) is plotted alongside corosio against that same baseline.
+
+On Linux, asio is built twice: once against the epoll reactor, once against io_uring. Every comparison pairs implementations on the same reactor, never judging an io_uring corosio backend against an epoll-only asio. On Windows and macOS, asio uses its native reactor (IOCP and kqueue respectively), matching corosio's own default backend there. Each platform page records the reactor used on that machine.
+
+Each platform's numbers come from a dedicated, otherwise-idle machine, to keep competing workloads from adding noise to the measurements.
+
+== Reproducing
+
+The full suite layout and exact commands are documented in `bench/README.md`. In short: dispatch the benchmark-report workflow, download its artifacts, and regenerate this page with:
+
+[source,bash,role=external]
+----
+python3 .github/bench/report_page.py --input-dir <artifacts-dir> \
+    --output-dir doc/modules/ROOT
+----
+
+Source data: https://github.com/cppalliance/corosio/actions/runs/37015995763[workflow run]. Regenerate this page with the command above. GitHub retains the run's raw JSON artifacts for 90 days; these pages are the durable record.
+
+== Platforms
+
+* xref:benchmarks/linux.adoc[Linux]
+* xref:benchmarks/windows.adoc[Windows]
+* xref:benchmarks/macos.adoc[macOS]

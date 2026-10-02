@@ -281,3 +281,6 @@
 (?i)IP[’']s
 (?i)UDP[’']s
 (?i)URL[’']s
+CMake
+Ryzen
+liburing

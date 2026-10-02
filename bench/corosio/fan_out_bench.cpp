@@ -550,19 +550,42 @@ make_fan_out_suite()
 {
     using F = bench::bench_flags;
     return bench::benchmark_suite("fan_out", F::needs_conntrack_drain)
+        .category_description(
+            "Fan-out/fan-in coroutine coordination: a parent starts "
+            "concurrent sub-requests against echo servers and awaits their "
+            "completion via a shared latch.")
         .add("fork_join", bench_fork_join<Backend>)
+        .describe(
+            "One parent starts N sub-requests to echo servers and waits "
+            "for all to finish before repeating; N is the fan-out width.")
         .args({1, 4, 16, 64})
         .add("fork_join_lockless", bench_fork_join_lockless<Backend>)
+        .describe(
+            "Same as fork_join, with the context in single-threaded "
+            "lockless mode; N is the fan-out width.")
         .args({1, 4, 16, 64})
         .add("nested", bench_nested<Backend>)
+        .describe(
+            "Two-level fan-out: the parent starts N groups of 4 "
+            "sub-requests each, each group awaited via its own latch; N "
+            "is the number of groups.")
         .args({4, 16})
         .add("nested_lockless", bench_nested_lockless<Backend>)
+        .describe(
+            "Same as nested, with the context in single-threaded lockless "
+            "mode; N is the number of groups.")
         .args({4, 16})
         .add("concurrent_parents", bench_concurrent_parents<Backend>)
+        .describe(
+            "N independent parents each fan out to 16 sub-requests at "
+            "once; N is the number of parents.")
         .args({1, 4, 16})
         .add(
             "concurrent_parents_lockless",
             bench_concurrent_parents_lockless<Backend>)
+        .describe(
+            "Same as concurrent_parents, with the context in "
+            "single-threaded lockless mode; N is the number of parents.")
         .args({1, 4, 16});
 }
 

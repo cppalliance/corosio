@@ -3,7 +3,7 @@
   "note": "Snapshot of current violations (Style Guide Part F.0). Everything recorded here is grandfathered; check-no-new-violations.mjs fails on findings that are NOT in it, for the rules named by the workflow's --gate spec. Reseed only via the workflow_dispatch steps, never locally. Fingerprints are line-insensitive: the `#N` component is the Nth occurrence of that (file, message) pair, NOT a line number, so inserting text above a finding does not rename it.",
   "checks": {
     "vale_adoc": {
-      "count": 55,
+      "count": 45,
       "skipped": false,
       "fingerprints": [
         "modules/ROOT/pages/2.networking-tutorial/2b.internet-addresses.adoc:#1:Google.OxfordComma",
@@ -48,16 +48,6 @@
         "modules/ROOT/pages/4.guide/4p.unix-sockets.adoc:#1:Google.OxfordComma",
         "modules/ROOT/pages/4.guide/4q.udp.adoc:#1:Google.Colons",
         "modules/ROOT/pages/4.guide/4q.udp.adoc:#1:Google.OxfordComma",
-        "modules/ROOT/pages/benchmark-report.adoc:#1:Google.Colons",
-        "modules/ROOT/pages/benchmark-report.adoc:#1:Google.Units",
-        "modules/ROOT/pages/benchmark-report.adoc:#2:Google.Colons",
-        "modules/ROOT/pages/benchmark-report.adoc:#2:Google.Units",
-        "modules/ROOT/pages/benchmark-report.adoc:#3:Google.Colons",
-        "modules/ROOT/pages/benchmark-report.adoc:#4:Google.Colons",
-        "modules/ROOT/pages/benchmark-report.adoc:#5:Google.Colons",
-        "modules/ROOT/pages/benchmark-report.adoc:#6:Google.Colons",
-        "modules/ROOT/pages/benchmark-report.adoc:#7:Google.Colons",
-        "modules/ROOT/pages/benchmark-report.adoc:#8:Google.Colons",
         "modules/ROOT/pages/glossary.adoc:#1:Google.OxfordComma",
         "modules/ROOT/pages/glossary.adoc:#1:Vale.Spelling",
         "modules/ROOT/pages/quick-start.adoc:#1:Vale.Spelling"

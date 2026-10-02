@@ -60,6 +60,14 @@ make_churn_acceptor(asio::io_context& ioc)
         ec = acc.open(tcp::v4(), ec);
         if (!ec)
             ec = acc.set_option(tcp_acceptor::reuse_address(true), ec);
+        // Accepted sockets inherit these from the listener
+        if (!ec)
+            ec = acc.set_option(asio::socket_base::send_buffer_size(1024), ec);
+        if (!ec)
+            ec = acc.set_option(
+                asio::socket_base::receive_buffer_size(1024), ec);
+        if (!ec)
+            ec = acc.set_option(asio::socket_base::linger(true, 0), ec);
         if (!ec)
             ec = acc.bind(tcp::endpoint(tcp::v4(), 0), ec);
         if (!ec)

@@ -1,0 +1,595 @@
+= macOS Benchmarks
+:page-mode: explanation
+:toc: left
+
+_Generated 2026-10-02 from corosio `e2de06fda069` — https://github.com/cppalliance/corosio/actions/runs/37015995763[benchmark run]. This page is fully generated; do not edit by hand (see the xref:benchmarks/index.adoc[Benchmarks landing page])._
+
+== Summary
+
+_Within noise_ means the relative difference is within twice the combined run-to-run noise (the root-sum-square of each side's CV). Differences that small are indistinguishable from measurement jitter. See xref:benchmarks/index.adoc[Methodology] for how these figures are computed.
+
+**68 faster &#183; 15 within noise &#183; 30 slower** of 113 benchmarks &#8212; median **+58.8%** vs Boost.Asio (callbacks) on the same reactor.
+
+image::bench/macos-summary.svg[summary,role=bch-block,opts=inline]
+
+== Test Environment
+
+[cols="1,3"]
+|===
+| CPU | Apple M1
+| Cores | 8
+| RAM (GB) | 16
+| OS | Darwin 25.6.0
+| Kernel/build | Darwin Kernel Version 25.6.0: Tue Aug 18 17:48:35 PDT 2026; root:xnu-12377.161.15.700.19~2/RELEASE_ARM64_T8103
+| Compiler | Apple clang version 17.0.0 (clang-1700.6.3.2)
+| CMake | `cmake version 4.4.3`
+| liburing | n/a
+| Boost commit | 39fa1e9a3491bd099b570935b3f3422065f91b03
+| Asio commit | a7dc25b4cb6c49a6946d86ea20664f1027203225
+| Asio reactor | kqueue
+| Capy commit | a372a6b054261f29497ac0d19c2a9533f9eaad40
+| Corosio commit | e2de06fda069607f34bc957cbefcbd9ba12fddca
+| Corosio branch | pr/benchmark-report
+| Date (UTC) | 2026-10-02
+| Iterations | 7
+| Duration per benchmark (s) | 2.0
+|===
+
+== Results
+
+=== `accept_churn`
+
+Rate of setting up and tearing down short-lived TCP connections: connect, accept, close.
+
+[.bch-card]
+--
+image::bench/macos-accept_churn.svg[accept churn comparison,role=bch-block,opts=inline]
+
+.Detailed results
+[%collapsible.bch-exact]
+====
+[%autowidth.stretch,options="header"]
+|===
+| Benchmark | Implementation | Median | CV | vs asio
+| `burst/10` | corosio (kqueue) | 4.12K ops/s | 4.19% | -10.2%
+| `burst/10` | asio (coroutines) | 3.18K ops/s | 1.54% | -30.6%
+| `burst/10` | asio (callbacks) | 4.58K ops/s | 2.22% | baseline
+| `burst/100` | corosio (kqueue) | 426.7 ops/s | 4.25% | -27.3%
+| `burst/100` | asio (coroutines) | 343.8 ops/s | 2.96% | -41.4%
+| `burst/100` | asio (callbacks) | 587.1 ops/s | 12.84% | baseline
+| `burst_lockless/10` | corosio (kqueue) | 4.11K ops/s | 3.92% | -10.5%
+| `burst_lockless/10` | asio (coroutines) | 3.24K ops/s | 1.91% | -29.4%
+| `burst_lockless/10` | asio (callbacks) | 4.59K ops/s | 9.95% | baseline
+| `burst_lockless/100` | corosio (kqueue) | 424.0 ops/s | 3.50% | -28.0%
+| `burst_lockless/100` | asio (coroutines) | 347.1 ops/s | 2.79% | -41.0%
+| `burst_lockless/100` | asio (callbacks) | 588.5 ops/s | 4.01% | baseline
+| `concurrent/1` | corosio (kqueue) | 19.67K ops/s | 0.52% | +9.7%
+| `concurrent/1` | asio (coroutines) | 17.79K ops/s | 1.75% | -0.7%
+| `concurrent/1` | asio (callbacks) | 17.93K ops/s | 0.74% | baseline
+| `concurrent/16` | corosio (kqueue) | 34.00K ops/s | 3.18% | -20.6%
+| `concurrent/16` | asio (coroutines) | 42.53K ops/s | 2.55% | -0.7%
+| `concurrent/16` | asio (callbacks) | 42.81K ops/s | 6.50% | baseline
+| `concurrent/4` | corosio (kqueue) | 28.71K ops/s | 2.41% | -8.2%
+| `concurrent/4` | asio (coroutines) | 30.05K ops/s | 1.48% | -3.9%
+| `concurrent/4` | asio (callbacks) | 31.27K ops/s | 3.26% | baseline
+| `sequential` | corosio (kqueue) | 19.68K ops/s | 0.50% | +9.1%
+| `sequential` | asio (coroutines) | 17.81K ops/s | 0.97% | -1.3%
+| `sequential` | asio (callbacks) | 18.05K ops/s | 0.54% | baseline
+| `sequential_lockless` | corosio (kqueue) | 19.73K ops/s | 1.83% | +9.8%
+| `sequential_lockless` | asio (coroutines) | 17.79K ops/s | 1.50% | -1.0%
+| `sequential_lockless` | asio (callbacks) | 17.97K ops/s | 0.50% | baseline
+|===
+====
+
+--
+
+++++
+<br/>
+++++
+
+=== `fan_out`
+
+Fan-out/fan-in coroutine coordination: a parent starts concurrent sub-requests against echo servers and awaits their completion via a shared latch.
+
+[.bch-card]
+--
+image::bench/macos-fan_out-g1.svg[fan out comparison, part 1,role=bch-block,opts=inline]
+
+.Detailed results
+[%collapsible.bch-exact]
+====
+[%autowidth.stretch,options="header"]
+|===
+| Benchmark | Implementation | Median | CV | vs asio
+| `concurrent_parents/1` | corosio (kqueue) | 7.72K ops/s | 0.42% | -4.7%
+| `concurrent_parents/1` | asio (coroutines) | 7.20K ops/s | 0.22% | -11.1%
+| `concurrent_parents/1` | asio (callbacks) | 8.10K ops/s | 0.65% | baseline
+| `concurrent_parents/16` | corosio (kqueue) | 8.45K ops/s | 19.25% | -7.3%
+| `concurrent_parents/16` | asio (coroutines) | 6.35K ops/s | 19.09% | -30.3%
+| `concurrent_parents/16` | asio (callbacks) | 9.11K ops/s | 17.43% | baseline
+| `concurrent_parents/4` | corosio (kqueue) | 8.25K ops/s | 1.64% | -7.8%
+| `concurrent_parents/4` | asio (coroutines) | 8.47K ops/s | 0.83% | -5.4%
+| `concurrent_parents/4` | asio (callbacks) | 8.95K ops/s | 0.17% | baseline
+| `concurrent_parents_lockless/1` | corosio (kqueue) | 7.76K ops/s | 0.94% | -4.8%
+| `concurrent_parents_lockless/1` | asio (coroutines) | 7.25K ops/s | 0.21% | -11.1%
+| `concurrent_parents_lockless/1` | asio (callbacks) | 8.16K ops/s | 0.69% | baseline
+| `concurrent_parents_lockless/16` | corosio (kqueue) | 8.29K ops/s | 14.13% | -10.3%
+| `concurrent_parents_lockless/16` | asio (coroutines) | 6.34K ops/s | 18.94% | -31.4%
+| `concurrent_parents_lockless/16` | asio (callbacks) | 9.24K ops/s | 10.75% | baseline
+| `concurrent_parents_lockless/4` | corosio (kqueue) | 8.10K ops/s | 1.89% | -10.5%
+| `concurrent_parents_lockless/4` | asio (coroutines) | 8.65K ops/s | 0.83% | -4.4%
+| `concurrent_parents_lockless/4` | asio (callbacks) | 9.05K ops/s | 0.31% | baseline
+|===
+====
+
+--
+
+[.bch-card]
+--
+image::bench/macos-fan_out-g2.svg[fan out comparison, part 2,role=bch-block,opts=inline]
+
+.Detailed results
+[%collapsible.bch-exact]
+====
+[%autowidth.stretch,options="header"]
+|===
+| Benchmark | Implementation | Median | CV | vs asio
+| `fork_join/1` | corosio (kqueue) | 46.39K ops/s | 0.98% | -23.4%
+| `fork_join/1` | asio (coroutines) | 29.26K ops/s | 1.31% | -51.7%
+| `fork_join/1` | asio (callbacks) | 60.56K ops/s | 1.56% | baseline
+| `fork_join/16` | corosio (kqueue) | 7.70K ops/s | 0.41% | -4.1%
+| `fork_join/16` | asio (coroutines) | 7.21K ops/s | 0.18% | -10.2%
+| `fork_join/16` | asio (callbacks) | 8.03K ops/s | 0.70% | baseline
+| `fork_join/4` | corosio (kqueue) | 21.70K ops/s | 0.41% | -6.7%
+| `fork_join/4` | asio (coroutines) | 16.80K ops/s | 0.33% | -27.8%
+| `fork_join/4` | asio (callbacks) | 23.27K ops/s | 0.31% | baseline
+| `fork_join/64` | corosio (kqueue) | 1.99K ops/s | 2.25% | -11.2%
+| `fork_join/64` | asio (coroutines) | 2.08K ops/s | 0.97% | -7.4%
+| `fork_join/64` | asio (callbacks) | 2.25K ops/s | 0.16% | baseline
+| `fork_join_lockless/1` | corosio (kqueue) | 46.88K ops/s | 0.48% | -26.6%
+| `fork_join_lockless/1` | asio (coroutines) | 29.74K ops/s | 0.48% | -53.4%
+| `fork_join_lockless/1` | asio (callbacks) | 63.85K ops/s | 0.50% | baseline
+| `fork_join_lockless/16` | corosio (kqueue) | 7.80K ops/s | 0.71% | -4.3%
+| `fork_join_lockless/16` | asio (coroutines) | 7.27K ops/s | 0.24% | -10.8%
+| `fork_join_lockless/16` | asio (callbacks) | 8.15K ops/s | 0.69% | baseline
+| `fork_join_lockless/4` | corosio (kqueue) | 21.77K ops/s | 0.50% | -7.2%
+| `fork_join_lockless/4` | asio (coroutines) | 16.89K ops/s | 0.22% | -28.0%
+| `fork_join_lockless/4` | asio (callbacks) | 23.47K ops/s | 0.19% | baseline
+| `fork_join_lockless/64` | corosio (kqueue) | 2.08K ops/s | 2.38% | -8.5%
+| `fork_join_lockless/64` | asio (coroutines) | 2.10K ops/s | 1.02% | -7.4%
+| `fork_join_lockless/64` | asio (callbacks) | 2.27K ops/s | 0.13% | baseline
+| `nested/16` | corosio (kqueue) | 2.04K ops/s | 1.78% | -8.9%
+| `nested/16` | asio (coroutines) | 2.01K ops/s | 0.50% | -10.2%
+| `nested/16` | asio (callbacks) | 2.24K ops/s | 0.29% | baseline
+| `nested/4` | corosio (kqueue) | 7.07K ops/s | 0.18% | -12.5%
+| `nested/4` | asio (coroutines) | 6.49K ops/s | 0.25% | -19.7%
+| `nested/4` | asio (callbacks) | 8.08K ops/s | 0.84% | baseline
+| `nested_lockless/16` | corosio (kqueue) | 2.00K ops/s | 2.14% | -11.6%
+| `nested_lockless/16` | asio (coroutines) | 2.03K ops/s | 0.73% | -10.4%
+| `nested_lockless/16` | asio (callbacks) | 2.26K ops/s | 0.25% | baseline
+| `nested_lockless/4` | corosio (kqueue) | 7.19K ops/s | 0.41% | -11.8%
+| `nested_lockless/4` | asio (coroutines) | 6.56K ops/s | 0.32% | -19.5%
+| `nested_lockless/4` | asio (callbacks) | 8.15K ops/s | 0.69% | baseline
+|===
+====
+
+--
+
+++++
+<br/>
+++++
+
+=== `http_server`
+
+Request/response throughput of a minimal HTTP/1.1 server exchanging a fixed small request and canned response over persistent TCP loopback connections.
+
+[.bch-card]
+--
+image::bench/macos-http_server.svg[http server comparison,role=bch-block,opts=inline]
+
+.Detailed results
+[%collapsible.bch-exact]
+====
+[%autowidth.stretch,options="header"]
+|===
+| Benchmark | Implementation | Median | CV | vs asio
+| `concurrent/1` | corosio (kqueue) | 49.55K ops/s | 0.29% | -17.9%
+| `concurrent/1` | asio (coroutines) | 57.16K ops/s | 1.17% | -5.3%
+| `concurrent/1` | asio (callbacks) | 60.35K ops/s | 0.94% | baseline
+| `concurrent/16` | corosio (kqueue) | 126.9K ops/s | 0.37% | -0.2%
+| `concurrent/16` | asio (coroutines) | 126.8K ops/s | 0.63% | -0.3%
+| `concurrent/16` | asio (callbacks) | 127.2K ops/s | 0.41% | baseline
+| `concurrent/32` | corosio (kqueue) | 127.9K ops/s | 0.92% | -8.4%
+| `concurrent/32` | asio (coroutines) | 135.2K ops/s | 0.21% | -3.1%
+| `concurrent/32` | asio (callbacks) | 139.6K ops/s | 0.44% | baseline
+| `concurrent/4` | corosio (kqueue) | 88.07K ops/s | 0.45% | -4.5%
+| `concurrent/4` | asio (coroutines) | 91.01K ops/s | 0.16% | -1.3%
+| `concurrent/4` | asio (callbacks) | 92.17K ops/s | 0.35% | baseline
+| `multithread/1` | corosio (kqueue) | 127.5K ops/s | 0.90% | -8.6%
+| `multithread/1` | asio (coroutines) | 134.9K ops/s | 0.18% | -3.3%
+| `multithread/1` | asio (callbacks) | 139.5K ops/s | 0.43% | baseline
+| `multithread/16` | corosio (kqueue) | 126.8K ops/s | 0.72% | +9.8%
+| `multithread/16` | asio (coroutines) | 114.2K ops/s | 0.49% | -1.1%
+| `multithread/16` | asio (callbacks) | 115.5K ops/s | 1.09% | baseline
+| `multithread/2` | corosio (kqueue) | 174.1K ops/s | 1.89% | +2.7%
+| `multithread/2` | asio (coroutines) | 167.9K ops/s | 0.20% | -1.0%
+| `multithread/2` | asio (callbacks) | 169.5K ops/s | 0.13% | baseline
+| `multithread/4` | corosio (kqueue) | 162.0K ops/s | 1.02% | +11.7%
+| `multithread/4` | asio (coroutines) | 143.3K ops/s | 0.19% | -1.2%
+| `multithread/4` | asio (callbacks) | 145.0K ops/s | 0.21% | baseline
+| `multithread/8` | corosio (kqueue) | 132.4K ops/s | 1.15% | +0.1%
+| `multithread/8` | asio (coroutines) | 128.8K ops/s | 0.57% | -2.6%
+| `multithread/8` | asio (callbacks) | 132.2K ops/s | 0.55% | baseline
+| `single_conn` | corosio (kqueue) | 49.49K ops/s | 0.20% | -18.2%
+| `single_conn` | asio (coroutines) | 56.88K ops/s | 0.89% | -6.0%
+| `single_conn` | asio (callbacks) | 60.49K ops/s | 0.80% | baseline
+| `single_conn_lockless` | corosio (kqueue) | 49.61K ops/s | 0.34% | -21.0%
+| `single_conn_lockless` | asio (coroutines) | 60.26K ops/s | 1.28% | -4.1%
+| `single_conn_lockless` | asio (callbacks) | 62.82K ops/s | 0.70% | baseline
+|===
+====
+
+--
+
+++++
+<br/>
+++++
+
+=== `local_socket_latency`
+
+Round-trip latency of a single Unix domain stream socket write/read exchange across message sizes and concurrent pair counts.
+
+[.bch-card]
+--
+image::bench/macos-local_socket_latency.svg[local socket latency comparison,role=bch-block,opts=inline]
+
+.Detailed results
+[%collapsible.bch-exact]
+====
+[%autowidth.stretch,options="header"]
+|===
+| Benchmark | Implementation | Median | CV | vs asio
+| `concurrent/1` | corosio (kqueue) | 2.06 µs | 0.14% | +95.8%
+| `concurrent/1` | asio (coroutines) | 48.60 µs | 0.08% | +0.0%
+| `concurrent/1` | asio (callbacks) | 48.62 µs | 0.09% | baseline
+| `concurrent/16` | corosio (kqueue) | 30.67 µs | 0.18% | +58.8%
+| `concurrent/16` | asio (coroutines) | 77.22 µs | 0.51% | -3.6%
+| `concurrent/16` | asio (callbacks) | 74.53 µs | 0.68% | baseline
+| `concurrent/4` | corosio (kqueue) | 7.69 µs | 0.28% | +86.1%
+| `concurrent/4` | asio (coroutines) | 55.63 µs | 0.21% | -0.5%
+| `concurrent/4` | asio (callbacks) | 55.38 µs | 0.19% | baseline
+| `concurrent_lockless/1` | corosio (kqueue) | 2.03 µs | 0.17% | +95.8%
+| `concurrent_lockless/1` | asio (coroutines) | 48.60 µs | 0.13% | +0.0%
+| `concurrent_lockless/1` | asio (callbacks) | 48.61 µs | 0.04% | baseline
+| `concurrent_lockless/16` | corosio (kqueue) | 30.25 µs | 0.31% | +58.6%
+| `concurrent_lockless/16` | asio (coroutines) | 75.99 µs | 0.92% | -4.1%
+| `concurrent_lockless/16` | asio (callbacks) | 73.02 µs | 0.32% | baseline
+| `concurrent_lockless/4` | corosio (kqueue) | 7.54 µs | 0.14% | +86.4%
+| `concurrent_lockless/4` | asio (coroutines) | 55.41 µs | 0.25% | -0.1%
+| `concurrent_lockless/4` | asio (callbacks) | 55.33 µs | 0.49% | baseline
+| `pingpong/1` | corosio (kqueue) | 2.06 µs | 0.19% | +95.8%
+| `pingpong/1` | asio (coroutines) | 48.62 µs | 0.03% | -0.0%
+| `pingpong/1` | asio (callbacks) | 48.61 µs | 0.10% | baseline
+| `pingpong/1024` | corosio (kqueue) | 2.16 µs | 0.24% | +95.6%
+| `pingpong/1024` | asio (coroutines) | 48.64 µs | 0.15% | -0.1%
+| `pingpong/1024` | asio (callbacks) | 48.60 µs | 0.12% | baseline
+| `pingpong/64` | corosio (kqueue) | 2.06 µs | 0.36% | +95.8%
+| `pingpong/64` | asio (coroutines) | 48.58 µs | 0.03% | +0.0%
+| `pingpong/64` | asio (callbacks) | 48.59 µs | 0.14% | baseline
+| `pingpong_lockless/1` | corosio (kqueue) | 2.03 µs | 0.15% | +95.8%
+| `pingpong_lockless/1` | asio (coroutines) | 48.60 µs | 0.06% | -0.0%
+| `pingpong_lockless/1` | asio (callbacks) | 48.58 µs | 0.07% | baseline
+| `pingpong_lockless/1024` | corosio (kqueue) | 2.13 µs | 0.28% | +95.6%
+| `pingpong_lockless/1024` | asio (coroutines) | 48.60 µs | 0.06% | +0.0%
+| `pingpong_lockless/1024` | asio (callbacks) | 48.61 µs | 0.08% | baseline
+| `pingpong_lockless/64` | corosio (kqueue) | 2.03 µs | 0.27% | +95.8%
+| `pingpong_lockless/64` | asio (coroutines) | 48.58 µs | 0.04% | +0.0%
+| `pingpong_lockless/64` | asio (callbacks) | 48.58 µs | 0.04% | baseline
+|===
+====
+
+--
+
+++++
+<br/>
+++++
+
+=== `local_socket_throughput`
+
+Sustained byte throughput of a Unix domain stream socket pair under continuous streaming across chunk sizes and directions.
+
+[.bch-card]
+--
+image::bench/macos-local_socket_throughput-g1.svg[local socket throughput comparison, part 1,role=bch-block,opts=inline]
+
+.Detailed results
+[%collapsible.bch-exact]
+====
+[%autowidth.stretch,options="header"]
+|===
+| Benchmark | Implementation | Median | CV | vs asio
+| `bidirectional/1024` | corosio (kqueue) | 1.22 GB/s | 0.26% | +703.2%
+| `bidirectional/1024` | asio (coroutines) | 151.7 MB/s | 0.18% | -0.1%
+| `bidirectional/1024` | asio (callbacks) | 151.9 MB/s | 0.04% | baseline
+| `bidirectional/1048576` | corosio (kqueue) | 3.85 GB/s | 0.45% | +246.9%
+| `bidirectional/1048576` | asio (coroutines) | 1.11 GB/s | 0.05% | -0.3%
+| `bidirectional/1048576` | asio (callbacks) | 1.11 GB/s | 0.07% | baseline
+| `bidirectional/16384` | corosio (kqueue) | 3.85 GB/s | 0.63% | +246.6%
+| `bidirectional/16384` | asio (coroutines) | 1.11 GB/s | 0.05% | -0.2%
+| `bidirectional/16384` | asio (callbacks) | 1.11 GB/s | 0.38% | baseline
+| `bidirectional/262144` | corosio (kqueue) | 3.86 GB/s | 0.72% | +247.3%
+| `bidirectional/262144` | asio (coroutines) | 1.11 GB/s | 0.02% | -0.3%
+| `bidirectional/262144` | asio (callbacks) | 1.11 GB/s | 0.23% | baseline
+| `bidirectional/4096` | corosio (kqueue) | 2.90 GB/s | 0.37% | +377.7%
+| `bidirectional/4096` | asio (coroutines) | 605.1 MB/s | 0.30% | -0.3%
+| `bidirectional/4096` | asio (callbacks) | 606.7 MB/s | 0.13% | baseline
+| `bidirectional/65536` | corosio (kqueue) | 3.85 GB/s | 0.32% | +247.0%
+| `bidirectional/65536` | asio (coroutines) | 1.11 GB/s | 0.03% | -0.3%
+| `bidirectional/65536` | asio (callbacks) | 1.11 GB/s | 0.31% | baseline
+| `bidirectional_lockless/1024` | corosio (kqueue) | 1.23 GB/s | 0.14% | +708.6%
+| `bidirectional_lockless/1024` | asio (coroutines) | 151.8 MB/s | 0.05% | -0.1%
+| `bidirectional_lockless/1024` | asio (callbacks) | 151.9 MB/s | 0.04% | baseline
+| `bidirectional_lockless/1048576` | corosio (kqueue) | 3.92 GB/s | 0.32% | +242.0%
+| `bidirectional_lockless/1048576` | asio (coroutines) | 1.11 GB/s | 0.03% | -3.3%
+| `bidirectional_lockless/1048576` | asio (callbacks) | 1.14 GB/s | 1.59% | baseline
+| `bidirectional_lockless/16384` | corosio (kqueue) | 3.90 GB/s | 0.54% | +240.9%
+| `bidirectional_lockless/16384` | asio (coroutines) | 1.11 GB/s | 0.03% | -3.1%
+| `bidirectional_lockless/16384` | asio (callbacks) | 1.14 GB/s | 1.35% | baseline
+| `bidirectional_lockless/262144` | corosio (kqueue) | 3.90 GB/s | 0.43% | +241.4%
+| `bidirectional_lockless/262144` | asio (coroutines) | 1.11 GB/s | 0.02% | -3.1%
+| `bidirectional_lockless/262144` | asio (callbacks) | 1.14 GB/s | 1.55% | baseline
+| `bidirectional_lockless/4096` | corosio (kqueue) | 2.95 GB/s | 0.38% | +384.9%
+| `bidirectional_lockless/4096` | asio (coroutines) | 605.8 MB/s | 0.16% | -0.3%
+| `bidirectional_lockless/4096` | asio (callbacks) | 607.4 MB/s | 0.05% | baseline
+| `bidirectional_lockless/65536` | corosio (kqueue) | 3.89 GB/s | 0.47% | +242.3%
+| `bidirectional_lockless/65536` | asio (coroutines) | 1.11 GB/s | 0.02% | -2.6%
+| `bidirectional_lockless/65536` | asio (callbacks) | 1.14 GB/s | 1.77% | baseline
+|===
+====
+
+--
+
+[.bch-card]
+--
+image::bench/macos-local_socket_throughput-g2.svg[local socket throughput comparison, part 2,role=bch-block,opts=inline]
+
+.Detailed results
+[%collapsible.bch-exact]
+====
+[%autowidth.stretch,options="header"]
+|===
+| Benchmark | Implementation | Median | CV | vs asio
+| `unidirectional/1024` | corosio (kqueue) | 1.19 GB/s | 0.36% | +1402.1%
+| `unidirectional/1024` | asio (coroutines) | 76.19 MB/s | 0.04% | -4.0%
+| `unidirectional/1024` | asio (callbacks) | 79.38 MB/s | 0.75% | baseline
+| `unidirectional/1048576` | corosio (kqueue) | 3.46 GB/s | 0.31% | +467.8%
+| `unidirectional/1048576` | asio (coroutines) | 608.5 MB/s | 0.08% | -0.1%
+| `unidirectional/1048576` | asio (callbacks) | 608.9 MB/s | 0.18% | baseline
+| `unidirectional/16384` | corosio (kqueue) | 3.46 GB/s | 0.38% | +467.9%
+| `unidirectional/16384` | asio (coroutines) | 608.6 MB/s | 0.03% | -0.0%
+| `unidirectional/16384` | asio (callbacks) | 608.7 MB/s | 0.03% | baseline
+| `unidirectional/262144` | corosio (kqueue) | 3.45 GB/s | 0.25% | +466.7%
+| `unidirectional/262144` | asio (coroutines) | 608.6 MB/s | 0.03% | -0.0%
+| `unidirectional/262144` | asio (callbacks) | 608.8 MB/s | 0.03% | baseline
+| `unidirectional/4096` | corosio (kqueue) | 2.68 GB/s | 0.21% | +778.7%
+| `unidirectional/4096` | asio (coroutines) | 304.5 MB/s | 0.08% | -0.1%
+| `unidirectional/4096` | asio (callbacks) | 304.8 MB/s | 0.02% | baseline
+| `unidirectional/65536` | corosio (kqueue) | 3.44 GB/s | 0.42% | +465.7%
+| `unidirectional/65536` | asio (coroutines) | 608.7 MB/s | 0.02% | -0.0%
+| `unidirectional/65536` | asio (callbacks) | 608.8 MB/s | 0.09% | baseline
+| `unidirectional_lockless/1024` | corosio (kqueue) | 1.20 GB/s | 0.26% | +1335.5%
+| `unidirectional_lockless/1024` | asio (coroutines) | 77.56 MB/s | 0.32% | -7.0%
+| `unidirectional_lockless/1024` | asio (callbacks) | 83.40 MB/s | 0.26% | baseline
+| `unidirectional_lockless/1048576` | corosio (kqueue) | 3.50 GB/s | 0.43% | +474.9%
+| `unidirectional_lockless/1048576` | asio (coroutines) | 608.6 MB/s | 0.04% | -0.1%
+| `unidirectional_lockless/1048576` | asio (callbacks) | 609.0 MB/s | 0.03% | baseline
+| `unidirectional_lockless/16384` | corosio (kqueue) | 3.50 GB/s | 0.34% | +475.4%
+| `unidirectional_lockless/16384` | asio (coroutines) | 608.7 MB/s | 0.01% | -0.0%
+| `unidirectional_lockless/16384` | asio (callbacks) | 608.9 MB/s | 0.03% | baseline
+| `unidirectional_lockless/262144` | corosio (kqueue) | 3.50 GB/s | 0.34% | +475.1%
+| `unidirectional_lockless/262144` | asio (coroutines) | 608.6 MB/s | 0.05% | -0.1%
+| `unidirectional_lockless/262144` | asio (callbacks) | 608.9 MB/s | 0.02% | baseline
+| `unidirectional_lockless/4096` | corosio (kqueue) | 2.71 GB/s | 0.22% | +776.8%
+| `unidirectional_lockless/4096` | asio (coroutines) | 304.6 MB/s | 0.03% | -1.6%
+| `unidirectional_lockless/4096` | asio (callbacks) | 309.5 MB/s | 0.58% | baseline
+| `unidirectional_lockless/65536` | corosio (kqueue) | 3.50 GB/s | 0.42% | +474.0%
+| `unidirectional_lockless/65536` | asio (coroutines) | 608.7 MB/s | 0.02% | -0.0%
+| `unidirectional_lockless/65536` | asio (callbacks) | 608.9 MB/s | 0.03% | baseline
+|===
+====
+
+--
+
+++++
+<br/>
+++++
+
+=== `socket_latency`
+
+Round-trip latency of a TCP loopback connection. Each sample is one full round trip (request out, reply back) across message sizes and concurrent pair counts.
+
+[.bch-card]
+--
+image::bench/macos-socket_latency.svg[socket latency comparison,role=bch-block,opts=inline]
+
+.Detailed results
+[%collapsible.bch-exact]
+====
+[%autowidth.stretch,options="header"]
+|===
+| Benchmark | Implementation | Median | CV | vs asio
+| `concurrent/1` | corosio (kqueue) | 18.82 µs | 0.21% | +64.8%
+| `concurrent/1` | asio (coroutines) | 55.96 µs | 2.40% | -4.6%
+| `concurrent/1` | asio (callbacks) | 53.52 µs | 4.64% | baseline
+| `concurrent/16` | corosio (kqueue) | 120.69 µs | 0.53% | +9.5%
+| `concurrent/16` | asio (coroutines) | 142.60 µs | 5.34% | -6.9%
+| `concurrent/16` | asio (callbacks) | 133.43 µs | 5.65% | baseline
+| `concurrent/4` | corosio (kqueue) | 44.09 µs | 0.77% | +40.3%
+| `concurrent/4` | asio (coroutines) | 74.88 µs | 7.32% | -1.3%
+| `concurrent/4` | asio (callbacks) | 73.91 µs | 0.80% | baseline
+| `concurrent_lockless/1` | corosio (kqueue) | 18.85 µs | 0.49% | +66.7%
+| `concurrent_lockless/1` | asio (coroutines) | 55.13 µs | 3.89% | +2.6%
+| `concurrent_lockless/1` | asio (callbacks) | 56.61 µs | 6.54% | baseline
+| `concurrent_lockless/16` | corosio (kqueue) | 120.26 µs | 0.39% | +8.3%
+| `concurrent_lockless/16` | asio (coroutines) | 136.84 µs | 5.71% | -4.3%
+| `concurrent_lockless/16` | asio (callbacks) | 131.16 µs | 7.19% | baseline
+| `concurrent_lockless/4` | corosio (kqueue) | 43.39 µs | 0.67% | +40.9%
+| `concurrent_lockless/4` | asio (coroutines) | 74.37 µs | 13.79% | -1.2%
+| `concurrent_lockless/4` | asio (callbacks) | 73.46 µs | 0.93% | baseline
+| `pingpong/1` | corosio (kqueue) | 15.56 µs | 0.60% | +68.5%
+| `pingpong/1` | asio (coroutines) | 50.73 µs | 1.93% | -2.6%
+| `pingpong/1` | asio (callbacks) | 49.42 µs | 2.41% | baseline
+| `pingpong/1024` | corosio (kqueue) | 19.02 µs | 0.25% | +66.2%
+| `pingpong/1024` | asio (coroutines) | 53.34 µs | 6.26% | +5.1%
+| `pingpong/1024` | asio (callbacks) | 56.18 µs | 5.76% | baseline
+| `pingpong/64` | corosio (kqueue) | 18.81 µs | 0.51% | +66.8%
+| `pingpong/64` | asio (coroutines) | 56.64 µs | 3.02% | -0.0%
+| `pingpong/64` | asio (callbacks) | 56.62 µs | 4.45% | baseline
+| `pingpong_lockless/1` | corosio (kqueue) | 15.47 µs | 0.43% | +69.7%
+| `pingpong_lockless/1` | asio (coroutines) | 55.05 µs | 5.28% | -7.8%
+| `pingpong_lockless/1` | asio (callbacks) | 51.09 µs | 5.04% | baseline
+| `pingpong_lockless/1024` | corosio (kqueue) | 19.03 µs | 0.36% | +66.4%
+| `pingpong_lockless/1024` | asio (coroutines) | 56.89 µs | 2.43% | -0.4%
+| `pingpong_lockless/1024` | asio (callbacks) | 56.67 µs | 2.05% | baseline
+| `pingpong_lockless/64` | corosio (kqueue) | 18.85 µs | 0.41% | +66.8%
+| `pingpong_lockless/64` | asio (coroutines) | 56.61 µs | 3.37% | +0.4%
+| `pingpong_lockless/64` | asio (callbacks) | 56.84 µs | 4.40% | baseline
+|===
+====
+
+--
+
+++++
+<br/>
+++++
+
+=== `socket_throughput`
+
+Sustained byte throughput of a TCP loopback connection under continuous streaming, varying chunk size, direction, and concurrency.
+
+[.bch-card]
+--
+image::bench/macos-socket_throughput-g1.svg[socket throughput comparison, part 1,role=bch-block,opts=inline]
+
+.Detailed results
+[%collapsible.bch-exact]
+====
+[%autowidth.stretch,options="header"]
+|===
+| Benchmark | Implementation | Median | CV | vs asio
+| `bidirectional/1024` | corosio (kqueue) | 410.3 MB/s | 0.65% | +100.0%
+| `bidirectional/1024` | asio (coroutines) | 198.8 MB/s | 0.87% | -3.1%
+| `bidirectional/1024` | asio (callbacks) | 205.1 MB/s | 0.67% | baseline
+| `bidirectional/1048576` | corosio (kqueue) | 7.75 GB/s | 0.71% | -11.6%
+| `bidirectional/1048576` | asio (coroutines) | 8.57 GB/s | 1.62% | -2.2%
+| `bidirectional/1048576` | asio (callbacks) | 8.77 GB/s | 2.18% | baseline
+| `bidirectional/16384` | corosio (kqueue) | 4.01 GB/s | 0.58% | +64.9%
+| `bidirectional/16384` | asio (coroutines) | 2.39 GB/s | 0.37% | -1.8%
+| `bidirectional/16384` | asio (callbacks) | 2.43 GB/s | 0.31% | baseline
+| `bidirectional/262144` | corosio (kqueue) | 9.02 GB/s | 1.59% | -1.9%
+| `bidirectional/262144` | asio (coroutines) | 7.37 GB/s | 8.49% | -19.9%
+| `bidirectional/262144` | asio (callbacks) | 9.20 GB/s | 0.56% | baseline
+| `bidirectional/4096` | corosio (kqueue) | 1.49 GB/s | 0.30% | +88.6%
+| `bidirectional/4096` | asio (coroutines) | 756.1 MB/s | 0.87% | -4.2%
+| `bidirectional/4096` | asio (callbacks) | 789.4 MB/s | 0.68% | baseline
+| `bidirectional/65536` | corosio (kqueue) | 7.59 GB/s | 1.46% | +32.1%
+| `bidirectional/65536` | asio (coroutines) | 5.74 GB/s | 1.55% | -0.2%
+| `bidirectional/65536` | asio (callbacks) | 5.75 GB/s | 0.86% | baseline
+| `bidirectional_lockless/1024` | corosio (kqueue) | 411.7 MB/s | 0.57% | +104.4%
+| `bidirectional_lockless/1024` | asio (coroutines) | 201.3 MB/s | 0.67% | -0.1%
+| `bidirectional_lockless/1024` | asio (callbacks) | 201.4 MB/s | 1.34% | baseline
+| `bidirectional_lockless/1048576` | corosio (kqueue) | 7.76 GB/s | 2.00% | -11.3%
+| `bidirectional_lockless/1048576` | asio (coroutines) | 8.72 GB/s | 2.31% | -0.3%
+| `bidirectional_lockless/1048576` | asio (callbacks) | 8.75 GB/s | 2.38% | baseline
+| `bidirectional_lockless/16384` | corosio (kqueue) | 4.00 GB/s | 0.47% | +63.3%
+| `bidirectional_lockless/16384` | asio (coroutines) | 2.40 GB/s | 0.51% | -1.9%
+| `bidirectional_lockless/16384` | asio (callbacks) | 2.45 GB/s | 0.22% | baseline
+| `bidirectional_lockless/262144` | corosio (kqueue) | 8.95 GB/s | 1.93% | -3.8%
+| `bidirectional_lockless/262144` | asio (coroutines) | 7.43 GB/s | 10.71% | -20.2%
+| `bidirectional_lockless/262144` | asio (callbacks) | 9.31 GB/s | 7.51% | baseline
+| `bidirectional_lockless/4096` | corosio (kqueue) | 1.50 GB/s | 0.51% | +86.4%
+| `bidirectional_lockless/4096` | asio (coroutines) | 773.4 MB/s | 0.50% | -3.6%
+| `bidirectional_lockless/4096` | asio (callbacks) | 802.7 MB/s | 1.08% | baseline
+| `bidirectional_lockless/65536` | corosio (kqueue) | 7.82 GB/s | 1.25% | +36.1%
+| `bidirectional_lockless/65536` | asio (coroutines) | 5.74 GB/s | 1.34% | -0.0%
+| `bidirectional_lockless/65536` | asio (callbacks) | 5.75 GB/s | 1.66% | baseline
+|===
+====
+
+--
+
+[.bch-card]
+--
+image::bench/macos-socket_throughput-g2.svg[socket throughput comparison, part 2,role=bch-block,opts=inline]
+
+.Detailed results
+[%collapsible.bch-exact]
+====
+[%autowidth.stretch,options="header"]
+|===
+| Benchmark | Implementation | Median | CV | vs asio
+| `multithread/2` | corosio (kqueue) | 7.75 GB/s | 1.43% | +2.4%
+| `multithread/2` | asio (coroutines) | 7.76 GB/s | 1.90% | +2.4%
+| `multithread/2` | asio (callbacks) | 7.57 GB/s | 2.22% | baseline
+| `multithread/4` | corosio (kqueue) | 3.92 GB/s | 2.78% | +0.6%
+| `multithread/4` | asio (coroutines) | 4.08 GB/s | 1.87% | +4.8%
+| `multithread/4` | asio (callbacks) | 3.90 GB/s | 22.01% | baseline
+| `multithread/8` | corosio (kqueue) | 3.48 GB/s | 3.73% | -10.8%
+| `multithread/8` | asio (coroutines) | 3.91 GB/s | 3.00% | +0.2%
+| `multithread/8` | asio (callbacks) | 3.90 GB/s | 2.02% | baseline
+|===
+====
+
+--
+
+[.bch-card]
+--
+image::bench/macos-socket_throughput-g3.svg[socket throughput comparison, part 3,role=bch-block,opts=inline]
+
+.Detailed results
+[%collapsible.bch-exact]
+====
+[%autowidth.stretch,options="header"]
+|===
+| Benchmark | Implementation | Median | CV | vs asio
+| `unidirectional/1024` | corosio (kqueue) | 321.5 MB/s | 1.01% | +94.3%
+| `unidirectional/1024` | asio (coroutines) | 157.8 MB/s | 0.52% | -4.7%
+| `unidirectional/1024` | asio (callbacks) | 165.5 MB/s | 2.47% | baseline
+| `unidirectional/1048576` | corosio (kqueue) | 9.05 GB/s | 1.04% | -0.1%
+| `unidirectional/1048576` | asio (coroutines) | 8.34 GB/s | 5.41% | -8.0%
+| `unidirectional/1048576` | asio (callbacks) | 9.07 GB/s | 1.31% | baseline
+| `unidirectional/16384` | corosio (kqueue) | 3.75 GB/s | 1.25% | +96.0%
+| `unidirectional/16384` | asio (coroutines) | 1.90 GB/s | 0.43% | -0.8%
+| `unidirectional/16384` | asio (callbacks) | 1.92 GB/s | 1.18% | baseline
+| `unidirectional/262144` | corosio (kqueue) | 8.96 GB/s | 2.20% | +14.0%
+| `unidirectional/262144` | asio (coroutines) | 6.07 GB/s | 8.74% | -22.7%
+| `unidirectional/262144` | asio (callbacks) | 7.86 GB/s | 2.31% | baseline
+| `unidirectional/4096` | corosio (kqueue) | 1.24 GB/s | 1.29% | +97.7%
+| `unidirectional/4096` | asio (coroutines) | 602.1 MB/s | 0.54% | -4.4%
+| `unidirectional/4096` | asio (callbacks) | 629.7 MB/s | 1.12% | baseline
+| `unidirectional/65536` | corosio (kqueue) | 7.32 GB/s | 1.44% | +67.2%
+| `unidirectional/65536` | asio (coroutines) | 4.26 GB/s | 1.87% | -2.6%
+| `unidirectional/65536` | asio (callbacks) | 4.37 GB/s | 2.43% | baseline
+| `unidirectional_lockless/1024` | corosio (kqueue) | 328.2 MB/s | 0.51% | +125.2%
+| `unidirectional_lockless/1024` | asio (coroutines) | 159.8 MB/s | 0.58% | +9.6%
+| `unidirectional_lockless/1024` | asio (callbacks) | 145.7 MB/s | 0.59% | baseline
+| `unidirectional_lockless/1048576` | corosio (kqueue) | 9.12 GB/s | 0.81% | +1.2%
+| `unidirectional_lockless/1048576` | asio (coroutines) | 8.25 GB/s | 5.89% | -8.5%
+| `unidirectional_lockless/1048576` | asio (callbacks) | 9.02 GB/s | 1.13% | baseline
+| `unidirectional_lockless/16384` | corosio (kqueue) | 3.76 GB/s | 0.54% | +94.8%
+| `unidirectional_lockless/16384` | asio (coroutines) | 1.90 GB/s | 0.94% | -1.8%
+| `unidirectional_lockless/16384` | asio (callbacks) | 1.93 GB/s | 1.53% | baseline
+| `unidirectional_lockless/262144` | corosio (kqueue) | 9.14 GB/s | 1.74% | +20.4%
+| `unidirectional_lockless/262144` | asio (coroutines) | 6.07 GB/s | 8.88% | -20.0%
+| `unidirectional_lockless/262144` | asio (callbacks) | 7.59 GB/s | 10.28% | baseline
+| `unidirectional_lockless/4096` | corosio (kqueue) | 1.26 GB/s | 0.74% | +96.5%
+| `unidirectional_lockless/4096` | asio (coroutines) | 613.2 MB/s | 0.64% | -4.1%
+| `unidirectional_lockless/4096` | asio (callbacks) | 639.1 MB/s | 0.40% | baseline
+| `unidirectional_lockless/65536` | corosio (kqueue) | 7.39 GB/s | 0.88% | +74.6%
+| `unidirectional_lockless/65536` | asio (coroutines) | 4.20 GB/s | 1.66% | -0.7%
+| `unidirectional_lockless/65536` | asio (callbacks) | 4.23 GB/s | 2.96% | baseline
+|===
+====
+
+--
+
