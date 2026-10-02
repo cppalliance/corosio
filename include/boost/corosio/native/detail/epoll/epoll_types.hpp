@@ -25,6 +25,7 @@
 #include <boost/corosio/native/detail/epoll/epoll_traits.hpp>
 #include <boost/corosio/native/detail/epoll/epoll_scheduler.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_backend.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_descriptor_service.hpp>
 
 namespace boost::corosio::detail {
 
@@ -41,6 +42,8 @@ class epoll_local_stream_acceptor;
 class epoll_local_stream_acceptor_service;
 class epoll_local_datagram_socket;
 class epoll_local_datagram_service;
+class epoll_descriptor;
+class epoll_descriptor_service;
 
 // --- Stream sockets ---
 
@@ -235,6 +238,29 @@ public:
     }
 };
 
+// --- Descriptors ---
+
+class epoll_descriptor final
+    : public reactor_descriptor<
+          epoll_descriptor,
+          epoll_traits,
+          epoll_descriptor_service,
+          epoll_tcp_acceptor>
+{
+    using base_type = reactor_descriptor<
+        epoll_descriptor,
+        epoll_traits,
+        epoll_descriptor_service,
+        epoll_tcp_acceptor>;
+    friend epoll_descriptor_service;
+
+public:
+    explicit epoll_descriptor(epoll_descriptor_service& svc) noexcept
+        : base_type(svc)
+    {
+    }
+};
+
 // --- Services ---
 
 class BOOST_COROSIO_DECL epoll_tcp_service final
@@ -346,6 +372,24 @@ class BOOST_COROSIO_DECL epoll_local_stream_acceptor_service final
 
 public:
     explicit epoll_local_stream_acceptor_service(capy::execution_context& ctx)
+        : base_type(ctx)
+    {
+    }
+};
+
+class BOOST_COROSIO_DECL epoll_descriptor_service final
+    : public reactor_descriptor_service<
+          epoll_descriptor_service,
+          epoll_traits,
+          epoll_descriptor>
+{
+    using base_type = reactor_descriptor_service<
+        epoll_descriptor_service,
+        epoll_traits,
+        epoll_descriptor>;
+
+public:
+    explicit epoll_descriptor_service(capy::execution_context& ctx)
         : base_type(ctx)
     {
     }

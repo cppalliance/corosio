@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -152,7 +153,31 @@ reactor_descriptor_state::invoke_deferred_io()
         {
             socklen_t len = sizeof(err);
             if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0)
-                err = errno;
+            {
+                if (errno == ENOTSOCK)
+                {
+                    // Non-socket fd (pipe, chardev, ...): no SO_ERROR, so
+                    // let the op's own syscall name the real failure.
+                    // Also force the read/write dispatch below to run: an
+                    // edge-triggered EPOLLERR can arrive alone, and
+                    // without this a parked op never calls perform_io()
+                    // and, the edge being one-shot, never gets another
+                    // chance -- a permanent hang.
+                    //
+                    // Assumes at least one parked op's own syscall makes
+                    // non-EAGAIN progress; if every op re-parks with
+                    // EAGAIN this sticky error is never redelivered and
+                    // they hang. No such case is known for pipes -- a
+                    // future non-socket type that hits one should be
+                    // handled here.
+                    err = 0;
+                    ev |= reactor_event_read | reactor_event_write;
+                }
+                else
+                {
+                    err = errno;
+                }
+            }
             // select raises its exceptional set for out-of-band/urgent
             // data as well as for genuine faults; on a healthy socket the
             // probe then reads SO_ERROR == 0. Faulting a pending read or

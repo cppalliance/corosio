@@ -70,6 +70,12 @@ library's socket directly and `release()` it before the library needs
 exclusive ownership again. Or create a true duplicate with
 `WSADuplicateSocketW` and adopt that.
 
+This applies to sockets. A library that owns a non-socket descriptor —
+a pipe, a tty, `inotify`, `eventfd` — needs the same readiness
+notification.
+xref:4.guide/4s.native-descriptors.adoc[`posix_descriptor`] provides it
+with the same `wait()` on the same terms.
+
 == Acceptors
 
 cpp:tcp_acceptor[] and cpp:local_stream_acceptor[] expose the same `wait()`.
@@ -150,3 +156,4 @@ uniform across platforms.
 * xref:4.guide/4d.sockets.adoc[Sockets]
 * xref:4.guide/4e.tcp-acceptor.adoc[Acceptors]
 * xref:4.guide/4q.udp.adoc[UDP Sockets]
+* xref:4.guide/4s.native-descriptors.adoc[Native Descriptors]

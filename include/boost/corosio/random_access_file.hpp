@@ -399,19 +399,47 @@ public:
 
     /** Adopt an existing native handle.
 
-        Closes any currently open file before adopting.
-        The file object takes ownership of the handle. Handles
-        created elsewhere may be unsuitable for asynchronous I/O;
-        such failures are reported through the returned error code.
+        Validation runs before anything is mutated or closed. On
+        error the object still holds whatever file it held before,
+        and the caller still owns @p handle. On success the object
+        takes ownership of @p handle and closes any file it
+        previously held. Handles created elsewhere may be unsuitable
+        for asynchronous I/O; such failures are reported through the
+        returned error code.
 
         @param handle The native file descriptor or handle.
 
-        @return The error code, empty on success.
+        @return An error code describing the outcome. The codes
+            that follow are those of the POSIX and io_uring
+            backends. `errc::invalid_argument` if @p handle is the
+            one this object already holds.
+            `errc::bad_file_descriptor` if it is invalid.
+            `errc::operation_not_supported` if it names something a
+            file object cannot position. Otherwise, the `errno`
+            reported by the kernel, or an empty code. The Windows
+            backend validates nothing and reports the Win32 error
+            from IOCP registration.
+
+        @par Exception Safety
+        Throws nothing. Strong guarantee.
+
+        @note On POSIX, "something a file object cannot position"
+            means, in practice, a pipe, a socket, or any other
+            anonymous inode. Adopt those into a @ref posix_descriptor
+            instead.
+
+        @note The strong guarantee above holds on the POSIX and
+            io_uring backends. On Windows (IOCP), a failed @p handle
+            can still close the file this object held. That backend's
+            file services are unified in a later stage, which is
+            where this gap is closed.
+
+        @see release
     */
     [[nodiscard]] std::error_code assign(native_handle_type handle) noexcept;
 
 protected:
-    /// Construct from a pre-built handle (for native_random_access_file).
+    /// Construct from a pre-built handle (for `native_random_access_file`).
     explicit random_access_file(handle h) noexcept : io_object(std::move(h)) {}
 
 private:

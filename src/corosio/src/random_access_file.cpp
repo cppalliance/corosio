@@ -127,8 +127,9 @@ random_access_file::release()
 std::error_code
 random_access_file::assign(native_handle_type handle) noexcept
 {
-    if (is_open())
-        close();
+    // Closing here first, unconditionally, would defeat the impl's own
+    // validate-before-mutate contract: get().assign() validates handle
+    // and only then closes whatever this object currently holds.
     return get().assign(handle);
 }
 

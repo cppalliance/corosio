@@ -636,17 +636,39 @@ struct uring_wait_op : uring_op
         // way — SO_ERROR, or EIO when the kernel has none — instead of
         // completing wait(error) with an empty, benign-looking code.
         // OOB (POLLPRI) is a readiness signal, not an error.
+        //
+        // POLLHUP is a fault only for wait(error). A readiness wait --
+        // the POLLIN/POLLOUT flag sets -- treats it as ready: a pipe or
+        // fully shut-down socket whose peer hung up is readable-at-EOF,
+        // and the read or write that follows names the condition. The
+        // reactors' poll() probe already reports it that way, so
+        // without this io_uring alone answers the wait-then-read idiom
+        // with a spurious EIO.
+        bool const readiness_wait =
+            (self->poll_flags & (POLLIN | POLLOUT)) != 0;
+        int const fault_bits = readiness_wait
+            ? (POLLERR | POLLNVAL)
+            : (POLLERR | POLLHUP | POLLNVAL);
+
         std::error_code ec{};
         if (self->res < 0)
         {
             ec = make_err(-self->res);
         }
-        else if (self->res & (POLLERR | POLLHUP | POLLNVAL))
+        else if (self->res & fault_bits)
         {
             int so_err    = 0;
             socklen_t len = sizeof(so_err);
             if (::getsockopt(self->fd, SOL_SOCKET, SO_ERROR, &so_err, &len) < 0)
-                so_err = errno;
+            {
+                // A non-socket (pipe, chardev, ...) has no SO_ERROR and
+                // fails the probe with ENOTSOCK; reporting that would
+                // name the probe rather than the fault, so fall through
+                // to the EIO substitution below. Every other failure
+                // (EBADF from a concurrent close, say) still reports
+                // itself, unchanged on the socket hot path.
+                so_err = (errno == ENOTSOCK) ? 0 : errno;
+            }
             if (so_err == 0)
                 so_err = EIO;
             ec = make_err(so_err);

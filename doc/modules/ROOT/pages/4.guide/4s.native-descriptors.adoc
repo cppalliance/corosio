@@ -1,0 +1,224 @@
+//
+// Copyright (c) 2026 Michael Vandeberg
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Native Descriptors
+:page-mode: how-to
+
+cpp:posix_descriptor[] adopts a file descriptor you already have and
+drives it from an `io_context`, giving it `read_some()`, `write_some()`
+and `wait()`. It exists on POSIX platforms only.
+
+[NOTE]
+====
+Code snippets assume:
+[source,cpp]
+----
+include::example$snippets/4s_native_descriptors.cpp[tag=assume]
+----
+====
+
+== Overview
+
+Corosio calls a descriptor pollable when a reactor can wait on it for
+readiness. Anything pollable that corosio does not already wrap is in
+scope. That includes character devices, `inotify`, `eventfd`,
+`timerfd`, `pidfd`, pipes, ttys, and socket kinds that have no
+dedicated corosio type.
+
+The type never creates a descriptor. Open it with whichever platform
+call suits it — `eventfd()`, `inotify_init1()`, `open()` on a device
+node — and hand the result to `assign()`. corosio supplies the event
+loop, not the constructor.
+
+== Why the Name Says POSIX
+
+A single portable `native_descriptor` spanning POSIX and Windows was
+considered and rejected. The platform gaps here are not edge cases
+around a shared core; they are the type's semantics. `O_NONBLOCK` on a
+shared open file description, `dup()`, and a file-type reject list
+expressed in `st_mode` bits are the entire contract below. An open
+file description is the kernel-side object a descriptor refers to.
+Every `dup()` of a descriptor shares the same one. None of them has a
+Windows counterpart. A type that named both would have to either
+document each rule twice or say nothing precise about either.
+
+Portability lives one layer up instead. A cpp:posix_descriptor[] is an
+cpp:io_object[], cpp:io_read_stream[], cpp:io_write_stream[] and
+cpp:io_stream[] — the same bases `tcp_socket` has — and, like every
+corosio stream, it satisfies `capy::Stream`. That concept is what the
+generic algorithms are written against, so they run on a descriptor, a
+socket and a `tls_stream` alike:
+
+[source,cpp]
+----
+include::example$snippets/4s_native_descriptors.cpp[tag=layering,indent=0]
+----
+
+Only the handful of lines that produce the descriptor are
+platform-specific. xref:4.guide/4l.tls.adoc[TLS] layers over it on the
+same terms.
+
+== Adopting a Descriptor
+
+`assign()` takes ownership: `close()` and the destructor close the
+descriptor. It returns a `std::error_code` and is pass:[<code>[[nodiscard]]</code>]; a
+failed `assign()` leaves the descriptor with you, so close it yourself.
+
+An `eventfd` as a cross-thread wakeup:
+
+[source,cpp]
+----
+include::example$snippets/4s_native_descriptors.cpp[tag=adopt_eventfd,indent=0]
+----
+
+[NOTE]
+====
+Distinct cpp:posix_descriptor[] objects are safe to use from different
+threads. A shared object must not run two operations of the same kind
+at once. One read and one write may overlap.
+====
+
+An `inotify` watch. The descriptor is a stream of variable-length
+records, so `read_some()` is the whole interface you need:
+
+[source,cpp]
+----
+include::example$snippets/4s_native_descriptors.cpp[tag=adopt_inotify,indent=0]
+----
+
+`release()` hands the descriptor back, cancelling pending operations
+and leaving the object not-open.
+
+== Ownership and the `dup()` Rule
+
+Another party sometimes owns the descriptor — a C library that does
+its own I/O on it, or a process-wide descriptor such as
+`STDIN_FILENO`. When that happens, adopt a `dup()` of it rather than
+the descriptor itself:
+
+[source,cpp]
+----
+include::example$snippets/4s_native_descriptors.cpp[tag=dup_for_foreign_fd,indent=0]
+----
+
+Both descriptors refer to one open file description, so the duplicate
+reports exactly the original's readiness. Corosio closing the
+duplicate can never close the original. This is the same rule
+xref:4.guide/4r.wait.adoc[Readiness Wait] states for adopted sockets.
+
+== Descriptor Flags
+
+[WARNING]
+====
+`O_NONBLOCK` is set on the first `read_some()` or `write_some()`, never
+by `assign()`, and it is never restored.
+
+The flag lives on the shared open file description, not on the
+descriptor, so every other holder of that description sees it.
+Restoring it on close would race whoever else is holding it. Permanent
+is the only safe choice.
+
+A `dup()` does not shield the other holder from this: the duplicate
+shares the same description, so the flag change reaches them anyway. It
+separates the lifetimes, nothing more. When another party owns the
+descriptor and cannot tolerate `O_NONBLOCK`, the way out is `wait()`
+and doing the I/O yourself. `wait()` never modifies the descriptor at
+all, flags included.
+====
+
+That is what makes standard input safe to adopt for readiness alone.
+Flipping `O_NONBLOCK` on it would change the terminal the parent shell
+is still using.
+
+[source,cpp]
+----
+include::example$snippets/4s_native_descriptors.cpp[tag=wait_only,indent=0]
+----
+
+== What Is Rejected
+
+`assign()` rejects regular files, block devices, and directories with a
+code comparing equal to `errc::operation_not_supported`. A reactor
+cannot report readiness for them, and they already have a home:
+xref:4.guide/4o.file-io.adoc[`stream_file` and `random_access_file`]
+adopt exactly those kinds.
+
+The test is a reject list, not an accept list. The reason: the
+flagship descriptor kinds — `eventfd`, `timerfd`, `inotify`, `pidfd` —
+are anonymous inodes whose `st_mode` type bits are all zero. An accept list
+would reject the descriptors this type exists to carry.
+
+A negative or closed descriptor fails with `errc::bad_file_descriptor`,
+and re-assigning the descriptor the object already holds fails with
+`errc::invalid_argument`.
+
+== Where Errors Surface
+
+Validation runs before anything is mutated. A rejected descriptor
+leaves the object holding whatever it held before — pending operations
+included — and leaves you owning the descriptor.
+
+A refusal from the *kernel* is the one exception, and where it appears
+depends on the backend:
+
+epoll, kqueue, select:: These register the descriptor with the reactor
+during `assign()`, so a refusal fails `assign()`. The old descriptor
+has already been closed by then, so the object is left closed. On
+select this is reachable in normal use: `select()` cannot monitor a
+descriptor at or above `FD_SETSIZE`, and such a descriptor is rejected
+with `EMFILE`.
+
+io_uring:: There is no adopt-time registration syscall, so `assign()`
+succeeds and a refusal appears at the first operation instead.
+
+Whichever way `assign()` fails, the descriptor you passed is still
+yours to close.
+
+Not every character device can be adopted. `/dev/null`, `/dev/zero` and
+`/dev/urandom` are not pollable: epoll refuses them with `EPERM` and
+kqueue with `EINVAL`, so `assign()` fails on those backends. select and
+io_uring have nothing to refuse them with, so `assign()` succeeds and the
+descriptor works — a `read_some()` on `/dev/zero` returns zeros. Character
+devices backed by a real driver, a tty among them, are pollable and
+adopt everywhere.
+
+`wait(wait_type::error)` is the one verb that is not uniform. epoll and
+io_uring report a pipe or FIFO hangup as an error condition and name a
+code. kqueue and select do not. kqueue raises an error event only for
+`EV_ERROR` or for `EV_EOF` with `fflags != 0`, and a hangup sets
+neither. select's exceptional set does not cover it. On those two backends
+the wait never completes; end it with `cancel()` or a stop token. Prefer
+`wait(wait_type::read)`, which is uniform — the hangup surfaces there as
+readiness, and the read that follows names the real failure.
+
+== `SIGPIPE`
+
+[WARNING]
+====
+Writing to a descriptor whose peer has closed raises `SIGPIPE` in the
+default disposition, which terminates the process. The socket types
+suppress this; cpp:posix_descriptor[] cannot.
+
+The suppression sockets get has no general form. `MSG_NOSIGNAL` is a
+`send()` flag and there is no `writev()` equivalent. `SO_NOSIGPIPE`
+is a socket option. Neither applies to an arbitrary descriptor.
+
+Install `SIG_IGN` for `SIGPIPE` — or handle it through a
+xref:4.guide/4i.signals.adoc[`signal_set`] — before writing to an
+adopted descriptor. The write then fails with `EPIPE` instead.
+====
+
+Asio's `posix::stream_descriptor` behaves the same way, for the same
+reason. Code ported from it needs no change here.
+
+== See Also
+
+* xref:4.guide/4r.wait.adoc[Readiness Wait]
+* xref:4.guide/4o.file-io.adoc[File I/O]
+* xref:reference:boost/corosio/posix_descriptor.adoc[`posix_descriptor` reference]

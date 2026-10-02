@@ -42,6 +42,7 @@
 #include <boost/corosio/native/detail/posix/posix_stream_file_service.hpp>
 #endif
 #if BOOST_COROSIO_HAS_URING
+#include <boost/corosio/native/detail/uring/uring_descriptor_service.hpp>
 #include <boost/corosio/native/detail/uring/uring_random_access_file.hpp>
 #include <boost/corosio/native/detail/uring/uring_stream_file.hpp>
 #include <boost/corosio/native/detail/uring/uring_types.hpp>
@@ -88,6 +89,12 @@ template<class Tag>
 struct local_datagram_service_of
 {
     using type = typename Tag::local_datagram_service_type;
+};
+
+template<class Tag>
+struct descriptor_service_of
+{
+    using type = typename Tag::descriptor_service_type;
 };
 
 template<class Tag>
