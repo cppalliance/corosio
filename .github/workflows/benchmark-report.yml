@@ -1,0 +1,229 @@
+#
+# Copyright (c) 2026 Steve Gerbino
+#
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Official repository: https://github.com/cppalliance/corosio/
+#
+# Comparison benchmark run for the published documentation report.
+# Dispatch-only; artifacts are turned into doc pages locally — see
+# bench/README.md ("Refreshing the published report").
+#
+# Runner prerequisites: same as benchmarks.yml.
+
+name: benchmark-report
+
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: "iterations per configuration"
+        default: "7"
+      duration:
+        description: "seconds per benchmark"
+        default: "2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-report
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            labels: '["self-hosted", "Linux", "X64"]'
+            configs: "corosio-epoll corosio-uring asio-epoll asio-uring asio_callback-epoll asio_callback-uring"
+          - platform: windows
+            labels: '["self-hosted", "Windows", "X64"]'
+            configs: "corosio-iocp asio asio_callback"
+          - platform: macos
+            labels: '["self-hosted", "macOS", "ARM64"]'
+            configs: "corosio-kqueue asio asio_callback"
+    name: bench-report-${{ matrix.platform }}
+    runs-on: ${{ fromJSON(matrix.labels) }}
+    timeout-minutes: 240
+    env:
+      ITERS: ${{ inputs.iterations || '7' }}
+      DUR: ${{ inputs.duration || '2' }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Clean workspace
+        run: rm -rf results build-aoff build-aon ws boost-root && mkdir -p results
+
+      - name: Checkout corosio
+        uses: actions/checkout@v4
+        with:
+          path: ws/corosio
+          persist-credentials: false
+
+      - name: Resolve Capy branch
+        id: capy-ref
+        uses: ./ws/corosio/.github/actions/resolve-capy
+
+      - name: Checkout capy
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.capy-ref.outputs.repo }}
+          ref: ${{ steps.capy-ref.outputs.ref }}
+          path: ws/capy
+          persist-credentials: false
+
+      - name: Clone Boost
+        uses: alandefreitas/cpp-actions/boost-clone@v1.9.0
+        with:
+          branch: develop
+          boost-dir: boost-root
+          modules: asio
+          modules-exclude-paths: ''
+          scan-modules-dir: ws/corosio
+          scan-modules-ignore: corosio, capy
+
+      - name: Patch Boost
+        run: |
+          set -e
+          rm -rf boost-root/libs/corosio boost-root/libs/capy
+          cp -r ws/corosio boost-root/libs/corosio
+          cp -r ws/capy boost-root/libs/capy
+
+      - name: Put common toolchain dirs on PATH
+        run: |
+          for dir in /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" /snap/bin /opt/cmake/bin; do
+            if [ -d "$dir" ]; then echo "$dir" >> "$GITHUB_PATH"; fi
+          done
+
+      - name: Configure and build (epoll/default asio reactor)
+        run: |
+          set -e
+          cmake -S boost-root -B build-aoff \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBOOST_INCLUDE_LIBRARIES="corosio;asio" \
+            -DBOOST_COROSIO_BUILD_BENCH=ON \
+            -DBOOST_COROSIO_BUILD_TESTS=OFF \
+            -DBOOST_COROSIO_BUILD_EXAMPLES=OFF \
+            -DBOOST_COROSIO_BENCH_ASIO_IO_URING=OFF
+          cmake --build build-aoff --config Release --target corosio_bench --parallel
+
+      # Linux only: a second binary with asio built against io_uring, so
+      # the asio-uring/asio_callback-uring configs compare against a
+      # same-reactor asio rather than an epoll-only one. Harmless to skip
+      # on Windows/macOS, which have no io_uring reactor to build against.
+      - name: Configure and build (io_uring asio reactor)
+        if: matrix.platform == 'linux'
+        run: |
+          set -e
+          cmake -S boost-root -B build-aon \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBOOST_INCLUDE_LIBRARIES="corosio;asio" \
+            -DBOOST_COROSIO_BUILD_BENCH=ON \
+            -DBOOST_COROSIO_BUILD_TESTS=OFF \
+            -DBOOST_COROSIO_BUILD_EXAMPLES=OFF \
+            -DBOOST_COROSIO_BENCH_ASIO_IO_URING=ON
+          cmake --build build-aon --config Release --target corosio_bench --parallel
+
+      - name: Locate binaries
+        id: bin
+        run: |
+          set -e
+          bin_off=$(find build-aoff -type f \( -name corosio_bench -o -name corosio_bench.exe \) | head -1)
+          test -n "$bin_off"
+          "$bin_off" --library asio --list > /dev/null   # hard-fail early if asio absent
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            bin_on=$(find build-aon -type f -name corosio_bench | head -1)
+            test -n "$bin_on"
+            "$bin_on" --library asio --list > /dev/null
+          else
+            bin_on="$bin_off"
+          fi
+          echo "bin_off=$bin_off" >> "$GITHUB_OUTPUT"
+          echo "bin_on=$bin_on" >> "$GITHUB_OUTPUT"
+
+      - name: Run interleaved comparison
+        run: |
+          set -e
+          configs=(${{ matrix.configs }})
+          n=${#configs[@]}
+          for i in $(seq 1 "$ITERS"); do
+            # rotate starting configuration each iteration so slow drift
+            # does not systematically favor any one implementation
+            for j in $(seq 0 $((n - 1))); do
+              cfg=${configs[$(( (j + i - 1) % n ))]}
+              case "$cfg" in
+                corosio-*)       args="--library corosio --backend ${cfg#corosio-}" ;;
+                asio-*)          args="--library asio --backend ${cfg#asio-}" ;;
+                asio_callback-*) args="--library asio_callback --backend ${cfg#asio_callback-}" ;;
+                *)               args="--library $cfg" ;;
+              esac
+              # Only the io_uring-flavored asio configs need the ON binary
+              # (asio's reactor is fixed at compile time); corosio picks
+              # its backend at runtime via --backend, so every corosio
+              # config runs fine on the OFF binary.
+              case "$cfg" in
+                asio-uring|asio_callback-uring) bin="${{ steps.bin.outputs.bin_on }}" ;;
+                *)                              bin="${{ steps.bin.outputs.bin_off }}" ;;
+              esac
+              "$bin" $args \
+                --duration "$DUR" --output "results/$cfg-$i.json"
+            done
+          done
+
+      - name: Capture environment
+        continue-on-error: true
+        run: |
+          cpu=$( (grep -m1 'model name' /proc/cpuinfo | cut -d: -f2-) 2>/dev/null \
+                || sysctl -n machdep.cpu.brand_string 2>/dev/null \
+                || powershell -NoProfile -Command "(Get-CimInstance Win32_Processor).Name" 2>/dev/null \
+                || echo unknown)
+          cores=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo unknown)
+          ram=$( (awk '/MemTotal/ {printf "%.0f", $2/1048576}' /proc/meminfo) 2>/dev/null \
+                || (sysctl -n hw.memsize 2>/dev/null | awk '{printf "%.0f", $1/1073741824}') \
+                || powershell -NoProfile -Command "[math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB)" 2>/dev/null \
+                || echo unknown)
+          osname=$(uname -sr 2>/dev/null || echo unknown)
+          kern=$(uname -v 2>/dev/null || echo unknown)
+          if command -v cl.exe >/dev/null 2>&1; then comp=$(cl.exe 2>&1 | head -1)
+          elif command -v c++ >/dev/null 2>&1; then comp=$(c++ --version | head -1)
+          else comp=unknown; fi
+          cmakev=$(cmake --version | head -1)
+          uringv=$( (dpkg-query -W -f '${Version}' liburing-dev) 2>/dev/null || echo n/a)
+          ASIO_REACTOR=$(case "${{ matrix.platform }}" in linux) echo "epoll and io_uring (matched per configuration)";; windows) echo IOCP;; macos) echo kqueue;; esac)
+          CPU="$cpu" CORES="$cores" RAM="$ram" OSN="$osname" KERN="$kern" \
+          COMP="$comp" CMAKEV="$cmakev" URINGV="$uringv" \
+          BOOST_SHA=$(git -C boost-root rev-parse HEAD) \
+          ASIO_SHA=$(git -C boost-root/libs/asio rev-parse HEAD 2>/dev/null || echo unknown) \
+          CAPY_SHA=$(git -C ws/capy rev-parse HEAD) \
+          COROSIO_SHA=${{ github.sha }} COROSIO_REF=${{ github.ref_name }} \
+          PLATFORM=${{ matrix.platform }} ITERS="$ITERS" DUR="$DUR" \
+          ASIO_REACTOR="$ASIO_REACTOR" \
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+          python3 - <<'EOF'
+          import json, os
+          e = os.environ
+          json.dump({
+              "platform": e["PLATFORM"], "cpu": e["CPU"].strip(),
+              "cores": e["CORES"], "ram_gb": e["RAM"], "os": e["OSN"],
+              "kernel": e["KERN"], "compiler": e["COMP"], "cmake": e["CMAKEV"],
+              "liburing": e["URINGV"], "boost_sha": e["BOOST_SHA"],
+              "asio_sha": e["ASIO_SHA"], "asio_reactor": e["ASIO_REACTOR"],
+              "capy_sha": e["CAPY_SHA"],
+              "corosio_sha": e["COROSIO_SHA"], "corosio_ref": e["COROSIO_REF"],
+              "date_utc": __import__("datetime").datetime.utcnow().strftime("%Y-%m-%d"),
+              "iterations": int(e["ITERS"]), "duration_s": float(e["DUR"]),
+              "run_url": e["RUN_URL"],
+          }, open("results/environment.json", "w"), indent=2)
+          EOF
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-report-${{ matrix.platform }}
+          path: results/

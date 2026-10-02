@@ -329,11 +329,27 @@ make_http_server_suite()
     using F = bench::bench_flags;
 
     return bench::benchmark_suite("http_server", F::needs_conntrack_drain)
+        .category_description(
+            "Request/response throughput of a minimal HTTP/1.1 server "
+            "exchanging a fixed small request and canned response over "
+            "persistent TCP loopback connections.")
         .add("single_conn", bench_single_connection<Backend>)
+        .describe(
+            "One client repeatedly sends a fixed small HTTP request to "
+            "one server and reads the response.")
         .add("single_conn_lockless", bench_single_connection_lockless<Backend>)
+        .describe(
+            "Same as single_conn, with the context in single-threaded "
+            "lockless mode.")
         .add("concurrent", bench_concurrent_connections<Backend>)
+        .describe(
+            "N client/server pairs run the single_conn request/response "
+            "loop concurrently; N is the number of connections.")
         .args({1, 4, 16, 32})
         .add("multithread", bench_multithread<Backend>)
+        .describe(
+            "32 client/server pairs share one context serviced by N "
+            "threads running the context; N is the thread count.")
         .args({1, 2, 4, 8, 16});
 }
 
