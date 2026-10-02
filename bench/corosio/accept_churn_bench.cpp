@@ -497,13 +497,33 @@ make_accept_churn_suite()
 {
     using F = bench::bench_flags;
     return bench::benchmark_suite("accept_churn", F::needs_conntrack_drain)
+        .category_description(
+            "Rate of setting up and tearing down short-lived TCP "
+            "connections: connect, accept, close.")
         .add("sequential", bench_sequential_churn<Backend>)
+        .describe(
+            "Single connect/accept/close loop with a one-way one-byte "
+            "transfer (client writes, server reads) per connection, one "
+            "connection at a time.")
         .add("sequential_lockless", bench_sequential_churn_lockless<Backend>)
+        .describe(
+            "Same as sequential, with the context in single-threaded "
+            "lockless mode.")
         .add("concurrent", bench_concurrent_churn<Backend>)
+        .describe(
+            "N independent accept loops run on separate listeners at once, "
+            "each doing a one-way one-byte transfer (client writes, server "
+            "reads) per connection; N is the number of loops.")
         .args({1, 4, 16})
         .add("burst", bench_burst_churn<Backend>)
+        .describe(
+            "N connects are fired at once, then all N are accepted before "
+            "closing; N is the burst size.")
         .args({10, 100})
         .add("burst_lockless", bench_burst_churn_lockless<Backend>)
+        .describe(
+            "Same as burst, with the context in single-threaded lockless "
+            "mode; N is the burst size.")
         .args({10, 100});
 }
 

@@ -330,17 +330,47 @@ make_io_context_suite()
 {
     using F = bench::bench_flags;
     return bench::benchmark_suite("io_context", F::is_microbenchmark)
+        .category_description(
+            "Overhead of posting and dispatching handlers on the "
+            "io_context scheduler itself, with no actual I/O involved.")
         .add("single_threaded", bench_single_threaded_post<Backend>)
+        .describe(
+            "One thread repeatedly posts batches of 1000 minimal "
+            "counter-increment handlers, then drains them with "
+            "poll()/restart().")
         .add("multithreaded", bench_multithreaded_scaling<Backend>)
+        .describe(
+            "One feeder thread continuously posts batches of 100000 "
+            "atomic-increment handlers while N worker threads poll and "
+            "restart the shared context; N is the worker thread count.")
         .args({8})
         .add("interleaved", bench_interleaved_post_run<Backend>)
+        .describe(
+            "Same as single_threaded, but with smaller batches of 100 "
+            "handlers per post/poll/restart cycle.")
         .add("concurrent", bench_concurrent_post_run<Backend>)
+        .describe(
+            "N threads each post their own batches of 10000 "
+            "atomic-increment handlers and poll/restart the shared "
+            "context themselves; N is the thread count.")
         .args({4})
         .add("high_inline_budget", bench_high_inline_budget<Backend>)
+        .describe(
+            "Same as single_threaded, but the context may run up to 64 "
+            "handlers inline per dispatch instead of the default 16.")
         .add("large_event_buffer", bench_large_event_buffer<Backend>)
+        .describe(
+            "Same as single_threaded, but the context polls up to 512 "
+            "events per iteration instead of the default 128.")
         .add(
             "single_threaded_lockless", bench_single_threaded_lockless<Backend>)
-        .add("interleaved_lockless", bench_interleaved_lockless<Backend>);
+        .describe(
+            "Same as single_threaded, with the context in single-threaded "
+            "lockless mode.")
+        .add("interleaved_lockless", bench_interleaved_lockless<Backend>)
+        .describe(
+            "Same as interleaved, with the context in single-threaded "
+            "lockless mode.");
 }
 
 } // namespace corosio_bench

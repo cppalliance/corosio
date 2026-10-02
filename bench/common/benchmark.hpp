@@ -16,6 +16,7 @@
 #include <ctime>
 #include <fstream>
 #include <iomanip>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -37,6 +38,7 @@ struct benchmark_result
     std::string library;
     std::string category;
     std::string name;
+    std::string description;
     std::vector<metric> metrics;
 
     benchmark_result(std::string lib, std::string cat, std::string n)
@@ -74,6 +76,7 @@ class result_collector
     std::string timestamp_;
     double duration_s_ = 0.0;
     std::vector<benchmark_result> results_;
+    std::map<std::string, std::string> category_descriptions_;
 
     static std::string escape_json(std::string const& s)
     {
@@ -147,6 +150,12 @@ public:
         results_.push_back(std::move(result));
     }
 
+    /// Record the description for a benchmark category.
+    void set_category_description(std::string category, std::string text)
+    {
+        category_descriptions_[std::move(category)] = std::move(text);
+    }
+
     /** Serialize all results to JSON. */
     std::string to_json() const
     {
@@ -159,6 +168,22 @@ public:
         oss << "    \"timestamp\": \"" << escape_json(timestamp_) << "\",\n";
         oss << "    \"duration_s\": " << duration_s_ << "\n";
         oss << "  },\n";
+
+        if (!category_descriptions_.empty())
+        {
+            oss << "  \"category_descriptions\": {\n";
+            std::size_t i = 0;
+            for (auto const& [category, text] : category_descriptions_)
+            {
+                oss << "    \"" << escape_json(category)
+                    << "\": \"" << escape_json(text) << "\"";
+                if (++i < category_descriptions_.size())
+                    oss << ",";
+                oss << "\n";
+            }
+            oss << "  },\n";
+        }
+
         oss << "  \"benchmarks\": [\n";
 
         for (std::size_t i = 0; i < results_.size(); ++i)
@@ -171,6 +196,10 @@ public:
             oss << "      \"category\": \"" << escape_json(r.category)
                 << "\",\n";
             oss << "      \"name\": \"" << escape_json(r.name) << "\"";
+
+            if (!r.description.empty())
+                oss << ",\n      \"description\": \""
+                    << escape_json(r.description) << "\"";
 
             for (auto const& m : r.metrics)
                 oss << ",\n      \"" << escape_json(m.name)

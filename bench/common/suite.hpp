@@ -262,6 +262,7 @@ struct suite_entry
     std::function<void(state&)> fn;
     bench_flags flags = bench_flags::none;
     std::vector<int64_t> args;
+    std::string description;
 };
 
 /** Group of related benchmarks sharing a category name. */
@@ -269,6 +270,7 @@ class benchmark_suite
 {
     std::string library_;
     std::string category_;
+    std::string category_description_;
     bench_flags flags_;
     std::vector<suite_entry> entries_;
 
@@ -286,7 +288,7 @@ public:
     benchmark_suite&
     add(std::string name, bench_fn fn, bench_flags flags = bench_flags::none)
     {
-        entries_.push_back({std::move(name), std::move(fn), flags, {}});
+        entries_.push_back({std::move(name), std::move(fn), flags, {}, {}});
         return *this;
     }
 
@@ -295,6 +297,14 @@ public:
     {
         if (!entries_.empty())
             entries_.back().args = std::move(values);
+        return *this;
+    }
+
+    /// Set the description for the most recently added benchmark.
+    benchmark_suite& describe(std::string text)
+    {
+        if (!entries_.empty())
+            entries_.back().description = std::move(text);
         return *this;
     }
 
@@ -316,6 +326,13 @@ public:
         library_ = std::move(lib);
     }
 
+    /// Set the description for this suite's category.
+    benchmark_suite& category_description(std::string text)
+    {
+        category_description_ = std::move(text);
+        return *this;
+    }
+
     std::string const& library() const
     {
         return library_;
@@ -323,6 +340,10 @@ public:
     std::string const& category() const
     {
         return category_;
+    }
+    std::string const& category_description() const
+    {
+        return category_description_;
     }
     bench_flags flags() const
     {
@@ -451,6 +472,10 @@ public:
                 !explicit_cat && !enable_microbenchmarks)
                 continue;
 
+            if (!suite.category_description().empty())
+                collector_.set_category_description(
+                    suite.category(), suite.category_description());
+
             for (auto const& entry : suite.entries())
             {
                 bool needs_drain =
@@ -465,7 +490,7 @@ public:
 
                     run_entry(
                         suite.library(), suite.category(), entry.name, entry.fn,
-                        {}, needs_drain);
+                        entry.description, {}, needs_drain);
                 }
                 else
                 {
@@ -478,7 +503,7 @@ public:
 
                         run_entry(
                             suite.library(), suite.category(), full_name,
-                            entry.fn, {v}, needs_drain);
+                            entry.fn, entry.description, {v}, needs_drain);
                     }
                 }
             }
@@ -497,6 +522,7 @@ private:
         std::string const& category,
         std::string const& name,
         std::function<void(state&)> const& fn,
+        std::string const& description,
         std::vector<int64_t> ranges,
         bool needs_drain)
     {
@@ -529,7 +555,7 @@ private:
         fn(st);
 
         print_results(st);
-        collect_results(library, category, name, st);
+        collect_results(library, category, name, description, st);
     }
 
     void print_results(state const& st)
@@ -611,6 +637,7 @@ private:
         std::string const& library,
         std::string const& category,
         std::string const& name,
+        std::string const& description,
         state const& st)
     {
         double elapsed = st.elapsed_seconds();
@@ -618,6 +645,7 @@ private:
             return;
 
         benchmark_result result(library, category, name);
+        result.description = description;
         result.add("elapsed_s", elapsed);
 
         int64_t ops = st.total_ops();

@@ -497,17 +497,37 @@ make_socket_throughput_suite()
     using F = bench::bench_flags;
 
     return bench::benchmark_suite("socket_throughput", F::needs_conntrack_drain)
+        .category_description(
+            "Sustained byte throughput of a TCP loopback connection under "
+            "continuous streaming, varying chunk size, direction, and "
+            "concurrency.")
         .add("unidirectional", bench_throughput<Backend>)
+        .describe(
+            "One writer streams to one reader as fast as possible; N is "
+            "the write/read chunk size in bytes.")
         .range(1024, 1048576, 4)
         .add("unidirectional_lockless", bench_throughput_lockless<Backend>)
+        .describe(
+            "Same as unidirectional, with the context in single-threaded "
+            "lockless mode; N is the chunk size in bytes.")
         .range(1024, 1048576, 4)
         .add("bidirectional", bench_bidirectional_throughput<Backend>)
+        .describe(
+            "Both ends of the connection write and read simultaneously; N "
+            "is the chunk size in bytes.")
         .range(1024, 1048576, 4)
         .add(
             "bidirectional_lockless",
             bench_bidirectional_throughput_lockless<Backend>)
+        .describe(
+            "Same as bidirectional, with the context in single-threaded "
+            "lockless mode; N is the chunk size in bytes.")
         .range(1024, 1048576, 4)
         .add("multithread", bench_multithread_throughput<Backend>)
+        .describe(
+            "32 bidirectional connection pairs share one context serviced "
+            "by N threads running the context, with 64 KiB chunks; N is "
+            "the thread count.")
         .args({2, 4, 8});
 }
 

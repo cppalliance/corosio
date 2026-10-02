@@ -256,13 +256,29 @@ make_socket_latency_suite()
     using F = bench::bench_flags;
 
     return bench::benchmark_suite("socket_latency", F::needs_conntrack_drain)
+        .category_description(
+            "Round-trip latency of a TCP loopback connection. Each sample "
+            "is one full round trip (request out, reply back) across "
+            "message sizes and concurrent pair counts.")
         .add("pingpong", bench_pingpong_latency<Backend>)
+        .describe(
+            "One TCP connection ping-pongs a message client->server->client; "
+            "N is the message size in bytes.")
         .args({1, 64, 1024})
         .add("pingpong_lockless", bench_pingpong_latency_lockless<Backend>)
+        .describe(
+            "Same as pingpong, with the context in single-threaded lockless "
+            "mode; N is the message size in bytes.")
         .args({1, 64, 1024})
         .add("concurrent", bench_concurrent_latency<Backend>)
+        .describe(
+            "N independent 64-byte pingpong pairs run concurrently on one "
+            "context; N is the number of connection pairs.")
         .args({1, 4, 16})
         .add("concurrent_lockless", bench_concurrent_latency_lockless<Backend>)
+        .describe(
+            "Same as concurrent, with the context in single-threaded "
+            "lockless mode; N is the number of connection pairs.")
         .args({1, 4, 16});
 }
 
