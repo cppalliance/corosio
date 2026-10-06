@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -41,6 +42,7 @@
 #include <tuple>
 #include <type_traits>
 
+#include <fcntl.h>
 #include <netdb.h>
 #include <signal.h>
 #include <unistd.h>
@@ -621,6 +623,56 @@ struct posix_common_faults
         });
     }
 
+    void testAssignDuringFinishedReadKeepsNewOffset()
+    {
+        // A pool worker whose preadv has returned, but which has not yet
+        // advanced the offset, when close() + assign() swap the file: the
+        // bytes belong to the old file, so the new file must stay at 0.
+        if constexpr (ring_files)
+            return;
+        if (!hook_is_live(sys::preadv))
+        {
+            skip_dead_hook("preadv");
+            return;
+        }
+        auto p1 = temp_path("sf_hold_a");
+        auto p2 = temp_path("sf_hold_b");
+        std::ofstream(p1) << std::string(4096, 'a');
+        std::ofstream(p2) << std::string(4096, 'b');
+
+        io_context ioc(Backend);
+        stream_file sf(ioc);
+        BOOST_TEST(!sf.open(p1, file_base::read_only));
+
+        preadv_hold hold;
+        char buf[4096];
+        auto reader = [&]() -> capy::task<> {
+            auto [ec, n] =
+                co_await sf.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            std::ignore = ec;
+            std::ignore = n;
+        };
+        auto swapper = [&]() -> capy::task<> {
+            hold.wait_held();
+            int fd2 = ::open(p2.c_str(), O_RDONLY | O_CLOEXEC);
+            BOOST_TEST(fd2 >= 0);
+            sf.close();
+            BOOST_TEST(!sf.assign(fd2));
+            hold.release();
+            co_return;
+        };
+        capy::run_async(ioc.get_executor())(reader());
+        capy::run_async(ioc.get_executor())(swapper());
+        ioc.run();
+
+        auto [sec, pos] = sf.seek(0, file_base::seek_cur);
+        BOOST_TEST(!sec);
+        BOOST_TEST_EQ(pos, 0u);
+        sf.close();
+        ::unlink(p1.c_str());
+        ::unlink(p2.c_str());
+    }
+
     void run()
     {
         if (skip_under_valgrind())
@@ -640,6 +692,7 @@ struct posix_common_faults
         testStreamFileOpenFails();
         testStreamFileSyncOps();
         testStreamFileIoFails();
+        testAssignDuringFinishedReadKeepsNewOffset();
         testRandomAccessFileFails();
         testResolverFails();
         testSignalTeardownWalk();

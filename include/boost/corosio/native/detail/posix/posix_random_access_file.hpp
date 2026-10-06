@@ -22,9 +22,12 @@
 #include <boost/corosio/detail/thread_pool.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
+#include <boost/corosio/detail/dispatch_coro.hpp>
 #include <boost/corosio/native/detail/coro_op.hpp>
 #include <boost/corosio/native/detail/coro_op_complete.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
+#include <boost/corosio/native/detail/posix/large_file.hpp>
+#include <boost/corosio/native/detail/validate_fd.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/buffers.hpp>
@@ -91,12 +94,19 @@ public:
         iovec iovecs[max_buffers];
         int iovec_count      = 0;
         std::uint64_t offset = 0;
+        // Snapshotted at submission: assign() may replace fd_ while the
+        // worker runs.
+        int fd = -1;
 
         int errn                      = 0;
         std::size_t bytes_transferred = 0;
 
         // Raw back-pointer for the typed work; `impl_ptr` is the keepalive.
         posix_random_access_file* file_ = nullptr;
+
+        // The awaitable's, not the embedded `cont`: this op is freed
+        // before the coroutine resumes.
+        capy::continuation* awaiting = nullptr;
 
         void operator()() override;
         void destroy() override;
@@ -112,7 +122,7 @@ public:
 
     std::coroutine_handle<> read_some_at(
         std::uint64_t offset,
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         buffer_param,
         std::stop_token,
@@ -121,7 +131,7 @@ public:
 
     std::coroutine_handle<> write_some_at(
         std::uint64_t offset,
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         buffer_param,
         std::stop_token,
@@ -195,7 +205,7 @@ posix_random_access_file::open_file(
         oflags |= O_SYNC;
     // Note: no O_APPEND for random access files
 
-    int fd = ::open(path.c_str(), oflags, 0666);
+    int fd = ::open(path.c_str(), oflags | large_file_open_flag, 0666);
     if (fd < 0)
         return make_err(errno);
 
@@ -221,8 +231,8 @@ posix_random_access_file::close_file() noexcept
 inline std::uint64_t
 posix_random_access_file::size() const
 {
-    struct stat st;
-    if (::fstat(fd_, &st) < 0)
+    file_stat_t st;
+    if (file_fstat(fd_, &st) < 0)
         throw_system_error(make_err(errno), "random_access_file::size");
     return static_cast<std::uint64_t>(st.st_size);
 }
@@ -231,9 +241,9 @@ inline std::error_code
 posix_random_access_file::resize(std::uint64_t new_size) noexcept
 {
     if (new_size >
-        static_cast<std::uint64_t>((std::numeric_limits<off_t>::max)()))
+        static_cast<std::uint64_t>((std::numeric_limits<file_off_t>::max)()))
         return make_err(EOVERFLOW);
-    if (::ftruncate(fd_, static_cast<off_t>(new_size)) < 0)
+    if (file_ftruncate(fd_, static_cast<file_off_t>(new_size)) < 0)
         return make_err(errno);
     return {};
 }
@@ -261,6 +271,9 @@ posix_random_access_file::sync_all() noexcept
 inline native_handle_type
 posix_random_access_file::release()
 {
+    // A queued op has already copied the fd number; it must not run
+    // after the caller closes it and the number is recycled.
+    cancel();
     int fd = fd_;
     fd_    = -1;
     return fd;
@@ -269,7 +282,10 @@ posix_random_access_file::release()
 inline std::error_code
 posix_random_access_file::assign(native_handle_type handle) noexcept
 {
-    close_file();
+    // The public assign() guarantees the object is closed.
+    if (auto ec = validate_file_fd(handle))
+        return ec;
+
     fd_ = handle;
     return {};
 }
@@ -298,10 +314,11 @@ posix_random_access_file::raf_op::operator()()
 
     impl_ptr.reset();
 
-    auto coro = h;
-    ex.on_work_finished();
+    auto* c       = awaiting;
+    auto local_ex = ex;
+    local_ex.on_work_finished();
     delete this;
-    coro.resume();
+    dispatch_coro(local_ex, *c).resume();
 }
 
 // -- raf_op shutdown cleanup --

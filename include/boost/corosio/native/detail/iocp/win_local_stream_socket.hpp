@@ -96,6 +96,7 @@ struct local_stream_wait_op : overlapped_op
 {
     WSABUF wsabuf{};
     DWORD flags = 0;
+    wait_type w = wait_type::read;
     win_local_stream_socket_internal& internal;
     std::shared_ptr<win_local_stream_socket_internal> internal_ptr;
 

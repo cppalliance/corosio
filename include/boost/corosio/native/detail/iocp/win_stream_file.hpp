@@ -19,7 +19,7 @@
 #include <boost/corosio/file_base.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
-#include <boost/corosio/native/detail/iocp/win_overlapped_op.hpp>
+#include <boost/corosio/native/detail/iocp/win_overlapped_handle.hpp>
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
 
 #include <coroutine>
@@ -29,99 +29,31 @@
 namespace boost::corosio::detail {
 
 class win_file_service;
-class win_stream_file_internal;
 
-/** Read operation state for stream file IOCP I/O. */
-struct file_read_op : overlapped_op
-{
-    void* buf     = nullptr;
-    DWORD buf_len = 0;
-    win_stream_file_internal& file_;
-    std::shared_ptr<win_stream_file_internal> file_ptr;
-
-    static void do_complete(
-        void* owner,
-        scheduler_op* base,
-        std::uint32_t bytes,
-        std::uint32_t error);
-    static void do_cancel_impl(overlapped_op* op) noexcept;
-
-    explicit file_read_op(win_stream_file_internal& f) noexcept;
-};
-
-/** Write operation state for stream file IOCP I/O. */
-struct file_write_op : overlapped_op
-{
-    void* buf     = nullptr;
-    DWORD buf_len = 0;
-    win_stream_file_internal& file_;
-    std::shared_ptr<win_stream_file_internal> file_ptr;
-
-    static void do_complete(
-        void* owner,
-        scheduler_op* base,
-        std::uint32_t bytes,
-        std::uint32_t error);
-    static void do_cancel_impl(overlapped_op* op) noexcept;
-
-    explicit file_write_op(win_stream_file_internal& f) noexcept;
-};
-
-/** Internal stream file state for IOCP-based I/O.
-
-    Contains the actual state for a single file, including
-    the native handle, position tracking, and pending operations.
-    Derives from enable_shared_from_this so operations can extend
-    its lifetime.
-*/
-class win_stream_file_internal
-    : public intrusive_list<win_stream_file_internal>::node
-    , public std::enable_shared_from_this<win_stream_file_internal>
+/** Stream file state: the slot model with a tracked position. */
+class win_stream_file_internal : public win_slot_handle
 {
     friend class win_file_service;
-    friend class win_stream_file;
-    friend struct file_read_op;
-    friend struct file_write_op;
-
-    win_file_service& svc_;
-    file_read_op rd_;
-    file_write_op wr_;
-    HANDLE handle_        = INVALID_HANDLE_VALUE;
-    std::uint64_t offset_ = 0;
 
 public:
-    explicit win_stream_file_internal(win_file_service& svc) noexcept;
-    ~win_stream_file_internal();
-
-    std::coroutine_handle<> read_some(
-        std::coroutine_handle<>,
-        capy::executor_ref,
-        buffer_param,
-        std::stop_token,
-        std::error_code*,
-        std::size_t*);
-
-    std::coroutine_handle<> write_some(
-        std::coroutine_handle<>,
-        capy::executor_ref,
-        buffer_param,
-        std::stop_token,
-        std::error_code*,
-        std::size_t*);
-
-    HANDLE native_handle() const noexcept;
-    bool is_open() const noexcept;
-    void cancel() noexcept;
-    void close_handle() noexcept;
+    win_stream_file_internal(
+        win_scheduler& sched,
+        win_state_list<win_handle_base>& list,
+        win_file_service& svc) noexcept
+        : win_slot_handle(sched, list, /*track_offset=*/true)
+        , svc_(svc)
+    {
+    }
 
     std::uint64_t size() const;
     std::error_code resize(std::uint64_t new_size) noexcept;
     std::error_code sync_data() noexcept;
     std::error_code sync_all() noexcept;
-    native_handle_type release();
-    std::error_code assign(native_handle_type handle) noexcept;
     capy::io_result<std::uint64_t>
     seek(std::int64_t offset, file_base::seek_basis origin) noexcept;
+
+private:
+    win_file_service& svc_;
 };
 
 /** Stream file implementation wrapper for IOCP-based I/O.

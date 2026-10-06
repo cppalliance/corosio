@@ -19,6 +19,7 @@
 #if BOOST_COROSIO_POSIX
 
 #include <boost/corosio/delay.hpp>
+#include <boost/corosio/error.hpp>
 #include <boost/corosio/local_connect_pair.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/socket_option.hpp>
@@ -688,57 +689,49 @@ struct local_datagram_socket_test
         BOOST_TEST(s2.available() >= std::strlen(msg));
     }
 
-    // Assign over an open socket cancels its pending operations and
-    // adopts, matching the internet family.
-    void testAssignOverOpenAdopts()
+    // assign() over an open socket is refused and leaves its pending
+    // operations undisturbed.
+    void testAssignOverOpenKeepsPending()
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
         local_datagram_socket d1(ioc), d2(ioc);
         BOOST_TEST(!connect_pair(d1, d2));
+        auto held = d1.native_handle();
 
         int fds[2];
         BOOST_TEST(::socketpair(AF_UNIX, SOCK_DGRAM, 0, fds) == 0);
-        int fl = ::fcntl(fds[0], F_GETFL);
-        BOOST_TEST(::fcntl(fds[0], F_SETFL, fl | O_NONBLOCK) == 0);
 
         bool recv_done = false;
         std::error_code recv_ec;
+        std::size_t recv_n = 0;
         auto reader = [&]() -> capy::task<> {
             char buf[8];
-            [[maybe_unused]] auto [ec, n] =
+            auto [ec, n] =
                 co_await d1.recv(capy::mutable_buffer(buf, sizeof(buf)));
             recv_ec   = ec;
+            recv_n    = n;
             recv_done = true;
         };
         auto assigner = [&]() -> capy::task<> {
-            BOOST_TEST(!d1.assign(static_cast<native_handle_type>(fds[0])));
-            co_return;
+            BOOST_TEST(
+                d1.assign(static_cast<native_handle_type>(fds[0])) ==
+                error::already_open);
+            BOOST_TEST_EQ(recv_done, false);
+            BOOST_TEST(d1.native_handle() == held);
+            auto [ec, n] = co_await d2.send(capy::const_buffer("go", 2));
+            BOOST_TEST(!ec);
+            (void)n;
         };
         capy::run_async(ex)(reader());
         capy::run_async(ex)(assigner());
         ioc.run();
-        ioc.restart();
 
         BOOST_TEST(recv_done);
-        BOOST_TEST(recv_ec == capy::cond::canceled);
-        BOOST_TEST(d1.is_open());
-        BOOST_TEST(
-            d1.native_handle() == static_cast<native_handle_type>(fds[0]));
+        BOOST_TEST(!recv_ec);
+        BOOST_TEST_EQ(recv_n, 2u);
 
-        // The adopted descriptor reaches its new peer.
-        BOOST_TEST(::send(fds[1], "go", 2, 0) == 2);
-        bool got    = false;
-        auto reread = [&]() -> capy::task<> {
-            char buf[8];
-            auto [ec, n] =
-                co_await d1.recv(capy::mutable_buffer(buf, sizeof(buf)));
-            got = !ec && n == 2;
-        };
-        capy::run_async(ex)(reread());
-        ioc.run();
-        BOOST_TEST(got);
-
+        ::close(fds[0]);
         ::close(fds[1]);
     }
 
@@ -984,22 +977,26 @@ struct local_datagram_socket_test
         BOOST_TEST(!wec);
     }
 
-    void testAssignSelfRejected()
+    void testAssignOnOpenIsAlreadyOpen()
     {
         io_context ioc(Backend);
-        local_datagram_socket d(ioc);
-        BOOST_TEST(!d.open());
-        BOOST_TEST(
-            d.assign(d.native_handle()) ==
-            std::make_error_code(std::errc::invalid_argument));
-        BOOST_TEST(d.is_open());
+        local_datagram_socket obj(ioc);
+        BOOST_TEST(!obj.open());
+        auto held  = obj.native_handle();
+        int second = ::socket(AF_UNIX, SOCK_DGRAM, 0);
+        BOOST_TEST(second >= 0);
+        BOOST_TEST(obj.assign(second) == error::already_open);
+        BOOST_TEST(obj.assign(held) == error::already_open);
+        BOOST_TEST_EQ(obj.native_handle(), held);
+        BOOST_TEST(::fcntl(second, F_GETFD) >= 0);
+        ::close(second);
     }
 
     void run()
     {
+        testAssignOnOpenIsAlreadyOpen();
         testSendToMissingPathReportsError();
         testWaitWriteReady();
-        testAssignSelfRejected();
 
         testConstruction();
         testOpen();
@@ -1015,7 +1012,7 @@ struct local_datagram_socket_test
         testReleaseClosedThrows();
         testAvailableClosedThrows();
         testAvailable();
-        testAssignOverOpenAdopts();
+        testAssignOverOpenKeepsPending();
         testAssignBadFdThrows();
         testAssignRejectedFdStaysOpen();
         testRelease();

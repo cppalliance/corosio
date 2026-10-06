@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -20,6 +21,8 @@
 #include <boost/corosio/native/detail/uring/uring_file_service_base.hpp>
 #include <boost/corosio/native/detail/uring/uring_scheduler.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
+#include <boost/corosio/native/detail/posix/large_file.hpp>
+#include <boost/corosio/native/detail/validate_fd.hpp>
 #include <boost/corosio/random_access_file.hpp>
 
 #include <cstdint>
@@ -82,7 +85,7 @@ public:
 
     std::coroutine_handle<> read_some_at(
         std::uint64_t,
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         buffer_param,
         std::stop_token,
@@ -91,7 +94,7 @@ public:
 
     std::coroutine_handle<> write_some_at(
         std::uint64_t,
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         buffer_param,
         std::stop_token,
@@ -111,18 +114,18 @@ public:
 
     std::uint64_t size() const override
     {
-        struct stat st;
-        if (::fstat(fd_, &st) < 0)
+        file_stat_t st;
+        if (file_fstat(fd_, &st) < 0)
             throw_system_error(make_err(errno), "random_access_file::size");
         return static_cast<std::uint64_t>(st.st_size);
     }
 
     std::error_code resize(std::uint64_t new_size) noexcept override
     {
-        if (new_size >
-            static_cast<std::uint64_t>((std::numeric_limits<off_t>::max)()))
+        if (new_size > static_cast<std::uint64_t>(
+                           (std::numeric_limits<file_off_t>::max)()))
             return make_err(EOVERFLOW);
-        if (::ftruncate(fd_, static_cast<off_t>(new_size)) < 0)
+        if (file_ftruncate(fd_, static_cast<file_off_t>(new_size)) < 0)
             return make_err(errno);
         return {};
     }
@@ -147,6 +150,11 @@ public:
 
     native_handle_type release() override
     {
+        // Flush the cancel while the fd is still open, so the kernel
+        // resolves it before the caller can close and recycle the
+        // number.
+        if (fd_ >= 0)
+            sched_->cancel_and_flush(fd_);
         int fd = fd_;
         fd_    = -1;
         return fd;
@@ -154,7 +162,10 @@ public:
 
     std::error_code assign(native_handle_type handle) noexcept override
     {
-        close_file();
+        // The public assign() guarantees the object is closed.
+        if (auto ec = validate_file_fd(handle))
+            return ec;
+
         fd_ = handle;
         return {};
     }
@@ -187,7 +198,7 @@ public:
 
         oflags |= O_CLOEXEC;
 
-        int fd = ::open(path.c_str(), oflags, 0666);
+        int fd = ::open(path.c_str(), oflags | large_file_open_flag, 0666);
         if (fd < 0)
             return make_err(errno);
 
@@ -221,7 +232,7 @@ public:
 inline std::coroutine_handle<>
 uring_random_access_file::read_some_at(
     std::uint64_t user_offset,
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref ex,
     buffer_param buffers,
     std::stop_token token,
@@ -230,8 +241,9 @@ uring_random_access_file::read_some_at(
 {
     auto op_guard = std::make_unique<uring_random_access_read_op>();
     op_guard->prepare(
-        h, ex, ec, bytes, fd_, static_cast<std::int64_t>(user_offset), sched_,
-        shared_from_this(), buffers, token);
+        cont.h, ex, ec, bytes, fd_, static_cast<std::int64_t>(user_offset),
+        sched_, shared_from_this(), buffers, token);
+    op_guard->awaiting = &cont;
     sched_->work_started();
 
     // Closed-object contract outranks the zero-length no-op.
@@ -259,7 +271,7 @@ uring_random_access_file::read_some_at(
 inline std::coroutine_handle<>
 uring_random_access_file::write_some_at(
     std::uint64_t user_offset,
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref ex,
     buffer_param buffers,
     std::stop_token token,
@@ -268,8 +280,9 @@ uring_random_access_file::write_some_at(
 {
     auto op_guard = std::make_unique<uring_random_access_write_op>();
     op_guard->prepare(
-        h, ex, ec, bytes, fd_, static_cast<std::int64_t>(user_offset), sched_,
-        shared_from_this(), buffers, token);
+        cont.h, ex, ec, bytes, fd_, static_cast<std::int64_t>(user_offset),
+        sched_, shared_from_this(), buffers, token);
+    op_guard->awaiting = &cont;
     sched_->work_started();
 
     // Closed-object contract outranks the zero-length no-op.

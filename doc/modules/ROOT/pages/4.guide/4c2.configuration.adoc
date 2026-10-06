@@ -1,3 +1,12 @@
+//
+// Copyright (c) 2026 Michael Vandeberg
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
 = Configuration
 :page-mode: how-to
 :navtitle: Configuration
@@ -9,10 +18,11 @@ freshly default-constructed cpp:io_context_options[].
 
 [IMPORTANT]
 ====
-The inline budget defaults in the table are *not* what a
-default-constructed cpp:io_context[] runs with on a multi-core machine.
-When `concurrency_hint > 1` and the inline budgets are still at their
-struct defaults, the constructor overrides them to `(0, 0, 0)`. That
+The inline budget defaults in the table are *not* what an
+cpp:io_context[] constructed from cpp:io_context_options[] runs with on a
+multi-core machine.
+When the effective `concurrency_hint` exceeds 1 and the inline budgets are
+still at their struct defaults, that constructor overrides them to `(0, 0, 0)`. That
 disables the inline fast path; see the note under
 <<inline-completion-budget>>. Pass an explicit
 cpp:io_context_options[] with non-default budgets to keep the fast path
@@ -75,7 +85,7 @@ include::example$snippets/4c2_configuration.cpp[tag=options_native,indent=0]
   file I/O uses native overlapped I/O.
 
 | cpp:io_context_options::locking[locking]
-| `locking_mode::safe`
+| cpp:locking_mode[locking_mode::safe]
 | all
 | Locking-safety tier: `safe` (default, full thread safety),
   `unsafe_io` (per-descriptor I/O locks off), or `unsafe` (all locks
@@ -95,21 +105,27 @@ include::example$snippets/4c2_configuration.cpp[tag=options_native,indent=0]
 | io_uring
 | Idle timeout of the SQ-poll kernel thread, in milliseconds.  After
   that many milliseconds without submissions the thread sleeps, and the
-  next submit re-wakes it.  `0` selects the kernel default (1{nbsp}ms).
-  Ignored unless `enable_sqpoll` is true.
+  next submit re-wakes it.  `0` selects the kernel default (1{nbsp}s).
+  Ignored unless cpp:io_context_options::enable_sqpoll[enable_sqpoll] is true.
 
 | cpp:io_context_options::sq_thread_cpu[sq_thread_cpu]
 | -1
 | io_uring
 | CPU to pin the SQ-poll kernel thread to; `-1` leaves it unpinned for
-  the kernel scheduler to place.  Ignored unless `enable_sqpoll` is
-  true.
+  the kernel scheduler to place.  Ignored unless
+  cpp:io_context_options::enable_sqpoll[enable_sqpoll] is true.
 |===
 
 Options that do not apply to the active backend are silently ignored.
-The one exception is cpp:io_context_options::thread_pool_size[thread_pool_size], which is always validated:
-a value less than `1` causes construction to throw
-`std::invalid_argument`.
+Three options are validated on some I/O backends.
+On POSIX, a cpp:io_context_options::thread_pool_size[thread_pool_size]
+less than `1` causes construction to throw `std::invalid_argument`.
+On the epoll, kqueue, and select I/O backends, construction throws
+`std::out_of_range` when
+cpp:io_context_options::max_events_per_poll[max_events_per_poll] is
+outside `[1, INT_MAX]` or
+cpp:io_context_options::inline_budget_max[inline_budget_max] exceeds
+`INT_MAX`.
 
 == Tuning Guidelines
 
@@ -145,7 +161,7 @@ a re-queue through the scheduler.
 ====
 The struct defaults are `(2, 16, 4)`, which is what a
 default-constructed context on a multi-core machine carries.
-Constructing an `io_context` with `concurrency_hint > 1` while all three
+Constructing an cpp:io_context[] with `concurrency_hint > 1` while all three
 budget fields still hold those defaults overrides them to `(0, 0, 0)`.
 That disables the inline fast path. Multi-thread workloads benefit from
 cross-thread
@@ -155,8 +171,9 @@ budget field to a non-default value disables the override.
 
 === Thread Pool Size (cpp:io_context_options::thread_pool_size[thread_pool_size])
 
-On POSIX platforms, file I/O (cpp:stream_file[], cpp:random_access_file[])
-and DNS resolution use a shared thread pool.
+On POSIX platforms, DNS resolution uses a shared thread pool. On the
+epoll, kqueue, and select I/O backends, file I/O (cpp:stream_file[],
+cpp:random_access_file[]) uses it too.
 
 * *Concurrent file operations*: increase to match expected
   parallelism (e.g. 4 for four concurrent file reads). The whole set starts at once on the first file or resolver call. A larger pool
@@ -211,11 +228,14 @@ Violating them is undefined behavior.
 
 The `unsafe` tier additionally makes:
 
-* **DNS resolution** return `operation_not_supported`.
-* **POSIX file I/O** (cpp:stream_file[], cpp:random_access_file[]) return
-  `operation_not_supported` on `open()`.
+* **DNS resolution** on POSIX return `operation_not_supported`.
+* **File I/O** (cpp:stream_file[], cpp:random_access_file[]) on the epoll,
+  kqueue, and select I/O backends return `operation_not_supported` on
+  `open()`.
+* cpp:win_object_handle[] return `operation_not_supported` on `assign()`.
+  The Windows thread pool completes its waits from a foreign thread.
 
-These two services stay available under `unsafe_io` because they rely
+These stay available under `unsafe_io` because they rely
 on scheduler locking, which that tier keeps enabled.
 
 [NOTE]
@@ -230,6 +250,6 @@ from the `concurrency_hint`.
 
 The `concurrency_hint` is a performance tuning value indicating how many
 threads are expected to call `run()`. It tunes the reactor inline-completion
-budget defaults and, on IOCP, the completion-port concurrency. A lockless
-tier is single-threaded, so its effective hint for that tuning is `1`
-regardless of the value passed.
+budget defaults and, on IOCP, the completion-port concurrency. The
+`unsafe_io` and `unsafe` tiers are single-threaded, so their effective hint
+for that tuning is `1` regardless of the value passed.

@@ -59,11 +59,11 @@ namespace boost::corosio::detail {
     2. Caller calls register_wait(fd, w, op) and returns
        std::noop_coroutine. The op is parked in the reactor's table.
     3. Reactor thread polls. When the fd is ready, the op is removed
-       from the table and posted to the scheduler. The error code
-       delivered to the completion is: ec={} on success; the SO_ERROR
-       value if error revents fired and SO_ERROR is set; or
-       WSAECONNABORTED as a synthesized fallback for wait_type::error
-       when error revents fired but SO_ERROR returned zero.
+       from the table and posted to the scheduler. A read or write
+       wait always completes with ec={}: error revents mean "ready",
+       and the next read or write names the error. A wait_type::error
+       wait completes with the SO_ERROR value when it is set, or
+       WSAECONNABORTED as a synthesized fallback when it is zero.
     4. On socket cancel(), the user's thread calls cancel_wait(op),
        which queues a cancel request. The reactor thread removes the
        op from the table and posts a completion; invoke_handler sees
@@ -500,27 +500,28 @@ win_wait_reactor::run()
         {
             // A socket's close() and cancel() ask the reactor to drop
             // their wait op whether or not one is parked -- open() goes
-            // through close_socket() before it has a socket at all --
-            // and such an ask can outlive the op's next reset().
-            // Acting on it then would complete the wait that reset
-            // started, the moment it is registered. Every real cancel
-            // flags the op before queueing the ask, and only reset()
-            // clears the flag, so an unflagged op is one of those
-            // stale asks.
-            if (!op->cancelled.load(std::memory_order_acquire))
-                continue;
-
+            // through close_socket() before it has a socket at all.
+            // Only a parked op pins its owner, so an op that is not in
+            // registered_ may belong to an object already destroyed:
+            // look it up before touching it.
             auto it = std::find_if(
                 registered_.begin(), registered_.end(),
                 [op](entry const& e) { return e.op == op; });
-            if (it != registered_.end())
+            if (it == registered_.end())
+                continue; // Already fired, or never parked.
+
+            // Such an ask can also outlive the op's next reset(). Acting
+            // on it then would complete the wait that reset started,
+            // the moment it is registered. Every real cancel flags the
+            // op before queueing the ask, and only reset() clears the
+            // flag, so an unflagged op is one of those stale asks.
+            if (op->cancelled.load(std::memory_order_acquire))
             {
                 // The op's cancelled flag has already been set by
                 // request_cancel; invoke_handler will translate it.
                 sched_.on_completion(op, 0, 0);
                 registered_.erase(it);
             }
-            // If not in registered_, the op already fired — no-op.
         }
 
         // Build the poll set. Slot 0 is the wakeup socket.
@@ -581,7 +582,10 @@ win_wait_reactor::run()
 
             DWORD err                = 0;
             constexpr SHORT err_bits = POLLERR | POLLHUP | POLLNVAL;
-            if (pfd.revents & err_bits)
+            // A read or write wait reports readiness: the next read or
+            // write names the error. SO_ERROR is read only for an error
+            // wait, because reading it resets it.
+            if (e.w == wait_type::error && (pfd.revents & err_bits))
             {
                 int so_err = 0;
                 int sz     = sizeof(so_err);
@@ -589,15 +593,10 @@ win_wait_reactor::run()
                         e.fd, SOL_SOCKET, SO_ERROR,
                         reinterpret_cast<char*>(&so_err), &sz) == 0 &&
                     so_err != 0)
-                {
                     err = static_cast<DWORD>(so_err);
-                }
-                else if (e.w == wait_type::error)
-                {
-                    // wait_type::error fires on the error condition;
-                    // the contract is to report a non-zero error_code.
+                else
+                    // The contract is to report a non-zero error_code.
                     err = WSAECONNABORTED;
-                }
             }
 
             sched_.on_completion(e.op, err, 0);

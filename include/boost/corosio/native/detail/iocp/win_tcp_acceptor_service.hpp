@@ -423,6 +423,11 @@ wait_op::do_complete(
         return;
     }
 
+    // Only the zero-byte WSARecv read wait; write and error waits come
+    // from the poll reactor through this op too.
+    if (op->w == wait_type::read)
+        op->dwError = normalize_read_wait_error(op->dwError);
+
     auto prevent_premature_destruction = std::move(op->internal_ptr);
     op->invoke_handler();
 }
@@ -727,6 +732,7 @@ win_tcp_socket_internal::wait(
     op.ec_out       = ec;
     op.bytes_out    = nullptr;
     op.empty_buffer = true; // skip EOF translation in invoke_handler
+    op.w            = w;
     op.start(token);
 
     svc_.work_started();
@@ -1132,8 +1138,6 @@ win_tcp_service::assign_socket(
     SOCKET sock = static_cast<SOCKET>(fd);
     if (sock == INVALID_SOCKET)
         return make_err(WSAENOTSOCK);
-    if (sock == impl.socket_)
-        return std::make_error_code(std::errc::invalid_argument);
 
     // SO_PROTOCOL_INFOW works on an unbound socket, unlike getsockname
     // (WSAEINVAL until bind/connect names it) -- an adopted socket may
@@ -1150,15 +1154,11 @@ win_tcp_service::assign_socket(
     if (proto_info.iSocketType != SOCK_STREAM)
         return make_err(WSAEPROTOTYPE);
 
-    // Associate before releasing the held socket: on IOCP nothing
-    // shares descriptor state the way the reactor path does, so a
-    // failed association must not cost the caller their old socket.
     HANDLE result = ::CreateIoCompletionPort(
         reinterpret_cast<HANDLE>(sock), static_cast<HANDLE>(iocp_), key_io, 0);
     if (result == nullptr)
         return make_err(::GetLastError());
 
-    impl.close_socket();
     impl.socket_ = sock;
     impl.family_ = proto_info.iAddressFamily;
 
@@ -1323,8 +1323,6 @@ win_tcp_service::assign_acceptor_socket(
     SOCKET sock = static_cast<SOCKET>(fd);
     if (sock == INVALID_SOCKET)
         return make_err(WSAENOTSOCK);
-    if (sock == impl.socket_)
-        return std::make_error_code(std::errc::invalid_argument);
 
     // SO_PROTOCOL_INFOW works on an unbound socket, unlike getsockname
     // (WSAEINVAL until bind names it).
@@ -1340,15 +1338,11 @@ win_tcp_service::assign_acceptor_socket(
     if (proto_info.iSocketType != SOCK_STREAM)
         return make_err(WSAEPROTOTYPE);
 
-    // Associate before releasing the held socket: on IOCP nothing
-    // shares descriptor state the way the reactor path does, so a
-    // failed association must not cost the caller their old socket.
     HANDLE result = ::CreateIoCompletionPort(
         reinterpret_cast<HANDLE>(sock), static_cast<HANDLE>(iocp_), key_io, 0);
     if (result == nullptr)
         return make_err(::GetLastError());
 
-    impl.close_socket();
     impl.socket_ = sock;
     impl.family_ = proto_info.iAddressFamily;
 

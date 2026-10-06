@@ -104,10 +104,44 @@ iocp_make_err(DWORD dwError, bool accept_path) noexcept
     case WSAEBADF:
     case ERROR_INVALID_HANDLE: // 10009 / 6
         return std::make_error_code(std::errc::bad_file_descriptor);
+    // A write to a pipe whose reader closed. The server end of a named
+    // pipe reports ERROR_NO_DATA ("the pipe is being closed"), and a
+    // client whose server disconnected reports ERROR_PIPE_NOT_CONNECTED.
+    case ERROR_BROKEN_PIPE:
+    case ERROR_NO_DATA:
+    case ERROR_PIPE_NOT_CONNECTED: // 109 / 232 / 233
+        return std::make_error_code(std::errc::broken_pipe);
     default:
         break;
     }
     return make_err(dwError);
+}
+
+/** Map a failed zero-byte `WSARecv` read wait to readiness.
+
+    A read wait that the kernel failed with a connection error reports
+    readiness; the read that follows names the error, which Windows
+    keeps reporting (`WSAECONNRESET` on every later call). A reset
+    arriving before the wait fails it synchronously with
+    `WSAECONNRESET`, one arriving during it completes with
+    `ERROR_NETNAME_DELETED`. Cancellation and a closed socket pass
+    through.
+*/
+inline DWORD
+normalize_read_wait_error(DWORD err) noexcept
+{
+    switch (err)
+    {
+    case ERROR_NETNAME_DELETED:    // 64, a reset through IOCP
+    case ERROR_CONNECTION_ABORTED: // 1236
+    case WSAECONNRESET:
+    case WSAECONNABORTED:
+    case WSAENETRESET:
+    case WSAESHUTDOWN:
+        return 0;
+    default:
+        return err;
+    }
 }
 
 /** Base class for IOCP overlapped operations.

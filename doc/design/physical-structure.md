@@ -314,7 +314,7 @@ private:
 
 | Type                     | Base(s)   | Key Operations                                           |
 | ------------------------ | --------- | -------------------------------------------------------- |
-| posix_descriptor         | io_stream | Wrap any fd into the reactor (POSIX only)                |
+| posix_stream_descriptor  | io_stream | Wrap any fd into the reactor (POSIX only)                |
 | win_stream_handle        | io_stream | Wrap any HANDLE for overlapped stream I/O (Windows only) |
 | win_random_access_handle | io_file   | Wrap any HANDLE for overlapped positional I/O (Windows)  |
 | win_object_handle        | io_object | WaitForSingleObject on kernel objects (Windows only)     |

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -12,6 +13,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/platform.hpp>
+#include <boost/corosio/error.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
 
 #if BOOST_COROSIO_POSIX
@@ -36,7 +38,7 @@ namespace boost::corosio {
     virtual dispatch.
 
     An already-open socket is rejected with
-    `errc::already_connected`; both sockets are left untouched.
+    `error::already_open`; both sockets are left untouched.
 
     @par Exception Safety
     Nothrow. On failure closed sockets remain closed and any
@@ -45,7 +47,8 @@ namespace boost::corosio {
     @param a Receives the accepted/first endpoint of the pair.
     @param b Receives the connected/second endpoint of the pair.
 
-    @return Empty on success; otherwise the underlying system error.
+    @return Empty on success; `error::already_open` if either socket
+        is open; otherwise the underlying system error.
 */
 [[nodiscard]] BOOST_COROSIO_DECL std::error_code
 connect_pair(local_stream_socket& a, local_stream_socket& b) noexcept;
@@ -58,7 +61,7 @@ connect_pair(local_stream_socket& a, local_stream_socket& b) noexcept;
     descriptors via `assign()`.
 
     An already-open socket is rejected with
-    `errc::already_connected`; both sockets are left untouched.
+    `error::already_open`; both sockets are left untouched.
 
     @par Exception Safety
     Nothrow.
@@ -66,7 +69,8 @@ connect_pair(local_stream_socket& a, local_stream_socket& b) noexcept;
     @param a First socket of the pair.
     @param b Second socket of the pair.
 
-    @return Empty on success; otherwise the underlying system error.
+    @return Empty on success; `error::already_open` if either socket
+        is open; otherwise the underlying system error.
 */
 [[nodiscard]] BOOST_COROSIO_DECL std::error_code
 connect_pair(local_datagram_socket& a, local_datagram_socket& b) noexcept;

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -15,9 +16,12 @@
 
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/io_context.hpp>
+#include <boost/corosio/local_connect_pair.hpp>
+#include <boost/corosio/local_stream_socket.hpp>
 #include <boost/corosio/signal_set.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
+#include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -25,10 +29,12 @@
 #include <chrono>
 #include <csignal>
 #include <system_error>
+#include <thread>
 #include <tuple>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 #if BOOST_COROSIO_HAS_KQUEUE
 
@@ -469,19 +475,21 @@ struct kqueue_faults
     {
         io_context ioc(kqueue);
         tcp_acceptor acc(ioc, loopback());
-        tcp_socket client(ioc), server(ioc);
-        // Opened before any arm so its own registration is not counted.
-        BOOST_TEST(!client.open(family::v4));
+        tcp_socket server(ioc);
+        // A raw client: the library would add EVFILT_WRITE when its
+        // connect parks, and that registration would take the fault.
+        int const client = ::socket(AF_INET, SOCK_STREAM, 0);
+        BOOST_TEST(client >= 0);
         std::error_code aec;
         int leaked       = 0;
         unsigned calls   = 0;
         auto accept_body = [&]() -> capy::task<> {
             int const before = open_fds();
-            // Both filters of both descriptors are already registered,
-            // so the next descriptor the kqueue is asked to add is the
-            // one the reactor's retry accepts. Counting registrations
-            // rather than kevent calls keeps the arm off the waits the
-            // run loop makes while the connection is on its way.
+            // The acceptor's read filter is already registered, so the
+            // next descriptor the kqueue is asked to add is the one the
+            // reactor's retry accepts. Counting registrations rather
+            // than kevent calls keeps the arm off the waits the run
+            // loop makes while the connection is on its way.
             fault_scope f(sys::kevent_register, ENOMEM);
             auto [ec] = co_await acc.accept(server);
             aec       = ec;
@@ -492,16 +500,88 @@ struct kqueue_faults
             BOOST_TEST(f.fired());
         };
         auto connect_body = [&]() -> capy::task<> {
-            auto [ec] = co_await client.connect(acc.local_endpoint());
-            BOOST_TEST(!ec);
+            sockaddr_in sa{};
+            sa.sin_family      = AF_INET;
+            sa.sin_port        = htons(acc.local_endpoint().port());
+            sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            BOOST_TEST_EQ(
+                ::connect(client, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)),
+                0);
+            co_return;
         };
         capy::run_async(ioc.get_executor())(accept_body());
         capy::run_async(ioc.get_executor())(connect_body());
         ioc.run();
+        ::close(client);
         BOOST_TEST_EQ(calls, 1u);
         BOOST_TEST(aec == std::errc::not_enough_memory);
         BOOST_TEST(!server.is_open());
         BOOST_TEST_EQ(leaked, 0);
+    }
+
+    /* A refused EVFILT_WRITE fails only the write that asked for it.
+       registered_events keeps no write bit, so the next write that
+       parks adds the filter again
+       (kqueue_scheduler::ensure_write_registered). The pair is adopted
+       through assign, which adds only EVFILT_READ, so the write
+       filter is the one add the arm can see.
+    */
+    void testParkedWriteRegisterFails()
+    {
+        io_context ioc(kqueue);
+        local_stream_socket a(ioc), b(ioc);
+        BOOST_TEST(!connect_pair(a, b));
+
+        // Fill the path to b so the next write has to park; refill until
+        // a pass after a pause sends nothing.
+        char chunk[4096]{};
+        int const fd = a.native_handle();
+        for (bool sent = true; sent;)
+        {
+            sent = false;
+            while (::send(fd, chunk, sizeof(chunk), MSG_DONTWAIT) > 0)
+                sent = true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+
+        std::error_code first_ec, second_ec;
+        std::size_t first_n = 1, second_n = 0;
+        unsigned calls = 0;
+        auto writer    = [&]() -> capy::task<> {
+            {
+                fault_scope f(sys::kevent_register, ENOMEM);
+                auto [ec, n] = co_await a.write_some(
+                    capy::const_buffer(chunk, sizeof(chunk)));
+                first_ec = ec;
+                first_n  = n;
+                calls    = f.count();
+            }
+            auto [ec, n] =
+                co_await a.write_some(capy::const_buffer(chunk, sizeof(chunk)));
+            second_ec = ec;
+            second_n  = n;
+        };
+        // Drains b once the second write has parked behind a filter
+        // that registered.
+        auto drainer = [&]() -> capy::task<> {
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
+            char sink[4096];
+            while (::recv(b.native_handle(), sink, sizeof(sink), MSG_DONTWAIT) >
+                   0)
+            {
+            }
+        };
+        capy::run_async(ioc.get_executor())(writer());
+        capy::run_async(ioc.get_executor())(drainer());
+        ioc.run();
+
+        BOOST_TEST_EQ(calls, 1u);
+        BOOST_TEST(first_ec == std::errc::not_enough_memory);
+        BOOST_TEST_EQ(first_n, 0u);
+        BOOST_TEST(a.is_open());
+        BOOST_TEST(!second_ec);
+        BOOST_TEST(second_n > 0u);
     }
 
     void run()
@@ -515,6 +595,7 @@ struct kqueue_faults
         testAcceptorAssignRegisterFails();
         testAcceptFails();
         testPostedAcceptRegisterFails();
+        testParkedWriteRegisterFails();
         testAcceptConfigureFails();
         testRunLoopFaults();
         testInterruptTriggerFails();

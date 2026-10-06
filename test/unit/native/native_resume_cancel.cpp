@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -17,6 +18,7 @@
 #include <boost/corosio/detail/platform.hpp>
 
 #include <boost/corosio/native/native_io_context.hpp>
+#include <boost/corosio/native/native_posix_stream_descriptor.hpp>
 #include <boost/corosio/native/native_random_access_file.hpp>
 #include <boost/corosio/native/native_stream_file.hpp>
 #include <boost/corosio/native/native_tcp_acceptor.hpp>
@@ -42,6 +44,8 @@
 #include <boost/corosio/native/native_local_datagram_socket.hpp>
 #include <boost/corosio/native/native_local_stream_acceptor.hpp>
 #include <boost/corosio/native/native_local_stream_socket.hpp>
+
+#include <unistd.h>
 #endif
 
 #include "context.hpp"
@@ -401,6 +405,96 @@ struct native_resume_cancel_test
         BOOST_TEST_EQ(canceled, 4);
     }
 
+    void testDescriptorPreStoppedPerformsNoIo()
+    {
+        // The pre-stopped half of the contract, with the stronger
+        // assertion: not merely that the operation reports canceled,
+        // but that no read reached the descriptor. An awaitable that
+        // checks the token only at resume lets a speculative ::read()
+        // drain the pipe first and then discards the bytes, which is
+        // silent data loss rather than a cancellation.
+        native_io_context<Backend> ioc;
+        auto ex = ioc.get_executor();
+
+        int fds[2];
+        BOOST_TEST_EQ(::pipe(fds), 0);
+        BOOST_TEST_EQ(::write(fds[1], "hello", 5), 5);
+
+        native_posix_stream_descriptor<Backend> d(ioc);
+        BOOST_TEST(!d.assign(fds[0]));
+
+        std::stop_source ss;
+        ss.request_stop();
+
+        char buf[8]  = {};
+        int canceled = 0;
+        auto driver  = [&]() -> capy::task<> {
+            auto [rec, rn] =
+                co_await d.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            if (rec == capy::cond::canceled && rn == 0)
+                ++canceled;
+            auto [tec] = co_await d.wait(wait_type::read);
+            if (tec == capy::cond::canceled)
+                ++canceled;
+        };
+        capy::run_async(ex, ss.get_token())(driver());
+        ioc.run();
+        BOOST_TEST_EQ(canceled, 2);
+
+        // The payload must still be in the pipe: a cancelled read
+        // consumes nothing.
+        char check[8] = {};
+        BOOST_TEST_EQ(::read(d.native_handle(), check, sizeof(check)), 5);
+        BOOST_TEST(std::memcmp(check, "hello", 5) == 0);
+
+        ::close(fds[1]);
+    }
+
+    void testDescriptorStopAfterCompleted()
+    {
+        // The racing half: a stop that lands on an already-completed
+        // transfer changes nothing, and the byte count survives.
+        io_context_options opts;
+        opts.inline_budget_max = 0;
+        native_io_context<Backend> ioc(opts);
+        auto ex = ioc.get_executor();
+
+        int fds[2];
+        BOOST_TEST_EQ(::pipe(fds), 0);
+        BOOST_TEST_EQ(::write(fds[1], "hello", 5), 5);
+
+        native_posix_stream_descriptor<Backend> d(ioc);
+        BOOST_TEST(!d.assign(fds[0]));
+
+        std::stop_source ss;
+        std::error_code rec = capy::error::eof;
+        std::size_t rn      = 0;
+        char buf[8]         = {};
+        bool done           = false;
+
+        auto reader = [&]() -> capy::task<> {
+            auto [ec, n] =
+                co_await d.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            rec  = ec;
+            rn   = n;
+            done = true;
+        };
+        auto stopper = [&]() -> capy::task<> {
+            ss.request_stop();
+            co_return;
+        };
+        capy::run_async(ex, ss.get_token())(reader());
+        capy::run_async(ex)(stopper());
+        ioc.run();
+
+        BOOST_TEST(done);
+        BOOST_TEST(!rec);
+        BOOST_TEST_EQ(rn, 5u);
+        BOOST_TEST(std::memcmp(buf, "hello", 5) == 0);
+
+        ::close(fds[1]);
+    }
+
     void testLocalStreamAcceptorPreStopped()
     {
         native_io_context<Backend> ioc;
@@ -503,6 +597,8 @@ struct native_resume_cancel_test
         testFileResumeCancel();
 #if BOOST_COROSIO_POSIX
         testLocalStreamPreStopped();
+        testDescriptorPreStoppedPerformsNoIo();
+        testDescriptorStopAfterCompleted();
         testLocalStreamAcceptorPreStopped();
         testLocalDatagramPreStopped();
 #endif

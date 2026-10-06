@@ -26,6 +26,8 @@
 #include <boost/corosio/native/detail/coro_op.hpp>
 #include <boost/corosio/native/detail/coro_op_complete.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
+#include <boost/corosio/native/detail/posix/large_file.hpp>
+#include <boost/corosio/native/detail/validate_fd.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/buffers.hpp>
@@ -37,6 +39,7 @@
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stop_token>
 #include <system_error>
@@ -102,6 +105,12 @@ public:
         // Buffer data (copied from buffer_param at submission time)
         iovec iovecs[max_buffers];
         int iovec_count = 0;
+
+        // Snapshotted at submission: assign() may replace fd_ and
+        // offset_ while the worker runs.
+        int fd                   = -1;
+        std::uint64_t offset     = 0;
+        std::uint64_t generation = 0;
 
         // Result storage (populated by worker thread)
         int errn                      = 0;
@@ -189,10 +198,18 @@ private:
     int fd_               = -1;
     std::uint64_t offset_ = 0;
 
+    // Bumped whenever the held file changes. A worker advances offset_
+    // only if this still matches its op's snapshot; the mutex makes the
+    // check and the advance one step against a concurrent assign().
+    std::mutex offset_mutex_;
+    std::uint64_t generation_ = 0;
+
     file_op read_op_;
     file_op write_op_;
     pool_op read_pool_op_;
     pool_op write_pool_op_;
+
+    void bump_generation() noexcept;
 
     static void do_read_work(pool_work_item*) noexcept;
     static void do_write_work(pool_work_item*) noexcept;
@@ -237,7 +254,7 @@ posix_stream_file::open_file(
     if ((mode & file_base::sync_all_on_write) != file_base::flags(0))
         oflags |= O_SYNC;
 
-    int fd = ::open(path.c_str(), oflags, 0666);
+    int fd = ::open(path.c_str(), oflags | large_file_open_flag, 0666);
     if (fd < 0)
         return make_err(errno);
 
@@ -248,8 +265,8 @@ posix_stream_file::open_file(
     // explicit offsets, so O_APPEND alone is not sufficient).
     if ((mode & file_base::append) != file_base::flags(0))
     {
-        struct stat st;
-        if (::fstat(fd, &st) < 0)
+        file_stat_t st;
+        if (file_fstat(fd, &st) < 0)
         {
             int err = errno;
             ::close(fd);
@@ -267,8 +284,16 @@ posix_stream_file::open_file(
 }
 
 inline void
+posix_stream_file::bump_generation() noexcept
+{
+    std::lock_guard<std::mutex> lock(offset_mutex_);
+    ++generation_;
+}
+
+inline void
 posix_stream_file::close_file() noexcept
 {
+    bump_generation();
     if (fd_ >= 0)
     {
         ::close(fd_);
@@ -279,8 +304,8 @@ posix_stream_file::close_file() noexcept
 inline std::uint64_t
 posix_stream_file::size() const
 {
-    struct stat st;
-    if (::fstat(fd_, &st) < 0)
+    file_stat_t st;
+    if (file_fstat(fd_, &st) < 0)
         throw_system_error(make_err(errno), "stream_file::size");
     return static_cast<std::uint64_t>(st.st_size);
 }
@@ -289,9 +314,9 @@ inline std::error_code
 posix_stream_file::resize(std::uint64_t new_size) noexcept
 {
     if (new_size >
-        static_cast<std::uint64_t>((std::numeric_limits<off_t>::max)()))
+        static_cast<std::uint64_t>((std::numeric_limits<file_off_t>::max)()))
         return make_err(EOVERFLOW);
-    if (::ftruncate(fd_, static_cast<off_t>(new_size)) < 0)
+    if (file_ftruncate(fd_, static_cast<file_off_t>(new_size)) < 0)
         return make_err(errno);
     return {};
 }
@@ -319,6 +344,10 @@ posix_stream_file::sync_all() noexcept
 inline native_handle_type
 posix_stream_file::release()
 {
+    // A queued op has already copied the fd number; it must not run
+    // after the caller closes it and the number is recycled.
+    cancel();
+    bump_generation();
     int fd  = fd_;
     fd_     = -1;
     offset_ = 0;
@@ -328,7 +357,10 @@ posix_stream_file::release()
 inline std::error_code
 posix_stream_file::assign(native_handle_type handle) noexcept
 {
-    close_file();
+    // The public assign() guarantees the object is closed.
+    if (auto ec = validate_file_fd(handle))
+        return ec;
+
     fd_     = handle;
     offset_ = 0;
     return {};
@@ -352,8 +384,8 @@ posix_stream_file::seek(
     }
     else
     {
-        struct stat st;
-        if (::fstat(fd_, &st) < 0)
+        file_stat_t st;
+        if (file_fstat(fd_, &st) < 0)
             return {make_err(errno), 0};
         new_pos = st.st_size + offset;
     }
@@ -361,7 +393,7 @@ posix_stream_file::seek(
     if (new_pos < 0)
         return {make_err(EINVAL), 0};
     if (new_pos >
-        static_cast<std::int64_t>((std::numeric_limits<off_t>::max)()))
+        static_cast<std::int64_t>((std::numeric_limits<file_off_t>::max)()))
         return {make_err(EOVERFLOW), 0};
 
     offset_ = static_cast<std::uint64_t>(new_pos);

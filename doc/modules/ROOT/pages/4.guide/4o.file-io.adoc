@@ -12,8 +12,9 @@
 
 Corosio provides two classes for asynchronous file operations:
 cpp:stream_file[] for sequential access and cpp:random_access_file[] for
-offset-based access. Both dispatch I/O to a worker thread on POSIX
-platforms and use native overlapped I/O on Windows.
+offset-based access. On the epoll, kqueue, and select I/O backends, both
+dispatch I/O to a worker thread. The io_uring I/O backend submits it directly,
+and Windows uses native overlapped I/O.
 
 [NOTE]
 ====
@@ -46,7 +47,7 @@ include::example$snippets/4o_file_io.cpp[tag=stream_write,indent=0]
 
 === Seeking
 
-The file position can be moved with `seek()`:
+The file position can be moved with cpp:stream_file::seek[]:
 
 [source,cpp]
 ----
@@ -76,7 +77,7 @@ include::example$snippets/4o_file_io.cpp[tag=write_at,indent=0]
 
 == Open Flags
 
-Both file types accept a bitmask of `file_base::flags` when opening:
+Both file types accept a bitmask of cpp:file_base::flags[] when opening:
 
 [cols="1,3"]
 |===
@@ -88,7 +89,10 @@ Both file types accept a bitmask of `file_base::flags` when opening:
 | `create` | Create the file if it does not exist
 | `exclusive` | Fail if the file already exists (requires `create`)
 | `truncate` | Truncate the file to zero length on open
-| `append` | Seek to end on open (stream_file only)
+| `append` | Write at the end of the file (cpp:stream_file[] only). Every POSIX
+I/O backend, io_uring included, opens with `O_APPEND`, so every write goes to the
+end. On Windows, the position starts at the end when opened, and writes advance
+from there.
 | `sync_all_on_write` | Synchronize data to disk on each write
 |===
 
@@ -108,12 +112,13 @@ Both file types provide synchronous metadata operations:
 include::example$snippets/4o_file_io.cpp[tag=metadata,indent=0]
 ----
 
-cpp:stream_file[] additionally provides `seek()` for repositioning.
+cpp:stream_file[] additionally provides cpp:stream_file::seek[] for repositioning.
 
 == Native Handle Access
 
 Both file types support releasing and adopting native handles.
-`release()` transfers ownership out of the file object. The caller
+cpp:stream_file::release[] and cpp:random_access_file::release[] transfer
+ownership out of the file object. The caller
 becomes responsible for closing the handle:
 
 [source,cpp]
@@ -121,8 +126,8 @@ becomes responsible for closing the handle:
 include::example$snippets/4o_file_io.cpp[tag=native_release,indent=0]
 ----
 
-`assign()` adopts a handle obtained from the platform's file API, such
-as `open()` or `CreateFile`:
+cpp:stream_file::assign[] and cpp:random_access_file::assign[] adopt a handle
+obtained from the platform's file API, such as `open()` or `CreateFile`:
 
 [source,cpp]
 ----
@@ -131,15 +136,37 @@ include::example$snippets/4o_file_io.cpp[tag=native_adopt,indent=0]
 
 [NOTE]
 ====
-On Windows, `assign` requires a handle that has never been associated
-with an I/O completion port. A handle released from another Corosio
-file object is already associated and cannot be re-adopted there. On
-POSIX platforms no such restriction exists.
+On Windows, `assign` requires a handle that is not associated with an
+I/O completion port. `release()` detaches the handle from the context's
+port, so a handle released from another Corosio file object can be
+adopted again. While an operation is still in flight, `release()` throws
+`errc::device_or_resource_busy` and keeps the handle; call it again once
+the cancelled operations have completed. Detaching requires Windows 8.1
+or later. On earlier versions, the detach fails and `release()` throws
+`errc::operation_not_supported`. The handles Windows rejects are listed in
+xref:4.guide/4s.native-descriptors.adoc#windows-handles[Native
+Descriptors and Handles].
 ====
+
+On POSIX, `assign()` accepts only what a file object can position:
+regular files, block devices, and character devices. A pipe or socket is
+rejected with `errc::operation_not_supported` — adopt those into a
+xref:4.guide/4s.native-descriptors.adoc[`posix_stream_descriptor`] instead; a
+directory is not adoptable by either type.
+
+A character device that cannot seek, such as a tty, passes adoption on
+every backend. What happens next is backend-specific: the epoll,
+kqueue, and select I/O backends issue `preadv`/`pwritev` and fail at the first
+read or write
+with `ESPIPE`. io_uring submits `READV`/`WRITEV` at offset `-1` for a
+cpp:stream_file[] and reads the tty successfully. Adopt one into a
+xref:4.guide/4s.native-descriptors.adoc[`posix_stream_descriptor`] if you want
+the same behavior everywhere.
 
 == Error Handling
 
-File operations follow the same error model as sockets. Reads past
+File operations follow the same
+xref:4.guide/4m.error-handling.adoc#one-channel[error model] as sockets. Reads past
 end-of-file return `capy::cond::eof`:
 
 [source,cpp]
@@ -152,8 +179,10 @@ Synchronous operations that can fail in normal use return a
 and `assign`. `seek` returns the code together with the new position.
 Opening a nonexistent file with `read_only` reports
 `no_such_file_or_directory`. Use `create` to create files that may
-not exist. Only misuse, such as calling `size()` or `release()` on
-a closed file, throws `std::system_error`.
+not exist. Of the synchronous operations, only `size()` and `release()`
+throw `std::system_error`. Both throw on a closed file, and `size()` also
+throws when the size query fails. On Windows, `release()` also throws on an
+open file in the cases the note above describes.
 
 == Thread Safety
 

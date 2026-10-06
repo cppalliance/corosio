@@ -574,16 +574,10 @@ public:
     {
         auto& sock = static_cast<uring_tcp_socket&>(impl);
         int nfd    = static_cast<int>(fd);
-        if (nfd >= 0 && nfd == sock.fd_)
-            return std::make_error_code(std::errc::invalid_argument);
+        // The public assign() guarantees the object is closed.
         if (auto ec = validate_socket_fd(nfd, SOCK_STREAM, true))
             return ec;
 
-        if (sock.fd_ >= 0)
-        {
-            sched_->cancel_and_flush(sock.fd_);
-            ::close(sock.fd_);
-        }
         sock.fd_ = nfd;
 
         sock.local_endpoint_  = endpoint{};
@@ -921,18 +915,9 @@ public:
     {
         auto& acc = static_cast<uring_tcp_acceptor&>(impl);
         int nfd   = static_cast<int>(fd);
-        if (nfd >= 0 && nfd == acc.fd_)
-            return std::make_error_code(std::errc::invalid_argument);
+        // The public assign() guarantees the object is closed.
         if (auto ec = validate_socket_fd(nfd, SOCK_STREAM, true))
             return ec;
-
-        if (acc.fd_ >= 0)
-        {
-            sched_->cancel_and_flush(acc.fd_);
-            acc.drain_waiters_only();
-            ::close(acc.fd_);
-            acc.fd_ = -1;
-        }
 
         // Unconditional: release_socket() also leaves the op in flight,
         // and it clears fd_ before returning.
@@ -1462,16 +1447,10 @@ public:
     {
         auto& sock = static_cast<uring_local_stream_socket&>(impl);
         int nfd    = static_cast<int>(fd);
-        if (nfd >= 0 && nfd == sock.fd_)
-            return std::make_error_code(std::errc::invalid_argument);
+        // The public assign() guarantees the object is closed.
         if (auto ec = validate_socket_fd(nfd, SOCK_STREAM, false))
             return ec;
 
-        if (sock.fd_ >= 0)
-        {
-            sched_->cancel_and_flush(sock.fd_);
-            ::close(sock.fd_);
-        }
         sock.fd_ = nfd;
 
         sockaddr_storage local{};
@@ -1762,18 +1741,9 @@ public:
     {
         auto& acc = static_cast<uring_local_stream_acceptor&>(impl);
         int nfd   = static_cast<int>(fd);
-        if (nfd >= 0 && nfd == acc.fd_)
-            return std::make_error_code(std::errc::invalid_argument);
+        // The public assign() guarantees the object is closed.
         if (auto ec = validate_socket_fd(nfd, SOCK_STREAM, false))
             return ec;
-
-        if (acc.fd_ >= 0)
-        {
-            sched_->cancel_and_flush(acc.fd_);
-            acc.drain_waiters_only();
-            ::close(acc.fd_);
-            acc.fd_ = -1;
-        }
 
         // Unconditional: release_socket() also leaves the op in flight,
         // and it clears fd_ before returning.
@@ -2403,16 +2373,10 @@ public:
     {
         auto& sock = static_cast<uring_udp_socket&>(impl);
         int nfd    = static_cast<int>(fd);
-        if (nfd >= 0 && nfd == sock.fd_)
-            return std::make_error_code(std::errc::invalid_argument);
+        // The public assign() guarantees the object is closed.
         if (auto ec = validate_socket_fd(nfd, SOCK_DGRAM, true))
             return ec;
 
-        if (sock.fd_ >= 0)
-        {
-            sched_->cancel_and_flush(sock.fd_);
-            ::close(sock.fd_);
-        }
         sock.fd_ = nfd;
 
         sock.local_endpoint_  = endpoint{};
@@ -3029,16 +2993,10 @@ public:
     {
         auto& sock = static_cast<uring_local_datagram_socket&>(impl);
         int nfd    = static_cast<int>(fd);
-        if (nfd >= 0 && nfd == sock.fd_)
-            return std::make_error_code(std::errc::invalid_argument);
+        // The public assign() guarantees the object is closed.
         if (auto ec = validate_socket_fd(nfd, SOCK_DGRAM, false))
             return ec;
 
-        if (sock.fd_ >= 0)
-        {
-            sched_->cancel_and_flush(sock.fd_);
-            ::close(sock.fd_);
-        }
         sock.fd_ = nfd;
 
         sockaddr_storage local{};

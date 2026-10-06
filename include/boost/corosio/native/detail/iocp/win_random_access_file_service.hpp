@@ -65,17 +65,6 @@ public:
         std::filesystem::path const& path,
         file_base::flags mode) override;
 
-    void destroy_impl(win_random_access_file& impl);
-    void unregister_impl(win_random_access_file_internal& impl);
-
-    void post(overlapped_op* op);
-    void on_pending(overlapped_op* op) noexcept;
-    void on_completion(overlapped_op* op, DWORD error, DWORD bytes) noexcept;
-    void work_started() noexcept;
-    void work_finished() noexcept;
-
-    void* iocp_handle() const noexcept;
-
     /** Attempt data-only flush via NtFlushBuffersFileEx.
 
         @return true if data-only flush succeeded, false if
@@ -106,9 +95,7 @@ private:
     win_scheduler& sched_;
     BOOST_COROSIO_MSVC_WARNING_PUSH
     BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // detail:: members, dll-interface
-    win_mutex mutex_;
-    intrusive_list<win_random_access_file_internal> file_list_;
-    intrusive_list<win_random_access_file> wrapper_list_;
+    win_handle_registry<win_random_access_file, win_handle_base> reg_;
     BOOST_COROSIO_MSVC_WARNING_POP
     void* iocp_;
     nt_flush_fn nt_flush_buffers_file_ex_;
@@ -122,123 +109,8 @@ get_random_access_file_service(capy::execution_context& ctx, win_scheduler&)
 }
 
 // ---------------------------------------------------------------------------
-// raf_concurrent_op
-// ---------------------------------------------------------------------------
-
-inline raf_concurrent_op::raf_concurrent_op(
-    win_random_access_file_internal& f) noexcept
-    : overlapped_op(&do_complete)
-    , file_(&f)
-{
-    cancel_func_ = &do_cancel_impl;
-}
-
-inline void
-raf_concurrent_op::do_cancel_impl(overlapped_op* base) noexcept
-{
-    auto* op = static_cast<raf_concurrent_op*>(base);
-    op->cancelled.store(true, std::memory_order_release);
-    if (op->file_->is_open())
-        ::CancelIoEx(op->file_->native_handle(), op);
-}
-
-inline void
-raf_concurrent_op::do_complete(
-    void* owner,
-    scheduler_op* base,
-    std::uint32_t /*bytes*/,
-    std::uint32_t /*error*/)
-{
-    auto* op = static_cast<raf_concurrent_op*>(base);
-
-    if (!owner)
-    {
-        // Shutdown path: clean up without invoking
-        op->stop_cb.reset();
-        op->h = {};
-        {
-            std::lock_guard<win_mutex> lock(op->file_->ops_mutex_);
-            op->file_->outstanding_ops_.remove(op);
-        }
-        op->file_ref.reset();
-        delete op;
-        return;
-    }
-
-    // Normal completion
-    op->stop_cb.reset();
-
-    // Through the IOCP normalization point, like every other
-    // overlapped op — plain make_err would leave codes such as
-    // ERROR_INVALID_HANDLE to toolchain-dependent mappings.
-    decode_io_result(
-        op->ec_out, op->bytes_out,
-        op->cancelled.load(std::memory_order_acquire),
-        op->dwError != 0 ? iocp_make_err(op->dwError, /*accept_path=*/false)
-                         : std::error_code{},
-        op->is_read, static_cast<std::size_t>(op->bytes_transferred),
-        op->empty_buffer);
-
-    {
-        std::lock_guard<win_mutex> lock(op->file_->ops_mutex_);
-        op->file_->outstanding_ops_.remove(op);
-    }
-
-    op->file_ref.reset();
-
-    auto coro = op->h;
-    delete op;
-    coro.resume();
-}
-
-// ---------------------------------------------------------------------------
 // win_random_access_file_internal
 // ---------------------------------------------------------------------------
-
-inline win_random_access_file_internal::win_random_access_file_internal(
-    win_random_access_file_service& svc) noexcept
-    : svc_(svc)
-{
-}
-
-inline win_random_access_file_internal::~win_random_access_file_internal()
-{
-    svc_.unregister_impl(*this);
-}
-
-inline HANDLE
-win_random_access_file_internal::native_handle() const noexcept
-{
-    return handle_;
-}
-
-inline bool
-win_random_access_file_internal::is_open() const noexcept
-{
-    return handle_ != INVALID_HANDLE_VALUE;
-}
-
-inline void
-win_random_access_file_internal::cancel() noexcept
-{
-    if (handle_ != INVALID_HANDLE_VALUE)
-        ::CancelIoEx(handle_, nullptr);
-
-    std::lock_guard<win_mutex> lock(ops_mutex_);
-    outstanding_ops_.for_each(
-        [](raf_concurrent_op* op) { op->request_cancel(); });
-}
-
-inline void
-win_random_access_file_internal::close_handle() noexcept
-{
-    if (handle_ != INVALID_HANDLE_VALUE)
-    {
-        ::CancelIoEx(handle_, nullptr);
-        ::CloseHandle(handle_);
-        handle_ = INVALID_HANDLE_VALUE;
-    }
-}
 
 inline std::uint64_t
 win_random_access_file_internal::size() const
@@ -281,192 +153,6 @@ win_random_access_file_internal::sync_all() noexcept
     return {};
 }
 
-inline native_handle_type
-win_random_access_file_internal::release()
-{
-    HANDLE h = handle_;
-    handle_  = INVALID_HANDLE_VALUE;
-    return reinterpret_cast<native_handle_type>(h);
-}
-
-inline std::error_code
-win_random_access_file_internal::assign(native_handle_type handle) noexcept
-{
-    close_handle();
-    HANDLE h = reinterpret_cast<HANDLE>(handle);
-    // Register with IOCP so overlapped I/O works
-    if (!::CreateIoCompletionPort(
-            h, static_cast<HANDLE>(svc_.iocp_handle()), key_io, 0))
-    {
-        return make_err(::GetLastError());
-    }
-    handle_ = h;
-    return {};
-}
-
-inline std::coroutine_handle<>
-win_random_access_file_internal::read_some_at(
-    std::uint64_t offset,
-    std::coroutine_handle<> h,
-    capy::executor_ref ex,
-    buffer_param param,
-    std::stop_token token,
-    std::error_code* ec,
-    std::size_t* bytes_out)
-{
-    static constexpr std::size_t max_buffers = 16;
-
-    auto* op     = new raf_concurrent_op(*this);
-    op->file_ref = shared_from_this();
-
-    op->reset();
-    op->is_read   = true;
-    op->h         = h;
-    op->ex        = ex;
-    op->ec_out    = ec;
-    op->bytes_out = bytes_out;
-    op->start(token);
-
-    svc_.work_started();
-
-    // Closed-object contract: complete with bad_file_descriptor
-    // without touching the kernel.
-    if (handle_ == INVALID_HANDLE_VALUE)
-    {
-        {
-            std::lock_guard<win_mutex> lock(ops_mutex_);
-            outstanding_ops_.push_back(op);
-        }
-        svc_.on_completion(op, ERROR_INVALID_HANDLE, 0);
-        return std::noop_coroutine();
-    }
-
-    capy::mutable_buffer bufs[max_buffers];
-    auto count = param.copy_to(bufs, max_buffers);
-
-    if (count == 0)
-    {
-        op->empty_buffer = true;
-        {
-            std::lock_guard<win_mutex> lock(ops_mutex_);
-            outstanding_ops_.push_back(op);
-        }
-        svc_.on_completion(op, 0, 0);
-        return std::noop_coroutine();
-    }
-
-    op->buf = bufs[0].data();
-    op->buf_len =
-        static_cast<DWORD>((std::min)(bufs[0].size(), std::size_t(0x7fffffff)));
-
-    // Set caller-provided offset in OVERLAPPED
-    op->Offset     = static_cast<DWORD>(offset & 0xFFFFFFFF);
-    op->OffsetHigh = static_cast<DWORD>(offset >> 32);
-
-    {
-        std::lock_guard<win_mutex> lock(ops_mutex_);
-        outstanding_ops_.push_back(op);
-    }
-
-    BOOL ok   = ::ReadFile(handle_, op->buf, op->buf_len, nullptr, op);
-    DWORD err = ok ? 0 : ::GetLastError();
-
-    if (err != 0 && err != ERROR_IO_PENDING)
-    {
-        svc_.on_completion(op, err, 0);
-        return std::noop_coroutine();
-    }
-
-    svc_.on_pending(op);
-
-    // Re-check cancellation after I/O is pending
-    if (op->cancelled.load(std::memory_order_acquire))
-        ::CancelIoEx(handle_, op);
-
-    return std::noop_coroutine();
-}
-
-inline std::coroutine_handle<>
-win_random_access_file_internal::write_some_at(
-    std::uint64_t offset,
-    std::coroutine_handle<> h,
-    capy::executor_ref ex,
-    buffer_param param,
-    std::stop_token token,
-    std::error_code* ec,
-    std::size_t* bytes_out)
-{
-    static constexpr std::size_t max_buffers = 16;
-
-    auto* op     = new raf_concurrent_op(*this);
-    op->file_ref = shared_from_this();
-
-    op->reset();
-    op->is_read   = false;
-    op->h         = h;
-    op->ex        = ex;
-    op->ec_out    = ec;
-    op->bytes_out = bytes_out;
-    op->start(token);
-
-    svc_.work_started();
-
-    // Closed-object contract: complete with bad_file_descriptor
-    // without touching the kernel.
-    if (handle_ == INVALID_HANDLE_VALUE)
-    {
-        {
-            std::lock_guard<win_mutex> lock(ops_mutex_);
-            outstanding_ops_.push_back(op);
-        }
-        svc_.on_completion(op, ERROR_INVALID_HANDLE, 0);
-        return std::noop_coroutine();
-    }
-
-    capy::mutable_buffer bufs[max_buffers];
-    auto count = param.copy_to(bufs, max_buffers);
-
-    if (count == 0)
-    {
-        {
-            std::lock_guard<win_mutex> lock(ops_mutex_);
-            outstanding_ops_.push_back(op);
-        }
-        svc_.on_completion(op, 0, 0);
-        return std::noop_coroutine();
-    }
-
-    op->buf = bufs[0].data();
-    op->buf_len =
-        static_cast<DWORD>((std::min)(bufs[0].size(), std::size_t(0x7fffffff)));
-
-    // Set caller-provided offset in OVERLAPPED
-    op->Offset     = static_cast<DWORD>(offset & 0xFFFFFFFF);
-    op->OffsetHigh = static_cast<DWORD>(offset >> 32);
-
-    {
-        std::lock_guard<win_mutex> lock(ops_mutex_);
-        outstanding_ops_.push_back(op);
-    }
-
-    BOOL ok   = ::WriteFile(handle_, op->buf, op->buf_len, nullptr, op);
-    DWORD err = ok ? 0 : ::GetLastError();
-
-    if (err != 0 && err != ERROR_IO_PENDING)
-    {
-        svc_.on_completion(op, err, 0);
-        return std::noop_coroutine();
-    }
-
-    svc_.on_pending(op);
-
-    // Re-check cancellation after I/O is pending
-    if (op->cancelled.load(std::memory_order_acquire))
-        ::CancelIoEx(handle_, op);
-
-    return std::noop_coroutine();
-}
-
 // ---------------------------------------------------------------------------
 // win_random_access_file wrapper
 // ---------------------------------------------------------------------------
@@ -490,27 +176,27 @@ win_random_access_file::close_internal() noexcept
 inline std::coroutine_handle<>
 win_random_access_file::read_some_at(
     std::uint64_t offset,
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     buffer_param buf,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes)
 {
-    return internal_->read_some_at(offset, h, d, buf, token, ec, bytes);
+    return internal_->read_some_at(offset, cont, d, buf, token, ec, bytes);
 }
 
 inline std::coroutine_handle<>
 win_random_access_file::write_some_at(
     std::uint64_t offset,
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     buffer_param buf,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes)
 {
-    return internal_->write_some_at(offset, h, d, buf, token, ec, bytes);
+    return internal_->write_some_at(offset, cont, d, buf, token, ec, bytes);
 }
 
 inline native_handle_type
@@ -558,7 +244,7 @@ win_random_access_file::release()
 inline std::error_code
 win_random_access_file::assign(native_handle_type handle) noexcept
 {
-    return internal_->assign(handle);
+    return internal_->assign(handle, handle_kind::random_access_file);
 }
 
 inline win_random_access_file_internal*
@@ -585,61 +271,36 @@ inline win_random_access_file_service::win_random_access_file_service(
     }
 }
 
-inline win_random_access_file_service::~win_random_access_file_service()
-{
-    for (auto* w = wrapper_list_.pop_front(); w != nullptr;
-         w       = wrapper_list_.pop_front())
-        delete w;
-}
+inline win_random_access_file_service::~win_random_access_file_service() =
+    default;
 
 inline io_object::implementation*
 win_random_access_file_service::construct()
 {
-    auto internal = std::make_shared<win_random_access_file_internal>(*this);
-
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        file_list_.push_back(internal.get());
-    }
-
-    auto* wrapper = new win_random_access_file(std::move(internal));
-
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        wrapper_list_.push_back(wrapper);
-    }
-
-    return wrapper;
+    auto internal = std::make_shared<win_random_access_file_internal>(
+        sched_, reg_.states(), *this);
+    return reg_.add(new win_random_access_file(std::move(internal)));
 }
 
 inline void
 win_random_access_file_service::destroy(io_object::implementation* p)
 {
     if (p)
-    {
-        auto& wrapper = static_cast<win_random_access_file&>(*p);
-        wrapper.close_internal();
-        destroy_impl(wrapper);
-    }
+        reg_.destroy(static_cast<win_random_access_file&>(*p));
 }
 
 inline void
 win_random_access_file_service::close(io_object::handle& h)
 {
-    auto& wrapper = static_cast<win_random_access_file&>(*h.get());
-    wrapper.get_internal()->close_handle();
+    static_cast<win_random_access_file&>(*h.get())
+        .get_internal()
+        ->close_handle();
 }
 
 inline void
 win_random_access_file_service::shutdown()
 {
-    std::lock_guard<win_mutex> lock(mutex_);
-
-    for (auto* impl = file_list_.pop_front(); impl != nullptr;
-         impl       = file_list_.pop_front())
-    {
-        impl->close_handle();
-    }
+    reg_.shutdown();
 }
 
 inline std::error_code
@@ -706,61 +367,6 @@ win_random_access_file_service::open_file(
     internal.handle_ = h;
 
     return {};
-}
-
-inline void
-win_random_access_file_service::destroy_impl(win_random_access_file& impl)
-{
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        wrapper_list_.remove(&impl);
-    }
-    delete &impl;
-}
-
-inline void
-win_random_access_file_service::unregister_impl(
-    win_random_access_file_internal& impl)
-{
-    std::lock_guard<win_mutex> lock(mutex_);
-    file_list_.remove(&impl);
-}
-
-inline void
-win_random_access_file_service::post(overlapped_op* op)
-{
-    sched_.post(op);
-}
-
-inline void
-win_random_access_file_service::on_pending(overlapped_op* op) noexcept
-{
-    sched_.on_pending(op);
-}
-
-inline void
-win_random_access_file_service::on_completion(
-    overlapped_op* op, DWORD error, DWORD bytes) noexcept
-{
-    sched_.on_completion(op, error, bytes);
-}
-
-inline void
-win_random_access_file_service::work_started() noexcept
-{
-    sched_.work_started();
-}
-
-inline void
-win_random_access_file_service::work_finished() noexcept
-{
-    sched_.work_finished();
-}
-
-inline void*
-win_random_access_file_service::iocp_handle() const noexcept
-{
-    return iocp_;
 }
 
 inline bool

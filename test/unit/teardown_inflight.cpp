@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -22,8 +23,8 @@
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
+#include <boost/corosio/posix_stream_descriptor.hpp>
 #include <boost/corosio/random_access_file.hpp>
-#include <boost/corosio/stream_file.hpp>
 #include <boost/corosio/family.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
@@ -223,7 +224,7 @@ struct uring_teardown_test
         BOOST_TEST(!resumed);
     }
 
-    void testDestroyWithPendingFileOps()
+    void testDestroyWithPendingDescriptorOps()
     {
         // The counterpart end of each pipe stays raw and open past the
         // context so the drained ops never hit a broken pipe.
@@ -236,16 +237,16 @@ struct uring_teardown_test
         {
             io_context ioc(uring);
             auto reader = [&]() -> capy::task<> {
-                stream_file f(ioc);
-                std::ignore = f.assign(static_cast<native_handle_type>(rp[0]));
+                posix_stream_descriptor f(ioc);
+                BOOST_TEST(!f.assign(static_cast<native_handle_type>(rp[0])));
                 char buf[16];
                 std::ignore = co_await f.read_some(
                     capy::mutable_buffer(buf, sizeof(buf)));
                 read_resumed = true;
             };
             auto writer = [&]() -> capy::task<> {
-                stream_file f(ioc);
-                std::ignore = f.assign(static_cast<native_handle_type>(wp[1]));
+                posix_stream_descriptor f(ioc);
+                BOOST_TEST(!f.assign(static_cast<native_handle_type>(wp[1])));
                 char big[4096] = {};
                 std::ignore =
                     co_await f.write_some(capy::const_buffer(big, sizeof(big)));
@@ -301,12 +302,24 @@ struct uring_teardown_test
     // undispatched when the context dies, so the drain must run its
     // handler ownerless.
 
-    void testDestroyWithBrokenPipeWriteSurvives()
+    void testDestroyDrainsBothEndsOfOnePipe()
     {
-        // Both ends of one pipe are wrapped, with a write parked on
-        // the full pipe. Service shutdown closes the read end first,
-        // so the flushed write executes against a broken pipe; the
-        // library must absorb the SIGPIPE instead of dying.
+        // Both ends of one pipe are wrapped, with a read parked on the
+        // empty end and a write parked on the full one, so service
+        // shutdown closes one end while the other's op is still in
+        // flight. Neither coroutine may resume.
+        //
+        // This was testDestroyWithBrokenPipeWriteSurvives, and it no
+        // longer earns that name. While the ends were stream_files the
+        // flushed write ran against a broken pipe and the SIGPIPE had
+        // to be absorbed -- deleting uring_stream_file::close_file()'s
+        // scoped_sigpipe_block kills the process. After two run_one()
+        // calls what is in the ring is a WRITEV parked in the kernel's
+        // internal poll, and the SIGPIPE cover for its flush comes from
+        // cancel_and_flush's own scoped_sigpipe_block, so deleting
+        // uring_descriptor::close_descriptor()'s guard leaves this
+        // passing. What this test pins is the drain coverage named
+        // above.
         int p[2];
         BOOST_TEST(::pipe2(p, O_NONBLOCK) == 0);
         fill_pipe(p[1]);
@@ -315,16 +328,16 @@ struct uring_teardown_test
         {
             io_context ioc(uring);
             auto reader = [&]() -> capy::task<> {
-                stream_file f(ioc);
-                std::ignore = f.assign(static_cast<native_handle_type>(p[0]));
+                posix_stream_descriptor f(ioc);
+                BOOST_TEST(!f.assign(static_cast<native_handle_type>(p[0])));
                 char buf[16];
                 std::ignore = co_await f.read_some(
                     capy::mutable_buffer(buf, sizeof(buf)));
                 read_resumed = true;
             };
             auto writer = [&]() -> capy::task<> {
-                stream_file f(ioc);
-                std::ignore = f.assign(static_cast<native_handle_type>(p[1]));
+                posix_stream_descriptor f(ioc);
+                BOOST_TEST(!f.assign(static_cast<native_handle_type>(p[1])));
                 char big[4096] = {};
                 std::ignore =
                     co_await f.write_some(capy::const_buffer(big, sizeof(big)));
@@ -413,7 +426,7 @@ struct uring_teardown_test
         BOOST_TEST_LT(resumed, 2);
     }
 
-    void testDestroyWithQueuedFileOps()
+    void testDestroyWithQueuedDescriptorOps()
     {
         int rp[2], wp[2];
         BOOST_TEST(::pipe2(rp, O_NONBLOCK) == 0);
@@ -425,8 +438,8 @@ struct uring_teardown_test
             io_context ioc(uring);
             auto reader = [](io_context& ctx, int fd,
                              int& count) -> capy::task<> {
-                stream_file f(ctx);
-                std::ignore = f.assign(static_cast<native_handle_type>(fd));
+                posix_stream_descriptor f(ctx);
+                BOOST_TEST(!f.assign(static_cast<native_handle_type>(fd)));
                 char buf[4];
                 std::ignore = co_await f.read_some(
                     capy::mutable_buffer(buf, sizeof(buf)));
@@ -437,8 +450,8 @@ struct uring_teardown_test
             };
             auto writer = [](io_context& ctx, int fd,
                              int& count) -> capy::task<> {
-                stream_file f(ctx);
-                std::ignore = f.assign(static_cast<native_handle_type>(fd));
+                posix_stream_descriptor f(ctx);
+                BOOST_TEST(!f.assign(static_cast<native_handle_type>(fd)));
                 std::ignore = co_await f.write_some(capy::const_buffer("a", 1));
                 ++count;
                 std::ignore = co_await f.write_some(capy::const_buffer("b", 1));
@@ -524,12 +537,12 @@ struct uring_teardown_test
 #if !COROSIO_TEST_HAS_ASAN
         testDestroyWithPendingSocketWrite();
         testDestroyWithPendingDatagramSend();
-        testDestroyWithPendingFileOps();
+        testDestroyWithPendingDescriptorOps();
         testDestroyWithSubmittedRandomAccessOps();
-        testDestroyWithBrokenPipeWriteSurvives();
+        testDestroyDrainsBothEndsOfOnePipe();
         testDestroyWithQueuedSocketWrites();
         testDestroyWithQueuedDatagramSends();
-        testDestroyWithQueuedFileOps();
+        testDestroyWithQueuedDescriptorOps();
         testDestroyWithQueuedRandomAccessOps();
         testDestroyWithParkedLocalAccept();
 #endif

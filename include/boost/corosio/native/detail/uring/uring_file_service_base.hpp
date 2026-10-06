@@ -41,6 +41,8 @@
     Requirements on File: derive from enable_shared_from_this<File> and
     intrusive_list<File>::node, a `File(uring_scheduler&)` constructor, and
     a `void close_file() noexcept` method (cancel in-flight ops + close fd).
+    uring_descriptor_service reuses it too, as asio's file service reuses
+    its descriptor service.
 
     @tparam Derived     The concrete service (CRTP; unused today but kept for
                         symmetry / future hooks).
@@ -97,13 +99,14 @@ public:
 
     void shutdown() override
     {
+        // file_ptrs_ is deliberately not cleared: the scheduler shuts
+        // down after this service and drains its completed ops, so
+        // every impl must outlive that drain. The map frees them when
+        // the service is destroyed.
         std::lock_guard<std::mutex> lock(mutex_);
         for (auto* impl = file_list_.pop_front(); impl != nullptr;
              impl       = file_list_.pop_front())
-        {
             impl->close_file();
-        }
-        file_ptrs_.clear();
     }
 
     /// Return the scheduler used by files created by this service.

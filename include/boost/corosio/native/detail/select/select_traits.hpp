@@ -15,6 +15,7 @@
 #if BOOST_COROSIO_HAS_SELECT
 
 #include <boost/corosio/native/detail/make_err.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_descriptor_ops.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_descriptor_state.hpp>
 
 #include <system_error>
@@ -25,6 +26,7 @@
 #include <netinet/in.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 /* select backend traits.
@@ -45,7 +47,10 @@ struct select_traits
     using scheduler_type  = select_scheduler;
     using desc_state_type = reactor_descriptor_state;
 
-    static constexpr bool needs_write_notification = true;
+    static constexpr bool needs_park_notification = true;
+
+    /// select() cannot watch a descriptor at or above this.
+    static constexpr int max_descriptor = FD_SETSIZE;
 
     // No extra per-socket state or lifecycle hooks needed for select.
     struct stream_socket_hook
@@ -110,6 +115,8 @@ struct select_traits
             return n;
         }
     };
+
+    using descriptor_write_policy = detail::descriptor_write_policy;
 
     struct accept_policy
     {

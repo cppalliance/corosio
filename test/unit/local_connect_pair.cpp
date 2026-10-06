@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -9,6 +10,7 @@
 
 // Test that header file is self-contained.
 #include <boost/corosio/local_connect_pair.hpp>
+#include <boost/corosio/error.hpp>
 
 #include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/io_context.hpp>
@@ -85,7 +87,7 @@ struct local_connect_pair_test
         // a is open; connect_pair must refuse and leave both sockets
         // in their original state (a open, b closed).
         auto ec = connect_pair(a, b);
-        BOOST_TEST(ec == std::errc::already_connected);
+        BOOST_TEST(ec == error::already_open);
         BOOST_TEST(a.is_open());
         BOOST_TEST(!b.is_open());
     }
@@ -97,7 +99,7 @@ struct local_connect_pair_test
         local_datagram_socket a(ioc), b(ioc);
         BOOST_TEST(!b.open());
         auto ec = connect_pair(a, b);
-        BOOST_TEST(ec == std::errc::already_connected);
+        BOOST_TEST(ec == error::already_open);
         BOOST_TEST(!a.is_open());
         BOOST_TEST(b.is_open());
     }

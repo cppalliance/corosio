@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -23,8 +24,11 @@
 #if BOOST_COROSIO_HAS_IOCP
 #include <boost/corosio/native/detail/iocp/win_file_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_local_stream_acceptor_service.hpp>
+#include <boost/corosio/native/detail/iocp/win_object_handle_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_random_access_file_service.hpp>
+#include <boost/corosio/native/detail/iocp/win_random_access_handle_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
+#include <boost/corosio/native/detail/iocp/win_stream_handle_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_tcp_acceptor_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_udp_service.hpp>
 #endif
@@ -42,6 +46,7 @@
 #include <boost/corosio/native/detail/posix/posix_stream_file_service.hpp>
 #endif
 #if BOOST_COROSIO_HAS_URING
+#include <boost/corosio/native/detail/uring/uring_descriptor_service.hpp>
 #include <boost/corosio/native/detail/uring/uring_random_access_file.hpp>
 #include <boost/corosio/native/detail/uring/uring_stream_file.hpp>
 #include <boost/corosio/native/detail/uring/uring_types.hpp>
@@ -91,6 +96,12 @@ struct local_datagram_service_of
 };
 
 template<class Tag>
+struct descriptor_service_of
+{
+    using type = typename Tag::stream_descriptor_service_type;
+};
+
+template<class Tag>
 struct stream_file_service_of
 {
     using type = typename Tag::stream_file_service_type;
@@ -100,6 +111,24 @@ template<class Tag>
 struct random_access_file_service_of
 {
     using type = typename Tag::random_access_file_service_type;
+};
+
+template<class Tag>
+struct random_access_handle_service_of
+{
+    using type = typename Tag::random_access_handle_service_type;
+};
+
+template<class Tag>
+struct object_handle_service_of
+{
+    using type = typename Tag::object_handle_service_type;
+};
+
+template<class Tag>
+struct stream_handle_service_of
+{
+    using type = typename Tag::stream_handle_service_type;
 };
 
 /** Get or create the backend-specific service registered under `Base`.

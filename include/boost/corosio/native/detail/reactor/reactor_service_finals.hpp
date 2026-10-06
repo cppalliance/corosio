@@ -81,13 +81,7 @@ std::error_code
 do_assign_fd(
     SocketFinal* socket_impl, int fd, int expected_type, bool is_ip) noexcept
 {
-    // fd >= 0 guard: an unset socket_impl reports native_handle() == -1,
-    // and a caller-supplied -1 must fail as a bad fd, not a self-assign.
-    if (fd >= 0 && fd == socket_impl->native_handle())
-        return std::make_error_code(std::errc::invalid_argument);
-
-    // Validate before touching the held socket: a failed assign must
-    // leave the object unchanged and the caller owning the fd.
+    // The public assign() guarantees the object is closed.
     if (auto ec = validate_socket_fd(fd, expected_type, is_ip))
         return ec;
 
@@ -96,8 +90,6 @@ do_assign_fd(
     // or SCM_RIGHTS). Only non-mutating validation is performed.
     if (auto ec = Traits::validate_assigned_fd(fd))
         return ec;
-
-    socket_impl->close_socket();
 
     if (auto ec = socket_impl->init_and_register(fd))
         return ec;
@@ -157,16 +149,12 @@ template<class Traits, class AccFinal>
 std::error_code
 do_assign_acceptor_fd(AccFinal* acc_impl, int fd, bool is_ip) noexcept
 {
-    if (fd >= 0 && fd == acc_impl->native_handle())
-        return std::make_error_code(std::errc::invalid_argument);
-
+    // The public assign() guarantees the object is closed.
     if (auto ec = validate_socket_fd(fd, SOCK_STREAM, is_ip))
         return ec;
 
     if (auto ec = Traits::validate_assigned_fd(fd))
         return ec;
-
-    acc_impl->close_socket();
 
     if (auto ec = acc_impl->init_and_register(fd))
         return ec;
@@ -212,8 +200,8 @@ class reactor_tcp_service_impl
     }
 
 public:
-    static constexpr bool needs_write_notification =
-        Traits::needs_write_notification;
+    static constexpr bool needs_park_notification =
+        Traits::needs_park_notification;
 
     std::error_code open_socket(
         tcp_socket::implementation& impl,
@@ -275,8 +263,8 @@ class reactor_local_stream_service_impl
     }
 
 public:
-    static constexpr bool needs_write_notification =
-        Traits::needs_write_notification;
+    static constexpr bool needs_park_notification =
+        Traits::needs_park_notification;
 
     std::error_code open_socket(
         local_stream_socket::implementation& impl,
@@ -323,8 +311,8 @@ class reactor_udp_service_impl
     }
 
 public:
-    static constexpr bool needs_write_notification =
-        Traits::needs_write_notification;
+    static constexpr bool needs_park_notification =
+        Traits::needs_park_notification;
 
     std::error_code open_datagram_socket(
         udp_socket::implementation& impl,
@@ -376,8 +364,8 @@ class reactor_local_dgram_service_impl
     }
 
 public:
-    static constexpr bool needs_write_notification =
-        Traits::needs_write_notification;
+    static constexpr bool needs_park_notification =
+        Traits::needs_park_notification;
 
     std::error_code open_socket(
         local_datagram_socket::implementation& impl,
@@ -444,6 +432,9 @@ class reactor_acceptor_service_impl
     }
 
 public:
+    static constexpr bool needs_park_notification =
+        Traits::needs_park_notification;
+
     std::error_code open_acceptor_socket(
         typename AccFinal::impl_base_type& impl,
         int family,

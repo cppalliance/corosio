@@ -25,6 +25,7 @@
 #include <boost/corosio/native/detail/kqueue/kqueue_traits.hpp>
 #include <boost/corosio/native/detail/kqueue/kqueue_scheduler.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_backend.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_descriptor_service.hpp>
 
 namespace boost::corosio::detail {
 
@@ -41,6 +42,8 @@ class kqueue_local_stream_acceptor;
 class kqueue_local_stream_acceptor_service;
 class kqueue_local_datagram_socket;
 class kqueue_local_datagram_service;
+class kqueue_descriptor;
+class kqueue_descriptor_service;
 
 // --- Stream sockets ---
 
@@ -238,6 +241,29 @@ public:
     }
 };
 
+// --- Descriptors ---
+
+class kqueue_descriptor final
+    : public reactor_descriptor<
+          kqueue_descriptor,
+          kqueue_traits,
+          kqueue_descriptor_service,
+          kqueue_tcp_acceptor>
+{
+    using base_type = reactor_descriptor<
+        kqueue_descriptor,
+        kqueue_traits,
+        kqueue_descriptor_service,
+        kqueue_tcp_acceptor>;
+    friend kqueue_descriptor_service;
+
+public:
+    explicit kqueue_descriptor(kqueue_descriptor_service& svc) noexcept
+        : base_type(svc)
+    {
+    }
+};
+
 // --- Services ---
 
 class BOOST_COROSIO_DECL kqueue_tcp_service final
@@ -353,6 +379,24 @@ class BOOST_COROSIO_DECL kqueue_local_stream_acceptor_service final
 
 public:
     explicit kqueue_local_stream_acceptor_service(capy::execution_context& ctx)
+        : base_type(ctx)
+    {
+    }
+};
+
+class BOOST_COROSIO_DECL kqueue_descriptor_service final
+    : public reactor_descriptor_service<
+          kqueue_descriptor_service,
+          kqueue_traits,
+          kqueue_descriptor>
+{
+    using base_type = reactor_descriptor_service<
+        kqueue_descriptor_service,
+        kqueue_traits,
+        kqueue_descriptor>;
+
+public:
+    explicit kqueue_descriptor_service(capy::execution_context& ctx)
         : base_type(ctx)
     {
     }

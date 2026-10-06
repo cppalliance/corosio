@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -139,19 +140,6 @@ report_poll_masks(tcp_socket& s)
             static_cast<int>(m), n, static_cast<int>(pfd.revents),
             ::WSAGetLastError());
     }
-}
-
-// Run into the reset, so the socket has a chance to record it where
-// SO_ERROR will report it. A connection the provider has flagged
-// through the poll does not necessarily have an error waiting there
-// for anyone who has not touched it since.
-void
-touch_after_reset(tcp_socket& s)
-{
-    auto const fd = static_cast<SOCKET>(s.native_handle());
-    char byte     = '!';
-    for (int i = 0; i < 2; ++i)
-        std::ignore = ::send(fd, &byte, 1, 0);
 }
 
 } // namespace
@@ -1487,91 +1475,61 @@ struct iocp_faults
        the condition in hand and nothing here depends on a round
        landing between two coroutines.
 
-       A write wait, so the second half reports no error at all rather
-       than WSAECONNABORTED: the substitution the probe falls through
-       to is for error waits only, and this is the probe's own answer
-       that is under test.
+       A write wait reports readiness and leaves SO_ERROR for the write
+       that follows, so the probe must not run for it: reading SO_ERROR
+       resets it. An error wait runs the probe, and when the probe
+       answers nothing it falls through to WSAECONNABORTED.
     */
     void testWaitReactorErrorProbe()
     {
+        for (bool error_wait : {false, true})
         {
             io_context ioc(iocp);
             auto pair = make_socket_pair(ioc);
             auto& s1  = pair.first;
             auto& s2  = pair.second;
+            std::optional<fault_scope> probe;
             std::error_code wec;
+            bool probed  = false;
             bool premise = false;
             bool expired = false;
             auto body    = [&]() -> capy::task<> {
                 // make_socket_pair leaves both ends on a zero linger,
-                // so this is a reset rather than an orderly shutdown
-                // and it leaves SO_ERROR set on the survivor.
+                // so this is a reset rather than an orderly shutdown.
                 s2.close();
                 premise = wait_for_poll_error(s1, POLLWRNORM);
-                touch_after_reset(s1);
-                auto [ec] = co_await s1.wait(wait_type::write);
-                wec       = ec;
+                // The probe runs on the reactor's polling thread, so the
+                // arm has to be process-wide; nothing else calls
+                // getsockopt while it is up.
+                probe.emplace(sys::getsockopt, WSAENOTSOCK, 1u, any_thread);
+                auto [ec] = co_await s1.wait(
+                    error_wait ? wait_type::error : wait_type::write);
+                wec    = ec;
+                probed = probe->fired();
+                probe.reset();
                 ioc.stop();
             };
             capy::run_async(ioc.get_executor())(body());
             capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
             ioc.run();
+            // A wait that never resolved leaves the one process-wide arm
+            // claimed, and the next test to want one would abort.
+            probe.reset();
             BOOST_TEST(!expired);
             BOOST_TEST(premise);
-            // Whether the reset the poll reported is also waiting in
-            // SO_ERROR is the provider's to decide; what the wait owes
-            // its caller is the probe's answer either way. Named in
-            // the log so a run that gives neither is legible.
-            if (wec != std::errc::connection_reset)
+            if (error_wait)
             {
-                std::fprintf(
-                    stderr,
-                    "fault harness: the reset the poll reported left "
-                    "SO_ERROR reading %d (%s)\n",
-                    wec.value(), wec.message().c_str());
+                BOOST_TEST(probed);
+                BOOST_TEST(wec == std::errc::connection_aborted);
+            }
+            else
+            {
+                BOOST_TEST(!probed);
                 BOOST_TEST(!wec);
             }
             BOOST_TEST(s1.is_open());
             s1.close();
         }
-
-        io_context ioc(iocp);
-        auto pair = make_socket_pair(ioc);
-        auto& s1  = pair.first;
-        auto& s2  = pair.second;
-        std::optional<fault_scope> probe;
-        std::error_code wec;
-        bool probed  = false;
-        bool premise = false;
-        bool expired = false;
-        auto body    = [&]() -> capy::task<> {
-            s2.close();
-            premise = wait_for_poll_error(s1, POLLWRNORM);
-            // The probe runs on the reactor's polling thread, so the
-            // arm has to be process-wide; nothing else calls
-            // getsockopt while it is up.
-            probe.emplace(sys::getsockopt, WSAENOTSOCK, 1u, any_thread);
-            auto [ec] = co_await s1.wait(wait_type::write);
-            wec       = ec;
-            probed    = probe->fired();
-            probe.reset();
-            ioc.stop();
-        };
-        capy::run_async(ioc.get_executor())(body());
-        capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
-        ioc.run();
-        // A wait that never resolved leaves the one process-wide arm
-        // claimed, and the next test to want one would abort.
-        probe.reset();
-        BOOST_TEST(!expired);
-        BOOST_TEST(premise);
-        BOOST_TEST(probed);
-        // The probe answered nothing, and the substitution it falls
-        // through to is for error waits only, so this round has
-        // nothing to report.
-        BOOST_TEST(!wec);
-        BOOST_TEST(s1.is_open());
-        s1.close();
     }
 
     /* An error wait is answered, and costs the context nothing.

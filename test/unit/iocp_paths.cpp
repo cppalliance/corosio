@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -15,6 +16,7 @@
 
 #if BOOST_COROSIO_HAS_IOCP
 
+#include <boost/corosio/error.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/local_stream_acceptor.hpp>
@@ -196,41 +198,42 @@ struct iocp_paths_test
         io_context ioc(iocp);
         auto const invalid = static_cast<native_handle_type>(~0ull);
 
+        // Validation runs only on a closed object; an open one reports
+        // already_open first.
         tcp_socket t(ioc);
-        BOOST_TEST(!t.open(family::v4));
         BOOST_TEST(!!t.assign(invalid));
-        BOOST_TEST(
-            t.assign(t.native_handle()) ==
-            std::make_error_code(std::errc::invalid_argument));
-        BOOST_TEST(t.is_open());
+        BOOST_TEST(!t.is_open());
 
         // A datagram socket is the wrong type for a TCP stream slot.
         udp_socket u(ioc);
         BOOST_TEST(!u.open(family::v4));
         auto ufd = u.release();
         BOOST_TEST(!!t.assign(ufd));
+        BOOST_TEST(!t.is_open());
         ::closesocket(static_cast<SOCKET>(ufd));
 
+        BOOST_TEST(!t.open(family::v4));
+        BOOST_TEST(t.assign(t.native_handle()) == error::already_open);
+        BOOST_TEST(t.is_open());
+
         udp_socket u2(ioc);
-        BOOST_TEST(!u2.open(family::v4));
         BOOST_TEST(!!u2.assign(invalid));
-        BOOST_TEST(
-            u2.assign(u2.native_handle()) ==
-            std::make_error_code(std::errc::invalid_argument));
+        BOOST_TEST(!u2.is_open());
+        BOOST_TEST(!u2.open(family::v4));
+        BOOST_TEST(u2.assign(u2.native_handle()) == error::already_open);
 
         // An AF_INET socket cannot back an AF_UNIX acceptor.
         test::temp_socket_dir tmp;
         local_stream_acceptor lacc(ioc);
-        BOOST_TEST(!lacc.open());
         tcp_socket t2(ioc);
         BOOST_TEST(!t2.open(family::v4));
         auto tfd = t2.release();
         BOOST_TEST(!!lacc.assign(tfd));
+        BOOST_TEST(!lacc.is_open());
         ::closesocket(static_cast<SOCKET>(tfd));
 
-        BOOST_TEST(
-            lacc.assign(lacc.native_handle()) ==
-            std::make_error_code(std::errc::invalid_argument));
+        BOOST_TEST(!lacc.open());
+        BOOST_TEST(lacc.assign(lacc.native_handle()) == error::already_open);
     }
 
     void testShutdownReceiveVariants()
@@ -345,6 +348,32 @@ struct iocp_paths_test
         f.close();
     }
 
+    // close() asks the wait reactor to drop the object's wait op even
+    // when none was ever parked. Objects destroyed before the reactor
+    // thread exists leave those asks queued; the first wait starts the
+    // thread, which must not touch the dead ops (ASan catches it).
+    void testStaleWaitCancelsFromDestroyedObjects()
+    {
+        io_context ioc(iocp);
+        {
+            tcp_acceptor a(ioc);
+            std::ignore = a.open(family::v4);
+            tcp_socket s(ioc);
+            std::ignore = s.open(family::v4);
+            udp_socket u(ioc);
+            std::ignore = u.open(family::v4);
+        }
+        auto [s1, s2] = test::make_socket_pair(ioc);
+        std::error_code ec = std::make_error_code(std::errc::io_error);
+        auto waiter        = [&]() -> capy::task<> {
+            auto [e] = co_await s1.wait(wait_type::write);
+            ec       = e;
+        };
+        capy::run_async(ioc.get_executor())(waiter());
+        ioc.run();
+        BOOST_TEST(!ec);
+    }
+
 #if !COROSIO_TEST_HAS_ASAN
     // These abandon parked coroutine frames by design; see context.hpp.
 
@@ -422,6 +451,59 @@ struct iocp_paths_test
         }
         BOOST_TEST_EQ(resumed, 0);
     }
+
+    void testDestroyWithParkedTcpStreamOps()
+    {
+        // Each socket has one wait slot, so the four ops need four
+        // sockets: a read and a zero-byte-WSARecv read wait on one pair
+        // (nothing is ever sent), and a write wait on a full send
+        // buffer plus an error wait on a healthy socket, both parked in
+        // the poll reactor, on the other.
+        int resumed = 0;
+        {
+            io_context ioc(iocp);
+            auto ex       = ioc.get_executor();
+            auto [a1, a2] = test::make_socket_pair(ioc);
+            auto [b1, b2] = test::make_socket_pair(ioc);
+
+            // Fill b1's send buffer; b2 never reads.
+            auto const raw = static_cast<SOCKET>(b1.native_handle());
+            u_long nonblocking = 1;
+            BOOST_TEST(::ioctlsocket(raw, FIONBIO, &nonblocking) == 0);
+            std::vector<char> chunk(64 * 1024, 'x');
+            while (::send(raw, chunk.data(), static_cast<int>(chunk.size()),
+                       0) != SOCKET_ERROR)
+            {
+            }
+            BOOST_TEST_EQ(::WSAGetLastError(), WSAEWOULDBLOCK);
+
+            char buf[8];
+            auto aread = [&]() -> capy::task<> {
+                std::ignore =
+                    co_await a1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+                ++resumed;
+            };
+            auto await_read = [&]() -> capy::task<> {
+                std::ignore = co_await a2.wait(wait_type::read);
+                ++resumed;
+            };
+            auto await_write = [&]() -> capy::task<> {
+                std::ignore = co_await b1.wait(wait_type::write);
+                ++resumed;
+            };
+            auto await_error = [&]() -> capy::task<> {
+                std::ignore = co_await b2.wait(wait_type::error);
+                ++resumed;
+            };
+            capy::run_async(ex)(aread());
+            capy::run_async(ex)(await_read());
+            capy::run_async(ex)(await_write());
+            capy::run_async(ex)(await_error());
+            for (int i = 0; i < 4; ++i)
+                std::ignore = ioc.run_one();
+        }
+        BOOST_TEST_EQ(resumed, 0);
+    }
 #endif // !COROSIO_TEST_HAS_ASAN
 
     void run()
@@ -434,9 +516,11 @@ struct iocp_paths_test
         testResolverEmptyInputs();
         testReleasedAcceptorAccessors();
         testTruncateWithoutCreate();
+        testStaleWaitCancelsFromDestroyedObjects();
 #if !COROSIO_TEST_HAS_ASAN
         testDestroyWithParkedSocketOps();
         testDestroyWithParkedLocalOps();
+        testDestroyWithParkedTcpStreamOps();
 #endif
     }
 };

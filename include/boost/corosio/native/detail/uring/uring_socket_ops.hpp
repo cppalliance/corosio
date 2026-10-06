@@ -631,22 +631,42 @@ struct uring_wait_op : uring_op
         if (self->sched_)
             self->sched_->reset_inline_budget();
 
-        // A POLL_ADD completion carries the error band in its revents
-        // (res), not as a negative res, so name the reason the reactor
-        // way — SO_ERROR, or EIO when the kernel has none — instead of
-        // completing wait(error) with an empty, benign-looking code.
-        // OOB (POLLPRI) is a readiness signal, not an error.
+        // A readiness wait (POLLIN/POLLOUT) reports readiness: POLLERR
+        // and POLLHUP mean the next read or write will not block, and
+        // that operation names the condition. Reading SO_ERROR here
+        // would clear it, turning a reset into a clean EOF for the read
+        // that follows. asio reports the same on every backend. Only a
+        // descriptor closed under the poll (POLLNVAL) fails the wait.
+        //
+        // wait(error) is different: its completion has to say why, so
+        // it names SO_ERROR, or EIO when the kernel has none. OOB
+        // (POLLPRI) is a readiness signal, not an error.
+        bool const readiness_wait =
+            (self->poll_flags & (POLLIN | POLLOUT)) != 0;
+
         std::error_code ec{};
         if (self->res < 0)
         {
             ec = make_err(-self->res);
         }
-        else if (self->res & (POLLERR | POLLHUP | POLLNVAL))
+        else if (self->res & POLLNVAL)
+        {
+            ec = make_err(EBADF);
+        }
+        else if (!readiness_wait && (self->res & (POLLERR | POLLHUP)))
         {
             int so_err    = 0;
             socklen_t len = sizeof(so_err);
             if (::getsockopt(self->fd, SOL_SOCKET, SO_ERROR, &so_err, &len) < 0)
-                so_err = errno;
+            {
+                // A non-socket (pipe, chardev, ...) has no SO_ERROR and
+                // fails the probe with ENOTSOCK; reporting that would
+                // name the probe rather than the fault, so fall through
+                // to the EIO substitution below. Every other failure
+                // (EBADF from a concurrent close, say) still reports
+                // itself, unchanged on the socket hot path.
+                so_err = (errno == ENOTSOCK) ? 0 : errno;
+            }
             if (so_err == 0)
                 so_err = EIO;
             ec = make_err(so_err);

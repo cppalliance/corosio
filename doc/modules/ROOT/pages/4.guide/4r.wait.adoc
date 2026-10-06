@@ -27,10 +27,15 @@ include::example$snippets/4r_wait.cpp[tag=assume]
 
 == Overview
 
-Three directions are exposed via the cpp:wait_type[] enum.
+Three directions are exposed via the cpp:wait_type[] enum. Keep at most
+one `wait()` outstanding per socket or acceptor, whatever its direction.
+On IOCP every socket and acceptor has one wait slot shared by all three
+directions, as does an io_uring socket.
 
 The awaitable yields an `error_code` with no `bytes_transferred`. On
-success the socket is ready; the wait consumes no data from it.
+success the socket is ready; the wait consumes no data from it. A
+hangup or a pending error counts as ready for a read or write wait, and
+the read or write that follows reports it.
 
 [source,cpp]
 ----
@@ -45,13 +50,14 @@ socket. They need two things from the surrounding event loop. First,
 "tell me when the fd is ready" without stealing bytes from the stream.
 Second, "never touch my descriptor".
 
-`wait()` provides the first. It never reads, writes, or consumes the
-socket's pending error, so the library's next `PQconsumeInput` (or
-equivalent) sees everything the kernel has delivered. Adoption provides
-the second, with one rule to follow. `assign()` takes ownership and
+`wait()` provides the first. A read or write wait never reads, writes,
+or consumes the socket's pending error. Therefore the library's next
+`PQconsumeInput` (or equivalent) sees everything the kernel has
+delivered. Adoption provides the second, with one rule to follow. `assign()` takes ownership and
 closes the descriptor, so adopt a `dup()` of the library's fd rather
-than the fd itself. Readiness lives on the open file description, which
-both descriptors share. The duplicate therefore reports exactly the
+than the fd itself. Readiness lives on the
+xref:4.guide/4s.native-descriptors.adoc#open-file-description[open file description],
+which both descriptors share. The duplicate therefore reports exactly the
 library's readiness, and closing it can never close the library's
 connection. Neither `assign()` nor `wait()`
 alters the descriptor's flags, so the library's non-blocking
@@ -62,19 +68,27 @@ configuration is untouched.
 include::example$snippets/4r_wait.cpp[tag=foreign_adopt,indent=0]
 ----
 
-Never call `read_some()` or `write_some()` on the adopted socket —
-the library owns the byte stream; corosio supplies readiness only.
+Never call `read_some()` or `write_some()` on the adopted socket.
+The library owns the byte stream. Corosio supplies readiness only.
 
 On Windows, `dup()` does not duplicate a `SOCKET`. Either adopt the
 library's socket directly and `release()` it before the library needs
 exclusive ownership again. Or create a true duplicate with
 `WSADuplicateSocketW` and adopt that.
 
+This applies to sockets. A library that owns a non-socket descriptor —
+a pipe, a tty, `inotify`, `eventfd` — needs the same readiness
+notification.
+cpp:posix_stream_descriptor[] provides it with the same read and write
+`wait()`. Error waits and devices without poll support differ, as
+xref:4.guide/4s.native-descriptors.adoc#errors-surface[Where Errors Surface]
+describes.
+
 == Acceptors
 
 cpp:tcp_acceptor[] and cpp:local_stream_acceptor[] expose the same `wait()`.
 For `wait_type::read`, completion signals that a connection is pending
-on the listen socket. A subsequent `accept()` succeeds without
+on the acceptor. A subsequent `accept()` succeeds without
 blocking:
 
 [source,cpp]
@@ -87,7 +101,7 @@ before consuming the next connection (rate limiting, backpressure
 signaling) without holding an `accept()` call open.
 
 A connection already queued when the wait begins completes it
-immediately — including on an adopted listener whose backlog predates
+immediately — including on an adopted acceptor whose backlog predates
 the adoption.
 
 == Cancellation
@@ -101,7 +115,7 @@ the adoption.
 include::example$snippets/4r_wait.cpp[tag=wait_cancel,indent=0]
 ----
 
-xref:4.guide/4h.timers.adoc[`timeout()`] composes with `wait()` the
+cpp:timeout[] composes with `wait()` the
 same way it does with the other socket operations, since `wait()`
 yields an `io_result` like any other awaitable:
 
@@ -125,8 +139,8 @@ Code that hands its buffers to `write_some()` does not need
 `wait(wait_type::write)` at all — `write_some()` already parks on the
 same condition.
 
-Acceptors are the exception: writability has no meaning for a
-listening socket, so `wait(wait_type::write)` on an acceptor fails
+Acceptors are the exception: writability has no meaning for an
+acceptor, so `wait(wait_type::write)` on one fails
 with `errc::operation_not_supported` on every backend.
 
 == Backend Notes
@@ -137,7 +151,12 @@ syscall. On the select backend the same registration semantics apply
 through the select-loop's fd sets, whose write set includes fds with a
 parked write wait.
 
-On Windows (IOCP), stream-socket `wait_read` uses a zero-byte
+On Linux (io_uring) a wait submits a one-shot `IORING_OP_POLL_ADD` and
+performs no I/O. An acceptor's read wait is the exception. Multishot
+accept drains the kernel backlog as connections arrive. The wait
+therefore completes once multishot accept has queued a connection.
+
+On Windows (IOCP), stream-socket `wait(wait_type::read)` uses a zero-byte
 `WSARecv`: the kernel signals completion when data is available
 without consuming bytes. All other waits — datagram-read, acceptor-read,
 write-wait, error-wait — route through an auxiliary `WSAPoll`-based
@@ -149,4 +168,6 @@ uniform across platforms.
 
 * xref:4.guide/4d.sockets.adoc[Sockets]
 * xref:4.guide/4e.tcp-acceptor.adoc[Acceptors]
+* xref:4.guide/4h.timers.adoc[Delays and Timeouts]
 * xref:4.guide/4q.udp.adoc[UDP Sockets]
+* xref:4.guide/4s.native-descriptors.adoc[Native Descriptors and Handles]

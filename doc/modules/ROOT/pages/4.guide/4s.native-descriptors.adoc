@@ -1,0 +1,564 @@
+//
+// Copyright (c) 2026 Michael Vandeberg
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Native Descriptors and Handles
+:page-mode: how-to
+
+cpp:posix_stream_descriptor[] adopts a file descriptor you already have and
+drives it from an cpp:io_context[], giving it `read_some()`, `write_some()`
+and `wait()`. It exists on POSIX platforms only. On Windows, three
+handle types fill the same role; see <<windows-handles>>.
+
+[NOTE]
+====
+Code snippets assume:
+[source,cpp]
+----
+include::example$snippets/4s_native_descriptors.cpp[tag=assume]
+----
+====
+
+== Overview
+
+Pick the type by what you hold:
+
+[cols="2,2,2"]
+|===
+| You have | POSIX | Windows
+
+| A pipe, FIFO, or tty
+| cpp:posix_stream_descriptor[]
+| cpp:win_stream_handle[] (named pipe opened overlapped)
+
+| A serial port
+| cpp:posix_stream_descriptor[]
+| cpp:win_stream_handle[]
+
+| A block device or volume
+| cpp:random_access_file[]
+| cpp:random_access_file[] or cpp:win_random_access_handle[]
+
+| A process to wait for
+| cpp:posix_stream_descriptor[] on a `pidfd`, `wait(wait_type::read)`
+| cpp:win_object_handle[] on a process handle, `wait()`
+
+| An event or counter
+| cpp:posix_stream_descriptor[] on an `eventfd`
+| cpp:win_object_handle[] on an event or semaphore
+|===
+
+[#posix-descriptors]
+== POSIX Descriptors
+
+Corosio calls a descriptor pollable when a reactor can wait on it for
+readiness. Anything pollable that corosio does not already wrap is in
+scope. That includes character devices, `inotify`, `eventfd`,
+`timerfd`, `pidfd`, pipes, ttys, and socket kinds that have no
+dedicated corosio type.
+
+The type never creates a descriptor. Open it with whichever platform
+call suits it — `eventfd()`, `inotify_init1()`, `open()` on a device
+node — and hand the result to `assign()`. corosio supplies the event
+loop, not the constructor.
+
+=== Why the Name Says POSIX
+
+A single portable `native_descriptor` spanning POSIX and Windows was
+considered and rejected. The platform gaps here are not edge cases
+around a shared core; they are the type's semantics. `O_NONBLOCK` on a
+shared open file description, `dup()`, and a file-type reject list
+expressed in `st_mode` bits are the entire contract below.
+[[open-file-description]]An open file description is the kernel-side object a descriptor refers to.
+Every `dup()` of a descriptor shares the same one. None of them has a
+Windows counterpart. A type that named both would have to either
+document each rule twice or say nothing precise about either.
+
+Portability lives one layer up instead. A cpp:posix_stream_descriptor[] is an
+cpp:io_object[], cpp:io_read_stream[], cpp:io_write_stream[], and
+cpp:io_stream[], the same bases cpp:tcp_socket[] has. Like every
+corosio stream, it satisfies `capy::Stream`. That concept is what the
+generic algorithms are written against, so they run on a descriptor, a
+socket, and a cpp:tls_stream[] alike:
+
+[source,cpp]
+----
+include::example$snippets/4s_native_descriptors.cpp[tag=layering,indent=0]
+----
+
+Only the handful of lines that produce the descriptor are
+platform-specific. xref:4.guide/4l.tls.adoc[TLS] layers over it on the
+same terms.
+
+=== Adopting a Descriptor
+
+cpp:posix_stream_descriptor::assign[] takes ownership: `close()` and the
+destructor close the descriptor. A failed `assign()` leaves the
+descriptor with you, so close it yourself.
+
+An `eventfd` as a cross-thread wakeup:
+
+[source,cpp]
+----
+include::example$snippets/4s_native_descriptors.cpp[tag=adopt_eventfd,indent=0]
+----
+
+[NOTE]
+====
+Distinct cpp:posix_stream_descriptor[] objects are safe to use from different
+threads. A shared object must not run two operations of the same kind
+at once. One read and one write may overlap.
+====
+
+An `inotify` watch. The descriptor is a stream of variable-length
+records, so `read_some()` is the whole interface you need:
+
+[source,cpp]
+----
+include::example$snippets/4s_native_descriptors.cpp[tag=adopt_inotify,indent=0]
+----
+
+=== Ownership and the `dup()` Rule
+
+Another party sometimes owns the descriptor — a C library that does
+its own I/O on it, or a process-wide descriptor such as
+`STDIN_FILENO`. When that happens, adopt a `dup()` of it rather than
+the descriptor itself:
+
+[source,cpp]
+----
+include::example$snippets/4s_native_descriptors.cpp[tag=dup_for_foreign_fd,indent=0]
+----
+
+Both descriptors refer to one open file description, so the duplicate
+reports exactly the original's readiness. Corosio closing the
+duplicate can never close the original. This is the same rule
+xref:4.guide/4r.wait.adoc[Readiness Wait] states for adopted sockets.
+
+[#descriptor-flags]
+=== Descriptor Flags
+
+[WARNING]
+====
+On epoll, kqueue and select, `O_NONBLOCK` is set on the first
+`read_some()` or `write_some()` and never restored. On io_uring nothing
+is ever modified. `assign()` and `wait()` never modify the descriptor on
+any backend.
+
+Leaving the descriptor blocking has a cost on io_uring. A transfer the
+kernel cannot complete through its internal poll, such as on a device
+without poll support, waits in a kernel worker thread. Each such
+operation holds one worker until it completes. Cancellation reaches it
+only if the driver's wait is interruptible, and then completes it with
+`capy::error::canceled`.
+
+The flag lives on the shared open file description, not on the
+descriptor, so every other holder of that description sees it.
+Restoring it on close would race whoever else is holding it. Permanent
+is the only safe choice.
+
+A `dup()` does not shield the other holder from this: the duplicate
+shares the same description, so the flag change reaches them anyway. It
+separates the lifetimes, nothing more. When another party owns the
+descriptor and cannot tolerate `O_NONBLOCK`, the way out is `wait()`
+and doing the I/O yourself. `wait()` never modifies the descriptor at
+all, flags included.
+====
+
+That is what makes standard input safe to adopt for readiness alone.
+Flipping `O_NONBLOCK` on it would change the terminal the parent shell
+is still using.
+
+[source,cpp]
+----
+include::example$snippets/4s_native_descriptors.cpp[tag=wait_only,indent=0]
+----
+
+On the reactor backends corosio sets the flag once and does not check
+it again. If another holder clears it, the next `read_some()` or
+`write_some()` blocks the thread running the `io_context`. bash does this to the terminal when a
+job suspended with Ctrl-Z resumes. Asio's `posix::stream_descriptor`
+has the same limitation.
+
+=== What Is Rejected
+
+`assign()` rejects regular files, block devices, and directories with a
+code comparing equal to `errc::operation_not_supported`. A reactor
+cannot report readiness for them. Regular files and block devices
+already have a home:
+xref:4.guide/4o.file-io.adoc[`stream_file` and `random_access_file`]
+adopt them. No corosio type adopts a directory.
+
+The test is a reject list, not an accept list. The reason: the
+flagship descriptor kinds — `eventfd`, `timerfd`, `inotify`, `pidfd` —
+are anonymous inodes whose `st_mode` type bits are all zero. An accept list
+would reject the descriptors this type exists to carry.
+
+A negative or closed descriptor fails with `errc::bad_file_descriptor`.
+
+=== Transfers
+
+`read_some()` and `write_some()` use `readv()` and `writev()`, so one
+operation scatters into or gathers from up to 16 buffers of the
+sequence. A read that returns zero bytes, such as on a pipe whose
+writer has closed, completes with `capy::error::eof`. A write to a
+pipe whose reader has closed completes with `errc::broken_pipe`, and in the
+default disposition also raises `SIGPIPE`; see <<sigpipe>>.
+
+=== Releasing a Descriptor
+
+`release()` cancels pending operations, deregisters the descriptor
+from the reactor, and hands it back without closing it. The object is
+left not-open. `O_NONBLOCK` stays set if an operation set it;
+`release()` never restores the flag.
+
+[#errors-surface]
+=== Where Errors Surface
+
+`assign()` requires a closed object; on an open one it fails with
+`error::already_open` and changes nothing.
+
+On select, a descriptor at or above `FD_SETSIZE` is a validation
+failure too. `select()` cannot monitor it, so `assign()` rejects it
+with `errc::too_many_files_open`.
+
+Where a refusal from the *kernel* appears depends on the backend:
+
+epoll, kqueue:: These register the descriptor with the reactor during
+`assign()`, so a refusal fails `assign()` and leaves the object closed.
+What is left to refuse is resource exhaustion (`ENOMEM`, `ENOSPC`).
+kqueue watches writes only once a write-direction operation first has
+to wait. A descriptor that refuses write watching is still adopted,
+and such a write or `wait(wait_type::write)` completes with the kernel's
+refusal.
+
+io_uring:: There is no adopt-time registration syscall, so `assign()`
+succeeds and a refusal appears at the first operation instead.
+
+select:: Nothing is registered with the kernel, so there is no refusal
+to report.
+
+Whichever way `assign()` fails, the descriptor you passed is still
+yours to close.
+
+Character devices that an I/O backend cannot watch, such as `/dev/null`,
+`/dev/zero`, and `/dev/urandom` on epoll, are adopted on every I/O
+backend. Their I/O never blocks. On epoll, io_uring, and kqueue, an
+operation on
+one that would have to wait for readiness completes with
+`errc::operation_not_supported` instead of waiting forever. The
+exception is a transfer on io_uring when the descriptor is blocking: it
+waits in a kernel worker thread, as described under
+<<descriptor-flags>>. select treats every descriptor as watchable.
+There, reads and writes complete at once, and `wait(wait_type::error)`
+parks until cancelled. On macOS, select reports the device as
+exceptional, so that wait completes at once with an error.
+
+`wait(wait_type::error)` is the one verb that is not uniform. A hangup
+or error condition that already holds completes it with
+`errc::io_error` on every backend. A wait parked *before* a pipe or FIFO
+hangup completes the same way on epoll and io_uring, but never on kqueue
+or select. kqueue raises an error event only for `EV_ERROR` or for
+`EV_EOF` with `fflags != 0`, and a hangup sets neither. select's
+exceptional set does not cover it. On those two backends, end the wait
+with `cancel()` or a stop token. Prefer `wait(wait_type::read)`, which is
+uniform — the hangup surfaces there as readiness, and the read that
+follows names the real failure.
+
+[#sigpipe]
+=== `SIGPIPE`
+
+[WARNING]
+====
+Writing to a descriptor whose peer has closed raises `SIGPIPE` in the
+default disposition, which terminates the process. The socket types
+suppress this; cpp:posix_stream_descriptor[] cannot.
+
+The suppression sockets get has no general form. `MSG_NOSIGNAL` is a
+`send()` flag and there is no `writev()` equivalent. `SO_NOSIGPIPE`
+is a socket option. Neither applies to an arbitrary descriptor.
+
+Install `SIG_IGN` for `SIGPIPE` — or handle it through a
+xref:4.guide/4i.signals.adoc[`signal_set`] — before writing to an
+adopted descriptor. The write then fails with `EPIPE` instead.
+====
+
+Asio's `posix::stream_descriptor` behaves the same way, for the same
+reason. Code ported from it needs no change here.
+
+[#windows-handles]
+== Windows Handles
+
+Windows has no single descriptor type, so the counterpart of
+cpp:posix_stream_descriptor[] is three types. Each adopts a handle you already
+have and drives it from an `io_context`. None of them creates a handle.
+
+[NOTE]
+====
+The Windows snippets assume:
+[source,cpp]
+----
+include::example$snippets/4s_native_handles_win.cpp[tag=assume_win]
+----
+====
+
+[cols="2,3,2,2"]
+|===
+| Type | Adopts | Operations | In flight at once
+
+| cpp:win_stream_handle[]
+| Overlapped handles with an implicit position: named pipes, COM ports, mailslots
+| `read_some()`, `write_some()`
+| One read and one write
+
+| cpp:win_random_access_handle[]
+| Overlapped handles addressed by offset: volumes, physical drives, files
+| `read_some_at()`, `write_some_at()`
+| Any number
+
+| cpp:win_object_handle[]
+| Waitable kernel objects: processes, threads, events, semaphores, waitable timers, jobs
+| `wait()`
+| One wait
+|===
+
+=== Why the Names Say Windows
+
+The overlapped types have no `wait()`. A reactor asks the kernel when a
+descriptor is ready, and then does the I/O itself. IOCP works the other
+way round. The kernel performs the I/O and reports when it is finished.
+IOCP has no readiness notification for an arbitrary handle, so no
+readiness wait can be built on it.
+
+That gap is the reason for the platform-qualified names. A portable type
+would have to drop `wait()` on POSIX, or promise it on Windows and fail.
+
+Portability lives one layer up, as it does for cpp:posix_stream_descriptor[]. A
+cpp:win_stream_handle[] is an cpp:io_stream[] and satisfies
+`capy::Stream`. `capy::read`, `capy::write`, and TLS layering work on it
+exactly as they do on a socket.
+
+=== The Overlapped Requirement
+
+IOCP completes I/O only on a handle opened for overlapped I/O. Both
+overlapped types therefore reject a handle opened without
+`FILE_FLAG_OVERLAPPED`, called a synchronous-mode handle. Console
+handles are rejected for the same reason. So are both ends of an
+anonymous `CreatePipe` pipe, which are always synchronous:
+
+[source,cpp]
+----
+include::example$snippets/4s_native_handles_win.cpp[tag=rejected_handles,indent=0]
+----
+
+Corosio does not emulate those handles on a thread. The substitute for
+`CreatePipe` is a named pipe whose server end is created with
+`FILE_FLAG_OVERLAPPED`. Opening the client end connects the pipe. The
+client end can stay synchronous. Passing it to a child process requires
+opening it inheritable, with a `SECURITY_ATTRIBUTES` whose
+`bInheritHandle` is `TRUE`. The read loop is an ordinary `capy::read`:
+
+[source,cpp]
+----
+include::example$snippets/4s_native_handles_win.cpp[tag=overlapped_pipe,indent=0]
+----
+
+cpp:win_random_access_handle[] accepts any overlapped handle that
+<<windows-rejected,What Is Rejected>> does not mark as rejected. Each operation
+names its own offset, so any number can be in flight:
+
+[source,cpp]
+----
+include::example$snippets/4s_native_handles_win.cpp[tag=random_access,indent=0]
+----
+
+For regular files, prefer cpp:random_access_file[]. It also offers
+`size()`, `resize()`, and the sync operations. Volume and drive handles
+need sector-aligned offsets, lengths, and buffers. A misaligned request
+fails with the kernel's error.
+
+While an overlapped type or a file type holds a handle, the handle is
+bound to the context's completion port. Every overlapped call on it
+queues a packet to that port. Do not issue your own overlapped I/O on
+it, such as `ConnectNamedPipe`, `WaitCommEvent`, or `DeviceIoControl`.
+The exception is an `OVERLAPPED` whose `hEvent` has its low-order bit
+set, which suppresses the packet. Connect a pipe server before
+`assign()`. A successful `release()` detaches the handle, which lifts
+the restriction. cpp:win_object_handle[] never binds to the completion port.
+
+[#windows-rejected]
+=== What Is Rejected
+
+Each type checks a handle before `assign()` changes anything. The file
+types column covers cpp:stream_file[] and cpp:random_access_file[],
+which apply the same checks on Windows. A handle is in skip-on-success
+mode once `SetFileCompletionNotificationModes` has set
+`FILE_SKIP_COMPLETION_PORT_ON_SUCCESS` on it.
+
+[cols="3,1,1,1,1"]
+|===
+| Handle | `win_stream_handle` | `win_random_access_handle` | File types | `win_object_handle`
+
+| Console
+| Rejected
+| Rejected
+| Rejected
+| Not applicable
+
+| Opened without `FILE_FLAG_OVERLAPPED`, including `CreatePipe`
+| Rejected
+| Rejected
+| Rejected
+| Not applicable
+
+| Directory
+| Rejected
+| Rejected
+| Rejected
+| Not applicable
+
+| Disk file, volume, or physical drive
+| Rejected
+| Accepted
+| Accepted
+| Not applicable
+
+| Overlapped pipe
+| Accepted
+| Accepted
+| Rejected
+| Not applicable
+
+| Socket
+| Rejected
+| Rejected
+| Rejected
+| Not applicable
+
+| Handle already in skip-on-success mode
+| Rejected
+| Rejected
+| Rejected
+| Not applicable
+
+| Any type other than process, thread, event, semaphore, waitable timer, or job
+| Not applicable
+| Not applicable
+| Not applicable
+| Rejected
+
+| Handle without `SYNCHRONIZE` access
+| Not applicable
+| Not applicable
+| Not applicable
+| Rejected
+|===
+
+Every rejection in the table fails with a code comparing equal to
+`errc::operation_not_supported`. A null, invalid, or closed handle fails
+with `errc::bad_file_descriptor`. For the overlapped types, a handle
+already bound to another completion port fails with
+`errc::invalid_argument`.
+
+`assign()` requires a closed object; on an open one it fails with
+`error::already_open` and changes nothing. Any other failure leaves the
+object closed and leaves you owning the handle.
+
+=== Transfers
+
+Each `read_some()`, `write_some()`, `read_some_at()`, and
+`write_some_at()` transfers at most the first buffer of a buffer
+sequence. `ReadFile` and `WriteFile` take a single buffer, unlike
+`readv()` and `writev()`. `capy::read` and `capy::write` loop over the
+whole sequence, so the difference shows only when you call the
+operations directly.
+
+On a message-mode pipe, a message longer than the buffer is not an
+error. The read returns the bytes that fit, and the rest of the message
+arrives on the next read.
+
+A read that finds the peer closed completes with `capy::error::eof`. A
+write to a pipe whose reader has closed completes with
+`errc::broken_pipe`. Windows raises no signal here, so there is nothing
+like `SIGPIPE` to suppress.
+
+=== Releasing a Handle
+
+`release()` cancels pending operations and hands the handle back
+without closing it. On the overlapped types, it also detaches the
+handle from the context's completion port. If an operation is still in
+flight, or Windows refuses the detach, `release()` throws and the object
+keeps the handle. Call it again once the cancelled operations have
+completed. Detaching requires Windows 8.1 or later; on earlier versions
+`release()` on these types always throws `errc::operation_not_supported`.
+
+=== Waiting on Kernel Objects
+
+cpp:win_object_handle[] awaits the signaled state of a process, a
+thread, an event, a semaphore, a waitable timer, or a job. The Windows thread
+pool carries the wait. The awaiting coroutine resumes on its executor as
+usual.
+
+A process handle becomes signaled when the process exits:
+
+[source,cpp]
+----
+include::example$snippets/4s_native_handles_win.cpp[tag=wait_for_process,indent=0]
+----
+
+`assign()` rejects a mutex. A satisfied mutex wait acquires the mutex on
+a pool thread, and the resuming coroutine would not own it. It rejects
+file objects too, because a file object signals on any I/O completion.
+Console input handles and directory change notification handles are
+file objects, so they are rejected as well. A handle
+without `SYNCHRONIZE` access cannot be waited on, so it is rejected too,
+as are pseudo-handles such as `GetCurrentThread()` and every other
+object type. On an `io_context` whose locking mode is
+`locking_mode::unsafe`, `assign()` rejects every handle, because the
+wait completes from a thread-pool thread. `assign()` never waits on the
+handle, so it never consumes a signal.
+
+Re-waiting on an object that stays signaled -- a manual-reset event, an
+exited process or thread, a manual-reset timer -- completes again at
+once. Reset the object, or stop waiting, rather than looping on
+`wait()`.
+
+Only one wait may be pending. While the first is pending, a second
+`wait()` completes with `errc::operation_in_progress` and leaves the
+first undisturbed. Calling `wait()` concurrently on a shared object is
+unsafe.
+
+[IMPORTANT]
+====
+A wait the kernel satisfied always reports success, even when it raced
+`cancel()`, `close()`, `release()`, or a timeout. For an auto-reset
+event, a semaphore, or a synchronization (auto-reset) waitable timer, a
+satisfied wait has already
+changed the object's state. Reporting it as cancelled would lose that
+change for good.
+====
+
+`wait()` has no timeout parameter. Compose it with cpp:timeout[] or a
+stop token instead:
+
+[source,cpp]
+----
+include::example$snippets/4s_native_handles_win.cpp[tag=wait_with_timeout,indent=0]
+----
+
+A wait cancelled before the kernel satisfied it consumed nothing. The
+object stays open and accepts the next `wait()`.
+
+== See Also
+
+* xref:4.guide/4r.wait.adoc[Readiness Wait]
+* xref:4.guide/4o.file-io.adoc[File I/O]
+* xref:reference:boost/corosio/posix_stream_descriptor.adoc[`posix_stream_descriptor` reference]
+* xref:reference:boost/corosio/win_stream_handle.adoc[`win_stream_handle` reference]
+* xref:reference:boost/corosio/win_random_access_handle.adoc[`win_random_access_handle` reference]
+* xref:reference:boost/corosio/win_object_handle.adoc[`win_object_handle` reference]

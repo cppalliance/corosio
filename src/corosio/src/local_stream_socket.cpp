@@ -12,6 +12,7 @@
 #if BOOST_COROSIO_POSIX || BOOST_COROSIO_HAS_IOCP
 
 #include <boost/corosio/local_stream_socket.hpp>
+#include <boost/corosio/error.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/local_stream_service.hpp>
 
@@ -90,6 +91,8 @@ local_stream_socket::shutdown(shutdown_type what) noexcept
 std::error_code
 local_stream_socket::assign(native_handle_type fd) noexcept
 {
+    if (is_open())
+        return make_error_code(error::already_open);
     auto& svc = static_cast<detail::local_stream_service&>(h_.service());
     std::error_code ec = svc.assign_socket(
         static_cast<local_stream_socket::implementation&>(*h_.get()), fd);

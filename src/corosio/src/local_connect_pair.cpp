@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -8,6 +9,7 @@
 //
 
 #include <boost/corosio/local_connect_pair.hpp>
+#include <boost/corosio/error.hpp>
 #include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 
@@ -333,7 +335,7 @@ std::error_code
 connect_pair(local_stream_socket& a, local_stream_socket& b) noexcept
 {
     if (a.is_open() || b.is_open())
-        return std::make_error_code(std::errc::already_connected);
+        return make_error_code(error::already_open);
 
 #if BOOST_COROSIO_POSIX
     int a_fd = -1, b_fd = -1;
@@ -356,7 +358,7 @@ std::error_code
 connect_pair(local_datagram_socket& a, local_datagram_socket& b) noexcept
 {
     if (a.is_open() || b.is_open())
-        return std::make_error_code(std::errc::already_connected);
+        return make_error_code(error::already_open);
 
     int a_fd = -1, b_fd = -1;
     if (auto ec = make_pair_fds(SOCK_DGRAM, a_fd, b_fd))

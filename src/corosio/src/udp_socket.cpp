@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -8,6 +9,7 @@
 //
 
 #include <boost/corosio/udp_socket.hpp>
+#include <boost/corosio/error.hpp>
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/platform.hpp>
@@ -53,6 +55,8 @@ udp_socket::open_for_family(int family, int type, int protocol) noexcept
 std::error_code
 udp_socket::assign(native_handle_type fd) noexcept
 {
+    if (is_open())
+        return make_error_code(error::already_open);
     auto& svc          = static_cast<detail::udp_service&>(h_.service());
     std::error_code ec = svc.assign_socket(
         static_cast<udp_socket::implementation&>(*h_.get()), fd);

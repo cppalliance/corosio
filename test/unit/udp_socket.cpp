@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -9,6 +10,7 @@
 
 // Test that header file is self-contained.
 #include <boost/corosio/udp_socket.hpp>
+#include <boost/corosio/error.hpp>
 
 #include <boost/corosio/family.hpp>
 #include <boost/corosio/socket_option.hpp>
@@ -1566,9 +1568,9 @@ struct udp_socket_test
         BOOST_TEST(done);
     }
 
-    // Assign over an open socket cancels its pending operations and
-    // leaves the adopted descriptor usable.
-    void testAssignOverOpenCancelsPending()
+    // assign() over an open socket is refused and leaves its pending
+    // operations undisturbed.
+    void testAssignOverOpenKeepsPending()
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
@@ -1577,44 +1579,40 @@ struct udp_socket_test
         BOOST_TEST(!peer.open());
         auto ec = peer.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
-        auto peer_ep = peer.local_endpoint();
 
         udp_socket sock(ioc);
         BOOST_TEST(!sock.open());
         ec = sock.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
+        auto sock_ep = sock.local_endpoint();
+        auto held    = sock.native_handle();
 
         auto nfd = make_native_socket(AF_INET, SOCK_DGRAM);
         BOOST_TEST(nfd != invalid_native_socket);
-        std::uint16_t nport = 0;
-        BOOST_TEST(native_bind_loopback(nfd, false, nport));
         make_native_adoptable(nfd);
 
         std::error_code recv_ec;
-        bool recv_done = false;
-        bool delivered = false;
+        std::size_t recv_n = 0;
+        bool recv_done     = false;
         char buf[64];
         endpoint source;
 
         auto receiver = [&]() -> capy::task<> {
-            [[maybe_unused]] auto [rec, rn] = co_await sock.recv_from(
+            auto [rec, rn] = co_await sock.recv_from(
                 capy::mutable_buffer(buf, sizeof(buf)), source);
             recv_ec   = rec;
+            recv_n    = rn;
             recv_done = true;
         };
         auto adopter = [&]() -> capy::task<> {
-            BOOST_TEST(!sock.assign(nfd));
+            BOOST_TEST(sock.assign(nfd) == error::already_open);
+            BOOST_TEST_EQ(recv_done, false);
+            BOOST_TEST(sock.native_handle() == held);
             char const msg[] = "after";
-            auto [ec1, n1]   = co_await sock.send_to(
-                capy::const_buffer(msg, sizeof(msg)), peer_ep);
+            auto [ec1, n1]   = co_await peer.send_to(
+                capy::const_buffer(msg, sizeof(msg)), sock_ep);
             BOOST_TEST(!ec1);
-
-            char in[64] = {};
-            endpoint from;
-            auto [ec2, n2] = co_await peer.recv_from(
-                capy::mutable_buffer(in, sizeof(in)), from);
-            BOOST_TEST(!ec2);
-            delivered = (n2 == n1 && from.port() == nport);
+            (void)n1;
         };
 
         // run_async runs inline to the first suspend, so spawning the
@@ -1625,10 +1623,9 @@ struct udp_socket_test
         ioc.run();
 
         BOOST_TEST(recv_done);
-        BOOST_TEST(recv_ec == capy::cond::canceled);
-        BOOST_TEST(sock.is_open());
-        BOOST_TEST(sock.native_handle() == nfd);
-        BOOST_TEST(delivered);
+        BOOST_TEST(!recv_ec);
+        BOOST_TEST_EQ(recv_n, sizeof("after"));
+        close_native_socket(nfd);
     }
 
     // release() hands ownership to the caller only after pending
@@ -1943,17 +1940,6 @@ struct udp_socket_test
 #endif
     }
 
-    void testAssignSelfRejected()
-    {
-        io_context ioc(Backend);
-        udp_socket s(ioc);
-        BOOST_TEST(!s.open(family::v4));
-        BOOST_TEST(
-            s.assign(s.native_handle()) ==
-            std::make_error_code(std::errc::invalid_argument));
-        BOOST_TEST(s.is_open());
-    }
-
     void testAssignConnectedFdCachesRemote()
     {
         io_context ioc(Backend);
@@ -1979,13 +1965,29 @@ struct udp_socket_test
         BOOST_TEST(ok);
     }
 
+    void testAssignOnOpenIsAlreadyOpen()
+    {
+        io_context ioc(Backend);
+        udp_socket obj(ioc);
+        BOOST_TEST(!obj.open(family::v4));
+        auto held   = obj.native_handle();
+        auto second = make_native_socket(AF_INET, SOCK_DGRAM);
+        BOOST_TEST(second != invalid_native_socket);
+        make_native_adoptable(second);
+        BOOST_TEST(obj.assign(second) == error::already_open);
+        BOOST_TEST(obj.assign(held) == error::already_open);
+        BOOST_TEST(obj.native_handle() == held);
+        BOOST_TEST(native_socket_valid(second));
+        close_native_socket(second);
+    }
+
     void run()
     {
+        testAssignOnOpenIsAlreadyOpen();
         testRecvReportsIcmpRefusal();
         testConnectedShutdownSendSucceeds();
         testWaitWriteReady();
         testOversizedSendReportsError();
-        testAssignSelfRejected();
         testAssignConnectedFdCachesRemote();
 
         testConstruction();
@@ -2037,7 +2039,7 @@ struct udp_socket_test
         testAssignBoundSocket();
         testAssignRejections();
         testAssignFailureKeepsSocket();
-        testAssignOverOpenCancelsPending();
+        testAssignOverOpenKeepsPending();
         testRelease();
         testReleaseClosedThrows();
         testAssignV6();

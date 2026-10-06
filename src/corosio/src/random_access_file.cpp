@@ -8,6 +8,7 @@
 //
 
 #include <boost/corosio/random_access_file.hpp>
+#include <boost/corosio/error.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
@@ -128,7 +129,7 @@ std::error_code
 random_access_file::assign(native_handle_type handle) noexcept
 {
     if (is_open())
-        close();
+        return make_error_code(error::already_open);
     return get().assign(handle);
 }
 

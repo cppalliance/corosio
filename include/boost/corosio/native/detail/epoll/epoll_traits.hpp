@@ -15,6 +15,7 @@
 #if BOOST_COROSIO_HAS_EPOLL
 
 #include <boost/corosio/native/detail/make_err.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_descriptor_ops.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_descriptor_state.hpp>
 
 #include <system_error>
@@ -23,6 +24,8 @@
 #include <errno.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
+#include <unistd.h>
 
 /* epoll backend traits.
 
@@ -40,7 +43,7 @@ struct epoll_traits
     using scheduler_type  = epoll_scheduler;
     using desc_state_type = reactor_descriptor_state;
 
-    static constexpr bool needs_write_notification = false;
+    static constexpr bool needs_park_notification = false;
 
     // No extra per-socket state or lifecycle hooks needed for epoll.
     struct stream_socket_hook
@@ -91,6 +94,8 @@ struct epoll_traits
             return n;
         }
     };
+
+    using descriptor_write_policy = detail::descriptor_write_policy;
 
     struct accept_policy
     {
