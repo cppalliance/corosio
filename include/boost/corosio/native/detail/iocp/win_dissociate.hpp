@@ -18,7 +18,7 @@
 
 namespace boost::corosio::detail {
 
-/** Detach a socket from its I/O completion port.
+/** Detach a handle from its I/O completion port.
 
     The documented API keeps a handle bound to its completion port for
     the handle's lifetime; `NtSetInformationFile` with the
@@ -27,12 +27,12 @@ namespace boost::corosio::detail {
     adopted into an io_context again: re-association fails with
     `ERROR_INVALID_PARAMETER`.
 
-    @param s The socket to detach.
+    @param h The handle (file, pipe or socket) to detach.
 
     @return `true` if the association was removed.
 */
 inline bool
-dissociate_from_iocp(SOCKET s) noexcept
+dissociate_from_iocp(HANDLE h) noexcept
 {
     using nt_set_information_file_fn =
         LONG(NTAPI*)(HANDLE, ULONG_PTR*, void*, ULONG, ULONG);
@@ -57,7 +57,14 @@ dissociate_from_iocp(SOCKET s) noexcept
     // class FileReplaceCompletionInformation (61).
     ULONG_PTR iosb[2] = {0, 0};
     void* info[2]     = {nullptr, nullptr};
-    return fn(reinterpret_cast<HANDLE>(s), iosb, &info, sizeof(info), 61) == 0;
+    return fn(h, iosb, &info, sizeof(info), 61) == 0;
+}
+
+/// @copydoc dissociate_from_iocp(HANDLE)
+inline bool
+dissociate_from_iocp(SOCKET s) noexcept
+{
+    return dissociate_from_iocp(reinterpret_cast<HANDLE>(s));
 }
 
 } // namespace boost::corosio::detail

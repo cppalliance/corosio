@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -14,6 +15,7 @@
 #include <boost/corosio/connect.hpp>
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/endpoint.hpp>
+#include <boost/corosio/error.hpp>
 #include <boost/corosio/family.hpp>
 #include <boost/corosio/file_base.hpp>
 #include <boost/corosio/host_name.hpp>
@@ -22,6 +24,7 @@
 #include <boost/corosio/ipv4_address.hpp>
 #include <boost/corosio/ipv6_address.hpp>
 #include <boost/corosio/message_flags.hpp>
+#include <boost/corosio/posix_stream_descriptor.hpp> // POSIX-only; self-guarded
 #include <boost/corosio/random_access_file.hpp>
 #include <boost/corosio/resolver.hpp>
 #include <boost/corosio/shutdown_type.hpp>
@@ -35,6 +38,9 @@
 #include <boost/corosio/udp_socket.hpp>
 #include <boost/corosio/wait_traits.hpp>
 #include <boost/corosio/wait_type.hpp>
+#include <boost/corosio/win_object_handle.hpp> // Windows-only; self-guarded
+#include <boost/corosio/win_random_access_handle.hpp> // Windows-only; self-guarded
+#include <boost/corosio/win_stream_handle.hpp> // Windows-only; self-guarded
 
 #include <boost/corosio/local_connect_pair.hpp>
 #include <boost/corosio/local_endpoint.hpp>

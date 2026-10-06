@@ -11,6 +11,7 @@
 #include <boost/corosio/local_stream_socket.hpp>
 
 #include <boost/corosio/delay.hpp>
+#include <boost/corosio/error.hpp>
 #include <boost/corosio/local_connect_pair.hpp>
 #include <boost/corosio/local_datagram_socket.hpp>
 #include <boost/corosio/local_stream_acceptor.hpp>
@@ -52,6 +53,7 @@
 
 #include "context.hpp"
 #include "test_suite.hpp"
+#include "test_utils.hpp"
 
 namespace boost::corosio {
 
@@ -473,57 +475,49 @@ struct local_stream_socket_test
     }
 
 #if BOOST_COROSIO_POSIX
-    // Assign over an open socket cancels its pending operations and
-    // adopts, matching the internet family.
-    void testAssignOverOpenAdopts()
+    // assign() over an open socket is refused and leaves its pending
+    // operations undisturbed.
+    void testAssignOverOpenKeepsPending()
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
         local_stream_socket s1(ioc), s2(ioc);
         BOOST_TEST(!connect_pair(s1, s2));
+        auto held = s1.native_handle();
 
         int fds[2];
         BOOST_TEST(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
-        int fl = ::fcntl(fds[0], F_GETFL);
-        BOOST_TEST(::fcntl(fds[0], F_SETFL, fl | O_NONBLOCK) == 0);
 
         bool read_done = false;
         std::error_code read_ec;
+        std::size_t read_n = 0;
         auto reader = [&]() -> capy::task<> {
             char buf[4];
-            [[maybe_unused]] auto [ec, n] =
+            auto [ec, n] =
                 co_await s1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             read_ec   = ec;
+            read_n    = n;
             read_done = true;
         };
         auto assigner = [&]() -> capy::task<> {
-            BOOST_TEST(!s1.assign(static_cast<native_handle_type>(fds[0])));
-            co_return;
+            BOOST_TEST(
+                s1.assign(static_cast<native_handle_type>(fds[0])) ==
+                error::already_open);
+            BOOST_TEST_EQ(read_done, false);
+            BOOST_TEST(s1.native_handle() == held);
+            auto [ec, n] = co_await s2.write_some(capy::const_buffer("go", 2));
+            BOOST_TEST(!ec);
+            (void)n;
         };
         capy::run_async(ex)(reader());
         capy::run_async(ex)(assigner());
         ioc.run();
-        ioc.restart();
 
         BOOST_TEST(read_done);
-        BOOST_TEST(read_ec == capy::cond::canceled);
-        BOOST_TEST(s1.is_open());
-        BOOST_TEST(
-            s1.native_handle() == static_cast<native_handle_type>(fds[0]));
+        BOOST_TEST(!read_ec);
+        BOOST_TEST_EQ(read_n, 2u);
 
-        // The adopted descriptor reaches its new peer.
-        BOOST_TEST(::send(fds[1], "go", 2, 0) == 2);
-        bool got    = false;
-        auto reread = [&]() -> capy::task<> {
-            char buf[4];
-            auto [ec, n] =
-                co_await s1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
-            got = !ec && n == 2;
-        };
-        capy::run_async(ex)(reread());
-        ioc.run();
-        BOOST_TEST(got);
-
+        ::close(fds[0]);
         ::close(fds[1]);
     }
 
@@ -541,7 +535,7 @@ struct local_stream_socket_test
 
         BOOST_TEST(
             s1.assign(static_cast<native_handle_type>(fds[0])) ==
-            std::errc::wrong_protocol_type);
+            error::already_open);
         BOOST_TEST(::fcntl(fds[0], F_GETFD) >= 0); // caller keeps it
         BOOST_TEST(s1.is_open());
 
@@ -1614,9 +1608,8 @@ struct local_stream_socket_test
         return done;
     }
 
-    // Adopting over a listening acceptor must retire the accept
-    // machinery for the descriptor being replaced, not leave it
-    // aliased onto the newly adopted one.
+    // assign() over a listening acceptor is refused and leaves its
+    // armed accept machinery working on the held descriptor.
     void testAcceptorAssignOverListening()
     {
         io_context ioc(Backend);
@@ -1637,14 +1630,13 @@ struct local_stream_socket_test
         BOOST_TEST_EQ(!ec, true);
         ec = donor.listen();
         BOOST_TEST_EQ(!ec, true);
-        auto h = donor.release();
+        auto held = acc.native_handle();
 
-        BOOST_TEST(!acc.assign(h));
-        BOOST_TEST_EQ(acc.is_open(), true);
-        BOOST_TEST(acc.native_handle() == h);
-        BOOST_TEST_EQ(acc.local_endpoint().path(), adopted_dir.path());
+        BOOST_TEST(acc.assign(donor.native_handle()) == error::already_open);
+        BOOST_TEST(acc.native_handle() == held);
+        BOOST_TEST_EQ(acc.local_endpoint().path(), held_dir.path());
 
-        BOOST_TEST(acceptOneThroughLocal(ioc, acc, adopted_dir.path()));
+        BOOST_TEST(acceptOneThroughLocal(ioc, acc, held_dir.path()));
     }
 
     // release() then assign() on the SAME object: the released
@@ -1816,25 +1808,12 @@ struct local_stream_socket_test
     }
 #endif
 
-    void testAssignSelfRejected()
-    {
-        io_context ioc(Backend);
-        local_stream_socket s(ioc);
-        BOOST_TEST(!s.open());
-        BOOST_TEST(
-            s.assign(s.native_handle()) ==
-            std::make_error_code(std::errc::invalid_argument));
-        BOOST_TEST(s.is_open());
-    }
-
     void testAcceptorAssignSelfAndWrongType()
     {
         io_context ioc(Backend);
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        BOOST_TEST(
-            acc.assign(acc.native_handle()) ==
-            std::make_error_code(std::errc::invalid_argument));
+        BOOST_TEST(acc.assign(acc.native_handle()) == error::already_open);
         BOOST_TEST(acc.is_open());
 
 #if BOOST_COROSIO_POSIX
@@ -1843,15 +1822,103 @@ struct local_stream_socket_test
         local_datagram_socket d(ioc);
         BOOST_TEST(!d.open());
         auto dfd = d.release();
+        acc.close();
         BOOST_TEST(!!acc.assign(dfd));
+        BOOST_TEST(!acc.is_open());
         ::close(dfd);
 #endif
     }
 
+    void testAssignOnOpenIsAlreadyOpen()
+    {
+        io_context ioc(Backend);
+        local_stream_socket obj(ioc);
+        BOOST_TEST(!obj.open());
+        auto held   = obj.native_handle();
+        auto second = test::make_native_socket(AF_UNIX, SOCK_STREAM);
+        BOOST_TEST(second != test::invalid_native_socket);
+        test::make_native_adoptable(second);
+        BOOST_TEST(obj.assign(second) == error::already_open);
+        BOOST_TEST(obj.assign(held) == error::already_open);
+        BOOST_TEST(obj.native_handle() == held);
+        BOOST_TEST(test::native_socket_valid(second));
+        test::close_native_socket(second);
+    }
+
+    void testAcceptorAssignOnOpenIsAlreadyOpen()
+    {
+        io_context ioc(Backend);
+        local_stream_acceptor obj(ioc);
+        BOOST_TEST(!obj.open());
+        auto held   = obj.native_handle();
+        auto second = test::make_native_socket(AF_UNIX, SOCK_STREAM);
+        BOOST_TEST(second != test::invalid_native_socket);
+        test::make_native_adoptable(second);
+        BOOST_TEST(obj.assign(second) == error::already_open);
+        BOOST_TEST(obj.native_handle() == held);
+        BOOST_TEST(test::native_socket_valid(second));
+        test::close_native_socket(second);
+    }
+
+#if BOOST_COROSIO_POSIX
+    // The first write parks on a full send buffer. On kqueue that is
+    // what adds EVFILT_WRITE, and the add must lose no wakeup. A Unix
+    // socket frees space only when the peer reads; loopback TCP can
+    // free it at any moment while acknowledgements are in flight.
+    void testFirstParkedWriteCompletes()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        local_stream_socket s1(ioc), s2(ioc);
+        BOOST_TEST(!connect_pair(s1, s2));
+
+        static char block[65536] = {};
+        int const fd             = s1.native_handle();
+        while (::send(fd, block, sizeof(block), MSG_DONTWAIT) > 0)
+        {
+        }
+
+        std::error_code wec;
+        bool write_done = false;
+        auto writer     = [&]() -> capy::task<> {
+            auto [e, n] = co_await s1.write_some(
+                capy::const_buffer(block, sizeof(block)));
+            wec        = e;
+            write_done = true;
+            (void)n;
+            s1.close(); // ends the drainer with EOF
+        };
+        auto drainer = [&]() -> capy::task<> {
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(10));
+            BOOST_TEST_EQ(write_done, false); // genuinely parked
+            char buf[65536];
+            for (;;)
+            {
+                auto [rec, rn] = co_await s2.read_some(
+                    capy::mutable_buffer(buf, sizeof(buf)));
+                (void)rn;
+                if (rec)
+                    break;
+            }
+        };
+        capy::run_async(ex)(writer());
+        capy::run_async(ex)(drainer());
+        ioc.run();
+
+        BOOST_TEST(write_done);
+        BOOST_TEST(!wec);
+    }
+#endif
+
     void run()
     {
-        testAssignSelfRejected();
+        testAssignOnOpenIsAlreadyOpen();
+        testAcceptorAssignOnOpenIsAlreadyOpen();
         testAcceptorAssignSelfAndWrongType();
+#if BOOST_COROSIO_POSIX
+        testFirstParkedWriteCompletes();
+#endif
 
         testConstruction();
         testOpen();
@@ -1868,7 +1935,7 @@ struct local_stream_socket_test
         testEndpointsConnected();
         testShutdown();
 #if BOOST_COROSIO_POSIX
-        testAssignOverOpenAdopts();
+        testAssignOverOpenKeepsPending();
         testAssignOverOpenRejectedKeepsSocket();
         testAssignBadFdThrows();
         testAssignRejectedFdStaysOpen();

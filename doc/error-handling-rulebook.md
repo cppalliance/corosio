@@ -188,15 +188,15 @@ second channel:
 
 ## 7. Code Values and Portability
 
-- **The user vocabulary is `std::errc`** — corosio defines no error
-  namespace of its own.
+- **The user vocabulary is `std::errc`**. The one exception is
+  `corosio::error::already_open` (`assign()` or `connect_pair()` on
+  an open object), which matches Asio.
 - Codes corosio generates itself are deterministic contracts:
   `invalid_argument` (parsers, signal_set, negative seek),
   `bad_file_descriptor` (closed objects, descriptor validation),
   `wrong_protocol_type` / `address_family_not_supported` (adoption
   rejection), `value_too_large` (off_t guard, truncated hostname),
   `filename_too_long`,
-  `already_connected` (`connect_pair` on an open socket),
   `no_such_device_or_address` (`corosio::connect` with no viable
   candidate),
   `resource_unavailable_try_again` (io_uring submission queue

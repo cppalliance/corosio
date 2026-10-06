@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -13,6 +14,7 @@
 Corosio reports I/O errors through the `io_result` type, which carries an
 error code alongside any values produced by the operation.
 
+[#one-channel]
 == One Channel
 
 Every fallible operation reports through exactly one channel:
@@ -26,11 +28,11 @@ Every fallible operation reports through exactly one channel:
   for example `release()`, `set_option()`, or `get_option()` on a
   closed object.
 * *Operations whose outcome nobody can act on report nothing.*
-  `close()` and `cancel()` are `void noexcept`; durability reporting
-  belongs to `sync_data()`/`sync_all()`, and cancellation reports
+  `close()` and `cancel()` are `void noexcept`. Durability reporting
+  belongs to `sync_data()`/`sync_all()`. Cancellation reports
   through each canceled completion.
 
-Using a closed object is deterministic on every backend and every
+Using a closed object is deterministic on every I/O backend and every
 channel: the operation returns, throws, or completes with
 `errc::bad_file_descriptor`.
 
@@ -45,7 +47,7 @@ the piecewise path, never sees the throw:
 | Throwing convenience | Exception-free spelling
 
 | cpp:tcp_acceptor[] constructed with a context, endpoint, and backlog +
-  `local_stream_acceptor(ctx, ep, backlog)`
+  cpp:local_stream_acceptor[] constructed the same way
 | default-construct, then `open()` + `bind()` + `listen()`.
 cpp:tcp_acceptor[] also configures address reuse via `set_option()`
 between open and bind: `SO_REUSEADDR` on POSIX, `SO_EXCLUSIVEADDRUSE` on
@@ -61,7 +63,7 @@ Windows. The constructor throws exactly the codes this path reports
 | `signal_set(ctx)`, then `add()` per signal
 
 | `local_endpoint(path)`
-| check `path.size() <=` cpp:local_endpoint[]`::max_path_length` first —
+| check `path.size() <=` cpp:local_endpoint::max_path_length[] first —
   the public constant is the entire precondition
 
 | cpp:io_context[]'s options constructor throwing `std::invalid_argument`
@@ -74,7 +76,7 @@ Windows. The constructor throws exactly the codes this path reports
 |===
 
 What cannot be spelled exception-free: root construction and the run
-loop. cpp:io_context[] itself throws if backend setup fails, because
+loop. cpp:io_context[] itself throws if I/O backend setup fails, because
 there is no code-returning way to construct it. Any constructor can
 throw `std::bad_alloc`. `run()`/`stop()` throw `std::system_error` if
 the OS demultiplexer itself fails — a process-fatal condition with no
@@ -84,6 +86,13 @@ platform rejects the option itself, such as an unsupported option on
 that protocol or OS. An open check therefore removes the closed-object
 throw but not that environmental arm. Probe an option once at startup if
 it must not throw later.
+The same row has a Windows caveat for `release()`. On
+cpp:win_stream_handle[], cpp:win_random_access_handle[],
+cpp:stream_file[], and cpp:random_access_file[], it can throw while
+open. It throws `errc::device_or_resource_busy` if an operation is
+still in flight. Call it again once the canceled operations complete.
+It throws `errc::operation_not_supported` if Windows cannot detach the
+handle from the completion port.
 Startup construction failing by exception is the intended shape.
 
 [NOTE]
@@ -202,27 +211,32 @@ include::example$snippets/4m_error_handling.cpp[tag=throw_style,indent=0]
 === Deterministic Corosio Codes
 
 Codes corosio generates itself are contracts, portable across every
-platform and backend:
+platform and I/O backend:
 
 [cols="1,2"]
 |===
 | Error | Meaning
 
 | `bad_file_descriptor`
-| Operation on a closed object, or adopting an invalid descriptor
+| Operation on a closed object, or adopting an invalid descriptor.
+  On Windows, adopting an invalid socket reports `not_a_socket` instead.
 
 | `invalid_argument`
 | Unparseable input to the `make_*` factories, invalid signal_set
   flags, a negative seek
 
-| `already_connected`
-| `connect_pair()` on an already-open socket
+| cpp:error[corosio::error::already_open]
+| `assign()` or `connect_pair()` on an already-open object
 
 | `no_such_device_or_address`
 | `corosio::connect()` with no viable candidate
 
 | `wrong_protocol_type` / `address_family_not_supported`
 | Adopting a foreign descriptor of the wrong type or family
+
+| `operation_not_supported`
+| Adopting a native descriptor or handle of the wrong kind, such as a
+  directory or a synchronous-mode Windows handle
 
 | `value_too_large`
 | A file offset beyond what the platform can represent, or a
@@ -234,19 +248,11 @@ platform and backend:
 
 === Cancellation
 
-Cancellation does not map deterministically to a single category or
-value per trigger. Depending on the path, a cancelled operation may
-surface as `capy::error::canceled` (capy's category) or as
-`std::errc::operation_canceled` (the generic category). For example, a
-stop token that is already requested when the operation is awaited tends
-to produce `std::errc::operation_canceled`. Three other sources tend to
-produce `capy::error::canceled`: `cancel()`, an in-flight stop-token
-cancel, and a syscall reporting `ECANCELED`. Do not rely on the specific
-category or
-value.
+Every corosio cancellation completes with `capy::error::canceled`,
+whatever triggered it.
 
 Always test cancellation portably with the `capy::cond::canceled`
-condition, which matches both:
+condition:
 
 [source,cpp]
 ----

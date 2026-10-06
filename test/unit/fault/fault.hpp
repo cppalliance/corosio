@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -400,6 +401,33 @@ bool hook_is_live(sys which) noexcept;
 
 /// Return true if the executable links corosio as a shared library.
 bool corosio_is_shared() noexcept;
+
+/** Hold the first `preadv` on any thread, after the real call returns.
+
+    For a test that must act while a pool worker has finished its
+    transfer but not yet reported it. The held call returns once the
+    hold is released or destroyed.
+
+    @par Preconditions
+    No other `preadv_hold` is alive. POSIX only.
+*/
+class preadv_hold
+{
+public:
+    preadv_hold();
+
+    /// Release the held call, if any.
+    ~preadv_hold();
+
+    /// Block until a `preadv` is being held.
+    void wait_held();
+
+    /// Let the held call return.
+    void release();
+
+    preadv_hold(preadv_hold const&)            = delete;
+    preadv_hold& operator=(preadv_hold const&) = delete;
+};
 
 } // namespace boost::corosio::test::fault
 

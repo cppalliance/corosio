@@ -107,17 +107,13 @@ public:
         local.push(self);
     }
 
-    /// Common post-completion work used by both handlers: fill ec_out
-    /// and bytes_out, then return the coroutine to resume.
-    static std::coroutine_handle<>
-    finish(uring_file_read_op_base* self) noexcept
+    /// Fill ec_out and bytes_out from the completion.
+    static void finish(uring_file_read_op_base* self) noexcept
     {
         uring_set_result(self, /*is_read=*/true, self->empty_buffer);
         if (self->bytes_out)
             *self->bytes_out =
                 self->res >= 0 ? static_cast<std::size_t>(self->res) : 0u;
-        self->cont.h = self->h;
-        return dispatch_coro(self->ex, self->cont);
     }
 };
 
@@ -154,6 +150,10 @@ struct uring_file_read_op : uring_file_read_op_base
 /// at different offsets on the same fd can be in flight concurrently.
 struct uring_random_access_read_op : uring_file_read_op_base
 {
+    /// The awaitable's continuation, not the embedded `cont`: this op is
+    /// freed before the coroutine resumes, possibly on another thread.
+    capy::continuation* awaiting = nullptr;
+
     uring_random_access_read_op() noexcept
         : uring_file_read_op_base(&do_handler)
     {
@@ -174,9 +174,11 @@ struct uring_random_access_read_op : uring_file_read_op_base
             return;
         }
 
-        auto next = finish(self);
+        finish(self);
+        auto* c = self->awaiting;
+        auto ex = self->ex;
         delete self;
-        next.resume();
+        dispatch_coro(ex, *c).resume();
     }
 };
 
@@ -253,15 +255,13 @@ public:
         local.push(self);
     }
 
-    static std::coroutine_handle<>
-    finish(uring_file_write_op_base* self) noexcept
+    /// Fill ec_out and bytes_out from the completion.
+    static void finish(uring_file_write_op_base* self) noexcept
     {
         uring_set_result(self, /*is_read=*/false, self->empty_buffer);
         if (self->bytes_out)
             *self->bytes_out =
                 self->res >= 0 ? static_cast<std::size_t>(self->res) : 0u;
-        self->cont.h = self->h;
-        return dispatch_coro(self->ex, self->cont);
     }
 };
 
@@ -294,6 +294,10 @@ struct uring_file_write_op : uring_file_write_op_base
 /// Heap-allocated file write op for random_access_file.
 struct uring_random_access_write_op : uring_file_write_op_base
 {
+    /// The awaitable's continuation, not the embedded `cont`: this op is
+    /// freed before the coroutine resumes, possibly on another thread.
+    capy::continuation* awaiting = nullptr;
+
     uring_random_access_write_op() noexcept
         : uring_file_write_op_base(&do_handler)
     {
@@ -314,9 +318,11 @@ struct uring_random_access_write_op : uring_file_write_op_base
             return;
         }
 
-        auto next = finish(self);
+        finish(self);
+        auto* c = self->awaiting;
+        auto ex = self->ex;
         delete self;
-        next.resume();
+        dispatch_coro(ex, *c).resume();
     }
 };
 

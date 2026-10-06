@@ -158,7 +158,7 @@ private:
 inline std::coroutine_handle<>
 posix_random_access_file::read_some_at(
     std::uint64_t offset,
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref ex,
     buffer_param param,
     std::stop_token token,
@@ -170,7 +170,7 @@ posix_random_access_file::read_some_at(
     {
         *ec        = make_error_code(std::errc::bad_file_descriptor);
         *bytes_out = 0;
-        return h;
+        return cont.h;
     }
 
     capy::mutable_buffer bufs[max_buffers];
@@ -180,12 +180,13 @@ posix_random_access_file::read_some_at(
     {
         *ec        = {};
         *bytes_out = 0;
-        return h;
+        return cont.h;
     }
 
     auto* op    = new raf_op();
     op->is_read = true;
     op->offset  = offset;
+    op->fd      = fd_;
 
     op->iovec_count = static_cast<int>(count);
     for (int i = 0; i < op->iovec_count; ++i)
@@ -194,7 +195,8 @@ posix_random_access_file::read_some_at(
         op->iovecs[i].iov_len  = bufs[i].size();
     }
 
-    op->h         = h;
+    op->h         = cont.h;
+    op->awaiting  = &cont;
     op->ex        = ex;
     op->ec_out    = ec;
     op->bytes_out = bytes_out;
@@ -221,7 +223,7 @@ posix_random_access_file::read_some_at(
         op->destroy();
         *ec        = pec;
         *bytes_out = 0;
-        return h;
+        return cont.h;
     }
     return std::noop_coroutine();
 }
@@ -229,7 +231,7 @@ posix_random_access_file::read_some_at(
 inline std::coroutine_handle<>
 posix_random_access_file::write_some_at(
     std::uint64_t offset,
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref ex,
     buffer_param param,
     std::stop_token token,
@@ -241,7 +243,7 @@ posix_random_access_file::write_some_at(
     {
         *ec        = make_error_code(std::errc::bad_file_descriptor);
         *bytes_out = 0;
-        return h;
+        return cont.h;
     }
 
     capy::mutable_buffer bufs[max_buffers];
@@ -251,12 +253,13 @@ posix_random_access_file::write_some_at(
     {
         *ec        = {};
         *bytes_out = 0;
-        return h;
+        return cont.h;
     }
 
     auto* op    = new raf_op();
     op->is_read = false;
     op->offset  = offset;
+    op->fd      = fd_;
 
     op->iovec_count = static_cast<int>(count);
     for (int i = 0; i < op->iovec_count; ++i)
@@ -265,7 +268,8 @@ posix_random_access_file::write_some_at(
         op->iovecs[i].iov_len  = bufs[i].size();
     }
 
-    op->h         = h;
+    op->h         = cont.h;
+    op->awaiting  = &cont;
     op->ex        = ex;
     op->ec_out    = ec;
     op->bytes_out = bytes_out;
@@ -292,7 +296,7 @@ posix_random_access_file::write_some_at(
         op->destroy();
         *ec        = pec;
         *bytes_out = 0;
-        return h;
+        return cont.h;
     }
     return std::noop_coroutine();
 }
@@ -312,7 +316,7 @@ posix_random_access_file::raf_op::do_work(pool_work_item* w) noexcept
     }
     else if (
         op->offset >
-        static_cast<std::uint64_t>(std::numeric_limits<off_t>::max()))
+        static_cast<std::uint64_t>(std::numeric_limits<file_off_t>::max()))
     {
         op->errn              = EOVERFLOW;
         op->bytes_transferred = 0;
@@ -324,9 +328,9 @@ posix_random_access_file::raf_op::do_work(pool_work_item* w) noexcept
         {
             do
             {
-                n = ::preadv(
-                    self->fd_, op->iovecs, op->iovec_count,
-                    static_cast<off_t>(op->offset));
+                n = file_preadv(
+                    op->fd, op->iovecs, op->iovec_count,
+                    static_cast<file_off_t>(op->offset));
             }
             while (n < 0 && errno == EINTR);
         }
@@ -334,9 +338,9 @@ posix_random_access_file::raf_op::do_work(pool_work_item* w) noexcept
         {
             do
             {
-                n = ::pwritev(
-                    self->fd_, op->iovecs, op->iovec_count,
-                    static_cast<off_t>(op->offset));
+                n = file_pwritev(
+                    op->fd, op->iovecs, op->iovec_count,
+                    static_cast<file_off_t>(op->offset));
             }
             while (n < 0 && errno == EINTR);
         }

@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -10,6 +11,7 @@
 
 // Test that header file is self-contained.
 #include <boost/corosio/tcp_acceptor.hpp>
+#include <boost/corosio/error.hpp>
 
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/family.hpp>
@@ -1505,9 +1507,8 @@ struct tcp_acceptor_test
         BOOST_TEST(wait_ec == std::errc::operation_not_supported);
     }
 
-    // Adopting over an acceptor that is already listening must retire
-    // the in-flight accept machinery for the descriptor being replaced,
-    // not leave it aliased onto the newly adopted one.
+    // assign() over a listening acceptor is refused and leaves its
+    // armed accept machinery working on the held descriptor.
     void testAssignOverListeningAcceptor()
     {
         io_context ioc(Backend);
@@ -1531,12 +1532,13 @@ struct tcp_acceptor_test
         BOOST_TEST(lfd != invalid_native_socket);
         BOOST_TEST(port != old_port);
 
-        BOOST_TEST(!acc.assign(lfd));
-        BOOST_TEST(acc.is_open());
-        BOOST_TEST(acc.native_handle() == lfd);
-        BOOST_TEST_EQ(acc.local_endpoint().port(), port);
+        auto held = acc.native_handle();
+        BOOST_TEST(acc.assign(lfd) == error::already_open);
+        BOOST_TEST(acc.native_handle() == held);
+        BOOST_TEST_EQ(acc.local_endpoint().port(), old_port);
+        close_native_socket(lfd);
 
-        BOOST_TEST(acceptOneThrough(ioc, acc, port, false));
+        BOOST_TEST(acceptOneThrough(ioc, acc, old_port, false));
     }
 
     // release() then assign() on the SAME object: the released
@@ -1833,8 +1835,24 @@ struct tcp_acceptor_test
         BOOST_TEST(acceptOneThrough(ioc, acc, port, true));
     }
 
+    void testAssignOnOpenIsAlreadyOpen()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor obj(ioc);
+        BOOST_TEST(!obj.open(family::v4));
+        auto held   = obj.native_handle();
+        auto second = make_native_socket(AF_INET, SOCK_STREAM);
+        BOOST_TEST(second != invalid_native_socket);
+        make_native_adoptable(second);
+        BOOST_TEST(obj.assign(second) == error::already_open);
+        BOOST_TEST(obj.native_handle() == held);
+        BOOST_TEST(native_socket_valid(second));
+        close_native_socket(second);
+    }
+
     void run()
     {
+        testAssignOnOpenIsAlreadyOpen();
         testConstruction();
         testListen();
         testOptions();

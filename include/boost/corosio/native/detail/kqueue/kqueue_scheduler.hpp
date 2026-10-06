@@ -44,6 +44,71 @@ namespace boost::corosio::detail {
 
 struct kqueue_op;
 
+/* Every call on a kqueue goes through kqueue_call, because Darwin
+   needs kevent64 for one case: a poll with a zero timeout that finds
+   nothing ready. kevent with a zero timespec takes ~12us there; only
+   KEVENT_FLAG_IMMEDIATE returns at once. A kqueue accepts a single
+   flavor of call, so the registrations use kevent64 as well.
+*/
+#if defined(__APPLE__)
+using kqueue_event = struct kevent64_s;
+#else
+using kqueue_event = struct kevent;
+#endif
+
+/// Fill @p ev, as EV_SET does.
+inline void
+kqueue_set(
+    kqueue_event& ev,
+    int ident,
+    short filter,
+    unsigned short flags,
+    unsigned fflags,
+    void* udata) noexcept
+{
+#if defined(__APPLE__)
+    EV_SET64(
+        &ev, static_cast<std::uint64_t>(ident), filter, flags, fflags, 0,
+        reinterpret_cast<std::uint64_t>(udata), 0, 0);
+#else
+    EV_SET(&ev, static_cast<uintptr_t>(ident), filter, flags, fflags, 0, udata);
+#endif
+}
+
+/// The udata stored by kqueue_set.
+inline void*
+kqueue_udata(kqueue_event const& ev) noexcept
+{
+#if defined(__APPLE__)
+    return reinterpret_cast<void*>(static_cast<std::uintptr_t>(ev.udata));
+#else
+    return ev.udata;
+#endif
+}
+
+/// Call kevent on @p kq; a zero @p ts polls without waiting.
+inline int
+kqueue_call(
+    int kq,
+    kqueue_event const* changes,
+    int nchanges,
+    kqueue_event* events,
+    int nevents,
+    struct timespec const* ts) noexcept
+{
+#if defined(__APPLE__)
+    unsigned flags = 0;
+    if (ts && ts->tv_sec == 0 && ts->tv_nsec == 0)
+    {
+        flags = KEVENT_FLAG_IMMEDIATE;
+        ts    = nullptr;
+    }
+    return ::kevent64(kq, changes, nchanges, events, nevents, flags, ts);
+#else
+    return ::kevent(kq, changes, nchanges, events, nevents, ts);
+#endif
+}
+
 /** macOS/BSD scheduler using kqueue for I/O multiplexing.
 
     This scheduler implements the scheduler interface using the BSD kqueue
@@ -61,8 +126,9 @@ struct kqueue_op;
     variable until handlers are available.
 
     kqueue uses EV_CLEAR for edge-triggered semantics (equivalent to
-    epoll's EPOLLET). File descriptors are registered once with both
-    EVFILT_READ and EVFILT_WRITE and stay registered until closed.
+    epoll's EPOLLET). A descriptor gets EVFILT_READ at registration and
+    EVFILT_WRITE when a write-direction operation first parks, as asio
+    does; both stay registered until the descriptor is closed.
 
     @par Thread Safety
     All public member functions are thread-safe.
@@ -120,9 +186,10 @@ public:
 
     /** Register a descriptor for persistent monitoring.
 
-        Adds EVFILT_READ and EVFILT_WRITE (both EV_CLEAR) for @a fd
-        and stores @a desc in the kevent udata field so that the
-        reactor can dispatch events to the correct reactor_descriptor_state.
+        Adds EVFILT_READ (EV_CLEAR) for @a fd and stores @a desc in the
+        kevent udata field so that the reactor can dispatch events to
+        the correct reactor_descriptor_state. EVFILT_WRITE is added later
+        by ensure_write_registered.
 
         @param fd The file descriptor to register.
         @param desc Pointer to the caller-owned reactor_descriptor_state.
@@ -132,6 +199,20 @@ public:
     */
     std::error_code
     register_descriptor(int fd, reactor_descriptor_state* desc) const;
+
+    /** Add EVFILT_WRITE for @a fd if it is not registered yet.
+
+        Called with `desc->mutex` held, when a write-direction
+        operation is about to park.
+
+        @param fd The registered file descriptor.
+        @param desc Its reactor_descriptor_state.
+
+        @return The kernel's refusal of the filter, otherwise a default
+        constructed error code.
+    */
+    std::error_code ensure_write_registered(
+        int fd, reactor_descriptor_state* desc) const noexcept;
 
     /** Deregister a persistently registered descriptor.
 
@@ -164,7 +245,7 @@ private:
     mutable std::atomic<bool> user_event_armed_{false};
 
     // Event buffer sized from max_events_per_poll_.
-    std::vector<struct kevent> event_buffer_;
+    std::vector<kqueue_event> event_buffer_;
 };
 
 inline kqueue_scheduler::kqueue_scheduler(capy::execution_context& ctx, int)
@@ -182,9 +263,9 @@ inline kqueue_scheduler::kqueue_scheduler(capy::execution_context& ctx, int)
         detail::throw_system_error(make_err(errn), "fcntl (kqueue FD_CLOEXEC)");
     }
 
-    struct kevent ev;
-    EV_SET(&ev, 0, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, nullptr);
-    if (::kevent(kq_fd_, &ev, 1, nullptr, 0, nullptr) < 0)
+    kqueue_event ev;
+    kqueue_set(ev, 0, EVFILT_USER, EV_ADD | EV_CLEAR, 0, nullptr);
+    if (kqueue_call(kq_fd_, &ev, 1, nullptr, 0, nullptr) < 0)
     {
         int errn = errno;
         ::close(kq_fd_);
@@ -227,22 +308,30 @@ kqueue_scheduler::configure_reactor(
     event_buffer_.resize(max_events_per_poll_);
 }
 
+/// Add one edge-triggered filter for @p fd; returns 0 or the errno.
+inline int
+kqueue_add_filter(int kq, int fd, short filter, void* udata) noexcept
+{
+    kqueue_event ch;
+    kqueue_set(ch, fd, filter, EV_ADD | EV_CLEAR | EV_RECEIPT, 0, udata);
+    kqueue_event receipt;
+    if (kqueue_call(kq, &ch, 1, &receipt, 1, nullptr) < 0)
+        return errno;
+    return (receipt.flags & EV_ERROR) ? static_cast<int>(receipt.data) : 0;
+}
+
 inline std::error_code
 kqueue_scheduler::register_descriptor(
     int fd, reactor_descriptor_state* desc) const
 {
-    struct kevent changes[2];
-    EV_SET(
-        &changes[0], static_cast<uintptr_t>(fd), EVFILT_READ, EV_ADD | EV_CLEAR,
-        0, 0, desc);
-    EV_SET(
-        &changes[1], static_cast<uintptr_t>(fd), EVFILT_WRITE,
-        EV_ADD | EV_CLEAR, 0, 0, desc);
-
-    if (::kevent(kq_fd_, changes, 2, nullptr, 0, nullptr) < 0)
-        return make_err(errno);
-
-    desc->registered_events = reactor_event_read | reactor_event_write;
+    int const err = kqueue_add_filter(kq_fd_, fd, EVFILT_READ, desc);
+    // EINVAL/ENODEV: a device with no kqfilter. As on epoll's EPERM,
+    // adopt it unwatched.
+    bool const unpollable = err == EINVAL || err == ENODEV;
+    if (err != 0 && !unpollable)
+        return make_err(err);
+    desc->registered_events = unpollable ? 0 : reactor_event_read;
+    desc->unpollable        = unpollable;
     desc->fd                = fd;
     desc->scheduler_        = this;
     desc->mutex.set_enabled(reactor_io_locking_);
@@ -255,17 +344,33 @@ kqueue_scheduler::register_descriptor(
     return {};
 }
 
+inline std::error_code
+kqueue_scheduler::ensure_write_registered(
+    int fd, reactor_descriptor_state* desc) const noexcept
+{
+    // Added on first need, as asio does: adoption never asks for a
+    // write filter a read-only device would refuse. Adding a filter
+    // reports the current state, so an fd already writable fires at
+    // once and no edge is lost.
+    if (desc->registered_events & reactor_event_write)
+        return {};
+    if (int err = kqueue_add_filter(kq_fd_, fd, EVFILT_WRITE, desc))
+        return make_err(err);
+    desc->registered_events |= reactor_event_write;
+    return {};
+}
+
 inline void
 kqueue_scheduler::deregister_descriptor(int fd) const
 {
-    struct kevent changes[2];
-    EV_SET(
-        &changes[0], static_cast<uintptr_t>(fd), EVFILT_READ, EV_DELETE, 0, 0,
-        nullptr);
-    EV_SET(
-        &changes[1], static_cast<uintptr_t>(fd), EVFILT_WRITE, EV_DELETE, 0, 0,
-        nullptr);
-    ::kevent(kq_fd_, changes, 2, nullptr, 0, nullptr);
+    // EV_RECEIPT reports each change separately, so a never-added
+    // EVFILT_WRITE (ENOENT) does not stop the EVFILT_READ delete.
+    kqueue_event changes[2];
+    kqueue_set(changes[0], fd, EVFILT_READ, EV_DELETE | EV_RECEIPT, 0, nullptr);
+    kqueue_set(
+        changes[1], fd, EVFILT_WRITE, EV_DELETE | EV_RECEIPT, 0, nullptr);
+    kqueue_event receipts[2];
+    kqueue_call(kq_fd_, changes, 2, receipts, 2, nullptr);
 }
 
 inline void
@@ -276,9 +381,9 @@ kqueue_scheduler::interrupt_reactor() const
             expected, true, std::memory_order_acq_rel,
             std::memory_order_acquire))
     {
-        struct kevent ev;
-        EV_SET(&ev, 0, EVFILT_USER, 0, NOTE_TRIGGER, 0, nullptr);
-        if (::kevent(kq_fd_, &ev, 1, nullptr, 0, nullptr) < 0)
+        kqueue_event ev;
+        kqueue_set(ev, 0, EVFILT_USER, 0, NOTE_TRIGGER, nullptr);
+        if (kqueue_call(kq_fd_, &ev, 1, nullptr, 0, nullptr) < 0)
         {
             // The flag is what coalesces later interrupts into a
             // trigger already queued on the kqueue; a kevent that
@@ -342,7 +447,7 @@ kqueue_scheduler::run_task(lock_type& lock, context_type& ctx, long timeout_us)
         ts_ptr     = &ts;
     }
 
-    int nev = ::kevent(
+    int nev = kqueue_call(
         kq_fd_, nullptr, 0, event_buffer_.data(),
         static_cast<int>(event_buffer_.size()), ts_ptr);
     int saved_errno = errno;
@@ -361,7 +466,8 @@ kqueue_scheduler::run_task(lock_type& lock, context_type& ctx, long timeout_us)
         }
 
         auto* desc =
-            static_cast<reactor_descriptor_state*>(event_buffer_[i].udata);
+            static_cast<reactor_descriptor_state*>(
+                kqueue_udata(event_buffer_[i]));
         if (!desc)
             continue;
 

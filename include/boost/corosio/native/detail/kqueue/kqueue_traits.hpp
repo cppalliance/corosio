@@ -15,6 +15,7 @@
 #if BOOST_COROSIO_HAS_KQUEUE
 
 #include <boost/corosio/native/detail/make_err.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_descriptor_ops.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_descriptor_state.hpp>
 
 #include <system_error>
@@ -45,7 +46,7 @@ struct kqueue_traits
     using scheduler_type  = kqueue_scheduler;
     using desc_state_type = reactor_descriptor_state;
 
-    static constexpr bool needs_write_notification = false;
+    static constexpr bool needs_park_notification = false;
 
     // No per-socket state or lifecycle hooks: the stream socket hook is a
     // plain setsockopt passthrough, like epoll/select. SO_LINGER in particular
@@ -102,6 +103,8 @@ struct kqueue_traits
             return n;
         }
     };
+
+    using descriptor_write_policy = detail::descriptor_write_policy;
 
     struct accept_policy
     {

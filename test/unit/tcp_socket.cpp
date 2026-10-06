@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -9,6 +10,7 @@
 
 // Test that header file is self-contained.
 #include <boost/corosio/tcp_socket.hpp>
+#include <boost/corosio/error.hpp>
 
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/socket_option.hpp>
@@ -28,6 +30,7 @@
 #include <boost/capy/task.hpp>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -1898,8 +1901,24 @@ struct tcp_socket_test
         BOOST_TEST_EQ(resumed, before_destroy);
     }
 
+    void testAssignOnOpenIsAlreadyOpen()
+    {
+        io_context ioc(Backend);
+        tcp_socket obj(ioc);
+        BOOST_TEST(!obj.open(family::v4));
+        auto held   = obj.native_handle();
+        auto second = make_native_socket(AF_INET, SOCK_STREAM);
+        BOOST_TEST(second != invalid_native_socket);
+        make_native_adoptable(second);
+        BOOST_TEST(obj.assign(second) == error::already_open);
+        BOOST_TEST(obj.native_handle() == held);
+        BOOST_TEST(native_socket_valid(second));
+        close_native_socket(second);
+    }
+
     void run()
     {
+        testAssignOnOpenIsAlreadyOpen();
         testConstruction();
         testOpen();
         testOpenWhenAlreadyOpen();
@@ -1991,7 +2010,7 @@ struct tcp_socket_test
         testAssignConnectedSocket();
         testAssignRejections();
         testAssignFailureKeepsSocket();
-        testAssignOverOpenCancelsPending();
+        testAssignOverOpenKeepsPending();
         testRelease();
         testReleaseClosedThrows();
         testAssignV6();
@@ -2475,54 +2494,42 @@ struct tcp_socket_test
         BOOST_TEST(done);
     }
 
-    // Assign over an open socket cancels its pending operations and
-    // leaves the adopted descriptor usable.
-    void testAssignOverOpenCancelsPending()
+    // assign() over an open socket is refused and leaves its pending
+    // operations undisturbed.
+    void testAssignOverOpenKeepsPending()
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
         auto pair =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
         tcp_socket& s1 = pair.first;
-
-        tcp_acceptor acc(ioc);
-        BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
-        auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
-        BOOST_TEST(!ec);
-        ec = acc.listen();
-        BOOST_TEST(!ec);
+        tcp_socket& s2 = pair.second;
+        auto held      = s1.native_handle();
 
         auto nfd = make_native_socket(AF_INET, SOCK_STREAM);
         BOOST_TEST(nfd != invalid_native_socket);
-        BOOST_TEST(
-            native_connect_loopback(nfd, acc.local_endpoint().port(), false));
         make_native_adoptable(nfd);
 
         std::error_code read_ec;
-        bool read_done = false;
-        bool exchanged = false;
+        std::size_t read_n = 0;
+        bool read_done     = false;
         char buf[16];
 
         auto reader = [&]() -> capy::task<> {
-            [[maybe_unused]] auto [rec, rn] =
+            auto [rec, rn] =
                 co_await s1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             read_ec   = rec;
+            read_n    = rn;
             read_done = true;
         };
         auto adopter = [&]() -> capy::task<> {
-            BOOST_TEST(!s1.assign(nfd));
-            auto [aec, peer] = co_await acc.accept();
-            BOOST_TEST(!aec);
-            char const out[] = "ping";
-            [[maybe_unused]] auto [wec, wn] =
-                co_await s1.write_some(capy::const_buffer(out, 4));
+            BOOST_TEST(s1.assign(nfd) == error::already_open);
+            BOOST_TEST_EQ(read_done, false);
+            BOOST_TEST(s1.native_handle() == held);
+            auto [wec, wn] =
+                co_await s2.write_some(capy::const_buffer("ping", 4));
             BOOST_TEST(!wec);
-            char in[8];
-            auto [rec, rn] =
-                co_await peer.read_some(capy::mutable_buffer(in, sizeof(in)));
-            BOOST_TEST(!rec);
-            exchanged = (rn == 4);
+            (void)wn;
         };
 
         // run_async runs inline to the first suspend, so spawning the
@@ -2533,10 +2540,9 @@ struct tcp_socket_test
         ioc.run();
 
         BOOST_TEST(read_done);
-        BOOST_TEST(read_ec == capy::cond::canceled);
-        BOOST_TEST(s1.is_open());
-        BOOST_TEST(s1.native_handle() == nfd);
-        BOOST_TEST(exchanged);
+        BOOST_TEST(!read_ec);
+        BOOST_TEST_EQ(read_n, 4u);
+        close_native_socket(nfd);
     }
 
     // release() hands ownership to the caller only after pending

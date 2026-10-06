@@ -88,7 +88,11 @@
 (?i)epoll
 (?i)kqueue
 (?i)io_uring
+(?i)multishot
 (?i)iovec
+(?i)ttys?
+(?i)mailslots?
+(?i)inodes?
 (?i)syscalls?
 (?i)datagrams?
 (?i)wakeups?
@@ -133,6 +137,9 @@
 
 # --- Coined adjectives and nouns the guide uses ---------------------------------
 (?i)joinable
+(?i)waitable
+(?i)interruptible
+(?i)pollable
 (?i)schedulable
 (?i)launchable
 (?i)buildable
@@ -278,6 +285,7 @@
 (?i)wolfssl
 (?i)backend[’']s
 (?i)scheduler[’']s
+(?i)select[’']s
 (?i)IP[’']s
 (?i)UDP[’']s
 (?i)URL[’']s

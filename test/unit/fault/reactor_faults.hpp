@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -523,25 +524,33 @@ struct reactor_common_faults
        armed code rather than whatever the kernel recorded — the same
        trick testErrorEventSoError uses for the plain read arm.
     */
+    /* A reset arriving with only a readiness wait parked.
+
+       A readiness wait reports readiness and leaves SO_ERROR for the
+       read or write that follows, as asio does: the dispatch must not
+       read SO_ERROR for it, since reading clears it. The probe is
+       faulted, so a read would show as an injected EBADF. A reset
+       rather than raise_error_condition()'s out-of-band byte, because
+       urgent data on select is not readiness for this wait.
+    */
     void testErrorEventOnParkedWaitRead()
     {
         io_context ioc(Backend);
         auto [c, peer] = test::make_socket_pair(ioc);
         std::stop_source guard;
         std::error_code wec;
+        bool probe_fired = false;
         auto waiter = [&]() -> capy::task<> {
             fault_scope probe(sys::getsockopt, EBADF);
-            auto [ec] = co_await c.wait(wait_type::read);
-            wec       = ec;
-            BOOST_TEST(probe.fired());
-            // An out-of-band byte keeps select's except set raised, so
-            // the socket that raised it goes before the next pass.
-            peer.close();
+            auto [ec]   = co_await c.wait(wait_type::read);
+            wec         = ec;
+            probe_fired = probe.fired();
             guard.request_stop();
         };
         auto trigger = [&]() -> capy::task<> {
             std::ignore = co_await corosio::delay(std::chrono::milliseconds(1));
-            raise_error_condition(peer);
+            peer.set_option(socket_option::linger(true, 0));
+            peer.close();
         };
         bool expired = false;
         capy::run_async(ioc.get_executor())(waiter());
@@ -550,7 +559,8 @@ struct reactor_common_faults
             ioc.get_executor(), guard.get_token())(stop_guard(ioc, expired));
         ioc.run();
         BOOST_TEST(!expired);
-        BOOST_TEST(wec == std::errc::bad_file_descriptor);
+        BOOST_TEST(!probe_fired);
+        BOOST_TEST(!wec);
         BOOST_TEST(c.is_open());
     }
 
@@ -648,6 +658,7 @@ struct reactor_common_faults
         BOOST_TEST(c.is_open());
     }
 
+    /// The write-direction twin of testErrorEventOnParkedWaitRead.
     void testErrorEventOnParkedWaitWrite()
     {
         io_context ioc(Backend);
@@ -666,13 +677,15 @@ struct reactor_common_faults
             wec         = ec;
             probe_fired = probe.fired();
             done        = true;
-            peer.close();
             guard.request_stop();
         };
         auto trigger = [&]() -> capy::task<> {
             parked = !done;
             if (parked)
-                raise_error_condition(peer);
+            {
+                peer.set_option(socket_option::linger(true, 0));
+                peer.close();
+            }
             co_return;
         };
         bool expired = false;
@@ -687,8 +700,8 @@ struct reactor_common_faults
             skip_unfillable("testErrorEventOnParkedWaitWrite");
             return;
         }
-        BOOST_TEST(probe_fired);
-        BOOST_TEST(wec == std::errc::bad_file_descriptor);
+        BOOST_TEST(!probe_fired);
+        BOOST_TEST(!wec);
         BOOST_TEST(c.is_open());
     }
 

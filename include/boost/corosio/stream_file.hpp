@@ -14,6 +14,7 @@
 #include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
+#include <boost/corosio/error.hpp>
 #include <boost/corosio/file_base.hpp>
 #include <boost/corosio/io/io_stream.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -40,6 +41,13 @@ namespace boost::corosio {
     On POSIX platforms, file I/O is dispatched to a thread pool
     (blocking `preadv`/`pwritev`) with completion posted back to
     the scheduler. On Windows, true overlapped I/O is used via IOCP.
+
+    On Windows, while the file is open, its handle is bound to the
+    execution context's completion port. Every overlapped call on the
+    handle queues a packet to that port. Do not issue your own
+    overlapped I/O on `native_handle()` (`DeviceIoControl`,
+    `ReadFile`) unless the `OVERLAPPED`'s `hEvent` has its low-order
+    bit set, which suppresses the packet.
 
     @par Thread Safety
     Distinct objects: Safe.@n
@@ -268,23 +276,59 @@ public:
         The file object becomes not-open. The caller is
         responsible for closing the returned handle.
 
+        `release()` cancels pending operations first. On Windows, the
+        object keeps the handle and this throws if one is still in
+        flight. It does the same if Windows refuses to detach the
+        handle from the execution context's completion port. Call
+        `release()` again once the cancelled operations have
+        completed. Detaching requires Windows 8.1 or later.
+
         @return The native file descriptor or handle.
 
         @throws std::system_error `errc::bad_file_descriptor` if the
-            file is not open.
+            file is not open. On Windows,
+            `errc::device_or_resource_busy` if an operation is still in
+            flight, or `errc::operation_not_supported` if the handle
+            cannot be detached.
     */
     native_handle_type release();
 
     /** Adopt an existing native handle.
 
-        Closes any currently open file before adopting.
-        The file object takes ownership of the handle. Handles
-        created elsewhere may be unsuitable for asynchronous I/O.
-        Such failures are reported through the returned error code.
+        The object must be closed. To replace a held file, `close()`
+        or `release()` it first. On success the object takes
+        ownership of @p handle. Handles created elsewhere may be
+        unsuitable for asynchronous I/O. `assign()` reports most such
+        failures through the returned error code.
 
         @param handle The native file descriptor or handle.
 
-        @return The error code, empty on success.
+        @return An error code describing the outcome.
+            `error::already_open` if this object is open.
+            `errc::bad_file_descriptor` if @p handle is invalid.
+            `errc::operation_not_supported` if a file object cannot
+            use it. On Windows, the rejected handles are a pipe, a
+            socket, a console, a directory, a handle opened without
+            `FILE_FLAG_OVERLAPPED`, or one
+            already in skip-completion-port-on-success mode. On
+            Windows, `errc::invalid_argument` when @p handle is
+            bound to another completion port. Any other failure is
+            the code reported by the system. Otherwise, the code is
+            empty.
+
+        @par Exception Safety
+        Throws nothing. On failure the object is unchanged and the
+        caller still owns @p handle.
+
+        @note On POSIX, the rejected descriptors are, in practice, a
+            directory, a pipe, a socket, or any other anonymous inode.
+            Adopt a pipe, a socket, or an anonymous inode into a
+            @ref posix_stream_descriptor instead. `assign()` accepts a
+            non-seekable character device such as a tty. Its first
+            read or write then fails with `ESPIPE` on the epoll,
+            kqueue, and select I/O backends.
+
+        @see release
     */
     [[nodiscard]] std::error_code assign(native_handle_type handle) noexcept;
 
@@ -305,10 +349,10 @@ public:
         file_base::seek_basis origin = file_base::seek_set) noexcept;
 
 protected:
-    /// Default-construct (for derived types that initialize io_object directly).
+    /// Default-construct (for derived types that initialize `io_object` directly).
     stream_file() noexcept = default;
 
-    /** Construct from a pre-built handle (for native_stream_file).
+    /** Construct from a pre-built handle (for `native_stream_file`).
 
         @param h The pre-built handle to adopt.
     */

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -75,6 +76,7 @@ class reactor_stream_socket
         ImplBase,
         Endpoint>;
     friend base_type;
+    friend reactor_io_core<Derived, Service, DescState>;
     friend Derived;
 
 protected:
@@ -283,7 +285,7 @@ public:
     }
 
 private:
-    // CRTP callbacks for reactor_basic_socket cancel/close
+    // CRTP callbacks for reactor_io_core cancel/close
 
     template<class Op>
     reactor_op_base** op_to_desc_slot(Op& op) noexcept

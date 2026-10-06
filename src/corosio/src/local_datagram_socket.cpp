@@ -12,6 +12,7 @@
 #if BOOST_COROSIO_POSIX
 
 #include <boost/corosio/local_datagram_socket.hpp>
+#include <boost/corosio/error.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/local_datagram_service.hpp>
 
@@ -93,6 +94,8 @@ local_datagram_socket::shutdown(shutdown_type what) noexcept
 std::error_code
 local_datagram_socket::assign(native_handle_type fd) noexcept
 {
+    if (is_open())
+        return make_error_code(error::already_open);
     auto& svc = static_cast<detail::local_datagram_service&>(h_.service());
     std::error_code ec = svc.assign_socket(
         static_cast<local_datagram_socket::implementation&>(*h_.get()), fd);

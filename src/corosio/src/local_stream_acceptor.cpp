@@ -8,6 +8,7 @@
 //
 
 #include <boost/corosio/local_stream_acceptor.hpp>
+#include <boost/corosio/error.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/platform.hpp>
 #include <boost/corosio/detail/local_stream_acceptor_service.hpp>
@@ -78,6 +79,8 @@ local_stream_acceptor::open() noexcept
 std::error_code
 local_stream_acceptor::assign(native_handle_type fd) noexcept
 {
+    if (is_open())
+        return make_error_code(error::already_open);
     auto& svc =
         static_cast<detail::local_stream_acceptor_service&>(h_.service());
     auto ec = svc.assign_socket(

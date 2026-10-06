@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -13,7 +14,7 @@
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/wait_type.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
-#include <boost/corosio/native/detail/reactor/reactor_op_base.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_io_core.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_descriptor_state.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
@@ -59,16 +60,20 @@ template<
 class reactor_acceptor
     : public ImplBase
     , public std::enable_shared_from_this<Derived>
+    , public reactor_io_core<Derived, Service, DescState>
     , public intrusive_list<Derived>::node
 {
     friend Derived;
 
-protected:
-    // NOLINTNEXTLINE(bugprone-crtp-constructor-accessibility)
-    explicit reactor_acceptor(Service& svc) noexcept : svc_(svc) {}
+    using core_type = reactor_io_core<Derived, Service, DescState>;
+    friend core_type;
 
 protected:
-    Service& svc_;
+    // NOLINTNEXTLINE(bugprone-crtp-constructor-accessibility)
+    explicit reactor_acceptor(Service& svc) noexcept : core_type(svc) {}
+
+protected:
+    using core_type::svc_;
     int fd_ = -1;
     Endpoint local_endpoint_;
 
@@ -85,8 +90,7 @@ public:
     /// Pending wait-for-error operation slot.
     WaitOp wait_er_;
 
-    /// Per-descriptor state for persistent reactor registration.
-    DescState desc_state_;
+    using core_type::desc_state_;
 
     ~reactor_acceptor() override = default;
 
@@ -179,12 +183,10 @@ public:
     */
     std::error_code init_and_register(int fd) noexcept
     {
-        init_acceptor_fd(fd);
-        if (auto ec = svc_.scheduler().register_descriptor(fd, &desc_state_))
+        fd_ = fd;
+        if (auto ec = this->register_fd(fd))
         {
-            fd_                           = -1;
-            desc_state_.fd                = -1;
-            desc_state_.registered_events = 0;
+            fd_ = -1;
             return ec;
         }
         return {};
@@ -235,17 +237,11 @@ public:
         std::stop_token const&,
         std::error_code*);
 
-    /** Cancel a single pending operation.
-
-        Claims the operation from the read_op descriptor slot
-        under the mutex and posts it to the scheduler as cancelled.
-
-        @param op The operation to cancel.
-    */
-    void cancel_single_op(Op& op) noexcept;
-
     /** Cancel the pending accept operation. */
-    void do_cancel() noexcept;
+    void do_cancel() noexcept
+    {
+        this->cancel_all();
+    }
 
     /** Close the acceptor and cancel pending operations.
 
@@ -253,10 +249,28 @@ public:
         derived class may add backend-specific cleanup after
         calling this method.
     */
-    void do_close_socket() noexcept;
+    void do_close_socket() noexcept
+    {
+        this->abandon_all();
+        this->unregister_fd(fd_);
+        if (fd_ >= 0)
+        {
+            ::close(fd_);
+            fd_ = -1;
+        }
+        local_endpoint_ = Endpoint{};
+    }
 
     /** Release the acceptor without closing the fd. */
-    native_handle_type do_release_socket() noexcept;
+    native_handle_type do_release_socket() noexcept
+    {
+        this->abandon_all();
+        native_handle_type released = fd_;
+        this->unregister_fd(fd_);
+        fd_             = -1;
+        local_endpoint_ = Endpoint{};
+        return released;
+    }
 
     /** Bind the acceptor socket to an endpoint.
 
@@ -278,228 +292,42 @@ public:
         registration, or success.
     */
     std::error_code do_listen(int backlog);
+
+private:
+    // CRTP callbacks for reactor_io_core cancel/close
+
+    template<class AnyOp>
+    reactor_op_base** op_to_desc_slot(AnyOp& op) noexcept
+    {
+        if (&op == static_cast<void*>(&acc_))
+            return &desc_state_.read_op;
+        if (&op == static_cast<void*>(&wait_rd_))
+            return &desc_state_.wait_read_op;
+        if (&op == static_cast<void*>(&wait_wr_))
+            return &desc_state_.wait_write_op;
+        if (&op == static_cast<void*>(&wait_er_))
+            return &desc_state_.wait_error_op;
+        return nullptr;
+    }
+
+    template<class Fn>
+    void for_each_op(Fn fn) noexcept
+    {
+        fn(acc_);
+        fn(wait_rd_);
+        fn(wait_wr_);
+        fn(wait_er_);
+    }
+
+    template<class Fn>
+    void for_each_desc_entry(Fn fn) noexcept
+    {
+        fn(acc_, desc_state_.read_op);
+        fn(wait_rd_, desc_state_.wait_read_op);
+        fn(wait_wr_, desc_state_.wait_write_op);
+        fn(wait_er_, desc_state_.wait_error_op);
+    }
 };
-
-template<
-    class Derived,
-    class Service,
-    class Op,
-    class AcceptOp,
-    class WaitOp,
-    class DescState,
-    class ImplBase,
-    class Endpoint>
-void
-reactor_acceptor<
-    Derived,
-    Service,
-    Op,
-    AcceptOp,
-    WaitOp,
-    DescState,
-    ImplBase,
-    Endpoint>::cancel_single_op(Op& op) noexcept
-{
-    auto self = this->weak_from_this().lock();
-    if (!self)
-        return;
-
-    op.request_cancel();
-
-    reactor_op_base* claimed = nullptr;
-    {
-        std::lock_guard lock(desc_state_.mutex);
-        auto try_claim = [&](reactor_op_base*& slot) {
-            if (!claimed && slot == &op)
-                claimed = std::exchange(slot, nullptr);
-        };
-        try_claim(desc_state_.read_op);
-        try_claim(desc_state_.wait_read_op);
-        try_claim(desc_state_.wait_write_op);
-        try_claim(desc_state_.wait_error_op);
-    }
-    if (claimed)
-    {
-        op.impl_ptr = self;
-        svc_.post(&op);
-        svc_.work_finished();
-    }
-}
-
-template<
-    class Derived,
-    class Service,
-    class Op,
-    class AcceptOp,
-    class WaitOp,
-    class DescState,
-    class ImplBase,
-    class Endpoint>
-void
-reactor_acceptor<
-    Derived,
-    Service,
-    Op,
-    AcceptOp,
-    WaitOp,
-    DescState,
-    ImplBase,
-    Endpoint>::do_cancel() noexcept
-{
-    cancel_single_op(acc_);
-    cancel_single_op(wait_rd_);
-    cancel_single_op(wait_wr_);
-    cancel_single_op(wait_er_);
-}
-
-template<
-    class Derived,
-    class Service,
-    class Op,
-    class AcceptOp,
-    class WaitOp,
-    class DescState,
-    class ImplBase,
-    class Endpoint>
-void
-reactor_acceptor<
-    Derived,
-    Service,
-    Op,
-    AcceptOp,
-    WaitOp,
-    DescState,
-    ImplBase,
-    Endpoint>::do_close_socket() noexcept
-{
-    auto self = this->weak_from_this().lock();
-    if (self)
-    {
-        acc_.request_cancel();
-        wait_rd_.request_cancel();
-        wait_wr_.request_cancel();
-        wait_er_.request_cancel();
-
-        reactor_op_base* claimed_acc = nullptr;
-        reactor_op_base* claimed_wr  = nullptr;
-        reactor_op_base* claimed_ww  = nullptr;
-        reactor_op_base* claimed_we  = nullptr;
-        {
-            std::lock_guard lock(desc_state_.mutex);
-            claimed_acc = std::exchange(desc_state_.read_op, nullptr);
-            claimed_wr  = std::exchange(desc_state_.wait_read_op, nullptr);
-            claimed_ww  = std::exchange(desc_state_.wait_write_op, nullptr);
-            claimed_we  = std::exchange(desc_state_.wait_error_op, nullptr);
-            desc_state_.read_ready  = false;
-            desc_state_.write_ready = false;
-
-            if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
-                desc_state_.impl_ref_ = self;
-        }
-
-        auto repost = [&](reactor_op_base* claimed, reactor_op_base& op) {
-            if (claimed)
-            {
-                op.impl_ptr = self;
-                svc_.post(&op);
-                svc_.work_finished();
-            }
-        };
-        repost(claimed_acc, acc_);
-        repost(claimed_wr, wait_rd_);
-        repost(claimed_ww, wait_wr_);
-        repost(claimed_we, wait_er_);
-    }
-
-    if (fd_ >= 0)
-    {
-        if (desc_state_.registered_events != 0)
-            svc_.scheduler().deregister_descriptor(fd_);
-        ::close(fd_);
-        fd_ = -1;
-    }
-
-    desc_state_.fd                = -1;
-    desc_state_.registered_events = 0;
-
-    local_endpoint_ = Endpoint{};
-}
-
-template<
-    class Derived,
-    class Service,
-    class Op,
-    class AcceptOp,
-    class WaitOp,
-    class DescState,
-    class ImplBase,
-    class Endpoint>
-native_handle_type
-reactor_acceptor<
-    Derived,
-    Service,
-    Op,
-    AcceptOp,
-    WaitOp,
-    DescState,
-    ImplBase,
-    Endpoint>::do_release_socket() noexcept
-{
-    auto self = this->weak_from_this().lock();
-    if (self)
-    {
-        acc_.request_cancel();
-        wait_rd_.request_cancel();
-        wait_wr_.request_cancel();
-        wait_er_.request_cancel();
-
-        reactor_op_base* claimed_acc = nullptr;
-        reactor_op_base* claimed_wr  = nullptr;
-        reactor_op_base* claimed_ww  = nullptr;
-        reactor_op_base* claimed_we  = nullptr;
-        {
-            std::lock_guard lock(desc_state_.mutex);
-            claimed_acc = std::exchange(desc_state_.read_op, nullptr);
-            claimed_wr  = std::exchange(desc_state_.wait_read_op, nullptr);
-            claimed_ww  = std::exchange(desc_state_.wait_write_op, nullptr);
-            claimed_we  = std::exchange(desc_state_.wait_error_op, nullptr);
-            desc_state_.read_ready  = false;
-            desc_state_.write_ready = false;
-
-            if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
-                desc_state_.impl_ref_ = self;
-        }
-
-        auto repost = [&](reactor_op_base* claimed, reactor_op_base& op) {
-            if (claimed)
-            {
-                op.impl_ptr = self;
-                svc_.post(&op);
-                svc_.work_finished();
-            }
-        };
-        repost(claimed_acc, acc_);
-        repost(claimed_wr, wait_rd_);
-        repost(claimed_ww, wait_wr_);
-        repost(claimed_we, wait_er_);
-    }
-
-    native_handle_type released = fd_;
-
-    if (fd_ >= 0)
-    {
-        if (desc_state_.registered_events != 0)
-            svc_.scheduler().deregister_descriptor(fd_);
-        fd_ = -1;
-    }
-
-    desc_state_.fd                = -1;
-    desc_state_.registered_events = 0;
-
-    local_endpoint_ = Endpoint{};
-
-    return released;
-}
 
 template<
     class Derived,
@@ -671,6 +499,11 @@ reactor_acceptor<
     else
     {
         *desc_slot_ptr = &op;
+
+        // Select watches an fd only while an op is parked; see
+        // register_op.
+        if constexpr (Service::needs_park_notification)
+            svc_.scheduler().notify_reactor();
     }
     return std::noop_coroutine();
 }

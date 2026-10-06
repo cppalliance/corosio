@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -1098,8 +1099,6 @@ win_udp_service::assign_socket(
     SOCKET sock = static_cast<SOCKET>(fd);
     if (sock == INVALID_SOCKET)
         return make_err(WSAENOTSOCK);
-    if (sock == internal->socket_)
-        return std::make_error_code(std::errc::invalid_argument);
 
     // SO_PROTOCOL_INFOW works on an unbound socket, unlike getsockname
     // (WSAEINVAL until bind names it).
@@ -1115,15 +1114,11 @@ win_udp_service::assign_socket(
     if (proto_info.iSocketType != SOCK_DGRAM)
         return make_err(WSAEPROTOTYPE);
 
-    // Associate before releasing the held socket: on IOCP nothing
-    // shares descriptor state the way the reactor path does, so a
-    // failed association must not cost the caller their old socket.
     HANDLE result = ::CreateIoCompletionPort(
         reinterpret_cast<HANDLE>(sock), static_cast<HANDLE>(iocp_), key_io, 0);
     if (result == nullptr)
         return make_err(::GetLastError());
 
-    internal->close_socket();
     internal->socket_ = sock;
     internal->family_ = proto_info.iAddressFamily;
 

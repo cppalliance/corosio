@@ -157,6 +157,10 @@ reactor_acceptor_impl<
         else
         {
             this->desc_state_.read_op = &op;
+
+            // Select watches reads only for parked ops; see register_op.
+            if constexpr (Traits::needs_park_notification)
+                this->svc_.scheduler().notify_reactor();
         }
         return std::noop_coroutine();
     }

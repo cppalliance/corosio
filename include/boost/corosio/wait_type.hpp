@@ -12,10 +12,15 @@
 
 namespace boost::corosio {
 
-/** Direction selector for socket and acceptor wait() operations.
+/** Selects the condition that completes a `wait()` operation.
 
-    Passed to socket::wait() and acceptor::wait() to select which
-    readiness condition to await before returning.
+    Passed to the `wait()` of sockets, acceptors and
+    @ref posix_stream_descriptor to select which readiness condition
+    to await before returning.
+
+    A hangup or a pending error satisfies `read` and `write`. The wait
+    completes successfully and leaves the error for the next read or
+    write to report.
 */
 enum class wait_type
 {

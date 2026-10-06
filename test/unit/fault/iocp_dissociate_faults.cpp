@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -12,10 +13,13 @@
 #include "context.hpp"
 #include "test_suite.hpp"
 #include "test_utils.hpp"
+#include "win_test_handles.hpp"
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/tcp_socket.hpp>
+#include <boost/corosio/win_stream_handle.hpp>
 
+#include <system_error>
 #include <tuple>
 
 #if BOOST_COROSIO_HAS_IOCP
@@ -74,9 +78,46 @@ struct iocp_dissociate_faults
         close_native_socket(h2);
     }
 
+    /* The overlapped handle types are not best effort.
+
+       Runs after testReleaseWithoutNtEntryPoint, which left the
+       process without the entry point, so the detach cannot happen.
+       Asio fails its release() here, and so does this one: it throws
+       and the object keeps its handle.
+    */
+    void testHandleReleaseWithoutNtEntryPoint()
+    {
+        if (!hook_is_live(sys::GetModuleHandleW))
+        {
+            skip_dead_hook("GetModuleHandleW");
+            return;
+        }
+        io_context ioc(iocp);
+        auto p = make_pipe_pair();
+        BOOST_TEST(p.server);
+        win_stream_handle h(ioc);
+        auto const raw = as_native(p.server.get());
+        BOOST_TEST(!h.assign(raw));
+        p.server.release();
+
+        std::error_code ec;
+        try
+        {
+            (void)h.release();
+        }
+        catch (std::system_error const& e)
+        {
+            ec = e.code();
+        }
+        BOOST_TEST(ec == std::errc::operation_not_supported);
+        BOOST_TEST(h.is_open());
+        BOOST_TEST_EQ(h.native_handle(), raw);
+    }
+
     void run()
     {
         testReleaseWithoutNtEntryPoint();
+        testHandleReleaseWithoutNtEntryPoint();
     }
 };
 

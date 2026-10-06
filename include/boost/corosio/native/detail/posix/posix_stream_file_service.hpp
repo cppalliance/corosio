@@ -198,6 +198,10 @@ posix_stream_file::read_some(
     op.bytes_out = bytes_out;
     op.start(token);
 
+    op.fd         = fd_;
+    op.offset     = offset_;
+    op.generation = generation_;
+
     op.ex.on_work_started();
 
     read_pool_op_.file_ = this;
@@ -232,9 +236,9 @@ posix_stream_file::do_read_work(pool_work_item* w) noexcept
         ssize_t n;
         do
         {
-            n = ::preadv(
-                self->fd_, op.iovecs, op.iovec_count,
-                static_cast<off_t>(self->offset_));
+            n = file_preadv(
+                op.fd, op.iovecs, op.iovec_count,
+                static_cast<file_off_t>(op.offset));
         }
         while (n < 0 && errno == EINTR);
 
@@ -242,7 +246,12 @@ posix_stream_file::do_read_work(pool_work_item* w) noexcept
         {
             op.errn              = 0;
             op.bytes_transferred = static_cast<std::size_t>(n);
-            self->offset_ += static_cast<std::uint64_t>(n);
+
+            // The file may have been replaced while this ran; its
+            // position belongs to whatever it now holds.
+            std::lock_guard<std::mutex> lock(self->offset_mutex_);
+            if (self->generation_ == op.generation)
+                self->offset_ += static_cast<std::uint64_t>(n);
         }
         else
         {
@@ -300,6 +309,10 @@ posix_stream_file::write_some(
     op.bytes_out = bytes_out;
     op.start(token);
 
+    op.fd         = fd_;
+    op.offset     = offset_;
+    op.generation = generation_;
+
     op.ex.on_work_started();
 
     write_pool_op_.file_ = this;
@@ -334,9 +347,9 @@ posix_stream_file::do_write_work(pool_work_item* w) noexcept
         ssize_t n;
         do
         {
-            n = ::pwritev(
-                self->fd_, op.iovecs, op.iovec_count,
-                static_cast<off_t>(self->offset_));
+            n = file_pwritev(
+                op.fd, op.iovecs, op.iovec_count,
+                static_cast<file_off_t>(op.offset));
         }
         while (n < 0 && errno == EINTR);
 
@@ -344,7 +357,12 @@ posix_stream_file::do_write_work(pool_work_item* w) noexcept
         {
             op.errn              = 0;
             op.bytes_transferred = static_cast<std::size_t>(n);
-            self->offset_ += static_cast<std::uint64_t>(n);
+
+            // The file may have been replaced while this ran; its
+            // position belongs to whatever it now holds.
+            std::lock_guard<std::mutex> lock(self->offset_mutex_);
+            if (self->generation_ == op.generation)
+                self->offset_ += static_cast<std::uint64_t>(n);
         }
         else
         {

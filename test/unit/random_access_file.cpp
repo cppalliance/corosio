@@ -9,6 +9,7 @@
 
 // Test that header file is self-contained.
 #include <boost/corosio/random_access_file.hpp>
+#include <boost/corosio/error.hpp>
 
 // GCC emits false-positive "may be used uninitialized" warnings
 // for structured bindings with co_await expressions
@@ -23,6 +24,7 @@
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/ex/strand.hpp>
 #include <boost/capy/task.hpp>
 
 #include "context.hpp"
@@ -46,10 +48,17 @@
 #include "temp_path.hpp"
 
 #if BOOST_COROSIO_POSIX
+#include <cerrno>
 #include <fcntl.h>
 #include <unistd.h>
 #else
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
+#endif
+
+#if BOOST_COROSIO_HAS_IOCP
+#include <boost/corosio/win_random_access_handle.hpp>
+#include <winioctl.h>
+#include "win_test_handles.hpp"
 #endif
 
 namespace boost::corosio {
@@ -719,8 +728,274 @@ struct random_access_file_test
         BOOST_TEST(!resumed);
     }
 
+#if BOOST_COROSIO_POSIX
+    // A rejected assign() leaves a read_at queued on the pool alone: a
+    // disturbed object would show up as the read completing against
+    // the other file.
+    void testAssignKeepsQueuedRead()
+    {
+#if BOOST_COROSIO_HAS_URING
+        // No pool on io_uring; this pins the POSIX pool path.
+        if constexpr (
+            std::is_same_v<std::remove_const_t<decltype(Backend)>, uring_t>)
+            return;
+#endif
+        temp_file tmp1("raf_assign_cancel_a_", "OLDOLDOLD");
+        temp_file tmp2("raf_assign_cancel_b_", "NEWNEWNEW");
+
+        // blocker must outlive ioc: the pool joins its workers while
+        // the context is being destroyed, and pool_release_gate's
+        // shutdown() calls blocker.release() at that point (see
+        // pool_teardown.hpp). Declaring it after ioc destroys it first,
+        // and ioc's destructor then releases an already-dead object.
+        test::pool_blocker blocker;
+        io_context ioc(Backend);
+        BOOST_TEST(test::park_pool_worker(ioc, blocker));
+
+        random_access_file f(ioc);
+        BOOST_TEST(!f.open(tmp1.path, file_base::read_only));
+
+        bool resumed              = false;
+        std::error_code result_ec = {};
+        std::size_t result_bytes  = 0;
+        char buf[16]              = {};
+
+        auto reader = [&]() -> capy::task<> {
+            auto [ec, n] = co_await f.read_some_at(
+                0, capy::mutable_buffer(buf, sizeof(buf)));
+            result_ec    = ec;
+            result_bytes = n;
+            resumed      = true;
+        };
+
+        std::optional<io_context::executor_type> ex;
+        std::optional<capy::io_env> env;
+        std::optional<capy::task<>> parked;
+        ex.emplace(ioc.get_executor());
+        env.emplace(capy::io_env{*ex, std::stop_token{}, nullptr});
+        parked.emplace(reader());
+        // Synchronously runs the coroutine up to its first suspension,
+        // which posts the read to the pool -- queued behind the parked
+        // worker, not yet executed.
+        parked->await_suspend(std::noop_coroutine(), &*env).resume();
+
+        int fd2 = ::open(tmp2.path.c_str(), O_RDONLY);
+        BOOST_TEST(fd2 >= 0);
+        BOOST_TEST(
+            f.assign(static_cast<native_handle_type>(fd2)) ==
+            error::already_open);
+
+        blocker.release();
+        ioc.run();
+
+        BOOST_TEST(resumed);
+        BOOST_TEST(!result_ec);
+        BOOST_TEST_EQ(result_bytes, 9u);
+        BOOST_TEST(std::memcmp(buf, "OLDOLDOLD", 9) == 0);
+        ::close(fd2);
+    }
+
+    // release() cancels a write queued on the pool. The op has already
+    // copied the fd number, so without the cancel it would write into
+    // whatever the caller next opens on that number.
+    void testReleaseCancelsQueuedWrite()
+    {
+#if BOOST_COROSIO_HAS_URING
+        // No pool on io_uring; this pins the POSIX pool path.
+        if constexpr (
+            std::is_same_v<std::remove_const_t<decltype(Backend)>, uring_t>)
+            return;
+#endif
+        temp_file tmp1("raf_release_queued_a_", "OLDOLDOLD");
+        temp_file tmp2("raf_release_queued_b_", "NEWNEWNEW");
+
+        // blocker must outlive ioc; see testAssignKeepsQueuedRead.
+        test::pool_blocker blocker;
+        io_context ioc(Backend);
+        BOOST_TEST(test::park_pool_worker(ioc, blocker));
+
+        random_access_file f(ioc);
+        BOOST_TEST(!f.open(tmp1.path, file_base::read_write));
+
+        bool resumed              = false;
+        std::error_code result_ec = {};
+
+        auto writer = [&]() -> capy::task<> {
+            auto [ec, n] = co_await f.write_some_at(
+                0, capy::const_buffer("XXXXXXXXX", 9));
+            std::ignore  = n;
+            result_ec    = ec;
+            resumed      = true;
+        };
+
+        std::optional<io_context::executor_type> ex;
+        std::optional<capy::io_env> env;
+        std::optional<capy::task<>> parked;
+        ex.emplace(ioc.get_executor());
+        env.emplace(capy::io_env{*ex, std::stop_token{}, nullptr});
+        parked.emplace(writer());
+        // Queues the write behind the parked worker.
+        parked->await_suspend(std::noop_coroutine(), &*env).resume();
+
+        // Recycle the released number onto the other file.
+        int raw = static_cast<int>(f.release());
+        int fd2 = ::open(tmp2.path.c_str(), O_RDWR);
+        BOOST_TEST(fd2 >= 0);
+        BOOST_TEST_EQ(::dup2(fd2, raw), raw);
+        ::close(fd2);
+
+        blocker.release();
+        ioc.run();
+        ::close(raw);
+
+        BOOST_TEST(resumed);
+        BOOST_TEST(result_ec == capy::cond::canceled);
+        std::ifstream ifs(tmp2.path, std::ios::binary);
+        std::string contents(
+            (std::istreambuf_iterator<char>(ifs)),
+            std::istreambuf_iterator<char>());
+        BOOST_TEST(contents == "NEWNEWNEW");
+    }
+#endif
+
+    void testResumesOnAwaitingExecutor()
+    {
+        // The pool-backed op is freed before the coroutine resumes, so
+        // only a continuation the awaitable owns can carry it back
+        // through the awaiting coroutine's executor.
+        temp_file tmp("raf_resume_strand_", std::string(64, 'z'));
+        io_context ioc(Backend);
+        capy::strand s(ioc.get_executor());
+        random_access_file f(ioc);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
+
+        bool on_strand = false;
+        std::error_code ec;
+        char buf[16];
+        auto t = [&]() -> capy::task<> {
+            auto [e, n] = co_await f.read_some_at(
+                0, capy::mutable_buffer(buf, sizeof(buf)));
+            ec = e;
+            (void)n;
+            on_strand = s.running_in_this_thread();
+        };
+        capy::run_async(s)(t());
+        ioc.run();
+
+        BOOST_TEST(!ec);
+        BOOST_TEST(on_strand);
+    }
+
+    void testOffsetAbove4GiB()
+    {
+        temp_file tmp("raf_4gib_", "");
+#if BOOST_COROSIO_HAS_IOCP
+        {
+            // Without the sparse flag NTFS allocates the whole 5 GiB. Set
+            // it through a synchronous handle; the one f holds is bound
+            // to the completion port.
+            test::unique_handle s(::CreateFileW(
+                tmp.path.c_str(), GENERIC_READ | GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS,
+                FILE_ATTRIBUTE_NORMAL, nullptr));
+            DWORD ret = 0;
+            BOOST_TEST(::DeviceIoControl(
+                s.get(), FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0, &ret,
+                nullptr));
+        }
+#endif
+        io_context ioc(Backend);
+        random_access_file f(ioc);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_write));
+        std::uint64_t const off = (std::uint64_t(5) << 30) + 7;
+
+        std::error_code wec, rec;
+        char out[4] = {'w', 'x', 'y', 'z'};
+        char in[4]  = {};
+        auto t      = [&]() -> capy::task<> {
+            auto [e1, n1] =
+                co_await f.write_some_at(off, capy::const_buffer(out, 4));
+            wec = e1;
+            (void)n1;
+            auto [e2, n2] =
+                co_await f.read_some_at(off, capy::mutable_buffer(in, 4));
+            rec = e2;
+            (void)n2;
+        };
+        capy::run_async(ioc.get_executor())(t());
+        ioc.run();
+
+        BOOST_TEST(!wec);
+        BOOST_TEST(!rec);
+        BOOST_TEST(std::memcmp(in, out, 4) == 0);
+    }
+
+#if BOOST_COROSIO_HAS_IOCP
+    // A positional read on a regular file completes too fast to cancel,
+    // so this pins the concurrent model's stop-token path on a pipe.
+    void testStopTokenCancelsReadAt()
+    {
+        io_context ioc(Backend);
+        win_random_access_handle h(ioc);
+        auto p = test::make_pipe_pair();
+        BOOST_TEST(!h.assign(test::as_native(p.server.release())));
+
+        std::stop_source ss;
+        std::error_code ec;
+        char buf[8]{};
+        auto reader = [&]() -> capy::task<> {
+            auto [e, n] = co_await h.read_some_at(
+                0, capy::mutable_buffer(buf, sizeof(buf)));
+            ec = e;
+            (void)n;
+        };
+        auto stopper = [&]() -> capy::task<> {
+            ss.request_stop();
+            co_return;
+        };
+        capy::run_async(ioc.get_executor(), ss.get_token())(reader());
+        capy::run_async(ioc.get_executor())(stopper());
+        ioc.run();
+        BOOST_TEST(ec == capy::cond::canceled);
+    }
+#endif
+
+    void testAssignOnOpenIsAlreadyOpen()
+    {
+        temp_file tmp1("raf_open_a_", "first");
+        temp_file tmp2("raf_open_b_", "second");
+        io_context ioc(Backend);
+        random_access_file f(ioc);
+        BOOST_TEST(!f.open(tmp1.path, file_base::read_only));
+        auto held = f.native_handle();
+
+#if BOOST_COROSIO_HAS_IOCP
+        HANDLE h = ::CreateFileW(
+            tmp2.path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+            nullptr, OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, nullptr);
+        BOOST_TEST(h != INVALID_HANDLE_VALUE);
+        auto second = reinterpret_cast<native_handle_type>(h);
+#else
+        int fd = ::open(tmp2.path.c_str(), O_RDONLY);
+        BOOST_TEST(fd >= 0);
+        auto second = static_cast<native_handle_type>(fd);
+#endif
+        BOOST_TEST(f.assign(second) == error::already_open);
+        BOOST_TEST(f.assign(held) == error::already_open);
+        BOOST_TEST(f.native_handle() == held);
+
+#if BOOST_COROSIO_HAS_IOCP
+        ::CloseHandle(h);
+#else
+        ::close(fd);
+#endif
+    }
+
     void run()
     {
+        testAssignOnOpenIsAlreadyOpen();
+        testResumesOnAwaitingExecutor();
         testConstruction();
         testConstructionFromExecutor();
         testMoveConstruct();
@@ -757,13 +1032,21 @@ struct random_access_file_test
         testClosedFileErrors();
         testClosedAtOpsComplete();
         testStopRaceReportsTransfer();
+        testAssignPipeRejected();
+        testAssignRejectsBadHandle();
 #if BOOST_COROSIO_POSIX
-        testSyncOnPipeFails();
         testHugeOffsetFails();
+#endif
+#if BOOST_COROSIO_HAS_IOCP
+        testAssignRejectsSynchronousHandle();
+        testFailedAssignKeepsHeldFileIocp();
+        testReleaseDetachesForReadoption();
+        testFileReleaseWithPendingThrowsAndKeeps();
+        testStopTokenCancelsReadAt();
 #endif
         testWrongDirectionIoFails();
         testResizeReadOnlyFails();
-        testAssignOverOpenAdopts();
+        testOffsetAbove4GiB();
         testOpenSyncAllOnWrite();
         testOpenExclusiveExistingFails();
         testOpenExclusiveNewFile();
@@ -777,6 +1060,8 @@ struct random_access_file_test
         // POSIX file work runs on the pool; IOCP uses overlapped I/O.
         testDestroyWithPoolWorkQueued();
         testReadWriteAtAfterPoolShutdown();
+        testAssignKeepsQueuedRead();
+        testReleaseCancelsQueuedWrite();
 #endif
 
 #if !COROSIO_TEST_HAS_ASAN
@@ -826,46 +1111,157 @@ struct random_access_file_test
         BOOST_TEST_EQ(f.size(), 10u);
     }
 
-    void testAssignOverOpenAdopts()
+    void testAssignRejectsBadHandle()
     {
-        temp_file tmp1("raf_assign_a_", "first");
-        temp_file tmp2("raf_assign_b_", "second");
         io_context ioc(Backend);
         random_access_file f(ioc);
-
-        BOOST_TEST(!f.open(tmp1.path, file_base::read_only));
-
-#if BOOST_COROSIO_HAS_IOCP
-        HANDLE h = ::CreateFileW(
-            tmp2.path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
-            nullptr, OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, nullptr);
-        BOOST_TEST(h != INVALID_HANDLE_VALUE);
-        auto raw = reinterpret_cast<native_handle_type>(h);
-#else
-        int fd = ::open(tmp2.path.c_str(), O_RDONLY);
-        BOOST_TEST(fd >= 0);
-        auto raw = static_cast<native_handle_type>(fd);
-#endif
-        // Adopting over an open file closes the previous handle first
-        BOOST_TEST(!f.assign(raw));
-        BOOST_TEST(f.is_open());
-        BOOST_TEST_EQ(f.size(), 6u);
+        BOOST_TEST(
+            f.assign(static_cast<native_handle_type>(-1)) ==
+            std::errc::bad_file_descriptor);
+        BOOST_TEST_EQ(f.is_open(), false);
     }
 
-#if BOOST_COROSIO_POSIX
-    void testSyncOnPipeFails()
+    void testAssignPipeRejected()
     {
+        // A pipe has no file position, so validate_file_fd now rejects
+        // it at assign() -- before this test relied on fsync/fdatasync
+        // surfacing a runtime error on an adopted pipe fd.
         io_context ioc(Backend);
         random_access_file f(ioc);
-
+#if BOOST_COROSIO_HAS_IOCP
+        auto p = test::make_pipe_pair();
+        BOOST_TEST(
+            f.assign(test::as_native(p.server.get())) ==
+            std::errc::operation_not_supported);
+        BOOST_TEST(!f.is_open());
+#else
         int fds[2];
         BOOST_TEST(::pipe(fds) == 0);
-        BOOST_TEST(!f.assign(static_cast<native_handle_type>(fds[1])));
-        BOOST_TEST(f.sync_data());
-        BOOST_TEST(f.sync_all());
-        f.close();
+        BOOST_TEST(
+            f.assign(static_cast<native_handle_type>(fds[1])) ==
+            std::errc::operation_not_supported);
+        BOOST_TEST(!f.is_open());
         ::close(fds[0]);
+        ::close(fds[1]);
+#endif
+    }
+
+#if BOOST_COROSIO_HAS_IOCP
+    void testAssignRejectsSynchronousHandle()
+    {
+        test::temp_path t("raf_sync");
+        auto h = test::open_file(t.path, false);
+        io_context ioc(Backend);
+        random_access_file f(ioc);
+        BOOST_TEST(
+            f.assign(test::as_native(h.get())) ==
+            std::errc::operation_not_supported);
+        BOOST_TEST(!f.is_open());
+    }
+
+    void testFailedAssignKeepsHeldFileIocp()
+    {
+        temp_file tmp("raf_keep_", "hello");
+        io_context ioc(Backend);
+        random_access_file f(ioc);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
+        auto const held = f.native_handle();
+
+        auto p = test::make_pipe_pair();
+        BOOST_TEST(
+            f.assign(test::as_native(p.server.get())) ==
+            error::already_open);
+        BOOST_TEST_EQ(f.native_handle(), held);
+
+        std::error_code ec;
+        std::size_t n = 0;
+        char buf[8]{};
+        auto reader = [&]() -> capy::task<> {
+            auto [rec, rn] = co_await f.read_some_at(
+                0, capy::mutable_buffer(buf, sizeof(buf)));
+            ec = rec;
+            n  = rn;
+        };
+        capy::run_async(ioc.get_executor())(reader());
+        ioc.run();
+        BOOST_TEST(!ec);
+        BOOST_TEST_EQ(n, 5u);
+    }
+
+    void testReleaseDetachesForReadoption()
+    {
+        temp_file tmp("raf_readopt_", "again");
+        native_handle_type raw{};
+        {
+            io_context ioc1(Backend);
+            random_access_file f1(ioc1);
+            BOOST_TEST(!f1.open(tmp.path, file_base::read_only));
+            raw = f1.release();
+        }
+        io_context ioc2(Backend);
+        random_access_file f2(ioc2);
+        BOOST_TEST(!f2.assign(raw));
+
+        std::error_code ec;
+        std::size_t n = 0;
+        char buf[8]{};
+        auto reader = [&]() -> capy::task<> {
+            auto [rec, rn] = co_await f2.read_some_at(
+                0, capy::mutable_buffer(buf, sizeof(buf)));
+            ec = rec;
+            n  = rn;
+        };
+        capy::run_async(ioc2.get_executor())(reader());
+        ioc2.run();
+        BOOST_TEST(!ec);
+        BOOST_TEST_EQ(n, 5u);
+    }
+
+    void testFileReleaseWithPendingThrowsAndKeeps()
+    {
+        // A read is in flight until the run loop dequeues its packet,
+        // even when the disk finished it at once. poll_one() starts the
+        // reader, which issues the read, and stops there.
+        temp_file tmp("raf_relbusy_", "hello");
+        io_context a(Backend);
+        io_context b(Backend);
+        random_access_file fa(a);
+        random_access_file fb(b);
+        BOOST_TEST(!fa.open(tmp.path, file_base::read_only));
+        native_handle_type const held = fa.native_handle();
+
+        std::error_code rec;
+        char buf[8]{};
+        auto reader = [&]() -> capy::task<> {
+            auto [e, n] = co_await fa.read_some_at(
+                0, capy::mutable_buffer(buf, sizeof(buf)));
+            rec = e;
+            (void)n;
+        };
+        capy::run_async(a.get_executor())(reader());
+        BOOST_TEST_EQ(a.poll_one(), 1u);
+
+        bool threw = false;
+        try
+        {
+            (void)fa.release();
+        }
+        catch (std::system_error const& e)
+        {
+            threw = true;
+            BOOST_TEST(e.code() == std::errc::device_or_resource_busy);
+        }
+        BOOST_TEST(threw);
+        BOOST_TEST(fa.is_open());
+        BOOST_TEST_EQ(fa.native_handle(), held);
+
+        a.run();
+        // The disk may have finished the read before the cancel reached
+        // it; a decided result is reported as is.
+        BOOST_TEST(!rec || rec == capy::cond::canceled);
+        BOOST_TEST(!fb.assign(fa.release()));
+        BOOST_TEST(!fa.is_open());
+        BOOST_TEST(fb.is_open());
     }
 #endif
 
@@ -1222,9 +1618,9 @@ struct random_access_file_test
         // The handle is still valid — we can read from it
         char buf[5] = {};
 #if BOOST_COROSIO_HAS_IOCP
-        // The released handle is still IOCP-associated, so we must
-        // set the low-order bit of hEvent to prevent the completion
-        // from being posted to the (unserviced) IOCP port.
+        // release() detached the handle from the completion port, so
+        // no packet is queued. The low-order bit of hEvent would
+        // suppress one anyway; it costs nothing to keep.
         HANDLE h   = reinterpret_cast<HANDLE>(handle);
         HANDLE evt = ::CreateEvent(nullptr, TRUE, FALSE, nullptr);
         OVERLAPPED ov{};

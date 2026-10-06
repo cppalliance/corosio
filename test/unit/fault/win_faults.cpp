@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -699,9 +700,11 @@ struct win_common_faults
     /* Adoption of a handle the library did not open.
 
        The only thing it does is associate the handle with the
-       completion port, so a refusal there is its only failure. It
-       closes what the object held before it tries, which is why the
-       caller's handle is still theirs afterwards.
+       completion port, so a refusal there is its only failure. The
+       object is closed before and after, and the caller still owns
+       the handle afterwards. ERROR_INVALID_PARAMETER
+       is mapped to invalid_argument explicitly, since the toolchains
+       map 87 differently.
     */
     void testFileAssignFails()
     {
@@ -716,7 +719,7 @@ struct win_common_faults
                     sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
                 BOOST_TEST(
                     sf.assign(reinterpret_cast<native_handle_type>(h)) ==
-                    win_err(ERROR_INVALID_PARAMETER));
+                    std::errc::invalid_argument);
                 BOOST_TEST(f.fired());
                 BOOST_TEST(!sf.is_open());
             }
@@ -731,7 +734,7 @@ struct win_common_faults
                     sys::CreateIoCompletionPort, ERROR_INVALID_PARAMETER);
                 BOOST_TEST(
                     rf.assign(reinterpret_cast<native_handle_type>(h)) ==
-                    win_err(ERROR_INVALID_PARAMETER));
+                    std::errc::invalid_argument);
                 BOOST_TEST(f.fired());
                 BOOST_TEST(!rf.is_open());
             }

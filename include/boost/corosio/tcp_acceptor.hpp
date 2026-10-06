@@ -17,6 +17,7 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
 #include <boost/corosio/detail/op_base.hpp>
+#include <boost/corosio/error.hpp>
 #include <boost/corosio/wait_type.hpp>
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/capy/io_result.hpp>
@@ -488,21 +489,18 @@ public:
         Adoption does not verify listen state; @ref accept reports the
         error if the socket is not listening.
 
-        If this object is already open, pending operations complete
-        with `errc::operation_canceled` and the held socket is
-        closed before the new one is adopted.
+        The object must be closed. To replace a held socket, `close()`
+        or `release()` it first.
 
         @par Exception Safety
-        Strong guarantee on validation failure: the object is
-        unchanged. If backend registration fails, the object either
-        retains its previous socket or is left closed, depending on
-        the backend. In all failure cases the caller retains
-        ownership of `fd`.
+        Throws nothing. On failure the object is unchanged and the
+        caller retains ownership of `fd`.
 
         @param fd The native socket to adopt. On success the object
             owns it and closes it.
 
-        @return The error code, empty on success. Validation and
+        @return `error::already_open` if this object is open.
+            Otherwise the error code, empty on success. Validation and
             registration failures are normal runtime conditions when
             adopting foreign descriptors.
     */

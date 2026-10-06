@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -18,10 +19,13 @@
 #endif
 
 #include <cerrno>
+#include <condition_variable>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
+#include <mutex>
 #include <fcntl.h>
 #include <netdb.h>
 #include <poll.h>
@@ -133,6 +137,69 @@ bool
 cqe_fault_scope::fired() const noexcept
 {
     return tls_cqe.fired;
+}
+
+namespace {
+
+// Static, not owned by the hold: a held call can still be leaving it
+// when the hold is destroyed.
+struct preadv_hold_state
+{
+    std::mutex m;
+    std::condition_variable cv;
+    bool armed    = false;
+    bool held     = false;
+    bool released = false;
+} g_preadv_hold;
+
+} // namespace
+
+preadv_hold::preadv_hold()
+{
+    std::lock_guard<std::mutex> lock(g_preadv_hold.m);
+    if (g_preadv_hold.armed)
+    {
+        std::fputs("preadv_hold: a hold is already alive\n", stderr);
+        std::abort();
+    }
+    g_preadv_hold.armed    = true;
+    g_preadv_hold.held     = false;
+    g_preadv_hold.released = false;
+}
+
+preadv_hold::~preadv_hold()
+{
+    std::lock_guard<std::mutex> lock(g_preadv_hold.m);
+    g_preadv_hold.armed    = false;
+    g_preadv_hold.released = true;
+    g_preadv_hold.cv.notify_all();
+}
+
+void
+preadv_hold::wait_held()
+{
+    std::unique_lock<std::mutex> lock(g_preadv_hold.m);
+    g_preadv_hold.cv.wait(lock, [] { return g_preadv_hold.held; });
+}
+
+void
+preadv_hold::release()
+{
+    std::lock_guard<std::mutex> lock(g_preadv_hold.m);
+    g_preadv_hold.released = true;
+    g_preadv_hold.cv.notify_all();
+}
+
+// Called by the preadv shadow once the real call has returned.
+void
+hold_preadv_if_armed() noexcept
+{
+    std::unique_lock<std::mutex> lock(g_preadv_hold.m);
+    if (!g_preadv_hold.armed || g_preadv_hold.held)
+        return;
+    g_preadv_hold.held = true;
+    g_preadv_hold.cv.notify_all();
+    g_preadv_hold.cv.wait(lock, [] { return g_preadv_hold.released; });
 }
 
 } // namespace boost::corosio::test::fault
@@ -460,6 +527,38 @@ kevent(
 #endif
 
 #if defined(__APPLE__)
+// Darwin's scheduler calls kevent64 (see kqueue_call); it answers to
+// the same two arms as kevent, so tests arm `kevent` on either OS.
+extern "C" int
+kevent64(
+    int kq,
+    struct kevent64_s const* ch,
+    int nch,
+    struct kevent64_s* ev,
+    int nev,
+    unsigned flags,
+    timespec const* ts)
+{
+    COROSIO_FAULT_REAL(
+        kevent64,
+        int (*)(
+            int, struct kevent64_s const*, int, struct kevent64_s*, int,
+            unsigned, timespec const*));
+    bool adds = false;
+    for (int i = 0; i < nch; ++i)
+    {
+        if (ch[i].flags & EV_ADD)
+            adds = true;
+    }
+    bool const fail_add = adds && should_fail(sys::kevent_register);
+    bool const fail_any = should_fail(sys::kevent);
+    if (fail_add || fail_any)
+        return -1;
+    return real(kq, ch, nch, ev, nev, flags, ts);
+}
+#endif
+
+#if defined(__APPLE__)
 // Darwin's <sys/select.h> spells select as `select$DARWIN_EXTSN` under
 // _DARWIN_C_SOURCE and plain `_select` otherwise, and each corosio
 // translation unit picks its spelling independently of this one.
@@ -725,7 +824,11 @@ preadv(int fd, iovec const* v, int n, off_t o)
         iovec t[64];
         return real(fd, t, truncate_iov(v, n, c, t), o);
     }
-    return real(fd, v, n, o);
+    ssize_t const r = real(fd, v, n, o);
+    int const err   = errno;
+    hold_preadv_if_armed();
+    errno = err;
+    return r;
 }
 
 extern "C" ssize_t
@@ -744,6 +847,75 @@ pwritev(int fd, iovec const* v, int n, off_t o)
     }
     return real(fd, v, n, o);
 }
+
+#if defined(__GLIBC__) && !defined(__OFF_T_MATCHES_OFF64_T)
+// A 32-bit off_t: the library calls the *64 spellings instead
+// (large_file.hpp), and each shares the arm of its plain name.
+extern "C" ssize_t
+preadv64(int fd, iovec const* v, int n, off64_t o)
+{
+    COROSIO_FAULT_REAL(preadv64, ssize_t (*)(int, iovec const*, int, off64_t));
+    if (should_fail(sys::preadv))
+        return -1;
+    std::size_t c;
+    if (should_shorten(sys::preadv, c))
+    {
+        if (c == 0)
+            return 0;
+        iovec t[64];
+        return real(fd, t, truncate_iov(v, n, c, t), o);
+    }
+    ssize_t const r = real(fd, v, n, o);
+    int const err   = errno;
+    hold_preadv_if_armed();
+    errno = err;
+    return r;
+}
+
+extern "C" ssize_t
+pwritev64(int fd, iovec const* v, int n, off64_t o)
+{
+    COROSIO_FAULT_REAL(pwritev64, ssize_t (*)(int, iovec const*, int, off64_t));
+    if (should_fail(sys::pwritev))
+        return -1;
+    std::size_t c;
+    if (should_shorten(sys::pwritev, c))
+    {
+        if (c == 0)
+            return 0;
+        iovec t[64];
+        return real(fd, t, truncate_iov(v, n, c, t), o);
+    }
+    return real(fd, v, n, o);
+}
+
+extern "C" int
+fstat64(int fd, struct stat64* st) COROSIO_FAULT_NOTHROW
+{
+    COROSIO_FAULT_REAL(fstat64, int (*)(int, struct stat64*));
+    if (should_fail(sys::fstat))
+        return -1;
+    return real(fd, st);
+}
+
+extern "C" int
+ftruncate64(int fd, off64_t len) COROSIO_FAULT_NOTHROW
+{
+    COROSIO_FAULT_REAL(ftruncate64, int (*)(int, off64_t));
+    if (should_fail(sys::ftruncate))
+        return -1;
+    return real(fd, len);
+}
+
+extern "C" off64_t
+lseek64(int fd, off64_t off, int wh) COROSIO_FAULT_NOTHROW
+{
+    COROSIO_FAULT_REAL(lseek64, off64_t (*)(int, off64_t, int));
+    if (should_fail(sys::lseek))
+        return -1;
+    return real(fd, off, wh);
+}
+#endif
 
 extern "C" ssize_t
 recvmsg(int fd, msghdr* m, int f)
@@ -1037,12 +1209,26 @@ namespace {
     COROSIO_FAULT_CENSUS_ALIAS(__recvfrom_chk),
     COROSIO_FAULT_CENSUS_ALIAS(__poll_chk),
     COROSIO_FAULT_CENSUS_ALIAS(__pread64_chk),
+#if defined(__GLIBC__) && !defined(__OFF_T_MATCHES_OFF64_T)
+    COROSIO_FAULT_CENSUS_ALIAS(preadv64),
+    COROSIO_FAULT_CENSUS_ALIAS(pwritev64),
+    COROSIO_FAULT_CENSUS_ALIAS(fstat64),
+    COROSIO_FAULT_CENSUS_ALIAS(ftruncate64),
+    COROSIO_FAULT_CENSUS_ALIAS(lseek64),
+#endif
     COROSIO_FAULT_CENSUS_ALIAS(__open_2),
     COROSIO_FAULT_CENSUS_ALIAS(__gethostname_chk),
 #endif
 #if defined(__APPLE__) || defined(__FreeBSD__)
     COROSIO_FAULT_CENSUS(writev),
     COROSIO_FAULT_CENSUS(kqueue),
+#endif
+#if defined(__APPLE__)
+    // The library calls kevent64 on Darwin and never imports kevent, so
+    // a shared build has no kevent slot to rebind. The kevent shadow
+    // still serves direct calls from the tests.
+    {"kevent64", reinterpret_cast<void const*>(&::kevent64), sys::kevent},
+#elif defined(__FreeBSD__)
     COROSIO_FAULT_CENSUS(kevent),
 #endif
 #if defined(__APPLE__)

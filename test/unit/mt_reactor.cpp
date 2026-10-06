@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -17,7 +18,9 @@
 #if BOOST_COROSIO_HAS_EPOLL || BOOST_COROSIO_HAS_KQUEUE || \
     BOOST_COROSIO_HAS_SELECT
 
+#include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/io_context.hpp>
+#include <boost/corosio/ipv4_address.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
@@ -27,16 +30,21 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
 #include <atomic>
 #include <chrono>
+#include <optional>
+#include <stop_token>
 #include <system_error>
 #include <thread>
 
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -144,10 +152,81 @@ struct mt_reactor_test
         BOOST_TEST(resumed);
     }
 
+    // An acceptor wait started off the reactor thread while that thread
+    // blocks in the reactor. Select watches an fd only while an op is
+    // parked on it, so the park has to wake the blocked reactor.
+    void testAcceptorWaitWakesBlockedReactor()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        auto [s1, s2] =
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.open());
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!acc.listen());
+        auto const port = acc.local_endpoint().port();
+
+        // The parked read keeps run() inside the reactor.
+        char buf[1];
+        auto reader = [&]() -> capy::task<> {
+            auto [ec, n] =
+                co_await s1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            std::ignore = ec;
+            std::ignore = n;
+        };
+        capy::run_async(ex)(reader());
+        std::thread runner([&] { ioc.run(); });
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        std::atomic<bool> done{false};
+        std::error_code wec;
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec] = co_await acc.wait(wait_type::read);
+            wec       = ec;
+            done.store(true);
+        };
+        // Runs the waiter on this thread up to the parked wait.
+        capy::io_env env{ex, std::stop_token{}, nullptr};
+        std::optional<capy::task<>> parked;
+        parked.emplace(waiter());
+        parked->await_suspend(std::noop_coroutine(), &env).resume();
+
+        int client = ::socket(AF_INET, SOCK_STREAM, 0);
+        BOOST_TEST(client >= 0);
+        sockaddr_in sa{};
+        sa.sin_family      = AF_INET;
+        sa.sin_port        = htons(port);
+        sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        BOOST_TEST_EQ(
+            ::connect(client, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)),
+            0);
+
+        auto const deadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (!done.load() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        bool const woke = done.load();
+
+        ioc.stop();
+        runner.join();
+        ::close(client);
+        BOOST_TEST(woke);
+        BOOST_TEST(!wec);
+
+        // Drain the parked read, and the wait if it never woke.
+        acc.cancel();
+        s1.cancel();
+        ioc.restart();
+        ioc.run();
+    }
+
     void run()
     {
         testEventCompletesBatchedOps();
         testForeignPostWakesParkedFollower();
+        testAcceptorWaitWakesBlockedReactor();
     }
 };
 

@@ -58,6 +58,7 @@ enum class locking_mode
         - Posting work from another thread is undefined behavior.
         - DNS resolution returns `operation_not_supported`.
         - POSIX file I/O returns `operation_not_supported`.
+        - `win_object_handle::assign()` returns `operation_not_supported`.
         - Signal sets should not be shared across contexts. */
     unsafe
 };
