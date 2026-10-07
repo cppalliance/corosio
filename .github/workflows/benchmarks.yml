@@ -208,6 +208,14 @@ jobs:
           ref: ${{ needs.gate.outputs.head_sha }}
           path: ws/head
           persist-credentials: false
+          # The checkout guard requires this literal opt-in for fork
+          # code under pull_request_target; naming the fork repository
+          # above is not accepted on its own. The risk it warns about
+          # is governed here: the gate pins the head SHA at label time,
+          # the benchmark label is a maintainer's explicit approval to
+          # run that code on these machines, no credentials persist,
+          # and all tooling comes from the trusted base commit.
+          allow-unsafe-pr-checkout: true
 
       - name: Checkout base
         uses: actions/checkout@v4
