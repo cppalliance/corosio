@@ -18,7 +18,7 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/random_access_file_service.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/corosio/detail/intrusive.hpp>
+#include <boost/corosio/detail/object_pool.hpp>
 #include <boost/corosio/native/detail/iocp/win_mutex.hpp>
 #include <boost/corosio/native/detail/iocp/win_random_access_file.hpp>
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
@@ -44,11 +44,12 @@ namespace boost::corosio::detail {
 class BOOST_COROSIO_DECL win_random_access_file_service final
     : public random_access_file_service
 {
+    friend class win_random_access_file;
+
 public:
     using key_type = win_random_access_file_service;
 
     explicit win_random_access_file_service(capy::execution_context& ctx);
-    ~win_random_access_file_service();
 
     win_random_access_file_service(win_random_access_file_service const&) =
         delete;
@@ -64,9 +65,6 @@ public:
         random_access_file::implementation& impl,
         std::filesystem::path const& path,
         file_base::flags mode) override;
-
-    void destroy_impl(win_random_access_file& impl);
-    void unregister_impl(win_random_access_file_internal& impl);
 
     void post(overlapped_op* op);
     void on_pending(overlapped_op* op) noexcept;
@@ -104,14 +102,12 @@ private:
         LONG(NTAPI*)(HANDLE, ULONG, void*, ULONG, io_status_block*);
 
     win_scheduler& sched_;
-    BOOST_COROSIO_MSVC_WARNING_PUSH
-    BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // detail:: members, dll-interface
-    win_mutex mutex_;
-    intrusive_list<win_random_access_file_internal> file_list_;
-    intrusive_list<win_random_access_file> wrapper_list_;
-    BOOST_COROSIO_MSVC_WARNING_POP
     void* iocp_;
     nt_flush_fn nt_flush_buffers_file_ex_;
+    BOOST_COROSIO_MSVC_WARNING_PUSH
+    BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // detail:: members, dll-interface
+    object_pool<win_random_access_file> pool_;
+    BOOST_COROSIO_MSVC_WARNING_POP
 };
 
 /** Get or create the random-access file service for the given context. */
@@ -126,7 +122,7 @@ get_random_access_file_service(capy::execution_context& ctx, win_scheduler&)
 // ---------------------------------------------------------------------------
 
 inline raf_concurrent_op::raf_concurrent_op(
-    win_random_access_file_internal& f) noexcept
+    win_random_access_file& f) noexcept
     : overlapped_op(&do_complete)
     , file_(&f)
 {
@@ -139,7 +135,7 @@ raf_concurrent_op::do_cancel_impl(overlapped_op* base) noexcept
     auto* op = static_cast<raf_concurrent_op*>(base);
     op->cancelled.store(true, std::memory_order_release);
     if (op->file_->is_open())
-        ::CancelIoEx(op->file_->native_handle(), op);
+        ::CancelIoEx(op->file_->handle_, op);
 }
 
 inline void
@@ -160,7 +156,7 @@ raf_concurrent_op::do_complete(
             std::lock_guard<win_mutex> lock(op->file_->ops_mutex_);
             op->file_->outstanding_ops_.remove(op);
         }
-        op->file_ref.reset();
+        op->object_ref_.reset();
         delete op;
         return;
     }
@@ -184,42 +180,46 @@ raf_concurrent_op::do_complete(
         op->file_->outstanding_ops_.remove(op);
     }
 
-    op->file_ref.reset();
-
     auto coro = op->h;
+    // Hold the keepalive across the resume, like every other IOCP op:
+    // it may be the last reference to the implementation the op was
+    // working on behalf of.
+    auto prevent_premature_destruction = std::move(op->object_ref_);
     delete op;
     coro.resume();
 }
 
 // ---------------------------------------------------------------------------
-// win_random_access_file_internal
+// win_random_access_file
 // ---------------------------------------------------------------------------
 
-inline win_random_access_file_internal::win_random_access_file_internal(
+inline win_random_access_file::win_random_access_file(
     win_random_access_file_service& svc) noexcept
     : svc_(svc)
 {
 }
 
-inline win_random_access_file_internal::~win_random_access_file_internal()
+inline void
+win_random_access_file::reuse() noexcept
 {
-    svc_.unregister_impl(*this);
+    BOOST_COROSIO_ASSERT(handle_ == INVALID_HANDLE_VALUE);
+    BOOST_COROSIO_ASSERT(outstanding_ops_.empty());
 }
 
-inline HANDLE
-win_random_access_file_internal::native_handle() const noexcept
+inline native_handle_type
+win_random_access_file::native_handle() const noexcept
 {
-    return handle_;
+    return reinterpret_cast<native_handle_type>(handle_);
 }
 
 inline bool
-win_random_access_file_internal::is_open() const noexcept
+win_random_access_file::is_open() const noexcept
 {
     return handle_ != INVALID_HANDLE_VALUE;
 }
 
 inline void
-win_random_access_file_internal::cancel() noexcept
+win_random_access_file::cancel() noexcept
 {
     if (handle_ != INVALID_HANDLE_VALUE)
         ::CancelIoEx(handle_, nullptr);
@@ -230,7 +230,7 @@ win_random_access_file_internal::cancel() noexcept
 }
 
 inline void
-win_random_access_file_internal::close_handle() noexcept
+win_random_access_file::close_handle() noexcept
 {
     if (handle_ != INVALID_HANDLE_VALUE)
     {
@@ -241,7 +241,7 @@ win_random_access_file_internal::close_handle() noexcept
 }
 
 inline std::uint64_t
-win_random_access_file_internal::size() const
+win_random_access_file::size() const
 {
     LARGE_INTEGER li;
     if (!::GetFileSizeEx(handle_, &li))
@@ -251,7 +251,7 @@ win_random_access_file_internal::size() const
 }
 
 inline std::error_code
-win_random_access_file_internal::resize(std::uint64_t new_size) noexcept
+win_random_access_file::resize(std::uint64_t new_size) noexcept
 {
     LARGE_INTEGER li;
     li.QuadPart = static_cast<LONGLONG>(new_size);
@@ -263,7 +263,7 @@ win_random_access_file_internal::resize(std::uint64_t new_size) noexcept
 }
 
 inline std::error_code
-win_random_access_file_internal::sync_data() noexcept
+win_random_access_file::sync_data() noexcept
 {
     // Attempt data-only flush; fall back to full flush
     if (svc_.try_flush_data(handle_))
@@ -274,7 +274,7 @@ win_random_access_file_internal::sync_data() noexcept
 }
 
 inline std::error_code
-win_random_access_file_internal::sync_all() noexcept
+win_random_access_file::sync_all() noexcept
 {
     if (!::FlushFileBuffers(handle_))
         return make_err(::GetLastError());
@@ -282,7 +282,7 @@ win_random_access_file_internal::sync_all() noexcept
 }
 
 inline native_handle_type
-win_random_access_file_internal::release()
+win_random_access_file::release()
 {
     HANDLE h = handle_;
     handle_  = INVALID_HANDLE_VALUE;
@@ -290,7 +290,7 @@ win_random_access_file_internal::release()
 }
 
 inline std::error_code
-win_random_access_file_internal::assign(native_handle_type handle) noexcept
+win_random_access_file::assign(native_handle_type handle) noexcept
 {
     close_handle();
     HANDLE h = reinterpret_cast<HANDLE>(handle);
@@ -305,7 +305,7 @@ win_random_access_file_internal::assign(native_handle_type handle) noexcept
 }
 
 inline std::coroutine_handle<>
-win_random_access_file_internal::read_some_at(
+win_random_access_file::read_some_at(
     std::uint64_t offset,
     std::coroutine_handle<> h,
     capy::executor_ref ex,
@@ -316,8 +316,8 @@ win_random_access_file_internal::read_some_at(
 {
     static constexpr std::size_t max_buffers = 16;
 
-    auto* op     = new raf_concurrent_op(*this);
-    op->file_ref = shared_from_this();
+    auto* op      = new raf_concurrent_op(*this);
+    op->object_ref_ = detail::object_ref(this);
 
     op->reset();
     op->is_read   = true;
@@ -387,7 +387,7 @@ win_random_access_file_internal::read_some_at(
 }
 
 inline std::coroutine_handle<>
-win_random_access_file_internal::write_some_at(
+win_random_access_file::write_some_at(
     std::uint64_t offset,
     std::coroutine_handle<> h,
     capy::executor_ref ex,
@@ -398,8 +398,8 @@ win_random_access_file_internal::write_some_at(
 {
     static constexpr std::size_t max_buffers = 16;
 
-    auto* op     = new raf_concurrent_op(*this);
-    op->file_ref = shared_from_this();
+    auto* op      = new raf_concurrent_op(*this);
+    op->object_ref_ = detail::object_ref(this);
 
     op->reset();
     op->is_read   = false;
@@ -467,104 +467,10 @@ win_random_access_file_internal::write_some_at(
     return std::noop_coroutine();
 }
 
-// ---------------------------------------------------------------------------
-// win_random_access_file wrapper
-// ---------------------------------------------------------------------------
-
-inline win_random_access_file::win_random_access_file(
-    std::shared_ptr<win_random_access_file_internal> internal) noexcept
-    : internal_(std::move(internal))
-{
-}
-
 inline void
-win_random_access_file::close_internal() noexcept
+win_random_access_file::retire() noexcept
 {
-    if (internal_)
-    {
-        internal_->close_handle();
-        internal_.reset();
-    }
-}
-
-inline std::coroutine_handle<>
-win_random_access_file::read_some_at(
-    std::uint64_t offset,
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    buffer_param buf,
-    std::stop_token token,
-    std::error_code* ec,
-    std::size_t* bytes)
-{
-    return internal_->read_some_at(offset, h, d, buf, token, ec, bytes);
-}
-
-inline std::coroutine_handle<>
-win_random_access_file::write_some_at(
-    std::uint64_t offset,
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    buffer_param buf,
-    std::stop_token token,
-    std::error_code* ec,
-    std::size_t* bytes)
-{
-    return internal_->write_some_at(offset, h, d, buf, token, ec, bytes);
-}
-
-inline native_handle_type
-win_random_access_file::native_handle() const noexcept
-{
-    return reinterpret_cast<native_handle_type>(internal_->native_handle());
-}
-
-inline void
-win_random_access_file::cancel() noexcept
-{
-    internal_->cancel();
-}
-
-inline std::uint64_t
-win_random_access_file::size() const
-{
-    return internal_->size();
-}
-
-inline std::error_code
-win_random_access_file::resize(std::uint64_t new_size) noexcept
-{
-    return internal_->resize(new_size);
-}
-
-inline std::error_code
-win_random_access_file::sync_data() noexcept
-{
-    return internal_->sync_data();
-}
-
-inline std::error_code
-win_random_access_file::sync_all() noexcept
-{
-    return internal_->sync_all();
-}
-
-inline native_handle_type
-win_random_access_file::release()
-{
-    return internal_->release();
-}
-
-inline std::error_code
-win_random_access_file::assign(native_handle_type handle) noexcept
-{
-    return internal_->assign(handle);
-}
-
-inline win_random_access_file_internal*
-win_random_access_file::get_internal() const noexcept
-{
-    return internal_.get();
+    svc_.pool_.recycle(this);
 }
 
 // ---------------------------------------------------------------------------
@@ -585,61 +491,33 @@ inline win_random_access_file_service::win_random_access_file_service(
     }
 }
 
-inline win_random_access_file_service::~win_random_access_file_service()
-{
-    for (auto* w = wrapper_list_.pop_front(); w != nullptr;
-         w       = wrapper_list_.pop_front())
-        delete w;
-}
-
 inline io_object::implementation*
 win_random_access_file_service::construct()
 {
-    auto internal = std::make_shared<win_random_access_file_internal>(*this);
-
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        file_list_.push_back(internal.get());
-    }
-
-    auto* wrapper = new win_random_access_file(std::move(internal));
-
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        wrapper_list_.push_back(wrapper);
-    }
-
-    return wrapper;
+    return pool_.acquire(*this);
 }
 
 inline void
 win_random_access_file_service::destroy(io_object::implementation* p)
 {
-    if (p)
-    {
-        auto& wrapper = static_cast<win_random_access_file&>(*p);
-        wrapper.close_internal();
-        destroy_impl(wrapper);
-    }
+    if (!p)
+        return;
+    auto* f = static_cast<win_random_access_file*>(p);
+    f->close_handle();
+    release(f);
 }
 
 inline void
 win_random_access_file_service::close(io_object::handle& h)
 {
-    auto& wrapper = static_cast<win_random_access_file&>(*h.get());
-    wrapper.get_internal()->close_handle();
+    static_cast<win_random_access_file*>(h.get())->close_handle();
 }
 
 inline void
 win_random_access_file_service::shutdown()
 {
-    std::lock_guard<win_mutex> lock(mutex_);
-
-    for (auto* impl = file_list_.pop_front(); impl != nullptr;
-         impl       = file_list_.pop_front())
-    {
-        impl->close_handle();
-    }
+    pool_.shutdown(
+        [](win_random_access_file* impl) { impl->close_handle(); });
 }
 
 inline std::error_code
@@ -702,28 +580,10 @@ win_random_access_file_service::open_file(
         }
     }
 
-    auto& internal = *static_cast<win_random_access_file&>(impl).get_internal();
-    internal.handle_ = h;
+    auto& file   = static_cast<win_random_access_file&>(impl);
+    file.handle_ = h;
 
     return {};
-}
-
-inline void
-win_random_access_file_service::destroy_impl(win_random_access_file& impl)
-{
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        wrapper_list_.remove(&impl);
-    }
-    delete &impl;
-}
-
-inline void
-win_random_access_file_service::unregister_impl(
-    win_random_access_file_internal& impl)
-{
-    std::lock_guard<win_mutex> lock(mutex_);
-    file_list_.remove(&impl);
 }
 
 inline void

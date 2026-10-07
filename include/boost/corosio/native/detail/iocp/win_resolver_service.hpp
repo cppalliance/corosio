@@ -17,10 +17,11 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include <boost/corosio/native/detail/iocp/win_resolver.hpp>
+#include <boost/corosio/detail/object_pool.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/thread_pool.hpp>
 
-#include <unordered_map>
+#include <vector>
 
 namespace boost::corosio::detail {
 
@@ -46,6 +47,8 @@ class BOOST_COROSIO_DECL win_resolver_service final
     , public capy::execution_context::service
     , public io_object::io_service
 {
+    friend class win_resolver;
+
 public:
     using key_type = win_resolver_service;
 
@@ -55,7 +58,7 @@ public:
     {
         auto& impl = static_cast<win_resolver&>(*p);
         impl.cancel();
-        destroy_impl(impl);
+        release(&impl);
     }
 
     /** Construct the resolver service.
@@ -72,9 +75,6 @@ public:
 
     /** Shut down the service. */
     void shutdown() override;
-
-    /** Destroy a resolver implementation. */
-    void destroy_impl(win_resolver& impl);
 
     /** Post an operation for completion. */
     void post(overlapped_op* op);
@@ -106,10 +106,7 @@ public:
 private:
     scheduler& sched_;
     thread_pool_ref pool_;
-    win_mutex mutex_;
-    intrusive_list<win_resolver> resolver_list_;
-    std::unordered_map<win_resolver*, std::shared_ptr<win_resolver>>
-        resolver_ptrs_;
+    object_pool<win_resolver> impls_;
 };
 BOOST_COROSIO_MSVC_WARNING_POP
 
@@ -229,10 +226,10 @@ resolve_op::completion(DWORD dwError, DWORD /*bytes*/, OVERLAPPED* ov)
 {
     auto* op = static_cast<resolve_op*>(ov);
 
-    // The post below can be drained and the win_resolver freed before
-    // this returns, and Windows owns the OVERLAPPED embedded in it until
-    // then.
-    auto keepalive = op->impl->shared_from_this();
+    // The post below can be drained and the win_resolver recycled or
+    // freed before this returns, and Windows owns the OVERLAPPED
+    // embedded in it until then.
+    detail::object_ref keepalive(op->impl);
 
     op->dwError = dwError;
 
@@ -277,7 +274,7 @@ resolve_op::do_complete(
         }
         // Dropping the keepalive may destroy the implementation this op
         // is embedded in, so nothing may touch it afterwards.
-        op->impl_ptr.reset();
+        op->object_ref_.reset();
         svc.work_finished();
         return;
     }
@@ -309,7 +306,7 @@ resolve_op::do_complete(
     op->cont.h = op->h;
     // Hold the keepalive across the dispatch: it may be the last
     // reference to the implementation this op is embedded in.
-    auto prevent_destroy = std::move(op->impl_ptr);
+    auto prevent_destroy = std::move(op->object_ref_);
     svc.work_finished();
     dispatch_coro(op->ex, op->cont).resume();
 }
@@ -338,7 +335,7 @@ reverse_resolve_op::do_complete(
         op->stop_cb.reset();
         // Dropping the keepalive may destroy the implementation this
         // op is embedded in, so nothing may touch it afterwards.
-        op->impl_ptr.reset();
+        op->object_ref_.reset();
         svc.work_finished();
         return;
     }
@@ -365,7 +362,7 @@ reverse_resolve_op::do_complete(
     op->cont.h = op->h;
     // Hold the keepalive across the dispatch: it may be the last
     // reference to the implementation this op is embedded in.
-    auto prevent_destroy = std::move(op->impl_ptr);
+    auto prevent_destroy = std::move(op->object_ref_);
     svc.work_finished();
     dispatch_coro(op->ex, op->cont).resume();
 }
@@ -414,7 +411,7 @@ win_resolver::resolve(
     // its completion waits in the scheduler queue: the op is embedded in
     // this win_resolver, which teardown may otherwise free before the
     // queued completion drains. Mirrors the reverse path's keepalive.
-    op.impl_ptr = this->shared_from_this();
+    op.object_ref_ = detail::object_ref(this);
 
     // Under the lock: the handle written here and the callback that
     // retires it must not interleave.
@@ -480,7 +477,7 @@ win_resolver::reverse_resolve(
 
     // Prevent impl destruction while work is in flight
     reverse_pool_op_.resolver_ = this;
-    reverse_pool_op_.ref_      = this->shared_from_this();
+    reverse_pool_op_.ref_      = detail::object_ref(this);
     reverse_pool_op_.func_     = &win_resolver::do_reverse_resolve_work;
     if (auto pec = svc_.pool().post(&reverse_pool_op_))
     {
@@ -570,7 +567,7 @@ win_resolver::do_reverse_resolve_work(pool_work_item* w) noexcept
     // Hand the keepalive to the op: the completion waits in the
     // scheduler's queue, and the implementation embedding it must
     // outlive that wait. Nothing may touch *self after the post.
-    self->reverse_op_.impl_ptr = std::move(pw->ref_);
+    self->reverse_op_.object_ref_ = std::move(pw->ref_);
 
     // Post only; the initiation credit is released where the op is
     // consumed.
@@ -591,42 +588,40 @@ inline win_resolver_service::~win_resolver_service() {}
 inline void
 win_resolver_service::shutdown()
 {
-    std::lock_guard<win_mutex> lock(mutex_);
-
-    // Cancel all resolvers (sets cancelled flag checked by pool threads)
-    for (auto* impl = resolver_list_.pop_front(); impl != nullptr;
-         impl       = resolver_list_.pop_front())
+    // Snapshot live impls under an acquired reference, then cancel
+    // without the pool lock held -- mirrors
+    // uring_socket_service_base::shutdown(). shutdown() sets
+    // shutting-down and takes the snapshot in one critical section, so
+    // each cancel's own release (if it drops the last ref) deletes
+    // rather than recycles. In-flight resolves hold their own
+    // object_ref_, so each resolver stays alive while its completion
+    // (GetAddrInfoExW callback or pool thread) drains. The thread pool
+    // service shuts down separately via execution_context service
+    // ordering.
+    std::vector<win_resolver*> live;
+    impls_.shutdown(
+        [&](win_resolver* r)
+        {
+            acquire(r);
+            live.push_back(r);
+        });
+    for (auto* r : live)
     {
-        impl->cancel();
+        r->cancel();
+        release(r);
     }
-
-    // Clear the map which releases shared_ptrs.
-    // The thread pool service shuts down separately via
-    // execution_context service ordering.
-    resolver_ptrs_.clear();
 }
 
 inline io_object::implementation*
 win_resolver_service::construct()
 {
-    auto ptr   = std::make_shared<win_resolver>(*this);
-    auto* impl = ptr.get();
-
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        resolver_list_.push_back(impl);
-        resolver_ptrs_[impl] = std::move(ptr);
-    }
-
-    return impl;
+    return impls_.acquire(*this);
 }
 
 inline void
-win_resolver_service::destroy_impl(win_resolver& impl)
+win_resolver::retire() noexcept
 {
-    std::lock_guard<win_mutex> lock(mutex_);
-    resolver_list_.remove(&impl);
-    resolver_ptrs_.erase(&impl);
+    svc_.impls_.recycle(this);
 }
 
 inline void

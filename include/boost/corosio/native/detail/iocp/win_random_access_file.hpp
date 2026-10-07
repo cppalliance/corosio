@@ -15,6 +15,7 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/random_access_file.hpp>
 #include <boost/corosio/file_base.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -25,12 +26,11 @@
 
 #include <coroutine>
 #include <cstdint>
-#include <memory>
 
 namespace boost::corosio::detail {
 
 class win_random_access_file_service;
-class win_random_access_file_internal;
+class win_random_access_file;
 
 /** Per-operation state for concurrent random-access file IOCP I/O.
 
@@ -42,10 +42,9 @@ struct raf_concurrent_op
     : overlapped_op
     , intrusive_list<raf_concurrent_op>::node
 {
-    void* buf                              = nullptr;
-    DWORD buf_len                          = 0;
-    win_random_access_file_internal* file_ = nullptr;
-    std::shared_ptr<win_random_access_file_internal> file_ref;
+    void* buf                      = nullptr;
+    DWORD buf_len                  = 0;
+    win_random_access_file* file_ = nullptr;
 
     static void do_complete(
         void* owner,
@@ -54,20 +53,21 @@ struct raf_concurrent_op
         std::uint32_t error);
     static void do_cancel_impl(overlapped_op* op) noexcept;
 
-    explicit raf_concurrent_op(win_random_access_file_internal& f) noexcept;
+    explicit raf_concurrent_op(win_random_access_file& f) noexcept;
 };
 
-/** Internal random-access file state for IOCP-based I/O.
+/** Random-access file implementation for IOCP-based I/O.
 
-    Each async operation heap-allocates a raf_concurrent_op,
-    allowing unlimited concurrent reads and writes.
+    Collapses the historical internal-state/wrapper split into one
+    pooled `io_object::implementation`. Each async operation
+    heap-allocates a `raf_concurrent_op`, allowing unlimited
+    concurrent reads and writes.
 */
-class win_random_access_file_internal
-    : public intrusive_list<win_random_access_file_internal>::node
-    , public std::enable_shared_from_this<win_random_access_file_internal>
+class win_random_access_file final
+    : public random_access_file::implementation
+    , public intrusive_list<win_random_access_file>::node
 {
     friend class win_random_access_file_service;
-    friend class win_random_access_file;
     friend struct raf_concurrent_op;
 
     win_random_access_file_service& svc_;
@@ -76,53 +76,21 @@ class win_random_access_file_internal
     HANDLE handle_ = INVALID_HANDLE_VALUE;
 
 public:
-    explicit win_random_access_file_internal(
-        win_random_access_file_service& svc) noexcept;
-    ~win_random_access_file_internal();
-
-    std::coroutine_handle<> read_some_at(
-        std::uint64_t offset,
-        std::coroutine_handle<>,
-        capy::executor_ref,
-        buffer_param,
-        std::stop_token,
-        std::error_code*,
-        std::size_t*);
-
-    std::coroutine_handle<> write_some_at(
-        std::uint64_t offset,
-        std::coroutine_handle<>,
-        capy::executor_ref,
-        buffer_param,
-        std::stop_token,
-        std::error_code*,
-        std::size_t*);
-
-    HANDLE native_handle() const noexcept;
-    bool is_open() const noexcept;
-    void cancel() noexcept;
-    void close_handle() noexcept;
-
-    std::uint64_t size() const;
-    std::error_code resize(std::uint64_t new_size) noexcept;
-    std::error_code sync_data() noexcept;
-    std::error_code sync_all() noexcept;
-    native_handle_type release();
-    std::error_code assign(native_handle_type handle) noexcept;
-};
-
-/** Random-access file implementation wrapper for IOCP-based I/O. */
-class win_random_access_file final
-    : public random_access_file::implementation
-    , public intrusive_list<win_random_access_file>::node
-{
-    std::shared_ptr<win_random_access_file_internal> internal_;
-
-public:
     explicit win_random_access_file(
-        std::shared_ptr<win_random_access_file_internal> internal) noexcept;
+        win_random_access_file_service& svc) noexcept;
 
-    void close_internal() noexcept;
+    /// Recycle into the owning service's pool. Defined out-of-line
+    /// after `win_random_access_file_service` is complete (needs
+    /// `svc_.pool_`).
+    void retire() noexcept override;
+
+    /** Reset recycled state for reuse.
+
+        @pre refs_ == 0, handle closed, no op in flight (per-op
+        `raf_concurrent_op` holds its own `object_ref`, so `refs_`
+        cannot reach zero while one is outstanding).
+    */
+    void reuse() noexcept;
 
     std::coroutine_handle<> read_some_at(
         std::uint64_t offset,
@@ -143,6 +111,7 @@ public:
         std::size_t* bytes) override;
 
     native_handle_type native_handle() const noexcept override;
+    bool is_open() const noexcept;
     void cancel() noexcept override;
     std::uint64_t size() const override;
     std::error_code resize(std::uint64_t new_size) noexcept override;
@@ -151,7 +120,7 @@ public:
     native_handle_type release() override;
     std::error_code assign(native_handle_type handle) noexcept override;
 
-    win_random_access_file_internal* get_internal() const noexcept;
+    void close_handle() noexcept;
 };
 
 } // namespace boost::corosio::detail

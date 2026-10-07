@@ -18,8 +18,7 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/file_service.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/corosio/detail/intrusive.hpp>
-#include <boost/corosio/native/detail/iocp/win_mutex.hpp>
+#include <boost/corosio/detail/object_pool.hpp>
 #include <boost/corosio/native/detail/iocp/win_stream_file.hpp>
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
 #include <boost/corosio/native/detail/iocp/win_completion_key.hpp>
@@ -42,11 +41,12 @@ namespace boost::corosio::detail {
 */
 class BOOST_COROSIO_DECL win_file_service final : public file_service
 {
+    friend class win_stream_file;
+
 public:
     using key_type = win_file_service;
 
     explicit win_file_service(capy::execution_context& ctx);
-    ~win_file_service();
 
     win_file_service(win_file_service const&)            = delete;
     win_file_service& operator=(win_file_service const&) = delete;
@@ -60,9 +60,6 @@ public:
         stream_file::implementation& impl,
         std::filesystem::path const& path,
         file_base::flags mode) override;
-
-    void destroy_impl(win_stream_file& impl);
-    void unregister_impl(win_stream_file_internal& impl);
 
     void post(overlapped_op* op);
     void on_pending(overlapped_op* op) noexcept;
@@ -100,14 +97,12 @@ private:
         LONG(NTAPI*)(HANDLE, ULONG, void*, ULONG, io_status_block*);
 
     win_scheduler& sched_;
-    BOOST_COROSIO_MSVC_WARNING_PUSH
-    BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // detail:: members, dll-interface
-    win_mutex mutex_;
-    intrusive_list<win_stream_file_internal> file_list_;
-    intrusive_list<win_stream_file> wrapper_list_;
-    BOOST_COROSIO_MSVC_WARNING_POP
     void* iocp_;
     nt_flush_fn nt_flush_buffers_file_ex_;
+    BOOST_COROSIO_MSVC_WARNING_PUSH
+    BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // detail:: members, dll-interface
+    object_pool<win_stream_file> pool_;
+    BOOST_COROSIO_MSVC_WARNING_POP
 };
 
 /** Get or create the stream file service for the given context. */
@@ -121,14 +116,14 @@ get_stream_file_service(capy::execution_context& ctx, win_scheduler&)
 // Operation constructors
 // ---------------------------------------------------------------------------
 
-inline file_read_op::file_read_op(win_stream_file_internal& f) noexcept
+inline file_read_op::file_read_op(win_stream_file& f) noexcept
     : overlapped_op(&do_complete)
     , file_(f)
 {
     cancel_func_ = &do_cancel_impl;
 }
 
-inline file_write_op::file_write_op(win_stream_file_internal& f) noexcept
+inline file_write_op::file_write_op(win_stream_file& f) noexcept
     : overlapped_op(&do_complete)
     , file_(f)
 {
@@ -145,7 +140,7 @@ file_read_op::do_cancel_impl(overlapped_op* base) noexcept
     auto* op = static_cast<file_read_op*>(base);
     op->cancelled.store(true, std::memory_order_release);
     if (op->file_.is_open())
-        ::CancelIoEx(op->file_.native_handle(), op);
+        ::CancelIoEx(op->file_.handle_, op);
 }
 
 inline void
@@ -154,7 +149,7 @@ file_write_op::do_cancel_impl(overlapped_op* base) noexcept
     auto* op = static_cast<file_write_op*>(base);
     op->cancelled.store(true, std::memory_order_release);
     if (op->file_.is_open())
-        ::CancelIoEx(op->file_.native_handle(), op);
+        ::CancelIoEx(op->file_.handle_, op);
 }
 
 // ---------------------------------------------------------------------------
@@ -173,7 +168,7 @@ file_read_op::do_complete(
     if (!owner)
     {
         op->cleanup_only();
-        op->file_ptr.reset();
+        op->object_ref_.reset();
         return;
     }
 
@@ -181,7 +176,7 @@ file_read_op::do_complete(
     if (op->dwError == 0 && op->bytes_transferred > 0)
         op->file_.offset_ += op->bytes_transferred;
 
-    auto prevent_premature_destruction = std::move(op->file_ptr);
+    auto prevent_premature_destruction = std::move(op->object_ref_);
     op->invoke_handler();
 }
 
@@ -197,7 +192,7 @@ file_write_op::do_complete(
     if (!owner)
     {
         op->cleanup_only();
-        op->file_ptr.reset();
+        op->object_ref_.reset();
         return;
     }
 
@@ -205,41 +200,44 @@ file_write_op::do_complete(
     if (op->dwError == 0 && op->bytes_transferred > 0)
         op->file_.offset_ += op->bytes_transferred;
 
-    auto prevent_premature_destruction = std::move(op->file_ptr);
+    auto prevent_premature_destruction = std::move(op->object_ref_);
     op->invoke_handler();
 }
 
 // ---------------------------------------------------------------------------
-// win_stream_file_internal
+// win_stream_file
 // ---------------------------------------------------------------------------
 
-inline win_stream_file_internal::win_stream_file_internal(
-    win_file_service& svc) noexcept
+inline win_stream_file::win_stream_file(win_file_service& svc) noexcept
     : svc_(svc)
     , rd_(*this)
     , wr_(*this)
 {
 }
 
-inline win_stream_file_internal::~win_stream_file_internal()
+inline void
+win_stream_file::reuse() noexcept
 {
-    svc_.unregister_impl(*this);
+    BOOST_COROSIO_ASSERT(handle_ == INVALID_HANDLE_VALUE);
+    BOOST_COROSIO_ASSERT(offset_ == 0);
+    BOOST_COROSIO_ASSERT(!rd_.stop_cb);
+    BOOST_COROSIO_ASSERT(!wr_.stop_cb);
 }
 
-inline HANDLE
-win_stream_file_internal::native_handle() const noexcept
+inline native_handle_type
+win_stream_file::native_handle() const noexcept
 {
-    return handle_;
+    return reinterpret_cast<native_handle_type>(handle_);
 }
 
 inline bool
-win_stream_file_internal::is_open() const noexcept
+win_stream_file::is_open() const noexcept
 {
     return handle_ != INVALID_HANDLE_VALUE;
 }
 
 inline void
-win_stream_file_internal::cancel() noexcept
+win_stream_file::cancel() noexcept
 {
     if (handle_ != INVALID_HANDLE_VALUE)
         ::CancelIoEx(handle_, nullptr);
@@ -249,7 +247,7 @@ win_stream_file_internal::cancel() noexcept
 }
 
 inline void
-win_stream_file_internal::close_handle() noexcept
+win_stream_file::close_handle() noexcept
 {
     if (handle_ != INVALID_HANDLE_VALUE)
     {
@@ -261,7 +259,7 @@ win_stream_file_internal::close_handle() noexcept
 }
 
 inline std::uint64_t
-win_stream_file_internal::size() const
+win_stream_file::size() const
 {
     LARGE_INTEGER li;
     if (!::GetFileSizeEx(handle_, &li))
@@ -270,7 +268,7 @@ win_stream_file_internal::size() const
 }
 
 inline std::error_code
-win_stream_file_internal::resize(std::uint64_t new_size) noexcept
+win_stream_file::resize(std::uint64_t new_size) noexcept
 {
     LARGE_INTEGER li;
     li.QuadPart = static_cast<LONGLONG>(new_size);
@@ -282,7 +280,7 @@ win_stream_file_internal::resize(std::uint64_t new_size) noexcept
 }
 
 inline std::error_code
-win_stream_file_internal::sync_data() noexcept
+win_stream_file::sync_data() noexcept
 {
     // Attempt data-only flush; fall back to full flush
     if (svc_.try_flush_data(handle_))
@@ -293,7 +291,7 @@ win_stream_file_internal::sync_data() noexcept
 }
 
 inline std::error_code
-win_stream_file_internal::sync_all() noexcept
+win_stream_file::sync_all() noexcept
 {
     if (!::FlushFileBuffers(handle_))
         return make_err(::GetLastError());
@@ -301,7 +299,7 @@ win_stream_file_internal::sync_all() noexcept
 }
 
 inline native_handle_type
-win_stream_file_internal::release()
+win_stream_file::release()
 {
     HANDLE h = handle_;
     handle_  = INVALID_HANDLE_VALUE;
@@ -310,7 +308,7 @@ win_stream_file_internal::release()
 }
 
 inline std::error_code
-win_stream_file_internal::assign(native_handle_type handle) noexcept
+win_stream_file::assign(native_handle_type handle) noexcept
 {
     close_handle();
     HANDLE h = reinterpret_cast<HANDLE>(handle);
@@ -326,8 +324,7 @@ win_stream_file_internal::assign(native_handle_type handle) noexcept
 }
 
 inline capy::io_result<std::uint64_t>
-win_stream_file_internal::seek(
-    std::int64_t offset, file_base::seek_basis origin) noexcept
+win_stream_file::seek(std::int64_t offset, file_base::seek_basis origin) noexcept
 {
     // We manage offset_ ourselves (same as POSIX impl).
     std::int64_t new_pos;
@@ -356,7 +353,7 @@ win_stream_file_internal::seek(
 }
 
 inline std::coroutine_handle<>
-win_stream_file_internal::read_some(
+win_stream_file::read_some(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     buffer_param param,
@@ -366,8 +363,8 @@ win_stream_file_internal::read_some(
 {
     static constexpr std::size_t max_buffers = 16;
 
-    // Keep internal alive during I/O
-    rd_.file_ptr = shared_from_this();
+    // Keep this file alive during I/O
+    rd_.object_ref_ = detail::object_ref(this);
 
     auto& op = rd_;
     op.reset();
@@ -428,7 +425,7 @@ win_stream_file_internal::read_some(
 }
 
 inline std::coroutine_handle<>
-win_stream_file_internal::write_some(
+win_stream_file::write_some(
     std::coroutine_handle<> h,
     capy::executor_ref ex,
     buffer_param param,
@@ -438,8 +435,8 @@ win_stream_file_internal::write_some(
 {
     static constexpr std::size_t max_buffers = 16;
 
-    // Keep internal alive during I/O
-    wr_.file_ptr = shared_from_this();
+    // Keep this file alive during I/O
+    wr_.object_ref_ = detail::object_ref(this);
 
     auto& op = wr_;
     op.reset();
@@ -497,109 +494,10 @@ win_stream_file_internal::write_some(
     return std::noop_coroutine();
 }
 
-// ---------------------------------------------------------------------------
-// win_stream_file wrapper
-// ---------------------------------------------------------------------------
-
-inline win_stream_file::win_stream_file(
-    std::shared_ptr<win_stream_file_internal> internal) noexcept
-    : internal_(std::move(internal))
-{
-}
-
 inline void
-win_stream_file::close_internal() noexcept
+win_stream_file::retire() noexcept
 {
-    if (internal_)
-    {
-        internal_->close_handle();
-        internal_.reset();
-    }
-}
-
-inline std::coroutine_handle<>
-win_stream_file::read_some(
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    buffer_param buf,
-    std::stop_token token,
-    std::error_code* ec,
-    std::size_t* bytes)
-{
-    return internal_->read_some(h, d, buf, token, ec, bytes);
-}
-
-inline std::coroutine_handle<>
-win_stream_file::write_some(
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    buffer_param buf,
-    std::stop_token token,
-    std::error_code* ec,
-    std::size_t* bytes)
-{
-    return internal_->write_some(h, d, buf, token, ec, bytes);
-}
-
-inline native_handle_type
-win_stream_file::native_handle() const noexcept
-{
-    return reinterpret_cast<native_handle_type>(internal_->native_handle());
-}
-
-inline void
-win_stream_file::cancel() noexcept
-{
-    internal_->cancel();
-}
-
-inline std::uint64_t
-win_stream_file::size() const
-{
-    return internal_->size();
-}
-
-inline std::error_code
-win_stream_file::resize(std::uint64_t new_size) noexcept
-{
-    return internal_->resize(new_size);
-}
-
-inline std::error_code
-win_stream_file::sync_data() noexcept
-{
-    return internal_->sync_data();
-}
-
-inline std::error_code
-win_stream_file::sync_all() noexcept
-{
-    return internal_->sync_all();
-}
-
-inline native_handle_type
-win_stream_file::release()
-{
-    return internal_->release();
-}
-
-inline std::error_code
-win_stream_file::assign(native_handle_type handle) noexcept
-{
-    return internal_->assign(handle);
-}
-
-inline capy::io_result<std::uint64_t>
-win_stream_file::seek(
-    std::int64_t offset, file_base::seek_basis origin) noexcept
-{
-    return internal_->seek(offset, origin);
-}
-
-inline win_stream_file_internal*
-win_stream_file::get_internal() const noexcept
-{
-    return internal_.get();
+    svc_.pool_.recycle(this);
 }
 
 // ---------------------------------------------------------------------------
@@ -619,61 +517,32 @@ inline win_file_service::win_file_service(capy::execution_context& ctx)
     }
 }
 
-inline win_file_service::~win_file_service()
-{
-    for (auto* w = wrapper_list_.pop_front(); w != nullptr;
-         w       = wrapper_list_.pop_front())
-        delete w;
-}
-
 inline io_object::implementation*
 win_file_service::construct()
 {
-    auto internal = std::make_shared<win_stream_file_internal>(*this);
-
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        file_list_.push_back(internal.get());
-    }
-
-    auto* wrapper = new win_stream_file(std::move(internal));
-
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        wrapper_list_.push_back(wrapper);
-    }
-
-    return wrapper;
+    return pool_.acquire(*this);
 }
 
 inline void
 win_file_service::destroy(io_object::implementation* p)
 {
-    if (p)
-    {
-        auto& wrapper = static_cast<win_stream_file&>(*p);
-        wrapper.close_internal();
-        destroy_impl(wrapper);
-    }
+    if (!p)
+        return;
+    auto* f = static_cast<win_stream_file*>(p);
+    f->close_handle();
+    release(f);
 }
 
 inline void
 win_file_service::close(io_object::handle& h)
 {
-    auto& wrapper = static_cast<win_stream_file&>(*h.get());
-    wrapper.get_internal()->close_handle();
+    static_cast<win_stream_file*>(h.get())->close_handle();
 }
 
 inline void
 win_file_service::shutdown()
 {
-    std::lock_guard<win_mutex> lock(mutex_);
-
-    for (auto* impl = file_list_.pop_front(); impl != nullptr;
-         impl       = file_list_.pop_front())
-    {
-        impl->close_handle();
-    }
+    pool_.shutdown([](win_stream_file* impl) { impl->close_handle(); });
 }
 
 inline std::error_code
@@ -736,9 +605,9 @@ win_file_service::open_file(
         }
     }
 
-    auto& internal   = *static_cast<win_stream_file&>(impl).get_internal();
-    internal.handle_ = h;
-    internal.offset_ = 0;
+    auto& file   = static_cast<win_stream_file&>(impl);
+    file.handle_ = h;
+    file.offset_ = 0;
 
     // Handle append: seek to end
     if (mode & file_base::append)
@@ -746,32 +615,15 @@ win_file_service::open_file(
         LARGE_INTEGER sz;
         if (!::GetFileSizeEx(h, &sz))
         {
-            DWORD err        = ::GetLastError();
-            internal.handle_ = INVALID_HANDLE_VALUE;
+            DWORD err    = ::GetLastError();
+            file.handle_ = INVALID_HANDLE_VALUE;
             ::CloseHandle(h);
             return make_err(err);
         }
-        internal.offset_ = static_cast<std::uint64_t>(sz.QuadPart);
+        file.offset_ = static_cast<std::uint64_t>(sz.QuadPart);
     }
 
     return {};
-}
-
-inline void
-win_file_service::destroy_impl(win_stream_file& impl)
-{
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        wrapper_list_.remove(&impl);
-    }
-    delete &impl;
-}
-
-inline void
-win_file_service::unregister_impl(win_stream_file_internal& impl)
-{
-    std::lock_guard<win_mutex> lock(mutex_);
-    file_list_.remove(&impl);
 }
 
 inline void

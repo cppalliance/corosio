@@ -19,6 +19,8 @@
 #include <boost/corosio/native/detail/iocp/win_signal.hpp>
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/object_pool.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/corosio/native/detail/iocp/win_mutex.hpp>
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
@@ -28,6 +30,7 @@
 #include <csignal>
 #include <mutex>
 #include <tuple>
+#include <vector>
 
 #include <signal.h>
 
@@ -75,7 +78,7 @@
     2. win_signals (one per execution_context)
        - Maintains registrations_[] table indexed by signal number
        - Each slot is a doubly-linked list of all signal_registrations for that signal
-       - Also maintains impl_list_ of all win_signal objects it owns
+       - Also owns a recycling pool of all win_signal objects it owns
 
     3. win_signal (one per signal_set)
        - Owns a singly-linked list (sorted by signal number) of signal_registrations
@@ -154,11 +157,21 @@ class BOOST_COROSIO_DECL win_signals final
     : public capy::execution_context::service
     , public io_object::io_service
 {
+    friend class win_signal;
+
 public:
     using key_type = win_signals;
 
     io_object::implementation* construct() override;
-    void destroy(io_object::implementation*) override;
+
+    void destroy(io_object::implementation* p) override
+    {
+        auto& impl = static_cast<win_signal&>(*p);
+        impl.clear();
+        impl.disarm_stop();
+        impl.cancel();
+        release(&impl);
+    }
 
     /** Construct the signal service.
 
@@ -179,8 +192,6 @@ public:
     */
     void shutdown() override;
 
-    /** Destroy a signal implementation. */
-    void destroy_impl(win_signal& impl);
 
     /** Add a signal to a signal set.
 
@@ -265,7 +276,7 @@ private:
     BOOST_COROSIO_MSVC_WARNING_PUSH
     BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // detail:: members, dll-interface
     win_mutex mutex_;
-    intrusive_list<win_signal> impl_list_;
+    object_pool<win_signal> pool_;
     BOOST_COROSIO_MSVC_WARNING_POP
 
     // Per-signal registration table for this service
@@ -439,20 +450,34 @@ inline win_signals::~win_signals()
 inline void
 win_signals::shutdown()
 {
-    // Collected under the locks below and deleted after they are released:
-    // ~win_signal destroys an armed stop_cb_, and ~stop_callback blocks
-    // until a concurrently running token_canceller returns -- which takes
-    // mutex_. Deleting while still holding mutex_ would self-deadlock the
-    // same way disarm_stop() would if called inside the locked loop.
-    intrusive_list<win_signal> doomed;
+    // Collected under the locks below and released after they are
+    // released: ~win_signal destroys an armed stop_cb_, and
+    // ~stop_callback blocks until a concurrently running
+    // token_canceller returns -- which takes mutex_. Releasing while
+    // still holding mutex_ would self-deadlock the same way
+    // disarm_stop() would if called inside the locked loop.
+    //
+    // The acquire()+release() pair below nets to zero change on each
+    // impl's refs_ -- it exists only so the lock-held loop above can
+    // safely walk `doomed` without a concurrent recycle() tearing one
+    // down mid-walk. It does NOT drop these impls to zero: every impl
+    // here survives at refs_ == 1 (the service's own floor reference)
+    // until ~object_pool()'s unconditional sweep deletes whatever is
+    // still in `live_`, bypassing refs_ entirely.
+    std::vector<win_signal*> doomed;
 
     {
         signal_detail::signal_state* state = signal_detail::get_signal_state();
         std::lock_guard<std::mutex> state_lock(state->mutex);
         std::lock_guard<win_mutex> lock(mutex_);
 
-        for (auto* impl = impl_list_.pop_front(); impl != nullptr;
-             impl       = impl_list_.pop_front())
+        pool_.shutdown(
+            [&](win_signal* impl)
+            {
+                acquire(impl);
+                doomed.push_back(impl);
+            });
+        for (auto* impl : doomed)
         {
             while (auto* reg = impl->signals_)
             {
@@ -472,57 +497,31 @@ win_signals::shutdown()
                 impl->signals_ = reg->next_in_set;
                 delete reg;
             }
-            doomed.push_back(impl);
         }
 
-        // Every live registration hung off an implementation in impl_list_,
-        // so the whole table goes stale at once and can be dropped wholesale
-        // rather than node by node. It has to be dropped: deliver_signal()
-        // walks this service until the destructor unlinks it from the global
-        // list.
+        // Every live registration hung off an implementation this pool
+        // owns, so the whole table goes stale at once and can be dropped
+        // wholesale rather than node by node. It has to be dropped:
+        // deliver_signal() walks this service until the destructor
+        // unlinks it from the global list.
         for (int i = 0; i < max_signal_number; ++i)
             registrations_[i] = nullptr;
     }
 
-    for (auto* impl = doomed.pop_front(); impl != nullptr;
-         impl       = doomed.pop_front())
-    {
-        delete impl;
-    }
+    for (auto* impl : doomed)
+        release(impl);
 }
 
 inline io_object::implementation*
 win_signals::construct()
 {
-    auto* impl = new win_signal(*this);
-
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        impl_list_.push_back(impl);
-    }
-
-    return impl;
+    return pool_.acquire(*this);
 }
 
 inline void
-win_signals::destroy(io_object::implementation* p)
+win_signal::retire() noexcept
 {
-    auto& impl = static_cast<win_signal&>(*p);
-    impl.clear();
-    impl.disarm_stop();
-    impl.cancel();
-    destroy_impl(impl);
-}
-
-inline void
-win_signals::destroy_impl(win_signal& impl)
-{
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        impl_list_.remove(&impl);
-    }
-
-    delete &impl;
+    svc_.pool_.recycle(this);
 }
 
 inline std::error_code

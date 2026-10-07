@@ -17,13 +17,13 @@
 #include <boost/corosio/local_stream_acceptor.hpp>
 #include <boost/corosio/wait_type.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/native/detail/iocp/win_overlapped_op.hpp>
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
 
 #include <coroutine>
-#include <memory>
 
 #include <ws2tcpip.h>
 #include <mswsock.h>
@@ -33,7 +33,7 @@ namespace boost::corosio::detail {
 class win_local_stream_acceptor_service;
 class win_local_stream_service;
 class win_local_stream_socket;
-class win_local_stream_acceptor_internal;
+class win_local_stream_acceptor;
 
 /** Accept operation state for local stream sockets.
 
@@ -43,7 +43,7 @@ struct local_stream_accept_op : overlapped_op
 {
     SOCKET accepted_socket                = INVALID_SOCKET;
     win_local_stream_socket* peer_wrapper = nullptr;
-    std::shared_ptr<win_local_stream_acceptor_internal> acceptor_ptr;
+    win_local_stream_acceptor& acceptor;
     SOCKET listen_socket                 = INVALID_SOCKET;
     io_object::implementation** impl_out = nullptr;
     // 2 * (sizeof(un_sa_t) + 16) = 2 * (110 + 16) = 252
@@ -56,13 +56,13 @@ struct local_stream_accept_op : overlapped_op
         std::uint32_t error);
     static void do_cancel_impl(overlapped_op* op) noexcept;
 
-    local_stream_accept_op() noexcept;
+    explicit local_stream_accept_op(win_local_stream_acceptor& acceptor_) noexcept;
 };
 
 /** Readiness-wait operation state for a local stream acceptor. */
 struct local_stream_acceptor_wait_op : overlapped_op
 {
-    std::shared_ptr<win_local_stream_acceptor_internal> acceptor_ptr;
+    win_local_stream_acceptor& acceptor;
     SOCKET listen_socket = INVALID_SOCKET;
 
     static void do_complete(
@@ -72,66 +72,48 @@ struct local_stream_acceptor_wait_op : overlapped_op
         std::uint32_t error);
     static void do_cancel_impl(overlapped_op* op) noexcept;
 
-    local_stream_acceptor_wait_op() noexcept;
+    explicit local_stream_acceptor_wait_op(
+        win_local_stream_acceptor& acceptor_) noexcept;
 };
 
-/* Internal acceptor state for IOCP local stream I/O. */
-class win_local_stream_acceptor_internal
-    : public intrusive_list<win_local_stream_acceptor_internal>::node
-    , public std::enable_shared_from_this<win_local_stream_acceptor_internal>
-{
-    friend class win_local_stream_service;
-    friend class win_local_stream_acceptor;
+/** Acceptor implementation for IOCP local stream I/O.
 
-public:
-    explicit win_local_stream_acceptor_internal(
-        win_local_stream_service& svc) noexcept;
-    ~win_local_stream_acceptor_internal();
-
-    win_local_stream_service& socket_service() noexcept;
-
-    std::coroutine_handle<> accept(
-        std::coroutine_handle<>,
-        capy::executor_ref,
-        std::stop_token,
-        std::error_code*,
-        io_object::implementation**);
-
-    std::coroutine_handle<> wait(
-        std::coroutine_handle<>,
-        capy::executor_ref,
-        wait_type,
-        std::stop_token,
-        std::error_code*);
-
-    SOCKET native_handle() const noexcept;
-    corosio::local_endpoint local_endpoint() const noexcept;
-    bool is_open() const noexcept;
-    void cancel() noexcept;
-    void close_socket() noexcept;
-    void set_local_endpoint(corosio::local_endpoint ep) noexcept;
-
-    local_stream_accept_op acc_;
-    local_stream_acceptor_wait_op wt_;
-
-private:
-    win_local_stream_service& svc_;
-    SOCKET socket_ = INVALID_SOCKET;
-    corosio::local_endpoint local_endpoint_;
-};
-
-/* Acceptor implementation wrapper for IOCP local stream I/O. */
+   Collapses the historical internal-state/wrapper split into one
+   pooled `io_object::implementation`.
+*/
 class win_local_stream_acceptor final
     : public local_stream_acceptor::implementation
     , public intrusive_list<win_local_stream_acceptor>::node
 {
-    std::shared_ptr<win_local_stream_acceptor_internal> internal_;
+    friend class win_local_stream_service;
+    friend struct local_stream_accept_op;
+    friend struct local_stream_acceptor_wait_op;
+
+    win_local_stream_service& svc_;
+    local_stream_accept_op acc_;
+    local_stream_acceptor_wait_op wt_;
+    SOCKET socket_ = INVALID_SOCKET;
+    corosio::local_endpoint local_endpoint_;
 
 public:
-    explicit win_local_stream_acceptor(
-        std::shared_ptr<win_local_stream_acceptor_internal> internal) noexcept;
+    explicit win_local_stream_acceptor(win_local_stream_service& svc) noexcept;
 
-    void close_internal() noexcept;
+    /// Recycle into the owning service's pool. Defined out-of-line
+    /// after `win_local_stream_service` is complete (needs
+    /// `svc_.acceptor_pool_`).
+    void retire() noexcept override;
+
+    /** Reset recycled state for reuse.
+
+        Each op's `OVERLAPPED` fields are re-seeded by
+        `overlapped_op::reset()` at its next submit, so they are not
+        zeroed here.
+
+        @pre refs_ == 0, socket closed, no op in flight.
+    */
+    void reuse() noexcept;
+
+    win_local_stream_service& socket_service() noexcept;
 
     std::coroutine_handle<> accept(
         std::coroutine_handle<> h,
@@ -169,7 +151,8 @@ public:
     get_option(int level, int optname, void* data, std::size_t* size)
         const noexcept override;
 
-    win_local_stream_acceptor_internal* get_internal() const noexcept;
+    void set_local_endpoint(corosio::local_endpoint ep) noexcept;
+    void close_socket() noexcept;
 };
 
 } // namespace boost::corosio::detail

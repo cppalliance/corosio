@@ -20,6 +20,7 @@
 #include <boost/corosio/signal_set.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
+#include <boost/corosio/io/io_object.hpp>
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 
@@ -125,6 +126,16 @@ class win_signal final
 public:
     explicit win_signal(win_signals& svc) noexcept;
 
+    /// Recycle into the owning service's pool. Defined out-of-line
+    /// after `win_signals` is complete (needs `svc_.pool_`).
+    void retire() noexcept override;
+
+    /** Reset recycled state for reuse.
+
+        @pre refs_ == 0, no registrations, no wait in flight.
+    */
+    void reuse() noexcept;
+
     std::coroutine_handle<> wait(
         std::coroutine_handle<>,
         capy::executor_ref,
@@ -143,6 +154,16 @@ public:
         stop_cb_.reset();
     }
 };
+
+inline void
+win_signal::reuse() noexcept
+{
+    BOOST_COROSIO_ASSERT(signals_ == nullptr);
+    BOOST_COROSIO_ASSERT(!waiting_);
+    BOOST_COROSIO_ASSERT(!stop_cb_);
+    cancelled_       = false;
+    token_cancelled_ = false;
+}
 
 } // namespace boost::corosio::detail
 
