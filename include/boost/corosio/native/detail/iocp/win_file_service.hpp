@@ -19,6 +19,8 @@
 #include <boost/corosio/detail/file_service.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
+#include <boost/corosio/detail/object_pool.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/native/detail/iocp/win_mutex.hpp>
 #include <boost/corosio/native/detail/iocp/win_stream_file.hpp>
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
@@ -42,6 +44,8 @@ namespace boost::corosio::detail {
 */
 class BOOST_COROSIO_DECL win_file_service final : public file_service
 {
+    friend class win_stream_file;
+
 public:
     using key_type = win_file_service;
 
@@ -91,7 +95,7 @@ private:
     win_scheduler& sched_;
     BOOST_COROSIO_MSVC_WARNING_PUSH
     BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // detail:: members, dll-interface
-    win_handle_registry<win_stream_file, win_handle_base> reg_;
+    object_pool<win_stream_file> pool_;
     BOOST_COROSIO_MSVC_WARNING_POP
     void* iocp_;
     nt_flush_fn nt_flush_buffers_file_ex_;
@@ -185,20 +189,22 @@ win_stream_file_internal::seek(
 // win_stream_file wrapper
 // ---------------------------------------------------------------------------
 
-inline win_stream_file::win_stream_file(
-    std::shared_ptr<win_stream_file_internal> internal) noexcept
-    : internal_(std::move(internal))
+inline win_stream_file::win_stream_file(win_file_service& svc) noexcept
+    : svc_(svc)
+    , internal_(svc.sched_, *this, svc)
 {
 }
 
 inline void
-win_stream_file::close_internal() noexcept
+win_stream_file::retire() noexcept
 {
-    if (internal_)
-    {
-        internal_->close_handle();
-        internal_.reset();
-    }
+    svc_.pool_.recycle(this);
+}
+
+inline void
+win_stream_file::reuse() noexcept
+{
+    BOOST_COROSIO_ASSERT(!internal_.is_open());
 }
 
 inline std::coroutine_handle<>
@@ -210,7 +216,7 @@ win_stream_file::read_some(
     std::error_code* ec,
     std::size_t* bytes)
 {
-    return internal_->read_some(h, d, buf, token, ec, bytes);
+    return internal_.read_some(h, d, buf, token, ec, bytes);
 }
 
 inline std::coroutine_handle<>
@@ -222,68 +228,68 @@ win_stream_file::write_some(
     std::error_code* ec,
     std::size_t* bytes)
 {
-    return internal_->write_some(h, d, buf, token, ec, bytes);
+    return internal_.write_some(h, d, buf, token, ec, bytes);
 }
 
 inline native_handle_type
 win_stream_file::native_handle() const noexcept
 {
-    return reinterpret_cast<native_handle_type>(internal_->native_handle());
+    return reinterpret_cast<native_handle_type>(internal_.native_handle());
 }
 
 inline void
 win_stream_file::cancel() noexcept
 {
-    internal_->cancel();
+    internal_.cancel();
 }
 
 inline std::uint64_t
 win_stream_file::size() const
 {
-    return internal_->size();
+    return internal_.size();
 }
 
 inline std::error_code
 win_stream_file::resize(std::uint64_t new_size) noexcept
 {
-    return internal_->resize(new_size);
+    return internal_.resize(new_size);
 }
 
 inline std::error_code
 win_stream_file::sync_data() noexcept
 {
-    return internal_->sync_data();
+    return internal_.sync_data();
 }
 
 inline std::error_code
 win_stream_file::sync_all() noexcept
 {
-    return internal_->sync_all();
+    return internal_.sync_all();
 }
 
 inline native_handle_type
 win_stream_file::release()
 {
-    return internal_->release();
+    return internal_.release();
 }
 
 inline std::error_code
 win_stream_file::assign(native_handle_type handle) noexcept
 {
-    return internal_->assign(handle, handle_kind::stream_file);
+    return internal_.assign(handle, handle_kind::stream_file);
 }
 
 inline capy::io_result<std::uint64_t>
 win_stream_file::seek(
     std::int64_t offset, file_base::seek_basis origin) noexcept
 {
-    return internal_->seek(offset, origin);
+    return internal_.seek(offset, origin);
 }
 
 inline win_stream_file_internal*
-win_stream_file::get_internal() const noexcept
+win_stream_file::get_internal() noexcept
 {
-    return internal_.get();
+    return &internal_;
 }
 
 // ---------------------------------------------------------------------------
@@ -308,16 +314,17 @@ inline win_file_service::~win_file_service() = default;
 inline io_object::implementation*
 win_file_service::construct()
 {
-    auto internal = std::make_shared<win_stream_file_internal>(
-        sched_, reg_.states(), *this);
-    return reg_.add(new win_stream_file(std::move(internal)));
+    return pool_.acquire(*this);
 }
 
 inline void
 win_file_service::destroy(io_object::implementation* p)
 {
-    if (p)
-        reg_.destroy(static_cast<win_stream_file&>(*p));
+    if (!p)
+        return;
+    auto* f = static_cast<win_stream_file*>(p);
+    f->get_internal()->close_handle();
+    release(f);
 }
 
 inline void
@@ -329,7 +336,8 @@ win_file_service::close(io_object::handle& h)
 inline void
 win_file_service::shutdown()
 {
-    reg_.shutdown();
+    pool_.shutdown(
+        [](win_stream_file* f) { f->get_internal()->close_handle(); });
 }
 
 inline std::error_code

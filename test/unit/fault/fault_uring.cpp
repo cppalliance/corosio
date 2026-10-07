@@ -12,7 +12,9 @@
 #include <cerrno>
 #include <dlfcn.h>
 #include <liburing.h>
+#include <cstdint>
 #include <tuple>
+#include <unistd.h>
 
 // liburing 2.6 and later declare their API noexcept in C++; older
 // headers leave it unspecified, and a shadow that adds a specification
@@ -128,10 +130,47 @@ scan_pending_sqes(io_uring* ring) noexcept
     }
 }
 
+// A multishot CQE rewritten as terminal leaves the kernel arming live,
+// which a real termination never does. corosio may free the op once
+// it sees the fake terminal, so the arming's real terminal CQE, which
+// would name that op, is turned into a wakeup CQE (null user_data,
+// more to come) that corosio skips. Deliveries before it pass through,
+// since a re-arm reuses the same user_data. Outlives the rewriting
+// scope, as the arming can.
+struct orphan_state
+{
+    std::uint64_t user_data = 0;
+    bool closes_fds         = false;
+};
+
+orphan_state orphan;
+
+void
+swallow_orphan_terminal(io_uring* ring) noexcept
+{
+    if (orphan.user_data == 0)
+        return;
+    unsigned head;
+    io_uring_cqe* cqe;
+    io_uring_for_each_cqe(ring, head, cqe)
+    {
+        if (cqe->user_data != orphan.user_data ||
+            (cqe->flags & IORING_CQE_F_MORE) != 0)
+            continue;
+        if (orphan.closes_fds && cqe->res >= 0)
+            ::close(cqe->res);
+        cqe->user_data = 0;
+        cqe->flags |= IORING_CQE_F_MORE;
+        orphan         = {};
+        return;
+    }
+}
+
 // Overwrite `res` on the visible CQE carrying the recorded user_data.
 void
 rewrite_visible_cqes(io_uring* ring) noexcept
 {
+    swallow_orphan_terminal(ring);
     auto& c = tls_cqe;
     if (!c.armed || !c.have_user_data)
         return;
@@ -141,6 +180,12 @@ rewrite_visible_cqes(io_uring* ring) noexcept
     {
         if (cqe->user_data == c.user_data)
         {
+            if ((c.flags_clear & IORING_CQE_F_MORE) &&
+                (cqe->flags & IORING_CQE_F_MORE))
+            {
+                orphan.user_data  = c.user_data;
+                orphan.closes_fds = c.opcode == IORING_OP_ACCEPT;
+            }
             cqe->res = c.res;
             cqe->flags &= ~c.flags_clear;
             c.fired = true;

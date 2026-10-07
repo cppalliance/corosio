@@ -16,10 +16,12 @@
 
 #include <atomic>
 #include <coroutine>
+#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <new>
 
+#include "alloc_counter.hpp"
 #include "context.hpp"
 #include "test_suite.hpp"
 
@@ -53,32 +55,76 @@ bare_post_task(capy::continuation* cont, bool& ran)
     ran = true;
 }
 
-// TSan's runtime already replaces global operator new/delete, so the
-// counting replacements below cannot link under -fsanitize=thread (and
-// the counts would reflect the sanitizer's allocator anyway).
-#if defined(__SANITIZE_THREAD__)
-#define COROSIO_TEST_HAS_TSAN 1
-#elif defined(__has_feature)
-#if __has_feature(thread_sanitizer)
-#define COROSIO_TEST_HAS_TSAN 1
-#endif
-#endif
+} // namespace
 
+// Definitions for alloc_counter.hpp's extern declarations. Not in the
+// anonymous namespace above: zero_alloc.cpp needs these by extern
+// reference, and an unnamed namespace's members are unreachable from
+// another translation unit even though formally external-linkage.
 #ifndef COROSIO_TEST_HAS_TSAN
 std::atomic<bool> alloc_armed{false};
 std::atomic<long long> alloc_count{0};
-#endif
+
+namespace {
+
+inline void
+count_alloc() noexcept
+{
+    if (alloc_armed.load(std::memory_order_relaxed))
+        alloc_count.fetch_add(1, std::memory_order_relaxed);
+}
+
+/* Over-aligned new/delete, implemented without a platform-specific
+   aligned allocator (aligned_alloc/posix_memalign/_aligned_malloc all
+   differ in availability or requirements): stash the raw malloc()
+   pointer just before the returned block so the matching delete can
+   recover it, the same trick a custom allocator uses.
+*/
+void*
+aligned_alloc_impl(std::size_t n, std::size_t align)
+{
+    if (align < alignof(void*))
+        align = alignof(void*);
+    std::size_t total = (n ? n : 1) + align + sizeof(void*);
+    void* raw         = std::malloc(total);
+    if (!raw)
+        return nullptr;
+    auto base    = reinterpret_cast<std::uintptr_t>(raw) + sizeof(void*);
+    auto aligned = (base + align - 1) & ~(align - 1);
+    *reinterpret_cast<void**>(aligned - sizeof(void*)) = raw;
+    return reinterpret_cast<void*>(aligned);
+}
+
+void
+aligned_free_impl(void* p) noexcept
+{
+    if (!p)
+        return;
+    void* raw = *reinterpret_cast<void**>(
+        reinterpret_cast<std::uintptr_t>(p) - sizeof(void*));
+    std::free(raw);
+}
 
 } // namespace
+#endif
 
 } // namespace boost::corosio
 
 #ifndef COROSIO_TEST_HAS_TSAN
+// Plain forms
 void*
 operator new(std::size_t n)
 {
-    if (boost::corosio::alloc_armed.load(std::memory_order_relaxed))
-        boost::corosio::alloc_count.fetch_add(1, std::memory_order_relaxed);
+    boost::corosio::count_alloc();
+    if (void* p = std::malloc(n ? n : 1))
+        return p;
+    throw std::bad_alloc{};
+}
+
+void*
+operator new[](std::size_t n)
+{
+    boost::corosio::count_alloc();
     if (void* p = std::malloc(n ? n : 1))
         return p;
     throw std::bad_alloc{};
@@ -93,6 +139,111 @@ void
 operator delete(void* p, std::size_t) noexcept
 {
     std::free(p);
+}
+void
+operator delete[](void* p) noexcept
+{
+    std::free(p);
+}
+void
+operator delete[](void* p, std::size_t) noexcept
+{
+    std::free(p);
+}
+
+// nothrow forms
+void*
+operator new(std::size_t n, std::nothrow_t const&) noexcept
+{
+    boost::corosio::count_alloc();
+    return std::malloc(n ? n : 1);
+}
+void*
+operator new[](std::size_t n, std::nothrow_t const&) noexcept
+{
+    boost::corosio::count_alloc();
+    return std::malloc(n ? n : 1);
+}
+void
+operator delete(void* p, std::nothrow_t const&) noexcept
+{
+    std::free(p);
+}
+void
+operator delete[](void* p, std::nothrow_t const&) noexcept
+{
+    std::free(p);
+}
+
+// Over-aligned forms (std::align_val_t) -- an aligned allocation on a
+// measured path would otherwise bypass this interposer silently.
+void*
+operator new(std::size_t n, std::align_val_t align)
+{
+    boost::corosio::count_alloc();
+    if (void* p = boost::corosio::aligned_alloc_impl(
+            n, static_cast<std::size_t>(align)))
+        return p;
+    throw std::bad_alloc{};
+}
+void*
+operator new[](std::size_t n, std::align_val_t align)
+{
+    boost::corosio::count_alloc();
+    if (void* p = boost::corosio::aligned_alloc_impl(
+            n, static_cast<std::size_t>(align)))
+        return p;
+    throw std::bad_alloc{};
+}
+void
+operator delete(void* p, std::align_val_t) noexcept
+{
+    boost::corosio::aligned_free_impl(p);
+}
+void
+operator delete(void* p, std::size_t, std::align_val_t) noexcept
+{
+    boost::corosio::aligned_free_impl(p);
+}
+void
+operator delete[](void* p, std::align_val_t) noexcept
+{
+    boost::corosio::aligned_free_impl(p);
+}
+void
+operator delete[](void* p, std::size_t, std::align_val_t) noexcept
+{
+    boost::corosio::aligned_free_impl(p);
+}
+
+// Over-aligned nothrow forms
+void*
+operator new(std::size_t n, std::align_val_t align, std::nothrow_t const&)
+    noexcept
+{
+    boost::corosio::count_alloc();
+    return boost::corosio::aligned_alloc_impl(
+        n, static_cast<std::size_t>(align));
+}
+void*
+operator new[](std::size_t n, std::align_val_t align, std::nothrow_t const&)
+    noexcept
+{
+    boost::corosio::count_alloc();
+    return boost::corosio::aligned_alloc_impl(
+        n, static_cast<std::size_t>(align));
+}
+void
+operator delete(
+    void* p, std::align_val_t, std::nothrow_t const&) noexcept
+{
+    boost::corosio::aligned_free_impl(p);
+}
+void
+operator delete[](
+    void* p, std::align_val_t, std::nothrow_t const&) noexcept
+{
+    boost::corosio::aligned_free_impl(p);
 }
 #endif
 
@@ -150,6 +301,8 @@ struct continuation_zero_alloc_test
 
     void run()
     {
+        if (!alloc_counter_is_live("boost.corosio.continuation_post.zero_alloc"))
+            return;
         testPostIsZeroAlloc();
     }
 };

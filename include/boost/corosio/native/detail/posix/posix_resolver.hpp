@@ -57,11 +57,12 @@
     Class Hierarchy
     ---------------
     - posix_resolver_service (execution_context service, one per context)
-        - Owns all posix_resolver instances via shared_ptr
+        - Owns all posix_resolver instances via a recycling object_pool
         - Stores scheduler* for posting completions
     - posix_resolver (one per resolver object)
         - Contains embedded resolve_op and reverse_resolve_op for reuse
-        - Uses shared_from_this to prevent premature destruction
+        - Each op holds an object_ref keepalive while its pool work is
+          in flight, preventing premature destruction
     - resolve_op (forward resolution state)
         - Uses getaddrinfo() to resolve host/service to endpoints
     - reverse_resolve_op (reverse resolution state)
@@ -86,9 +87,12 @@
 
     Shutdown
     --------
-    The resolver service cancels all resolvers and clears the impl map.
-    The thread pool service shuts down separately via execution_context
-    service ordering, joining all worker threads.
+    The resolver service cancels all resolvers and releases the
+    service's own reference on each; the recycling pool frees (rather
+    than recycles) once each resolver's in-flight pool work also
+    releases its reference. The thread pool service shuts down
+    separately via execution_context service ordering, joining all
+    worker threads.
 */
 
 namespace boost::corosio::detail {
@@ -154,7 +158,6 @@ class posix_resolver_service;
 */
 class posix_resolver final
     : public resolver::implementation
-    , public std::enable_shared_from_this<posix_resolver>
     , public intrusive_list<posix_resolver>::node
 {
     friend class posix_resolver_service;
@@ -213,10 +216,33 @@ public:
         posix_resolver* resolver_ = nullptr;
 
         /// Prevent impl destruction while work is in flight.
-        std::shared_ptr<posix_resolver> ref_;
+        detail::object_ref ref_;
     };
 
     explicit posix_resolver(posix_resolver_service& svc) noexcept;
+
+    /// Recycle into the owning service's pool. Defined out-of-line
+    /// after posix_resolver_service for its complete type.
+    void retire() noexcept override;
+
+    /** Reset for recycling.
+
+        Both ops' own `reset()` already clears `host`/`service`/
+        `stored_host`/`stored_service` via `.clear()` (preserving their
+        allocated capacity — the whole point of recycling), run at the
+        top of the next `resolve()`/`reverse_resolve()`. refs_ cannot
+        reach zero while a resolve is in flight (the pool op's
+        `object_ref` holds a reference for the duration), so asserting
+        `stop_cb` disengaged on both ops is a precondition check, not
+        a defensive one.
+
+        @pre refs_ == 0, no resolve in flight.
+    */
+    void reuse() noexcept
+    {
+        BOOST_COROSIO_ASSERT(!op_.stop_cb);
+        BOOST_COROSIO_ASSERT(!reverse_op_.stop_cb);
+    }
 
     std::coroutine_handle<> resolve(
         std::coroutine_handle<>,

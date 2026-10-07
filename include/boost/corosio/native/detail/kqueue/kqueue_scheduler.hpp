@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <limits>
 #include <mutex>
+#include <tuple>
 #include <vector>
 
 #include <errno.h>
@@ -324,23 +325,36 @@ inline std::error_code
 kqueue_scheduler::register_descriptor(
     int fd, reactor_descriptor_state* desc) const
 {
-    int const err = kqueue_add_filter(kq_fd_, fd, EVFILT_READ, desc);
-    // EINVAL/ENODEV: a device with no kqfilter. As on epoll's EPERM,
-    // adopt it unwatched.
-    bool const unpollable = err == EINVAL || err == ENODEV;
-    if (err != 0 && !unpollable)
-        return make_err(err);
-    desc->registered_events = unpollable ? 0 : reactor_event_read;
-    desc->unpollable        = unpollable;
-    desc->fd                = fd;
-    desc->scheduler_        = this;
-    desc->mutex.set_enabled(reactor_io_locking_);
-    desc->ready_events_.store(0, std::memory_order_relaxed);
+    // Initialized before the add: another run thread's reactor can
+    // dispatch an event for the descriptor as soon as it is added.
+    // A completion queued by an earlier registration of the same state
+    // may still be running, so the fields it reads change under its
+    // mutex, and the mutex mode is only written when it differs.
+    if (desc->mutex.enabled() != reactor_io_locking_)
+        desc->mutex.set_enabled(reactor_io_locking_);
+    {
+        conditionally_enabled_mutex::scoped_lock lock(desc->mutex);
+        desc->registered_events = reactor_event_read;
+        desc->unpollable        = false;
+        desc->fd                = fd;
+        desc->scheduler_        = this;
+        desc->ready_events_.store(0, std::memory_order_release);
+        // object_ref_ is not touched: a queued invocation from an
+        // earlier registration still owns the reference in it.
+        desc->read_ready  = false;
+        desc->write_ready = false;
+    }
 
-    conditionally_enabled_mutex::scoped_lock lock(desc->mutex);
-    desc->impl_ref_.reset();
-    desc->read_ready  = false;
-    desc->write_ready = false;
+    if (int const err = kqueue_add_filter(kq_fd_, fd, EVFILT_READ, desc))
+    {
+        conditionally_enabled_mutex::scoped_lock lock(desc->mutex);
+        desc->registered_events = 0;
+        // EINVAL/ENODEV: a device with no kqfilter. As on epoll's
+        // EPERM, adopt it unwatched.
+        if (err != EINVAL && err != ENODEV)
+            return make_err(err);
+        desc->unpollable = true;
+    }
     return {};
 }
 
@@ -489,6 +503,13 @@ kqueue_scheduler::run_task(lock_type& lock, context_type& ctx, long timeout_us)
                 ready |= reactor_event_error;
         }
 
+#if BOOST_COROSIO_TSAN
+        // kevent hands the descriptor over in the kernel, where the
+        // sanitizer sees no ordering, and it checks a read-modify-write
+        // before applying its acquire. This load gives it the acquire
+        // that pairs with register_descriptor's release store first.
+        std::ignore = desc->ready_events_.load(std::memory_order_acquire);
+#endif
         desc->add_ready_events(ready);
 
         bool expected = false;

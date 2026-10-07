@@ -34,9 +34,9 @@
    PARALLEL COPY: construct, destroy, close and shutdown here mirror the
    same four members of reactor_socket_service.hpp, which this cannot
    reuse because it calls close_socket() by name. A fix to the service
-   lifecycle -- the construct/destroy bookkeeping under state_->mutex_,
-   or shutdown's deliberate retention of impl_ptrs_ so impls outlive the
-   scheduler's drain -- belongs in both files.
+   lifecycle -- the pool's acquire/recycle, or shutdown's reliance on
+   queued ops holding their own reference through the scheduler's
+   drain -- belongs in both files.
 */
 
 namespace boost::corosio::detail {
@@ -54,6 +54,10 @@ class reactor_descriptor_service : public descriptor_service
     using state_type     = reactor_service_state<scheduler_type, DescFinal>;
 
     friend Derived;
+
+    // The CRTP base reaches into state_->pool_ from retire().
+    template<class, class, class, class>
+    friend class reactor_descriptor;
 
 protected:
     // NOLINTNEXTLINE(bugprone-crtp-constructor-accessibility)
@@ -77,36 +81,24 @@ public:
 
     void shutdown() override
     {
-        std::lock_guard lock(state_->mutex_);
+        state_->pool_.shutdown(
+            [](DescFinal* impl) { impl->close_descriptor(); });
 
-        while (auto* impl = state_->impl_list_.pop_front())
-            impl->close_descriptor();
-
-        // Don't clear impl_ptrs_ here: the scheduler shuts down after us
-        // and drains completed_ops_, so every impl must outlive that.
+        // See reactor_socket_service::shutdown(): queued ops hold their
+        // own reference; the scheduler's drain releases them after us,
+        // and shutting-down mode deletes rather than recycles at zero.
     }
 
     io_object::implementation* construct() override
     {
-        auto impl = std::make_shared<DescFinal>(static_cast<Derived&>(*this));
-        auto* raw = impl.get();
-
-        {
-            std::lock_guard lock(state_->mutex_);
-            state_->impl_ptrs_.emplace(raw, std::move(impl));
-            state_->impl_list_.push_back(raw);
-        }
-
-        return raw;
+        return state_->pool_.acquire(static_cast<Derived&>(*this));
     }
 
     void destroy(io_object::implementation* impl) override
     {
         auto* typed = static_cast<DescFinal*>(impl);
         typed->close_descriptor();
-        std::lock_guard lock(state_->mutex_);
-        state_->impl_list_.remove(typed);
-        state_->impl_ptrs_.erase(typed);
+        release(typed);
     }
 
     void close(io_object::handle& h) override

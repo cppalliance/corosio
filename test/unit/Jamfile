@@ -38,12 +38,19 @@ project boost/corosio/test/unit
 # applies the exclusion patterns to directory entries too and does not
 # descend into a match. Those targets need the hook translation unit
 # linked in, which only fault/Jamfile does.
-for local f in [ glob-tree-ex . : *.cpp : openssl_stream.cpp wolfssl_stream.cpp cross_ssl_stream.cpp tls_stream.cpp tls_stream_stress.cpp iocp_shutdown.cpp iocp_error_map.cpp openssl_engine.cpp wolfssl_engine.cpp cross_engine.cpp fault ]
+for local f in [ glob-tree-ex . : *.cpp : openssl_stream.cpp wolfssl_stream.cpp cross_ssl_stream.cpp tls_stream.cpp tls_stream_stress.cpp iocp_shutdown.cpp iocp_error_map.cpp openssl_engine.cpp wolfssl_engine.cpp cross_engine.cpp zero_alloc.cpp fault ]
 {
     run $(f) ;
 }
 
 build-project fault ;
+
+# zero_alloc.cpp counts against alloc_counter.hpp's extern counters, whose
+# one definition (plus the global operator new/delete override) lives in
+# continuation_post.cpp. Unlike the CMake build, which links every test
+# source into a single binary, each b2 `run` target is its own executable,
+# so the extra translation unit must be named explicitly here.
+run zero_alloc.cpp continuation_post.cpp ;
 
 # IOCP-specific native tests (Windows host only; skip on other hosts to
 # avoid triggering a cross-compile attempt).

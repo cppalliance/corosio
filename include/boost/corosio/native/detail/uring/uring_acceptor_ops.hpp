@@ -18,9 +18,11 @@
 
 #include <boost/capy/error.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
+#include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/corosio/native/detail/uring/uring_buffer.hpp>
 #include <boost/corosio/native/detail/uring/uring_op.hpp>
+#include <boost/corosio/native/detail/uring/uring_scheduler.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 
 #include <netinet/in.h>
@@ -29,19 +31,22 @@
 
 namespace boost::corosio::detail {
 
-/** Multishot accept op — one submitted per acceptor lifetime.
+/** Multishot accept op: one kernel arming of an acceptor's listener.
 
-    The kernel produces a CQE for each accepted connection. Each CQE
-    carries the new fd in `res` (>= 0) or a negative errno on failure.
-    The `IORING_CQE_F_MORE` flag is set on every CQE except the last,
-    indicating whether the multishot armament is still active.
+    The kernel produces a CQE for each accepted connection, carrying
+    the new fd in `res` (>= 0) or a negative errno. Every CQE but the
+    last sets `IORING_CQE_F_MORE`; the last ends the arming.
 
-    `do_cqe` does NOT push self into `local` — the owning acceptor's
-    `on_cqe` handler decides whether to dispatch immediately (waiter
-    present) or park the fd (no waiter). The multishot op persists
-    across CQEs; only `acceptor_impl` owns its lifetime.
+    While armed, the op is owned by the kernel: it holds a reference on
+    its acceptor (`object_ref_`) and the acceptor only remembers it by
+    address. Deliveries are routed inline by `on_cqe` under the ring
+    mutex. The terminal CQE queues the op for dispatch, and its handler
+    (`on_end`, off every lock) either re-arms it or returns it to the
+    acceptor's free list and drops the reference.
 */
-struct uring_multi_accept_op : uring_op
+struct uring_multi_accept_op
+    : uring_op
+    , intrusive_list<uring_multi_accept_op>::node
 {
     /// Filled by the kernel for each accept. Address of this struct
     /// is registered with the SQE; kernel writes peer address here.
@@ -49,19 +54,34 @@ struct uring_multi_accept_op : uring_op
     socklen_t peer_len = sizeof(peer_storage);
     int listen_fd      = -1;
 
-    /// Owning acceptor; raw because the op IS owned by the acceptor.
+    /// The acceptor that armed this op.
     void* acceptor_impl = nullptr;
 
-    /** Callback into the acceptor for each accept CQE.
+    /** Route one accept CQE; runs under the ring mutex.
 
-        @param acceptor The owning acceptor_impl pointer.
+        @param acceptor The acceptor that armed @p op.
+        @param op       The arming the CQE belongs to.
         @param new_fd   Accepted fd on success, -1 on error.
         @param err      errno value on failure, 0 on success.
-        @param more     True unless this is the terminating CQE
-                        (e.g. kernel dropped multishot on -ENOMEM).
+        @param more     True unless this CQE ends the arming.
     */
-    void (*on_cqe)(void* acceptor, int new_fd, int err, bool more) noexcept =
-        nullptr;
+    void (*on_cqe)(
+        void* acceptor,
+        uring_multi_accept_op* op,
+        int new_fd,
+        int err,
+        bool more) noexcept = nullptr;
+
+    /** Handle the end of an arming; runs from dispatch, off every lock.
+
+        @param acceptor The acceptor that armed @p op.
+        @param op       The ended arming.
+        @param live     False when the scheduler is shutting down.
+    */
+    void (*on_end)(
+        void* acceptor,
+        uring_multi_accept_op* op,
+        bool live) noexcept = nullptr;
 
     uring_multi_accept_op() noexcept : uring_op(&do_handler, &do_cqe, &do_prep)
     {
@@ -76,48 +96,31 @@ struct uring_multi_accept_op : uring_op
             SOCK_NONBLOCK | SOCK_CLOEXEC);
     }
 
-    /** Dispose of a connection the kernel accepted for a retired
-        arming.
-
-        The acceptor that armed this op has moved to another
-        descriptor, so no waiter will ever take delivery. The fd is
-        already installed in the process table — dropping the CQE
-        without closing it leaks it for the life of the process.
-    */
     static void
-    do_retired_cqe(uring_op* /*base*/, int res, unsigned /*flags*/) noexcept
-    {
-        if (res >= 0)     // LCOV_EXCL_LINE adopt-over-armed race leak guard
-            ::close(res); // LCOV_EXCL_LINE adopt-over-armed race leak guard
-    }
-
-    static void do_cqe(
-        uring_op* base,
-        int res,
-        unsigned flags,
-        ready_queue& /*local*/) noexcept
+    do_cqe(uring_op* base, int res, unsigned flags, ready_queue& local) noexcept
     {
         auto* self = static_cast<uring_multi_accept_op*>(base);
         bool more  = (flags & IORING_CQE_F_MORE) != 0;
         int err    = (res < 0) ? -res : 0;
         int new_fd = (res >= 0) ? res : -1;
-        if (self->on_cqe)
-            self->on_cqe(self->acceptor_impl, new_fd, err, more);
-        // Intentionally NOT pushed into local: the acceptor decides
-        // whether to surface the fd via a waiter or park it.
+        self->on_cqe(self->acceptor_impl, self, new_fd, err, more);
+        if (!more)
+        {
+            // Balance the work_finished() do_one runs after dispatching.
+            self->sched_->work_started();
+            local.push(self);
+        }
     }
 
-    // LCOV_EXCL_START: never invoked; the multishot op is owned by
-    // the acceptor and never queued for handler dispatch. Provided so
-    // the vtable is complete.
     static void do_handler(
-        void* /*owner*/,
-        scheduler_op* /*base*/,
+        void* owner,
+        scheduler_op* base,
         std::uint32_t /*bytes*/,
         std::uint32_t /*error*/) noexcept
     {
+        auto* self = static_cast<uring_multi_accept_op*>(base);
+        self->on_end(self->acceptor_impl, self, owner != nullptr);
     }
-    // LCOV_EXCL_STOP
 };
 
 /** Synthesized accept op — manufactured by the acceptor for parked fds.
@@ -154,7 +157,22 @@ struct uring_accept_op : uring_op
         sockaddr_storage const& peer,
         socklen_t peer_len) noexcept = nullptr;
 
+    /** Disposal hook, run exactly once when the op is consumed.
+
+        Heap-allocated ops delete themselves (the default); the
+        multishot acceptor's pooled nodes override this to return to
+        their acceptor's free list instead. Factoring disposal out of
+        `do_handler` is what lets one completion routine serve both
+        ownership models.
+    */
+    void (*dispose)(uring_accept_op*) noexcept = &dispose_delete;
+
     uring_accept_op() noexcept : uring_op(&do_handler, &do_cqe) {}
+
+    static void dispose_delete(uring_accept_op* op) noexcept
+    {
+        delete op;
+    }
 
     // LCOV_EXCL_START: never receives a CQE; present for vtable
     // completeness.
@@ -172,7 +190,10 @@ struct uring_accept_op : uring_op
 
         if (owner == nullptr)
         {
-            delete self;
+            // A delivered connection that nobody will adopt.
+            if (self->accepted_fd >= 0)
+                ::close(self->accepted_fd);
+            self->dispose(self);
             return;
         }
 
@@ -186,7 +207,7 @@ struct uring_accept_op : uring_op
                     : make_err(self->err);
             self->cont.h = self->h;
             auto next    = dispatch_coro(self->ex, self->cont);
-            delete self;
+            self->dispose(self);
             next.resume();
             return;
         }
@@ -207,7 +228,7 @@ struct uring_accept_op : uring_op
 
         self->cont.h = self->h;
         auto next    = dispatch_coro(self->ex, self->cont);
-        delete self;
+        self->dispose(self);
         next.resume();
     }
 };

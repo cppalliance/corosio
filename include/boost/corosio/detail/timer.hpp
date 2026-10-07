@@ -80,7 +80,9 @@ public:
         so `wait` is a plain member function rather than a virtual
         dispatch point.
     */
-    struct implementation : io_object::implementation
+    struct implementation
+        : io_object::implementation
+        , intrusive_list<implementation>::node
     {
         /// Sentinel value indicating the timer is not in the heap.
         static constexpr std::size_t npos =
@@ -119,11 +121,32 @@ public:
         /// The waiter published on this timer, or `nullptr`.
         waiter_node* waiter_ = nullptr;
 
-        /// Free list linkage, reused when this impl is recycled.
-        implementation* next_free_ = nullptr;
-
         /// Construct bound to the given timer service.
         explicit implementation(timer_service& svc) noexcept : svc_(&svc) {}
+
+        /** Reset recycled state to fresh-impl values.
+
+            Both recycling tiers in `timer_service::construct()` — the
+            thread-local single-slot cache and the service's
+            `object_pool` fallback — call this, so the reset exists in
+            one place rather than duplicated per tier.
+        */
+        void reuse() noexcept
+        {
+            expiry_ = {};
+            heap_index_.store(npos, std::memory_order_relaxed);
+            might_have_pending_waits_.store(
+                false, std::memory_order_relaxed);
+            BOOST_COROSIO_ASSERT(waiter_ == nullptr);
+        }
+
+        /** Recycle into the owning service's pool at zero references.
+
+            Defined in timer.cpp: calling `svc_->pool_` needs
+            `timer_service`'s complete type, which this header only
+            forward-declares.
+        */
+        void retire() noexcept override;
 
         /** Check whether the timer is expired and absent from the heap.
 

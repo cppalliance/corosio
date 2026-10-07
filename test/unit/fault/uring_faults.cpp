@@ -275,10 +275,62 @@ struct uring_faults
         }
     }
 
-    // The acceptor's close path drains its multishot CQEs; a failing
-    // submit_and_wait_timeout breaks that loop silently, so the only
-    // observable is that the fault was reached.
-    void testAcceptorDrainSubmitFails()
+    // Parks a receive in the kernel, so the context's teardown has a
+    // request to cancel and wait for.
+    static void park_receive(io_context& ioc, udp_socket& s, char* buf)
+    {
+        BOOST_TEST(!s.open(family::v4));
+        BOOST_TEST(!s.bind(endpoint(ipv4_address::loopback(), 0)));
+        capy::run_async(ioc.get_executor())(
+            [](udp_socket& s, char* b) -> capy::task<> {
+                endpoint from;
+                std::ignore =
+                    co_await s.recv_from(capy::mutable_buffer(b, 8), from);
+            }(s, buf));
+        ioc.poll();
+    }
+
+    // Teardown waits for the kernel to finish every request it holds;
+    // a signal interrupting that wait must not end it early, or the
+    // services free implementations the kernel can still write to.
+    void testShutdownWaitRetriesAfterEintr()
+    {
+        char buf[8];
+        std::optional<fault_scope> first;
+        std::optional<fault_scope> again;
+        {
+            io_context ioc(uring);
+            udp_socket s(ioc);
+            park_receive(ioc, s, buf);
+            first.emplace(sys::io_uring_wait_cqe_timeout, EINTR);
+            again.emplace(sys::io_uring_wait_cqe_timeout, EINTR, 2);
+        }
+        BOOST_TEST(first->fired());
+        BOOST_TEST(again->fired()); // the interrupted wait was retried
+    }
+
+    // Same for the cancel that teardown submits before waiting.
+    void testShutdownCancelRetriesAfterEintr()
+    {
+        char buf[8];
+        std::optional<fault_scope> waits;
+        std::optional<fault_scope> submit;
+        {
+            io_context ioc(uring);
+            udp_socket s(ioc);
+            park_receive(ioc, s, buf);
+            waits.emplace(sys::io_uring_wait_cqe_timeout, EINTR, 1000);
+            submit.emplace(sys::io_uring_submit, EINTR);
+        }
+        BOOST_TEST(submit->fired());
+        BOOST_TEST_GE(waits->count(), 1u);
+    }
+
+    // Closing and destroying a listening acceptor on a live context
+    // leaves the arming's terminal completion to the run loop. Waiting
+    // on the ring for it instead would swallow other ops' completions;
+    // the kernel wait is the observable and must not be reached.
+    void testAcceptorCloseDoesNotWaitOnRing()
     {
         io_context ioc(uring);
         fault_scope f(sys::io_uring_submit_and_wait_timeout, EBADF);
@@ -296,7 +348,7 @@ struct uring_faults
             ioc.poll();
             BOOST_TEST(aec == capy::error::canceled);
         }
-        BOOST_TEST(f.fired());
+        BOOST_TEST(!f.fired());
     }
 
     // A ring clamped to one SQE spends it on the wakeup poll, and the
@@ -879,6 +931,63 @@ struct uring_faults
         BOOST_TEST(!peer.is_open());
     }
 
+    // A multishot accept the kernel terminates on its own (F_MORE
+    // cleared, no fatal error) is re-armed, so later connections are
+    // still accepted.
+    void testMultishotRearmKeepsAccepting()
+    {
+        io_context ioc(uring);
+        auto ex = ioc.get_executor();
+
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.open(family::v4));
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+        cqe_fault_scope q(-1, IORING_OP_ACCEPT, -EAGAIN, IORING_CQE_F_MORE);
+        BOOST_TEST(!acc.listen());
+
+        sockaddr_in sa{};
+        sa.sin_family      = AF_INET;
+        sa.sin_port        = htons(acc.local_endpoint().port());
+        sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        auto connect_raw   = [&] {
+            int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+            BOOST_TEST_EQ(
+                ::connect(fd, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)), 0);
+            return fd;
+        };
+
+        // The first connection provokes the rewritten terminal CQE.
+        int c1 = connect_raw();
+        for (int i = 0; i < 10000 && !q.fired(); ++i)
+        {
+            capy::run_async(ex)([]() -> capy::task<> { co_return; }());
+            ioc.restart();
+            ioc.poll();
+        }
+        BOOST_TEST(q.fired());
+
+        int c2 = connect_raw();
+        tcp_socket peer(ioc);
+        bool accepted = false;
+        capy::run_async(ex)(
+            [](tcp_acceptor& a, tcp_socket& p, bool& done) -> capy::task<> {
+                auto [ec] = co_await a.accept(p);
+                done      = !ec;
+            }(acc, peer, accepted));
+        ioc.restart();
+        std::ignore = ioc.run_for(std::chrono::seconds(2));
+        if (!accepted)
+        {
+            acc.close();
+            ioc.restart();
+            ioc.run();
+        }
+        BOOST_TEST(accepted);
+
+        ::close(c1);
+        ::close(c2);
+    }
+
     // A multishot accept the kernel terminates (F_MORE cleared, no
     // fatal error) is re-armed; a re-arm that cannot get an SQE must
     // drain the parked waiters with the error rather than strand them.
@@ -1029,6 +1138,7 @@ struct uring_faults
         testRingInitSqExhaustion();
         testCancelSqFullBestEffort();
         testMultishotArmFailure();
+        testMultishotRearmKeepsAccepting();
         testMultishotRearmFailureWithWaiter();
         testWakeupPollRearm();
         testSignalPipePollRearm();
@@ -1039,7 +1149,9 @@ struct uring_faults
         testAcceptorAssignProbeFails();
         testCancelSqFull();
         testWaitFails();
-        testAcceptorDrainSubmitFails();
+        testAcceptorCloseDoesNotWaitOnRing();
+        testShutdownWaitRetriesAfterEintr();
+        testShutdownCancelRetriesAfterEintr();
         testAcceptorArmSqFull();
         testSqFull();
         testConnectCqeRewrite();

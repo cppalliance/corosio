@@ -11,6 +11,7 @@
 #define BOOST_COROSIO_NATIVE_DETAIL_REACTOR_REACTOR_SCHEDULER_HPP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
 #include <boost/corosio/detail/ready_queue.hpp>
@@ -35,6 +36,37 @@ namespace boost::corosio::detail {
 // Forward declarations
 class reactor_scheduler;
 class timer_service;
+
+/** A deregistered descriptor whose owner must outlive the reactor pass
+    that may still hold it.
+
+    An event the reactor has already read from the kernel can name a
+    descriptor that another thread closes before the reactor queues it.
+    The closing thread hands over a reference instead of dropping it, so
+    the owner is neither freed nor recycled until that pass ends.
+*/
+struct reactor_retirable
+{
+    // All four fields are guarded by the scheduler's mutex.
+
+    /// Next in the scheduler's retired list.
+    reactor_retirable* retired_next_ = nullptr;
+
+    /// Owner reference held until the pass ends.
+    object_ref retired_ref_;
+
+    /// Next in a settling thread's list of references to drop.
+    reactor_retirable* dropped_next_ = nullptr;
+
+    /// Owner reference waiting to be dropped outside the mutex.
+    object_ref dropped_ref_;
+
+    /// Move @p keep into a queued completion, if one is pending.
+    virtual void hand_off(object_ref& keep) noexcept = 0;
+
+protected:
+    ~reactor_retirable() = default;
+};
 
 /** Per-thread state for a reactor scheduler.
 
@@ -119,6 +151,18 @@ public:
 
     /// Post a scheduler operation for deferred execution.
     void post(scheduler_op* h) const override;
+
+    /** Release an owner reference once no reactor pass can hold `d`.
+
+        Called after a descriptor is deregistered. If a reactor pass is
+        running, `keep` is parked on `d` until that pass ends. Then, or
+        at once if no pass is running, it moves to `d`'s queued
+        invocation if `d` is queued, and is dropped otherwise.
+
+        @param d The deregistered descriptor.
+        @param keep A reference to the descriptor's owner.
+    */
+    void retire_descriptor(reactor_retirable& d, object_ref keep) const;
 
     /// Post a continuation for deferred execution.
     void post(capy::continuation&) const override;
@@ -262,6 +306,14 @@ protected:
     std::atomic<bool> stopped_{false};
     mutable std::atomic<bool> task_running_{false};
     mutable bool task_interrupted_ = false;
+
+    // Descriptors retired during the running reactor pass (guarded by
+    // mutex_).
+    mutable reactor_retirable* retired_ = nullptr;
+
+    /// Settle every descriptor retired before the current pass ended.
+    /// @pre `lock` holds `mutex_`; it is held again on return.
+    void settle_retired(lock_type& lock) const;
 
     // Runtime-configurable reactor tuning parameters.
     // Defaults match the library's built-in values.
@@ -671,9 +723,63 @@ reactor_scheduler::post_deferred_completions(ready_queue& ops) const
 }
 
 inline void
+reactor_scheduler::retire_descriptor(
+    reactor_retirable& d, object_ref keep) const
+{
+    lock_type lock(mutex_);
+    if (!task_running_.load(std::memory_order_relaxed))
+    {
+        // No pass can hold an event, but an earlier one may have
+        // queued d.
+        d.hand_off(keep);
+        return;
+    }
+    // Already parked for this pass: the held reference suffices.
+    if (d.retired_ref_)
+        return;
+    d.retired_ref_  = std::move(keep);
+    d.retired_next_ = retired_;
+    retired_        = &d;
+}
+
+inline void
+reactor_scheduler::settle_retired(lock_type& lock) const
+{
+    // Handed off under the lock, since a later pass may retire the same
+    // descriptor again as soon as it is released. A reference that is
+    // not handed off may be the owner's last, and its release recycles
+    // through the pool mutex, so it is dropped with the lock released.
+    reactor_retirable* dropped = nullptr;
+    while (auto* d = retired_)
+    {
+        retired_         = d->retired_next_;
+        d->retired_next_ = nullptr;
+        auto keep        = std::move(d->retired_ref_);
+        d->hand_off(keep);
+        // A drop already pending keeps the owner alive, so this one
+        // cannot be the last and is released here.
+        if (!keep || d->dropped_ref_)
+            continue;
+        d->dropped_ref_  = std::move(keep);
+        d->dropped_next_ = dropped;
+        dropped          = d;
+    }
+    while (auto* d = dropped)
+    {
+        dropped          = d->dropped_next_;
+        d->dropped_next_ = nullptr;
+        auto keep        = std::move(d->dropped_ref_);
+        lock.unlock();
+        keep.reset();
+        lock.lock();
+    }
+}
+
+inline void
 reactor_scheduler::shutdown_drain()
 {
     lock_type lock(mutex_);
+    settle_retired(lock);
 
     while (auto e = completed_ops_.pop())
     {
@@ -854,6 +960,7 @@ reactor_scheduler::do_one(lock_type& lock, long timeout_us, context_type& ctx)
 
             task_running_.store(false, std::memory_order_relaxed);
             completed_ops_.push(&task_op_);
+            settle_retired(lock);
             if (timeout_us > 0)
                 return 0;
             continue;

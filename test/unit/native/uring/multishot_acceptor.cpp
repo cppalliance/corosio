@@ -15,6 +15,7 @@
 #if BOOST_COROSIO_HAS_URING
 
 #include <boost/corosio/backend.hpp>
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/native/native_io_context.hpp>
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
@@ -23,7 +24,16 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include <chrono>
 #include <cstdint>
+#include <stop_token>
+#include <thread>
+#include <tuple>
+
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 // The coroutine tasks below take their state through by-value parameters
 // (references to test-scope objects), never by lambda capture: a captured
@@ -42,6 +52,58 @@ struct uring_test_context : native_io_context<uring>
     }
 };
 
+inline capy::task<>
+noop_task()
+{
+    co_return;
+}
+
+// Reap completions nobody awaits, such as a cancelled arming's
+// terminal CQE: poll() only pumps the ring while work is outstanding.
+inline void
+reap(native_io_context<uring>& ioc)
+{
+    for (int i = 0; i < 8; ++i)
+    {
+        capy::run_async(ioc.get_executor())(noop_task());
+        ioc.restart();
+        ioc.poll();
+    }
+    ioc.restart();
+}
+
+// A blocking loopback connect; completes from the listener's backlog.
+inline int
+raw_connect(std::uint16_t port)
+{
+    int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    sockaddr_in sa{};
+    sa.sin_family      = AF_INET;
+    sa.sin_port        = htons(port);
+    sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if (::connect(fd, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)) != 0)
+    {
+        ::close(fd);
+        return -1;
+    }
+    return fd;
+}
+
+inline std::uint16_t
+peer_port(tcp_socket const& s)
+{
+    return s.remote_endpoint().port();
+}
+
+inline std::uint16_t
+local_port(int fd)
+{
+    sockaddr_in sa{};
+    socklen_t len = sizeof(sa);
+    ::getsockname(fd, reinterpret_cast<sockaddr*>(&sa), &len);
+    return ntohs(sa.sin_port);
+}
+
 struct multishot_acceptor_test
 {
     void testContextConstructs()
@@ -50,14 +112,12 @@ struct multishot_acceptor_test
         BOOST_TEST(!ioc.stopped());
     }
 
-    // Regression: drain_cqes_for (run from the multishot acceptor's
-    // destructor) used to advance CQEs without decrementing
-    // uring_inflight_, leaking the counts of the multishot accept SQE
-    // and the cancel SQEs it submits. The counter gates the do_one ring
-    // pump, so the leak accumulated across every acceptor teardown for the
-    // lifetime of the io_context. After the fix the counter returns to
-    // zero once teardown settles.
-    void testDrainCqesBalancesInflight()
+    // Destroying an acceptor must leave uring_inflight_ balanced: the
+    // multishot accept SQE and the cancel SQEs close submits are each
+    // counted once and must each be uncounted by their CQEs. The
+    // counter gates the do_one ring pump, so a leak would accumulate
+    // across every acceptor teardown for the lifetime of the io_context.
+    void testCloseReapsArming()
     {
         uring_test_context ctx;
 
@@ -77,14 +137,19 @@ struct multishot_acceptor_test
             ctx.poll();
             BOOST_TEST(ctx.inflight() >= 1);
         }
-        // acc destroyed: the impl destructor runs cancel-by-fd and
-        // drain_cqes_for(multi_op_). Drain the CQEs those produce that the
-        // destructor's bounded loop did not itself consume.
+        // acc destroyed: close cancelled the arming, whose terminal CQE
+        // the run loop reaps. poll() only pumps the ring while work is
+        // outstanding.
+        auto ex = ctx.get_executor();
         for (int i = 0; i < 64 && ctx.inflight() != 0; ++i)
+        {
+            capy::run_async(ex)(noop_task());
+            ctx.restart();
             ctx.poll();
+        }
 
         // Every submitted SQE (the multishot accept plus the teardown
-        // cancels) is now accounted for. Before the fix this stayed > 0.
+        // cancels) is now accounted for.
         BOOST_TEST_EQ(ctx.inflight(), 0);
     }
 
@@ -200,13 +265,139 @@ struct multishot_acceptor_test
         c2.close();
     }
 
+    // Accept one connection through `acc` and report the peer port.
+    static std::uint16_t
+    accept_one(native_io_context<uring>& ioc, tcp_acceptor& acc)
+    {
+        tcp_socket peer(ioc);
+        bool accepted = false;
+        capy::run_async(ioc.get_executor())(
+            [](tcp_acceptor& a, tcp_socket& p, bool& done) -> capy::task<> {
+                auto [ec] = co_await a.accept(p);
+                done      = !ec;
+            }(acc, peer, accepted));
+        for (int i = 0; i < 10000 && !accepted; ++i)
+            ioc.poll();
+        ioc.restart();
+        BOOST_TEST(accepted);
+        return accepted ? peer_port(peer) : 0;
+    }
+
+    // A released listener keeps its connections: once the acceptor
+    // listens again, it accepts only from its new descriptor, even
+    // while the released one still has connections queued.
+    void testReleaseThenRelisten()
+    {
+        native_io_context<uring> ioc;
+
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.open());
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!acc.listen());
+        int released = static_cast<int>(acc.release());
+        BOOST_TEST_GE(released, 0);
+
+        BOOST_TEST(!acc.open());
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!acc.listen());
+
+        int stale = raw_connect(local_port(released));
+        int fresh = raw_connect(acc.local_endpoint().port());
+        BOOST_TEST_GE(stale, 0);
+        BOOST_TEST_GE(fresh, 0);
+
+        BOOST_TEST_EQ(accept_one(ioc, acc), local_port(fresh));
+
+        // The released descriptor still holds its own connection.
+        int got = ::accept4(released, nullptr, nullptr, SOCK_NONBLOCK);
+        BOOST_TEST_GE(got, 0);
+
+        ::close(got);
+        ::close(stale);
+        ::close(fresh);
+        ::close(released);
+        acc.close();
+        reap(ioc);
+    }
+
+    // Assigning right after a close, while the cancelled arming's
+    // terminal completion is still unreaped, moves accepting to the new
+    // descriptor; a re-listen on it does not arm a second time.
+    void testAssignReplacesArming()
+    {
+        native_io_context<uring> ioc;
+
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.open());
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!acc.listen());
+
+        int nfd =
+            ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+        sockaddr_in sa{};
+        sa.sin_family      = AF_INET;
+        sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        BOOST_TEST_EQ(
+            ::bind(nfd, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)), 0);
+        BOOST_TEST_EQ(::listen(nfd, 16), 0);
+        acc.close();
+        BOOST_TEST(!acc.assign(nfd));
+        BOOST_TEST(!acc.listen());
+
+        for (int i = 0; i < 3; ++i)
+        {
+            int c = raw_connect(acc.local_endpoint().port());
+            BOOST_TEST_GE(c, 0);
+            BOOST_TEST_EQ(accept_one(ioc, acc), local_port(c));
+            ::close(c);
+        }
+
+        acc.close();
+        reap(ioc);
+    }
+
+    // Close on one thread races deliveries and terminal completions
+    // being dispatched on another.
+    void testCloseRacesDispatch()
+    {
+        native_io_context<uring> ioc;
+        auto ex = ioc.get_executor();
+        {
+            tcp_acceptor warm(ioc);
+        }
+
+        std::stop_source keep;
+        capy::run_async(ex, keep.get_token())([]() -> capy::task<> {
+            std::ignore = co_await delay(std::chrono::seconds(60));
+        }());
+        std::thread runner([&] { ioc.run(); });
+
+        for (int i = 0; i < 200; ++i)
+        {
+            tcp_acceptor acc(ioc);
+            BOOST_TEST(!acc.open());
+            BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+            BOOST_TEST(!acc.listen());
+            int c = raw_connect(acc.local_endpoint().port());
+            if (i % 2)
+                acc.close();
+            ::close(c);
+        }
+
+        keep.request_stop();
+        runner.join();
+    }
+
     void run()
     {
         testContextConstructs();
-        testDrainCqesBalancesInflight();
+        testCloseReapsArming();
         testAcceptBufferedConnection();
         testAcceptParkedThenDelivered();
         testDestroyWithBufferedConnections();
+        testReleaseThenRelisten();
+        testAssignReplacesArming();
+        testCloseRacesDispatch();
     }
 };
 

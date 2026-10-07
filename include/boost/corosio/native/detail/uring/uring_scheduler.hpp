@@ -223,8 +223,7 @@ public:
         Test-only helper: `uring_inflight_` is an internal accounting
         counter (it gates the `do_one` ring pump), with no bearing on the
         public API. It is exposed solely so tests can assert the counter
-        stays balanced across op submission and teardown — in particular
-        that `drain_cqes_for` does not leak counts. Not thread-safe with
+        stays balanced across op submission and teardown. Not thread-safe with
         respect to a concurrently running scheduler; call it from a quiesced
         context.
 
@@ -301,91 +300,6 @@ public:
             cancelled.
     */
     void cancel_and_flush(int fd) noexcept;
-
-    /** Take ownership of an op the kernel may still complete.
-
-        For member-owned ops (e.g. a multishot accept arming) whose
-        owner goes away on a *non-terminal* path — the owning acceptor
-        adopting a different descriptor, say. Draining the op's CQEs
-        there is not an option: `drain_cqes_for` consumes without
-        dispatching, which is only tolerable while the whole context
-        is being torn down.
-
-        The op stays allocated, and its `user_data` therefore stays
-        reserved, until the kernel delivers its terminal CQE. That is
-        what keeps a freshly submitted op from aliasing the retired
-        one. `process_completions` routes a retired op's CQEs to its
-        `retire_func` and frees the op on the terminal CQE; anything
-        still outstanding is released when the scheduler is destroyed,
-        after `io_uring_queue_exit`.
-
-        @par Invariant
-        Retirement state — the `retired` flag, and every owner
-        back-pointer @p prepare clears — is written and read only
-        under `ring_mutex_`. `process_completions` runs the whole CQE
-        dispatch under that mutex, so taking it here is the only thing
-        that orders this publication against a leader mid-dispatch.
-        Everything is therefore done inside one critical section:
-        @p prepare runs, the flag is set, and the op moves into the
-        retired list before the mutex is released.
-
-        @par Thread Safety
-        Safe to call from any thread. Takes `ring_mutex_` then
-        `retired_mutex_`, the same order `release_retired_op` uses.
-        Callers must hold neither.
-
-        @pre After @p prepare runs, @p slot must hold no reference back
-            to its owner (`impl_ptr` cleared, back-pointers nulled).
-            `release_retired_op` deletes the op from inside the CQE
-            loop with `ring_mutex_` held, so its destructor must not
-            re-enter the scheduler or touch the owner.
-
-        @param slot The owner's pointer to the op. Emptied on return;
-            ignored if already empty.
-        @param prepare Invoked as `prepare(*slot)` under `ring_mutex_`
-            to clear back-pointers and install a `retire_func`. Must
-            not take `ring_mutex_` or post work.
-    */
-    template<class Op, class PrepareFn>
-    void retire_op(std::unique_ptr<Op>& slot, PrepareFn prepare) noexcept
-    {
-        // Interrupt first so a leader parked in the kernel drops
-        // ring_mutex_ promptly, as cancel_and_flush does.
-        interrupt_reactor();
-        lock_type lock(ring_mutex_);
-        if (!slot)
-            return;
-        prepare(*slot);
-        slot->retired = true;
-        std::lock_guard<std::mutex> retired_lock(retired_mutex_);
-        retired_ops_.push_back(std::move(slot));
-    }
-
-    /** Drain pending CQEs for a specific op's `user_data`.
-
-        Submits an ASYNC_CANCEL by user_data to short-circuit any
-        in-flight op holding `target`, then iterates the CQ ring and
-        consumes every CQE matching `target` so its memory can be
-        freed safely. Used by member-owned ops (e.g.
-        `uring_multi_accept_op`) whose destructor cannot tolerate
-        outstanding CQEs.
-
-        @warning Teardown paths only. Every CQE this walks is consumed
-        and none are dispatched, so an unrelated op completing inside
-        the drain window loses its handler and its coroutine never
-        resumes. That is only tolerable when the owning object is
-        being destroyed. To retire a still-live op on a non-terminal
-        path, use @ref retire_op instead.
-
-        @par Thread Safety
-        Safe to call from any thread. Internally takes `ring_mutex_`
-        to serialise against the run-loop leader; calls
-        `interrupt_reactor()` first so the leader returns from its
-        kernel wait promptly.
-
-        @param target The op pointer used as user_data on the SQE.
-    */
-    void drain_cqes_for(uring_op* target) noexcept;
 
     /** Queue an already-counted op while the caller holds dispatch_mutex_.
 
@@ -492,20 +406,6 @@ private:
 
     int cancel_sentinel_ = 0;
 
-    // Ops adopted by retire_op, kept alive so the kernel never sees
-    // their user_data reused. Declared before ring_ is exited only in
-    // the sense that the destructor body runs io_uring_queue_exit
-    // first; the vector is then destroyed with the rest of the members,
-    // by which point the kernel can no longer reference these ops.
-    // A plain std::mutex (not the conditionally-enabled mutex_type):
-    // retirement happens on user threads regardless of the threading
-    // configuration. Leaf lock — nothing else is taken under it.
-    mutable std::mutex retired_mutex_;
-    std::vector<std::unique_ptr<uring_op>> retired_ops_;
-
-    /// Free a retired op once its terminal CQE has been consumed.
-    void release_retired_op(uring_op* op) noexcept;
-
     // Signal self-pipe integration. The read end is watched via a multishot
     // POLL SQE tagged with &signal_pipe_sentinel_ (distinct from nullptr =
     // wakeup eventfd and &cancel_sentinel_). On its CQE we re-arm the poll if
@@ -559,12 +459,6 @@ private:
 
     /// Single embedded `submit_sqes_op` instance, owned by the scheduler.
     mutable submit_sqes_op submit_op_;
-
-    // drain_cqes_for tuning. The bound exists to avoid stalling a
-    // destructor if the kernel never returns a cancel completion (best-
-    // effort drain); 8 rounds * 1ms == 8ms worst case.
-    static constexpr int drain_cqes_max_rounds        = 8;
-    static constexpr unsigned long drain_cqes_kick_ns = 1'000'000;
 
     // ring_inited_ goes true once the ring exists. The init is deferred
     // from the constructor so configure_threading() and configure_sqpoll()
@@ -733,19 +627,57 @@ uring_scheduler::shutdown()
 {
     stopped_.store(true, std::memory_order_release);
 
-    // Drain posted ops, calling destroy() on each so embedded handles
-    // (coroutine frames, error_code outputs) get torn down rather
-    // than leaked. Mirrors reactor_scheduler::shutdown_drain.
-    //
-    // Service shutdown order (driven by capy::execution_context):
-    // each socket/acceptor service::shutdown() submits a cancel SQE
-    // for every live impl. The CQEs that result either land in
-    // completed_ops_ (drained here as op->destroy()) or stay in the
-    // kernel ring; ~scheduler's io_uring_queue_exit cleans the
-    // latter up at process teardown. Self-referential impl_ptr
-    // cycles (e.g. multishot acceptor's multi_op_->impl_ptr) are
-    // broken explicitly inside each service before the scheduler
-    // shutdown runs.
+    // Cancel every request still in the kernel and wait for each to
+    // come back: the services free their impls next, and an op still
+    // armed would write into freed memory. One cancel-any covers ops
+    // whose own service-side cancel could not be queued. The kernel
+    // answers every cancel, so once it is submitted the wait ends; a
+    // ring that will not take it leaves nothing that could end a wait.
+    // A signal or a full completion queue only delays either step.
+    if (ring_inited_)
+    {
+        lock_type ring_lock(ring_mutex_);
+        io_uring_sqe* sqe = ::io_uring_get_sqe(&ring_);
+        if (!sqe)
+        {
+            ::io_uring_submit(&ring_);
+            sqe = ::io_uring_get_sqe(&ring_);
+        }
+        if (sqe)
+        {
+            ::io_uring_prep_cancel64(sqe, 0, IORING_ASYNC_CANCEL_ANY);
+            ::io_uring_sqe_set_data(sqe, &cancel_sentinel_);
+            inflight_inc();
+        }
+        int submitted = -EINVAL;
+        if (sqe)
+        {
+            do
+            {
+                submitted = ::io_uring_submit(&ring_);
+                if (submitted == -EBUSY)
+                    process_completions();
+            }
+            while (submitted == -EINTR || submitted == -EAGAIN ||
+                   submitted == -EBUSY);
+        }
+        while (submitted >= 0 &&
+               uring_inflight_.load(std::memory_order_acquire) > 0)
+        {
+            ::io_uring_cqe* cqe = nullptr;
+            int const rc = ::io_uring_wait_cqe_timeout(&ring_, &cqe, nullptr);
+            if (rc == -EINTR || rc == -EAGAIN || rc == -ETIME)
+                continue;
+            if (rc != 0)
+                break;
+            process_completions();
+        }
+    }
+
+    // Drain posted ops, including the completions reaped above,
+    // calling destroy() on each so embedded handles (coroutine frames,
+    // error_code outputs) get torn down rather than leaked. Mirrors
+    // reactor_scheduler::shutdown_drain.
     lock_type lock(dispatch_mutex_);
     while (auto e = completed_ops_.pop())
     {
@@ -1426,31 +1358,12 @@ uring_scheduler::process_completions()
         else
         {
             auto* iop = static_cast<uring_op*>(ud);
-            if (iop->retired)
-            {
-                // The owner handed this op to retire_op and is no
-                // longer listening. Never dispatch cqe_func — the
-                // handler's output pointers and coroutine are gone.
-                // retire_func disposes of whatever the result owns
-                // (an accepted descriptor, say), since only the op
-                // type knows what `res` means.
-                if (iop->retire_func)
-                    (*iop->retire_func)(iop, cqe->res, cqe->flags);
-                if ((cqe->flags & IORING_CQE_F_MORE) == 0)
-                {
-                    ++inflight_dec;
-                    release_retired_op(iop);
-                }
-            }
-            else
-            {
-                (*iop->cqe_func)(iop, cqe->res, cqe->flags, local_ops);
-                // Decrement inflight on the terminal CQE only — multishot
-                // ops (acceptor) hold the SQE alive across F_MORE CQEs and
-                // free it only when F_MORE is cleared.
-                if ((cqe->flags & IORING_CQE_F_MORE) == 0)
-                    ++inflight_dec;
-            }
+            (*iop->cqe_func)(iop, cqe->res, cqe->flags, local_ops);
+            // Decrement inflight on the terminal CQE only — multishot
+            // ops (acceptor) hold the SQE alive across F_MORE CQEs and
+            // free it only when F_MORE is cleared.
+            if ((cqe->flags & IORING_CQE_F_MORE) == 0)
+                ++inflight_dec;
         }
         ++consumed;
     }
@@ -1575,155 +1488,6 @@ uring_scheduler::cancel_and_flush(int fd) noexcept
     // Flush while fd is still open so the kernel resolves the file
     // from the fd number before the caller closes and recycles it.
     io_uring_submit(&ring_);
-}
-
-inline void
-uring_scheduler::release_retired_op(uring_op* op) noexcept
-{
-    // Called from the CQE loop with ring_mutex_ held; takes
-    // retired_mutex_ under it, matching retire_op's order. Deleting
-    // here is safe only because retire_op requires the op to hold no
-    // reference back to its owner, so ~op cannot re-enter the
-    // scheduler or touch a destroyed acceptor.
-    std::unique_ptr<uring_op> owned;
-    {
-        std::lock_guard<std::mutex> lock(retired_mutex_);
-        for (auto it = retired_ops_.begin(); it != retired_ops_.end(); ++it)
-        {
-            if (it->get() == op)
-            {
-                owned = std::move(*it);
-                retired_ops_.erase(it);
-                break;
-            }
-        }
-    }
-}
-
-inline void
-uring_scheduler::drain_cqes_for(uring_op* target) noexcept
-{
-    lazy_init_ring();
-    // Submit a cancel by user_data so the kernel returns CQEs for
-    // the target promptly, then iterate the CQ ring and consume
-    // every CQE that matches `target`. ring_mutex_ serializes against
-    // the leader's kernel wait and any concurrent cancel path; the
-    // interrupt_reactor() ensures the leader returns promptly so we
-    // can take the mutex.
-    interrupt_reactor();
-    {
-        lock_type lock(ring_mutex_);
-        if (auto* sqe = io_uring_get_sqe(&ring_))
-        {
-            io_uring_prep_cancel(sqe, target, 0);
-            io_uring_sqe_set_data(sqe, &cancel_sentinel_);
-            inflight_inc();
-        }
-        io_uring_submit(&ring_);
-    }
-
-    // Loop a few rounds: cancel SQE submission, then drain CQEs.
-    // Bounded loop avoids stalls if the kernel never returns a
-    // cancel completion — best-effort.
-    for (int rounds = 0; rounds < drain_cqes_max_rounds; ++rounds)
-    {
-        lock_type lock(ring_mutex_);
-
-        unsigned head;
-        ::io_uring_cqe* cqe;
-        unsigned consumed         = 0;
-        bool saw_target           = false;
-        std::int64_t inflight_dec = 0;
-
-        io_uring_for_each_cqe(&ring_, head, cqe)
-        {
-            // Mirror process_completions' uring_inflight_ accounting.
-            // That counter gates the do_one ring pump, so every CQE we
-            // advance past here must adjust it exactly as the normal
-            // drain would — otherwise it drifts upward (each teardown
-            // leaks the counts of the CQEs it swallows), defeating the
-            // idle-skip optimisation for the lifetime of the io_context.
-            // We do NOT dispatch real ops — the target is being
-            // destructed and siblings may already be freed — but we still
-            // account for and house-keep each CQE we consume.
-            void* ud = io_uring_cqe_get_data(cqe);
-            if (ud == nullptr)
-            {
-                // Wakeup eventfd CQE — our own interrupt_reactor() above
-                // very likely produced one. Drain the byte and re-arm if
-                // the multishot terminated, exactly as process_completions
-                // does. Never incremented, so never decremented.
-                drain_wakeup_eventfd();
-                if ((cqe->flags & IORING_CQE_F_MORE) == 0)
-                    std::ignore = prep_multishot_poll(wakeup_eventfd_, nullptr);
-            }
-            else if (ud == &signal_pipe_sentinel_)
-            {
-                // Signal self-pipe readiness. Re-arm if the multishot
-                // terminated; the still-readable pipe re-fires on the next
-                // kernel enter so process_completions delivers the signal —
-                // we deliberately do NOT enqueue signal_drain_op_ from this
-                // teardown path. Not counted by uring_inflight_ (the poll
-                // was armed via prep_multishot_poll, which never increments),
-                // so it must NOT be decremented.
-                if ((cqe->flags & IORING_CQE_F_MORE) == 0)
-                    std::ignore = prep_multishot_poll(
-                        signal_pipe_read_fd_, &signal_pipe_sentinel_);
-            }
-            else if (ud == &cancel_sentinel_)
-            {
-                // ASYNC_CANCEL CQE (one-shot, no F_MORE), including the
-                // cancel SQE we submitted just above. Decrement inflight.
-                ++inflight_dec;
-            }
-            else if (ud == target)
-            {
-                saw_target = true;
-                // Don't dispatch — caller is destructing target; just
-                // consume so the CQE doesn't dangle. Decrement inflight on
-                // the terminal CQE only: the target is a multishot op
-                // whose intermediate CQEs carry F_MORE.
-                if ((cqe->flags & IORING_CQE_F_MORE) == 0)
-                    ++inflight_dec;
-            }
-            else
-            {
-                // Some other op's CQE. Intentionally NOT dispatched: it
-                // may belong to an op freed by a sibling teardown (other
-                // acceptors / sockets), and dispatching would UAF. We
-                // still account for its terminal CQE so inflight stays
-                // balanced — the submit that produced it incremented the
-                // counter. The io_context's destructor sequence runs
-                // services' shutdowns before ~scheduler, so any still-live
-                // ops drain through their own paths first.
-                if ((cqe->flags & IORING_CQE_F_MORE) == 0)
-                    ++inflight_dec;
-            }
-            ++consumed;
-        }
-        if (consumed)
-        {
-            io_uring_cq_advance(&ring_, consumed);
-            if (inflight_dec)
-                uring_inflight_.fetch_sub(
-                    inflight_dec, std::memory_order_acq_rel);
-            if (saw_target)
-                break;
-            continue;
-        }
-
-        // Nothing in the CQ — kick the kernel briefly. Hold
-        // ring_mutex_ across the wait so we don't race with the
-        // run-loop leader.
-        __kernel_timespec ts{0, static_cast<long long>(drain_cqes_kick_ns)};
-        ::io_uring_cqe* one = nullptr;
-        int rc =
-            ::io_uring_submit_and_wait_timeout(&ring_, &one, 1, &ts, nullptr);
-        if (rc < 0 && rc != -ETIME && rc != -EINTR)
-            break;
-        if (rc == -ETIME)
-            break;
-    }
 }
 
 } // namespace boost::corosio::detail

@@ -17,9 +17,11 @@
 
 #include <boost/corosio/native/detail/posix/posix_resolver.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_scheduler.hpp>
+#include <boost/corosio/detail/object_pool.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/detail/thread_pool.hpp>
 
-#include <unordered_map>
+#include <vector>
 
 namespace boost::corosio::detail {
 
@@ -32,6 +34,8 @@ class BOOST_COROSIO_DECL posix_resolver_service final
     : public capy::execution_context::service
     , public io_object::io_service
 {
+    friend class posix_resolver;
+
 public:
     using key_type = posix_resolver_service;
 
@@ -52,11 +56,10 @@ public:
     {
         auto& impl = static_cast<posix_resolver&>(*p);
         impl.cancel();
-        destroy_impl(impl);
+        release(&impl);
     }
 
     void shutdown() override;
-    void destroy_impl(posix_resolver& impl);
 
     void post(scheduler_op* op);
 
@@ -89,10 +92,7 @@ public:
 private:
     scheduler* sched_;
     thread_pool_ref pool_;
-    std::mutex mutex_;
-    intrusive_list<posix_resolver> resolver_list_;
-    std::unordered_map<posix_resolver*, std::shared_ptr<posix_resolver>>
-        resolver_ptrs_;
+    object_pool<posix_resolver> object_pool_;
 };
 
 // ---------------------------------------------------------------------------
@@ -271,7 +271,7 @@ posix_resolver::resolve_op::operator()()
 
     // Hold the keepalive across the dispatch: it may be the last
     // reference to the implementation this op is embedded in.
-    auto prevent_destroy = std::move(impl_ptr);
+    auto prevent_destroy = std::move(object_ref_);
     ex.on_work_finished();
     cont.h = h;
     dispatch_coro(ex, cont).resume();
@@ -283,7 +283,7 @@ posix_resolver::resolve_op::destroy()
     stop_cb.reset();
     auto local_ex = ex;
     // May destroy the implementation, and with it this op.
-    impl_ptr.reset();
+    object_ref_.reset();
     local_ex.on_work_finished();
 }
 
@@ -328,7 +328,7 @@ posix_resolver::reverse_resolve_op::operator()()
 
     // Hold the keepalive across the dispatch: it may be the last
     // reference to the implementation this op is embedded in.
-    auto prevent_destroy = std::move(impl_ptr);
+    auto prevent_destroy = std::move(object_ref_);
     ex.on_work_finished();
     cont.h = h;
     dispatch_coro(ex, cont).resume();
@@ -340,7 +340,7 @@ posix_resolver::reverse_resolve_op::destroy()
     stop_cb.reset();
     auto local_ex = ex;
     // May destroy the implementation, and with it this op.
-    impl_ptr.reset();
+    object_ref_.reset();
     local_ex.on_work_finished();
 }
 
@@ -380,7 +380,7 @@ posix_resolver::resolve(
 
     // Prevent impl destruction while work is in flight
     resolve_pool_op_.resolver_ = this;
-    resolve_pool_op_.ref_      = this->shared_from_this();
+    resolve_pool_op_.ref_      = detail::object_ref(this);
     resolve_pool_op_.func_     = &posix_resolver::do_resolve_work;
     if (auto pec = svc_.pool().post(&resolve_pool_op_))
     {
@@ -430,7 +430,7 @@ posix_resolver::reverse_resolve(
 
     // Prevent impl destruction while work is in flight
     reverse_pool_op_.resolver_ = this;
-    reverse_pool_op_.ref_      = this->shared_from_this();
+    reverse_pool_op_.ref_      = detail::object_ref(this);
     reverse_pool_op_.func_     = &posix_resolver::do_reverse_resolve_work;
     if (auto pec = svc_.pool().post(&reverse_pool_op_))
     {
@@ -492,7 +492,7 @@ posix_resolver::do_resolve_work(pool_work_item* w) noexcept
     // Hand the keepalive to the op: the completion waits in the
     // scheduler's queue, and the implementation embedding it must
     // outlive that wait. Nothing may touch *self after the post.
-    self->op_.impl_ptr = std::move(pw->ref_);
+    self->op_.object_ref_ = std::move(pw->ref_);
     self->svc_.post(&self->op_);
 }
 
@@ -543,7 +543,7 @@ posix_resolver::do_reverse_resolve_work(pool_work_item* w) noexcept
     // Hand the keepalive to the op: the completion waits in the
     // scheduler's queue, and the implementation embedding it must
     // outlive that wait. Nothing may touch *self after the post.
-    self->reverse_op_.impl_ptr = std::move(pw->ref_);
+    self->reverse_op_.object_ref_ = std::move(pw->ref_);
     self->svc_.post(&self->reverse_op_);
 }
 
@@ -552,48 +552,42 @@ posix_resolver::do_reverse_resolve_work(pool_work_item* w) noexcept
 inline void
 posix_resolver_service::shutdown()
 {
-    std::lock_guard<std::mutex> lock(mutex_);
-
-    // Cancel all resolvers (sets cancelled flag checked by pool threads)
-    for (auto* impl = resolver_list_.pop_front(); impl != nullptr;
-         impl       = resolver_list_.pop_front())
+    // See uring_socket_service_base::shutdown(): snapshot under an
+    // acquired reference, cancel without the pool lock held; shutdown()
+    // sets shutting-down and takes the snapshot in one critical
+    // section, so a cancel that drops the last ref deletes rather than
+    // recycles. The thread pool service shuts down separately via
+    // execution_context ordering.
+    std::vector<posix_resolver*> live;
+    object_pool_.shutdown(
+        [&](posix_resolver* r)
+        {
+            acquire(r);
+            live.push_back(r);
+        });
+    for (auto* r : live)
     {
-        impl->cancel();
+        r->cancel();
+        release(r);
     }
-
-    // Clear the map which releases shared_ptrs.
-    // The thread pool service shuts down separately via
-    // execution_context service ordering.
-    resolver_ptrs_.clear();
 }
 
 inline io_object::implementation*
 posix_resolver_service::construct()
 {
-    auto ptr   = std::make_shared<posix_resolver>(*this);
-    auto* impl = ptr.get();
-
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        resolver_list_.push_back(impl);
-        resolver_ptrs_[impl] = std::move(ptr);
-    }
-
-    return impl;
-}
-
-inline void
-posix_resolver_service::destroy_impl(posix_resolver& impl)
-{
-    std::lock_guard<std::mutex> lock(mutex_);
-    resolver_list_.remove(&impl);
-    resolver_ptrs_.erase(&impl);
+    return object_pool_.acquire(*this);
 }
 
 inline void
 posix_resolver_service::post(scheduler_op* op)
 {
     sched_->post(op);
+}
+
+inline void
+posix_resolver::retire() noexcept
+{
+    svc_.object_pool_.recycle(this);
 }
 
 } // namespace boost::corosio::detail

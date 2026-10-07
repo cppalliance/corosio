@@ -11,6 +11,7 @@
 #ifndef BOOST_COROSIO_NATIVE_DETAIL_REACTOR_REACTOR_BASIC_SOCKET_HPP
 #define BOOST_COROSIO_NATIVE_DETAIL_REACTOR_REACTOR_BASIC_SOCKET_HPP
 
+#include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
 #include <boost/corosio/endpoint.hpp>
@@ -19,6 +20,7 @@
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
 
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <utility>
@@ -130,7 +132,6 @@ public:
     void do_close_socket() noexcept
     {
         this->abandon_all();
-        this->unregister_fd(fd_);
         if (fd_ >= 0)
         {
             ::close(fd_);
@@ -148,11 +149,55 @@ public:
     {
         this->abandon_all();
         native_handle_type released = fd_;
-        this->unregister_fd(fd_);
-        fd_             = -1;
-        local_endpoint_ = Endpoint{};
+        fd_                         = -1;
+        local_endpoint_             = Endpoint{};
         return released;
     }
+
+    /** Reset descriptor state for recycling.
+
+        Called by the owning service's `construct()` when popping this
+        impl back off the free list. Actively re-initializes every
+        field it owns rather than trusting `close_socket()`'s prior
+        writes to still be there — `poison()` below depends on that,
+        and a future field added to either side without the other
+        would otherwise go unnoticed until this one re-sets it.
+        `object_ref_` and `is_enqueued_` are asserted instead: `poison()`
+        never touches them, so they must already hold their
+        zero-action-complete state.
+
+        @pre refs_ == 0, fd closed and deregistered, no op in flight.
+    */
+    void reuse() noexcept
+    {
+        fd_             = -1;
+        local_endpoint_ = Endpoint{};
+        this->reset_desc_state();
+    }
+
+#if !defined(NDEBUG)
+    /** Poison the fields `reuse()` re-initializes, before the pool
+        parks this impl on the free list.
+
+        A field `reuse()` forgets to reset then reads back as this
+        unmistakable byte pattern instead of silently matching
+        whatever `close_socket()` happened to leave, turning a missed
+        reset into an immediate, loud failure rather than a latent
+        stale-state bug. See `reactor_io_core::poison_desc_state()`
+        for what is left alone.
+
+        @pre refs_ == 0, fd closed and deregistered, no op in flight.
+    */
+    void poison() noexcept
+    {
+        auto smash = [](auto& field) {
+            std::memset(static_cast<void*>(&field), 0xDB, sizeof(field));
+        };
+        smash(fd_);
+        smash(local_endpoint_);
+        this->poison_desc_state();
+    }
+#endif
 };
 
 } // namespace boost::corosio::detail

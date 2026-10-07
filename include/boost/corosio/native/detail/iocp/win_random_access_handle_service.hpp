@@ -15,39 +15,47 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/object_pool.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/detail/win_handle_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_overlapped_handle.hpp>
 
-#include <memory>
-
 namespace boost::corosio::detail {
+
+class win_random_access_handle_service;
 
 /** IOCP implementation of @ref win_random_access_handle: any number of positional operations. */
 class win_random_access_handle_impl final
     : public win_random_access_handle::implementation
     , public intrusive_list<win_random_access_handle_impl>::node
 {
-    std::shared_ptr<win_concurrent_handle> internal_;
+    win_random_access_handle_service& svc_;
+    win_concurrent_handle internal_;
 
 public:
-    explicit win_random_access_handle_impl(
-        std::shared_ptr<win_concurrent_handle> internal) noexcept
-        : internal_(std::move(internal))
+    win_random_access_handle_impl(
+        win_random_access_handle_service& svc, win_scheduler& sched) noexcept
+        : svc_(svc)
+        , internal_(sched, *this)
     {
     }
 
-    void close_internal() noexcept
+    /// Recycle into the owning service's pool. Defined out-of-line
+    /// after the service is complete.
+    void retire() noexcept override;
+
+    /** Assert the closed state a recycled handle starts from.
+
+        @pre refs_ == 0, handle closed, no op in flight.
+    */
+    void reuse() noexcept
     {
-        if (internal_)
-        {
-            internal_->close_handle();
-            internal_.reset();
-        }
+        BOOST_COROSIO_ASSERT(!internal_.is_open());
     }
 
-    win_concurrent_handle* get_internal() const noexcept
+    win_concurrent_handle* get_internal() noexcept
     {
-        return internal_.get();
+        return &internal_;
     }
 
     std::coroutine_handle<> read_some_at(
@@ -59,7 +67,7 @@ public:
         std::error_code* ec,
         std::size_t* bytes) override
     {
-        return internal_->read_some_at(
+        return internal_.read_some_at(
             offset, cont, ex, buf, std::move(token), ec, bytes);
     }
 
@@ -72,23 +80,23 @@ public:
         std::error_code* ec,
         std::size_t* bytes) override
     {
-        return internal_->write_some_at(
+        return internal_.write_some_at(
             offset, cont, ex, buf, std::move(token), ec, bytes);
     }
 
     native_handle_type native_handle() const noexcept override
     {
-        return reinterpret_cast<native_handle_type>(internal_->native_handle());
+        return reinterpret_cast<native_handle_type>(internal_.native_handle());
     }
 
     native_handle_type release_handle() override
     {
-        return internal_->release();
+        return internal_.release();
     }
 
     void cancel() noexcept override
     {
-        internal_->cancel();
+        internal_.cancel();
     }
 };
 
@@ -96,6 +104,8 @@ public:
 class BOOST_COROSIO_DECL win_random_access_handle_service final
     : public random_access_handle_service
 {
+    friend class win_random_access_handle_impl;
+
 public:
     explicit win_random_access_handle_service(capy::execution_context& ctx)
         : sched_(ctx.use_service<win_scheduler>())
@@ -104,15 +114,16 @@ public:
 
     io_object::implementation* construct() override
     {
-        auto internal = std::make_shared<win_concurrent_handle>(
-            sched_, reg_.states());
-        return reg_.add(new win_random_access_handle_impl(std::move(internal)));
+        return pool_.acquire(*this, sched_);
     }
 
     void destroy(io_object::implementation* p) override
     {
-        if (p)
-            reg_.destroy(static_cast<win_random_access_handle_impl&>(*p));
+        if (!p)
+            return;
+        auto* impl = static_cast<win_random_access_handle_impl*>(p);
+        impl->get_internal()->close_handle();
+        release(impl);
     }
 
     void close(io_object::handle& h) override
@@ -124,7 +135,8 @@ public:
 
     void shutdown() override
     {
-        reg_.shutdown();
+        pool_.shutdown(
+            [](win_random_access_handle_impl* impl) { impl->get_internal()->close_handle(); });
     }
 
     std::error_code assign_random_access_handle(
@@ -140,9 +152,15 @@ private:
     win_scheduler& sched_;
     BOOST_COROSIO_MSVC_WARNING_PUSH
     BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // detail:: members, dll-interface
-    win_handle_registry<win_random_access_handle_impl, win_handle_base> reg_;
+    object_pool<win_random_access_handle_impl> pool_;
     BOOST_COROSIO_MSVC_WARNING_POP
 };
+
+inline void
+win_random_access_handle_impl::retire() noexcept
+{
+    svc_.pool_.recycle(this);
+}
 
 } // namespace boost::corosio::detail
 

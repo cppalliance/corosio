@@ -61,6 +61,78 @@
 #define O_TMPFILE 0
 #endif
 
+// Sanitizer runtimes intercept part of the census for their own
+// bookkeeping (ASan's thread registry, TSan's happens-before graph).
+// When these shadows are linked into the executable they can bind
+// ahead of the runtime's interceptors (observed with clang >= 23's
+// static ASan runtime: `ASAN_OPTIONS=verbosity=1` reports "failed to
+// intercept 'pthread_create'", and the first pthread_join aborts with
+// "Joining already joined thread" because the thread was created
+// behind the runtime's back). Each sanitizer exports its interceptor
+// as `__interceptor_<name>` precisely so an interposer like this one
+// can cooperate: chaining into it keeps the bookkeeping intact and
+// still reaches libc. The references are weak, so a name the runtime
+// does not intercept resolves to null and falls back to the plain
+// RTLD_NEXT lookup; in unsanitized builds every reference is null.
+#if defined(__linux__)
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+#define COROSIO_FAULT_SANITIZER 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer) || \
+    __has_feature(memory_sanitizer)
+#define COROSIO_FAULT_SANITIZER 1
+#endif
+#endif
+#endif
+#if !defined(COROSIO_FAULT_SANITIZER)
+#define COROSIO_FAULT_SANITIZER 0
+#endif
+
+#if COROSIO_FAULT_SANITIZER
+
+// The libc half of the census (the SSL and liburing entries have no
+// sanitizer interceptors). A name listed here that the runtime does
+// not actually intercept costs nothing: its weak reference is null.
+#define COROSIO_FAULT_INTERCEPTED_SYMBOLS(X) \
+    X(socket) X(socketpair) X(bind) X(listen) X(accept) X(connect) \
+    X(getsockname) X(getpeername) X(getsockopt) X(setsockopt) \
+    X(shutdown) X(close) X(read) X(write) X(readv) X(writev) \
+    X(pread64) X(preadv) \
+    X(pwritev) X(recv) X(send) X(recvmsg) X(sendmsg) X(poll) X(pipe) \
+    X(fcntl) X(ioctl) X(open) X(fstat) X(ftruncate) X(fsync) \
+    X(unlink) X(sigaction) X(pthread_create) X(getaddrinfo) \
+    X(freeaddrinfo) X(getnameinfo) X(gethostname) X(fdatasync) \
+    X(posix_fadvise) X(select) X(accept4) X(lseek) X(epoll_create1) \
+    X(epoll_ctl) X(epoll_wait) X(eventfd) X(timerfd_create) \
+    X(timerfd_settime) X(__read_chk) X(__recv_chk) \
+    X(__recvfrom_chk) X(__poll_chk) X(__pread64_chk) X(__open_2) \
+    X(__gethostname_chk)
+
+// NOLINTNEXTLINE(bugprone-macro-parentheses) — token-paste operand cannot be parenthesized
+#define COROSIO_FAULT_DECLARE_INTERCEPTOR(name) \
+    extern "C" void __interceptor_##name() __attribute__((weak));
+COROSIO_FAULT_INTERCEPTED_SYMBOLS(COROSIO_FAULT_DECLARE_INTERCEPTOR)
+#undef COROSIO_FAULT_DECLARE_INTERCEPTOR
+
+namespace {
+
+struct sanitizer_interceptor
+{
+    char const* name;
+    void (*fn)();
+};
+
+sanitizer_interceptor const sanitizer_interceptors[] = {
+// NOLINTNEXTLINE(bugprone-macro-parentheses) — token-paste operand cannot be parenthesized
+#define COROSIO_FAULT_INTERCEPTOR_ENTRY(name) {#name, &__interceptor_##name},
+    COROSIO_FAULT_INTERCEPTED_SYMBOLS(COROSIO_FAULT_INTERCEPTOR_ENTRY)
+#undef COROSIO_FAULT_INTERCEPTOR_ENTRY
+};
+
+} // namespace
+
+#endif // COROSIO_FAULT_SANITIZER
+
 namespace boost::corosio::test::fault {
 
 thread_local cqe_slot tls_cqe;
@@ -76,6 +148,13 @@ publish_error(int err) noexcept
 void*
 real_symbol(char const* name) noexcept
 {
+#if COROSIO_FAULT_SANITIZER
+    // Chain into the sanitizer's own interceptor when it has one for
+    // this name — see the block comment above the table.
+    for (auto const& e : sanitizer_interceptors)
+        if (e.fn != nullptr && std::strcmp(e.name, name) == 0)
+            return reinterpret_cast<void*>(e.fn);
+#endif
     void* p = ::dlsym(RTLD_NEXT, name);
     if (!p)
     {

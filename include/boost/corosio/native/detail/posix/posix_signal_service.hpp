@@ -18,6 +18,8 @@
 #include <boost/corosio/native/detail/posix/posix_signal.hpp>
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/object_pool.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
@@ -25,6 +27,7 @@
 
 #include <mutex>
 #include <tuple>
+#include <vector>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -65,7 +68,7 @@
     2. posix_signal_service (one per execution_context)
        - Maintains registrations_[] table indexed by signal number
        - Each slot is a doubly-linked list of signal_registrations for that signal
-       - Also maintains impl_list_ of all posix_signal objects it owns
+       - Also owns a recycling pool of all posix_signal objects it owns
 
     3. posix_signal (one per signal_set)
        - Owns a singly-linked list (sorted by signal number) of signal_registrations
@@ -154,6 +157,8 @@ class BOOST_COROSIO_DECL posix_signal_service final
     : public capy::execution_context::service
     , public io_object::io_service
 {
+    friend class posix_signal;
+
 public:
     using key_type = posix_signal_service;
 
@@ -171,17 +176,17 @@ public:
         [[maybe_unused]] auto n = impl.clear();
         impl.disarm_stop();
         impl.cancel();
-        destroy_impl(impl);
+        release(&impl);
     }
 
     /** Shut down the service.
 
-        Destroys every implementation the service still owns and gives
-        each of their registrations back to the process-global table.
+        Gives every registration its live implementations still hold
+        back to the process-global table. The implementations are
+        freed when their handles release them, or when the service is
+        destroyed if a handle outlives it.
     */
     void shutdown() override;
-
-    void destroy_impl(posix_signal& impl);
 
     std::error_code add_signal(
         posix_signal& impl, int signal_number, signal_set::flags_t flags);
@@ -233,7 +238,7 @@ private:
     std::mutex reader_mutex_;
     bool reader_registered_ = false;
 
-    intrusive_list<posix_signal> impl_list_;
+    object_pool<posix_signal> pool_;
 
     // Per-signal registration table
     signal_registration* registrations_[max_signal_number];
@@ -526,12 +531,13 @@ inline posix_signal_service::~posix_signal_service()
 inline void
 posix_signal_service::shutdown()
 {
-    // Collected under the locks below and deleted after they are released:
-    // ~posix_signal destroys an armed stop_cb_, and ~stop_callback blocks
-    // until a concurrently running token_canceller returns -- which takes
-    // mutex_. Deleting while still holding mutex_ would self-deadlock the
-    // same way disarm_stop() would if called inside the locked loop.
-    intrusive_list<posix_signal> doomed;
+    // Each visited impl is pinned with acquire() so a handle
+    // destroy() racing this walk cannot free it mid-walk. The
+    // matching release() runs after the locks drop: if that handle's
+    // destroy() raced in, this release() is the last one, and
+    // ~posix_signal destroys an armed stop_cb_ whose ~stop_callback
+    // waits on a token_canceller that takes mutex_.
+    std::vector<posix_signal*> doomed;
 
     {
         posix_signal_detail::signal_state* state =
@@ -539,9 +545,18 @@ posix_signal_service::shutdown()
         std::lock_guard state_lock(state->mutex);
         std::lock_guard lock(mutex_);
 
-        for (auto* impl = impl_list_.pop_front(); impl != nullptr;
-             impl       = impl_list_.pop_front())
+        pool_.shutdown(
+            [&](posix_signal* impl)
+            {
+                acquire(impl);
+                doomed.push_back(impl);
+            });
+        for (auto* impl : doomed)
         {
+            // A parked wait is abandoned like every other op at
+            // teardown; a later destroy() must not resume it mid-drain.
+            impl->waiting_ = false;
+
             while (auto* reg = impl->signals_)
             {
                 int const signal_number = reg->signal_number;
@@ -568,47 +583,31 @@ posix_signal_service::shutdown()
                 impl->signals_ = reg->next_in_set;
                 delete reg;
             }
-            doomed.push_back(impl);
         }
 
-        // Every live registration hung off an implementation in impl_list_,
-        // so the whole table goes stale at once and can be dropped wholesale
-        // rather than node by node. It has to be dropped: deliver_signal()
-        // walks this service until the destructor unlinks it from the global
-        // list.
+        // Every live registration hung off an implementation this pool
+        // owns, so the whole table goes stale at once and can be dropped
+        // wholesale rather than node by node. It has to be dropped:
+        // deliver_signal() walks this service until the destructor
+        // unlinks it from the global list.
         for (int i = 0; i < max_signal_number; ++i)
             registrations_[i] = nullptr;
     }
 
-    for (auto* impl = doomed.pop_front(); impl != nullptr;
-         impl       = doomed.pop_front())
-    {
-        delete impl;
-    }
+    for (auto* impl : doomed)
+        release(impl);
 }
 
 inline io_object::implementation*
 posix_signal_service::construct()
 {
-    auto* impl = new posix_signal(*this);
-
-    {
-        std::lock_guard lock(mutex_);
-        impl_list_.push_back(impl);
-    }
-
-    return impl;
+    return pool_.acquire(*this);
 }
 
 inline void
-posix_signal_service::destroy_impl(posix_signal& impl)
+posix_signal::retire() noexcept
 {
-    {
-        std::lock_guard lock(mutex_);
-        impl_list_.remove(&impl);
-    }
-
-    delete &impl;
+    svc_.pool_.recycle(this);
 }
 
 inline std::error_code

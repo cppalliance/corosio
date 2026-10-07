@@ -224,16 +224,20 @@ select_scheduler::register_descriptor(
     if (fd < 0 || fd >= FD_SETSIZE)
         return make_err(EMFILE);
 
-    desc->registered_events = reactor_event_read | reactor_event_write;
-    desc->unpollable        = false; // the state is reused across adoptions
-    desc->fd                = fd;
-    desc->scheduler_        = this;
-    desc->mutex.set_enabled(reactor_io_locking_);
-    desc->ready_events_.store(0, std::memory_order_relaxed);
-
+    // A completion queued by an earlier registration of the same state
+    // may still be running, so the fields it reads change under its
+    // mutex, and the mutex mode is only written when it differs.
+    if (desc->mutex.enabled() != reactor_io_locking_)
+        desc->mutex.set_enabled(reactor_io_locking_);
     {
         conditionally_enabled_mutex::scoped_lock lock(desc->mutex);
-        desc->impl_ref_.reset();
+        desc->registered_events = reactor_event_read | reactor_event_write;
+        desc->unpollable        = false; // the state is reused across adoptions
+        desc->fd                = fd;
+        desc->scheduler_        = this;
+        desc->ready_events_.store(0, std::memory_order_release);
+        // object_ref_ is not touched: a queued invocation from an
+        // earlier registration still owns the reference in it.
         desc->read_ready  = false;
         desc->write_ready = false;
     }

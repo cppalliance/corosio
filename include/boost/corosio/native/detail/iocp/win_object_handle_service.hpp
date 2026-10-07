@@ -16,6 +16,8 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
+#include <boost/corosio/detail/object_pool.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/detail/win_handle_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_overlapped_handle.hpp>
 #include <boost/corosio/native/detail/iocp/win_validate_handle.hpp>
@@ -23,7 +25,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <memory>
 #include <mutex>
 
 /* win_object_handle on the Windows thread pool.
@@ -51,19 +52,20 @@
 
 namespace boost::corosio::detail {
 
+/** Object handle state, embedded in the implementation named by `io`.
+
+    The thread-pool wait survives recycling and is closed with the
+    implementation's storage.
+*/
 class win_object_handle_state
-    : public intrusive_list<win_object_handle_state>::node
-    , public std::enable_shared_from_this<win_object_handle_state>
 {
 public:
     win_object_handle_state(
-        win_scheduler& sched,
-        win_state_list<win_object_handle_state>& list) noexcept
+        win_scheduler& sched, io_object::implementation& io) noexcept
         : sched_(sched)
-        , list_(list)
+        , io_(io)
     {
         op_.self = this;
-        list_.add(*this);
     }
 
     ~win_object_handle_state()
@@ -74,7 +76,6 @@ public:
             ::WaitForThreadpoolWaitCallbacks(tp_wait_, FALSE);
             ::CloseThreadpoolWait(tp_wait_);
         }
-        list_.remove(*this);
     }
 
     win_object_handle_state(win_object_handle_state const&) = delete;
@@ -110,10 +111,10 @@ public:
         std::uint64_t const armed = (gen << 2) | phase_armed;
 
         op_.reset();
-        op_.keep_alive = shared_from_this();
+        op_.object_ref_ = detail::object_ref(&io_);
         // The op may complete and the object be destroyed on another
         // thread before wait() returns; this pin outlives both.
-        auto const pin = op_.keep_alive;
+        auto const pin = op_.object_ref_;
         op_.user_cont  = &cont;
         op_.h          = cont.h;
         op_.ex         = ex;
@@ -180,6 +181,13 @@ public:
         return reinterpret_cast<native_handle_type>(h);
     }
 
+    /// Return true if no wait is armed or being delivered.
+    bool is_idle() const noexcept
+    {
+        return (state_.load(std::memory_order_acquire) & phase_mask) ==
+            phase_idle;
+    }
+
     std::error_code assign(native_handle_type nh) noexcept
     {
         HANDLE h = reinterpret_cast<HANDLE>(nh);
@@ -198,7 +206,6 @@ private:
     struct wait_op : overlapped_op
     {
         win_object_handle_state* self = nullptr;
-        std::shared_ptr<win_object_handle_state> keep_alive;
         capy::continuation* user_cont = nullptr;
 
         wait_op() noexcept : overlapped_op(&do_complete)
@@ -219,7 +226,7 @@ private:
         {
             auto* op   = static_cast<wait_op*>(base);
             auto* self = op->self;
-            auto prevent_premature_destruction = std::move(op->keep_alive);
+            auto prevent_premature_destruction = std::move(op->object_ref_);
 
             if (!owner)
             {
@@ -299,7 +306,7 @@ private:
     }
 
     win_scheduler& sched_;
-    win_state_list<win_object_handle_state>& list_;
+    io_object::implementation& io_;
     HANDLE handle_    = INVALID_HANDLE_VALUE;
     PTP_WAIT tp_wait_ = nullptr;
     std::atomic<std::uint64_t> state_{phase_idle};
@@ -308,32 +315,41 @@ private:
     wait_op op_;
 };
 
+class win_object_handle_service;
+
 /** IOCP implementation of @ref win_object_handle. */
 class win_object_handle_impl final
     : public win_object_handle::implementation
     , public intrusive_list<win_object_handle_impl>::node
 {
-    std::shared_ptr<win_object_handle_state> internal_;
+    win_object_handle_service& svc_;
+    win_object_handle_state internal_;
 
 public:
-    explicit win_object_handle_impl(
-        std::shared_ptr<win_object_handle_state> internal) noexcept
-        : internal_(std::move(internal))
+    win_object_handle_impl(
+        win_object_handle_service& svc, win_scheduler& sched) noexcept
+        : svc_(svc)
+        , internal_(sched, *this)
     {
     }
 
-    void close_internal() noexcept
+    /// Recycle into the owning service's pool. Defined out-of-line
+    /// after the service is complete.
+    void retire() noexcept override;
+
+    /** Assert the closed state a recycled handle starts from.
+
+        @pre refs_ == 0, handle closed, no wait in flight.
+    */
+    void reuse() noexcept
     {
-        if (internal_)
-        {
-            internal_->close_handle();
-            internal_.reset();
-        }
+        BOOST_COROSIO_ASSERT(!internal_.is_open());
+        BOOST_COROSIO_ASSERT(internal_.is_idle());
     }
 
-    win_object_handle_state* get_internal() const noexcept
+    win_object_handle_state* get_internal() noexcept
     {
-        return internal_.get();
+        return &internal_;
     }
 
     std::coroutine_handle<> wait(
@@ -342,22 +358,22 @@ public:
         std::stop_token token,
         std::error_code* ec) override
     {
-        return internal_->wait(cont, ex, std::move(token), ec);
+        return internal_.wait(cont, ex, std::move(token), ec);
     }
 
     native_handle_type native_handle() const noexcept override
     {
-        return reinterpret_cast<native_handle_type>(internal_->native_handle());
+        return reinterpret_cast<native_handle_type>(internal_.native_handle());
     }
 
     native_handle_type release_handle() noexcept override
     {
-        return internal_->release();
+        return internal_.release();
     }
 
     void cancel() noexcept override
     {
-        internal_->cancel();
+        internal_.cancel();
     }
 };
 
@@ -365,6 +381,8 @@ public:
 class BOOST_COROSIO_DECL win_object_handle_service final
     : public object_handle_service
 {
+    friend class win_object_handle_impl;
+
 public:
     explicit win_object_handle_service(capy::execution_context& ctx)
         : sched_(ctx.use_service<win_scheduler>())
@@ -373,15 +391,16 @@ public:
 
     io_object::implementation* construct() override
     {
-        auto internal =
-            std::make_shared<win_object_handle_state>(sched_, reg_.states());
-        return reg_.add(new win_object_handle_impl(std::move(internal)));
+        return pool_.acquire(*this, sched_);
     }
 
     void destroy(io_object::implementation* p) override
     {
-        if (p)
-            reg_.destroy(static_cast<win_object_handle_impl&>(*p));
+        if (!p)
+            return;
+        auto* impl = static_cast<win_object_handle_impl*>(p);
+        impl->get_internal()->close_handle();
+        release(impl);
     }
 
     void close(io_object::handle& h) override
@@ -393,7 +412,9 @@ public:
 
     void shutdown() override
     {
-        reg_.shutdown();
+        pool_.shutdown([](win_object_handle_impl* impl) {
+            impl->get_internal()->close_handle();
+        });
     }
 
     std::error_code assign_object_handle(
@@ -412,9 +433,15 @@ private:
     win_scheduler& sched_;
     BOOST_COROSIO_MSVC_WARNING_PUSH
     BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // detail:: members, dll-interface
-    win_handle_registry<win_object_handle_impl, win_object_handle_state> reg_;
+    object_pool<win_object_handle_impl> pool_;
     BOOST_COROSIO_MSVC_WARNING_POP
 };
+
+inline void
+win_object_handle_impl::retire() noexcept
+{
+    svc_.pool_.recycle(this);
+}
 
 } // namespace boost::corosio::detail
 

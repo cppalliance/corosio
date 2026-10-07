@@ -21,7 +21,7 @@ namespace boost::corosio::detail {
     Adds the reactor-specific result model (the recorded errno + bytes and
     the perform_io() readiness re-run) on top of coro_op, the shared op
     envelope (coroutine handle, executor, output pointers, stop_token wiring,
-    cancelled flag, impl_ptr keepalive) common to every backend.
+    cancelled flag, object_ref_ keepalive) common to every backend.
 
     Kept as a non-template layer so reactor_descriptor_state and the
     scheduler hot paths can touch op state without knowing the concrete
@@ -37,7 +37,7 @@ struct reactor_op_base : coro_op
     /// Bytes transferred on success.
     std::size_t bytes_transferred = 0;
 
-    // cancelled, impl_ptr, and request_cancel() are inherited from coro_op.
+    // cancelled, object_ref_, and request_cancel() are inherited from coro_op.
 
     /// Record the result of an I/O attempt.
     void complete(int err, std::size_t bytes) noexcept
@@ -49,10 +49,11 @@ struct reactor_op_base : coro_op
     /// Perform the I/O syscall (implemented by concrete op types).
     virtual void perform_io() noexcept = 0;
 
-    /// Destroy without invoking — drop the keepalive (impl_ptr from coro_op).
+    /// Destroy without invoking — drop the keepalive held in
+    /// coro_op's `object_ref_`.
     void destroy() override
     {
-        impl_ptr.reset();
+        object_ref_.reset();
     }
 };
 

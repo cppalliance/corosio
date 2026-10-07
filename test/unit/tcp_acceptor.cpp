@@ -146,6 +146,20 @@ native_connect_loopback(native_handle_type h, std::uint16_t port, bool v6)
 #endif
 }
 
+// Write one byte without the io_context, so the peer's completion is
+// already waiting when the next run starts. Unused when the tests that
+// abandon parked frames are compiled out.
+[[maybe_unused]] bool
+native_send_byte(native_handle_type h)
+{
+    char const b = 'x';
+#if BOOST_COROSIO_HAS_IOCP
+    return ::send(static_cast<SOCKET>(h), &b, 1, 0) == 1;
+#else
+    return ::send(static_cast<int>(h), &b, 1, 0) == 1;
+#endif
+}
+
 // Take ownership of a released listener the way a caller would: clear
 // the non-blocking flag the library set, then accept.
 native_handle_type
@@ -266,8 +280,8 @@ struct tcp_acceptor_test
     void testCancelAccept()
     {
         // Tests that cancel() properly cancels a pending accept operation.
-        // This exercises the acceptor_ptr shared_ptr that keeps the
-        // acceptor impl alive until IOCP delivers the cancellation.
+        // The accept op's keepalive must hold the acceptor impl until
+        // IOCP delivers the cancellation.
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
@@ -455,13 +469,100 @@ struct tcp_acceptor_test
         BOOST_TEST_PASS();
     }
 
+    void testDestroyListeningAcceptorKeepsOtherOps()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        auto sockets = test::make_socket_pair(ioc);
+        auto& server = sockets.first;
+        auto& client = sockets.second;
+
+        bool read_done = false;
+        char buf[8];
+        capy::run_async(ex)(
+            [](tcp_socket& s, char* b, bool& done) -> capy::task<> {
+                auto [ec, n] =
+                    co_await s.read_some(capy::mutable_buffer(b, 8));
+                done = !ec && n == 1;
+            }(server, buf, read_done));
+        ioc.restart();
+        std::ignore = ioc.poll();
+        BOOST_TEST(!read_done);
+
+        {
+            tcp_acceptor acc(ioc);
+            BOOST_TEST(!acc.open());
+            BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+            BOOST_TEST(!acc.listen());
+            std::ignore = ioc.poll();
+
+            // The read's completion is now pending when the acceptor
+            // goes away; tearing it down must not consume it.
+            BOOST_TEST(native_send_byte(client.native_handle()));
+        }
+
+        ioc.restart();
+        while (!read_done && ioc.run_one_for(std::chrono::seconds(5)) != 0)
+        {
+        }
+        BOOST_TEST(read_done);
+    }
+
+    // An accept that completes inline under a stoppable token must not
+    // leave its stop callback registered on an impl the pool recycles.
+    void testInlineAcceptUnderStopTokenRecycles()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        std::stop_source src;
+        {
+            tcp_acceptor acc(ioc);
+            BOOST_TEST(!acc.open());
+            acc.set_option(socket_option::reuse_address(true));
+            BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+            BOOST_TEST(!acc.listen());
+            endpoint ep(ipv4_address::loopback(), acc.local_endpoint().port());
+
+            // Both connections are pending before the accepts start, so
+            // the second accept completes without parking.
+            tcp_socket c1(ioc);
+            tcp_socket c2(ioc);
+            for (auto* c : {&c1, &c2})
+                capy::run_async(ex)(
+                    [](tcp_socket& s, endpoint e) -> capy::task<> {
+                        std::ignore = co_await s.connect(e);
+                    }(*c, ep));
+            ioc.run();
+            ioc.restart();
+
+            tcp_socket s1(ioc);
+            tcp_socket s2(ioc);
+            bool accepted = false;
+            capy::run_async(ex, src.get_token())(
+                [](tcp_acceptor& a, tcp_socket& x, tcp_socket& y,
+                   bool& done) -> capy::task<> {
+                    auto [ec1] = co_await a.accept(x);
+                    auto [ec2] = co_await a.accept(y);
+                    done       = !ec1 && !ec2;
+                }(acc, s1, s2, accepted));
+            ioc.run();
+            ioc.restart();
+            BOOST_TEST(accepted);
+        }
+
+        // Pops the recycled impl; reuse() requires no armed stop callback.
+        tcp_acceptor acc2(ioc);
+        BOOST_TEST(!acc2.is_open());
+    }
+
     void testCloseWhilePendingAccept()
     {
         // Tests that close() properly handles a pending accept operation.
         // This is the key test for the cancel/destruction race condition:
         // when close() is called, CancelIoEx is invoked, the tcp_socket is closed,
         // but the impl must stay alive until IOCP delivers the cancellation.
-        // The acceptor_ptr shared_ptr in accept_op ensures this.
+        // The accept op's keepalive ensures this.
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
@@ -1866,6 +1967,8 @@ struct tcp_acceptor_test
         // Abandon parked coroutine frames by design; see context.hpp.
         testDestroyWithParkedAccept();
         testDestroyWithParkedRead();
+        testInlineAcceptUnderStopTokenRecycles();
+        testDestroyListeningAcceptorKeepsOtherOps();
         testDestroyWithQueuedAccept();
         testDestroyWithQueuedAcceptorWait();
 #endif
