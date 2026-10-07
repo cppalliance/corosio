@@ -20,6 +20,15 @@ timer::timer(capy::execution_context& ctx)
 {
 }
 
+// Not inline for the same reason as wait() below: retire() needs
+// timer_service's complete type (to reach pool_), which timer.hpp only
+// forward-declares.
+void
+timer::implementation::retire() noexcept
+{
+    svc_->pool_.recycle(this);
+}
+
 // Not inline: wait_awaitable::await_suspend (defined in timer.hpp) calls
 // this from translation units that may never include timer_service.hpp,
 // so this must be the one strong definition the linker can always find
@@ -60,7 +69,23 @@ timer::implementation::publish(waiter_node& w)
     if (w.token_->stop_possible())
         w.arm_stop_cb();
 
-    svc_->insert_waiter(*this, &w);
+    // insert_waiter() grows the heap before publishing anything (see
+    // its own comment), so a throw out of it leaves w.impl_ null and
+    // the waiter never visible to the fire/cancel paths above -- but
+    // work_started() and arm_stop_cb() already ran and must be
+    // unwound here, or the escaping exception leaves a dangling
+    // stop-callback registration (UAF on a later cancel) and a work
+    // count that never balances.
+    try
+    {
+        svc_->insert_waiter(*this, &w);
+    }
+    catch (...)
+    {
+        w.reset_stop_cb();
+        svc_->get_scheduler().work_finished();
+        throw;
+    }
 
     return std::noop_coroutine();
 }

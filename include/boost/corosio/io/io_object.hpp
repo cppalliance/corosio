@@ -63,13 +63,20 @@ public:
         /// Destroy the implementation; called only through @ref io_service.
         virtual ~implementation() = default;
 
-        /** Called when the reference count reaches zero.
+        /** Retire the implementation once the reference count reaches zero.
 
-            @note Transitional default is a no-op while backends are
-            migrated; it becomes pure virtual at the end of the
-            migration.
+            Every concrete implementation's override follows the
+            same shape: recycle into the owning service's pool member
+            as the final statement. The service befriends the
+            implementation so it can reach that private member
+            directly. Any required last-rites cleanup — releasing
+            state that is only safe to tear down once idle — runs as
+            ordinary statements immediately before the recycle.
+            Whichever action runs — recycle or delete — must be the
+            final statement: nothing touches the implementation
+            after.
         */
-        virtual void retire() noexcept {}
+        virtual void retire() noexcept = 0;
 
         /// In-flight + service references; starts at the service's 1.
         std::atomic<std::size_t> refs_{1};
@@ -95,15 +102,15 @@ public:
         /** Close kernel resources and release the service's reference.
 
             Called whenever a handle relinquishes its current
-            implementation, not only on destruction: handle
+            implementation, not only on destruction. Handle
             destruction, move-assignment onto a handle that already
             owns one (the replaced implementation is destroyed, the
             incoming one is not), and `handle::reset()` all invoke
-            this. Closes the underlying descriptor and drops the
-            service's own reference; in-flight operations may still
+            this. It closes the underlying descriptor and drops the
+            service's own reference. In-flight operations may still
             hold references of their own, so the implementation is
-            not necessarily recycled or freed here — that happens in
-            `implementation::retire` whenever the refcount
+            not necessarily recycled or freed here. That happens in
+            `implementation::retire` whenever the reference count
             actually reaches zero.
         */
         virtual void destroy(implementation* impl) = 0;
@@ -198,7 +205,7 @@ public:
                 one) — the old implementation is destroyed through
                 that service.
             @pre @p p, if non-null, was constructed by this handle's
-                own service: the service that destroys it later must
+                own service. The service that destroys it later must
                 be the one that knows how to close it.
 
             @param p The new implementation to own. May be nullptr.
@@ -235,7 +242,8 @@ protected:
 
     /** Create a handle bound to a service found in the context.
 
-        @tparam Service The service type whose key_type is used for lookup.
+        @tparam Service The service type whose `key_type` is used for
+            lookup.
         @param ctx The execution context to search for the service.
 
         @return A handle owning a freshly constructed implementation.
