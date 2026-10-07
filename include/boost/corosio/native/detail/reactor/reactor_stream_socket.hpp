@@ -20,6 +20,7 @@
 #include <boost/capy/buffers.hpp>
 
 #include <coroutine>
+#include <cstring>
 
 #include <errno.h>
 #include <sys/socket.h>
@@ -285,27 +286,38 @@ public:
 
     /** Reset op slots and the cached peer for recycling.
 
-        `do_close_socket()` already cleared `remote_endpoint_` and every
-        parked op pointer; each op's own `reset()` runs again at its next
-        `do_*` call before any field is read. The one thing worth
-        checking here is `stop_cb`: a still-armed callback would mean a
-        stop_token outlived the op's completion, which `reset()` always
-        disengages, so asserting it is what actually catches a missed
-        completion rather than papering over it.
+        Each op's own `reset()` runs again at its next `do_*` call
+        before any field is read, so only `remote_endpoint_` needs an
+        active reset here; `stop_cb` is checked instead of reset — a
+        still-armed callback would mean a stop_token outlived the op's
+        completion, which `reset()` always disengages, so asserting it
+        is what actually catches a missed completion rather than
+        papering over it.
 
         @pre refs_ == 0, fd closed and deregistered, no op in flight.
     */
     void reuse() noexcept
     {
         base_type::reuse();
+        remote_endpoint_ = Endpoint{};
         BOOST_COROSIO_ASSERT(!conn_.stop_cb);
         BOOST_COROSIO_ASSERT(!rd_.stop_cb);
         BOOST_COROSIO_ASSERT(!wr_.stop_cb);
         BOOST_COROSIO_ASSERT(!wait_rd_.stop_cb);
         BOOST_COROSIO_ASSERT(!wait_wr_.stop_cb);
         BOOST_COROSIO_ASSERT(!wait_er_.stop_cb);
-        BOOST_COROSIO_ASSERT(remote_endpoint_ == Endpoint{});
     }
+
+#if !defined(NDEBUG)
+    /// Extend base_type::poison() to the cached peer endpoint.
+    void poison() noexcept
+    {
+        base_type::poison();
+        std::memset(
+            static_cast<void*>(&remote_endpoint_), 0xDB,
+            sizeof(remote_endpoint_));
+    }
+#endif
 
 private:
     // CRTP callbacks for reactor_basic_socket cancel/close

@@ -19,6 +19,7 @@
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
 
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <utility>
@@ -179,29 +180,71 @@ public:
     /** Reset descriptor state for recycling.
 
         Called by the owning service's `construct()` when popping this
-        impl back off the free list. `close_socket()` already drove fd_,
-        the descriptor's registration, and every parked op pointer to
-        their closed state before the refcount reached zero, so this
-        only asserts those invariants rather than re-clearing them —
-        a non-null parked op or a lingering `object_ref_` here would mean
-        a reference survived close, which is the real bug to catch.
+        impl back off the free list. Actively re-initializes every
+        field it owns rather than trusting `close_socket()`'s prior
+        writes to still be there — `poison()` below depends on that,
+        and a future field added to either side without the other
+        would otherwise go unnoticed until this one re-sets it.
+        `object_ref_` and `is_enqueued_` are asserted instead: `poison()`
+        never touches them, so they must already hold their
+        zero-action-complete state.
 
         @pre refs_ == 0, fd closed and deregistered, no op in flight.
     */
     void reuse() noexcept
     {
-        BOOST_COROSIO_ASSERT(fd_ == -1);
-        BOOST_COROSIO_ASSERT(desc_state_.fd == -1);
-        BOOST_COROSIO_ASSERT(desc_state_.read_op == nullptr);
-        BOOST_COROSIO_ASSERT(desc_state_.write_op == nullptr);
-        BOOST_COROSIO_ASSERT(desc_state_.connect_op == nullptr);
-        BOOST_COROSIO_ASSERT(desc_state_.wait_read_op == nullptr);
-        BOOST_COROSIO_ASSERT(desc_state_.wait_write_op == nullptr);
-        BOOST_COROSIO_ASSERT(desc_state_.wait_error_op == nullptr);
+        fd_                           = -1;
+        local_endpoint_               = Endpoint{};
+        desc_state_.fd                = -1;
+        desc_state_.registered_events = 0;
+        desc_state_.read_op           = nullptr;
+        desc_state_.write_op          = nullptr;
+        desc_state_.connect_op        = nullptr;
+        desc_state_.wait_read_op      = nullptr;
+        desc_state_.wait_write_op     = nullptr;
+        desc_state_.wait_error_op     = nullptr;
+        desc_state_.read_ready        = false;
+        desc_state_.write_ready       = false;
         BOOST_COROSIO_ASSERT(!desc_state_.object_ref_);
         BOOST_COROSIO_ASSERT(!desc_state_.is_enqueued_.load(
             std::memory_order_relaxed));
     }
+
+#if !defined(NDEBUG)
+    /** Poison the fields `reuse()` re-initializes, before the pool
+        parks this impl on the free list.
+
+        A field `reuse()` forgets to reset then reads back as this
+        unmistakable byte pattern instead of silently matching
+        whatever `close_socket()` happened to leave, turning a missed
+        reset into an immediate, loud failure rather than a latent
+        stale-state bug. Does not touch the mutex, `ready_events_` /
+        `is_enqueued_` (atomics), `scheduler_`, `object_ref_`, the
+        `intrusive_list` hook, or `refs_`: `recycle()` still reads
+        some of those after this call returns, and smashing the rest
+        would be undefined rather than diagnostic.
+
+        @pre refs_ == 0, fd closed and deregistered, no op in flight.
+    */
+    void poison() noexcept
+    {
+        auto smash = [](auto& field) {
+            std::memset(static_cast<void*>(&field), 0xDB, sizeof(field));
+        };
+        smash(fd_);
+        smash(local_endpoint_);
+        smash(desc_state_.fd);
+        smash(desc_state_.registered_events);
+        smash(desc_state_.read_op);
+        smash(desc_state_.write_op);
+        smash(desc_state_.connect_op);
+        smash(desc_state_.wait_read_op);
+        smash(desc_state_.wait_write_op);
+        smash(desc_state_.wait_error_op);
+        smash(desc_state_.read_ready);
+        smash(desc_state_.write_ready);
+    }
+#endif
 };
 
 template<

@@ -21,6 +21,7 @@
 #include <boost/capy/buffers.hpp>
 
 #include <coroutine>
+#include <cstring>
 
 #include <errno.h>
 #include <sys/socket.h>
@@ -329,16 +330,16 @@ public:
     /** Reset op slots and the cached peer for recycling.
 
         See reactor_stream_socket::reuse() — same rationale: op state
-        is overwritten by the next do_* call, `remote_endpoint_` and
-        every parked op pointer are already cleared by
-        `do_close_socket()`, so this only asserts `stop_cb` disengaged
-        on each slot.
+        is overwritten by the next do_* call, so only `remote_endpoint_`
+        needs an active reset here; every other slot only asserts
+        `stop_cb` disengaged.
 
         @pre refs_ == 0, fd closed and deregistered, no op in flight.
     */
     void reuse() noexcept
     {
         base_type::reuse();
+        remote_endpoint_ = Endpoint{};
         BOOST_COROSIO_ASSERT(!conn_.stop_cb);
         BOOST_COROSIO_ASSERT(!wr_.stop_cb);
         BOOST_COROSIO_ASSERT(!rd_.stop_cb);
@@ -347,8 +348,18 @@ public:
         BOOST_COROSIO_ASSERT(!wait_rd_.stop_cb);
         BOOST_COROSIO_ASSERT(!wait_wr_.stop_cb);
         BOOST_COROSIO_ASSERT(!wait_er_.stop_cb);
-        BOOST_COROSIO_ASSERT(remote_endpoint_ == Endpoint{});
     }
+
+#if !defined(NDEBUG)
+    /// Extend base_type::poison() to the cached peer endpoint.
+    void poison() noexcept
+    {
+        base_type::poison();
+        std::memset(
+            static_cast<void*>(&remote_endpoint_), 0xDB,
+            sizeof(remote_endpoint_));
+    }
+#endif
 
     /** Shut down part or all of the full-duplex connection.
 

@@ -19,6 +19,7 @@
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
 
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <utility>
@@ -260,21 +261,27 @@ public:
 
     /** Reset descriptor state for recycling.
 
-        `close_socket()` already drove fd_ and every parked op pointer
-        to their closed state before the refcount reached zero, so
-        this only asserts those invariants — see
-        reactor_basic_socket::reuse() for the same rationale.
+        Actively re-initializes every field it owns rather than
+        trusting `close_socket()`'s prior writes to still be there —
+        see reactor_basic_socket::reuse() for the same rationale.
+        `object_ref_` and `is_enqueued_` are asserted instead: `poison()`
+        never touches them, so they must already hold their
+        zero-action-complete state.
 
         @pre refs_ == 0, fd closed and deregistered, no op in flight.
     */
     void reuse() noexcept
     {
-        BOOST_COROSIO_ASSERT(fd_ == -1);
-        BOOST_COROSIO_ASSERT(desc_state_.fd == -1);
-        BOOST_COROSIO_ASSERT(desc_state_.read_op == nullptr);
-        BOOST_COROSIO_ASSERT(desc_state_.wait_read_op == nullptr);
-        BOOST_COROSIO_ASSERT(desc_state_.wait_write_op == nullptr);
-        BOOST_COROSIO_ASSERT(desc_state_.wait_error_op == nullptr);
+        fd_                           = -1;
+        local_endpoint_               = Endpoint{};
+        desc_state_.fd                = -1;
+        desc_state_.registered_events = 0;
+        desc_state_.read_op           = nullptr;
+        desc_state_.wait_read_op      = nullptr;
+        desc_state_.wait_write_op     = nullptr;
+        desc_state_.wait_error_op     = nullptr;
+        desc_state_.read_ready        = false;
+        desc_state_.write_ready       = false;
         BOOST_COROSIO_ASSERT(!desc_state_.object_ref_);
         BOOST_COROSIO_ASSERT(!desc_state_.is_enqueued_.load(
             std::memory_order_relaxed));
@@ -282,8 +289,33 @@ public:
         BOOST_COROSIO_ASSERT(!wait_rd_.stop_cb);
         BOOST_COROSIO_ASSERT(!wait_wr_.stop_cb);
         BOOST_COROSIO_ASSERT(!wait_er_.stop_cb);
-        BOOST_COROSIO_ASSERT(local_endpoint_ == Endpoint{});
     }
+
+#if !defined(NDEBUG)
+    /** Poison the fields `reuse()` re-initializes, before the pool
+        parks this impl on the free list. See
+        reactor_basic_socket::poison() for the full rationale and the
+        list of fields deliberately left untouched.
+
+        @pre refs_ == 0, fd closed and deregistered, no op in flight.
+    */
+    void poison() noexcept
+    {
+        auto smash = [](auto& field) {
+            std::memset(static_cast<void*>(&field), 0xDB, sizeof(field));
+        };
+        smash(fd_);
+        smash(local_endpoint_);
+        smash(desc_state_.fd);
+        smash(desc_state_.registered_events);
+        smash(desc_state_.read_op);
+        smash(desc_state_.wait_read_op);
+        smash(desc_state_.wait_write_op);
+        smash(desc_state_.wait_error_op);
+        smash(desc_state_.read_ready);
+        smash(desc_state_.write_ready);
+    }
+#endif
 
     /** Bind the acceptor socket to an endpoint.
 

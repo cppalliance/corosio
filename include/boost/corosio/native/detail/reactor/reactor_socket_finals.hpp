@@ -90,6 +90,9 @@ public:
     /// Recycle into the owning service's pool at zero references.
     void retire() noexcept override
     {
+#if !defined(NDEBUG)
+        this->poison();
+#endif
         this->svc_.state_->pool_.recycle(static_cast<Derived*>(this));
     }
 
@@ -161,6 +164,9 @@ public:
     /// Recycle into the owning service's pool at zero references.
     void retire() noexcept override
     {
+#if !defined(NDEBUG)
+        this->poison();
+#endif
         this->svc_.state_->pool_.recycle(static_cast<Derived*>(this));
     }
 };
@@ -212,6 +218,9 @@ public:
     /// Recycle into the owning service's pool at zero references.
     void retire() noexcept override
     {
+#if !defined(NDEBUG)
+        this->poison();
+#endif
         this->svc_.state_->pool_.recycle(static_cast<Derived*>(this));
     }
 
