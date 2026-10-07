@@ -59,6 +59,7 @@ jobs:
       pull-requests: write
     outputs:
       head_sha: ${{ steps.decide.outputs.head_sha }}
+      head_repo: ${{ steps.decide.outputs.head_repo }}
       base_sha: ${{ steps.decide.outputs.base_sha }}
       tools_sha: ${{ steps.decide.outputs.tools_sha }}
       pr: ${{ steps.decide.outputs.pr }}
@@ -72,6 +73,15 @@ jobs:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -e
+          # The repo the head commit lives in: the base repo except for
+          # fork PRs, whose commits exist only in the fork. The bench
+          # jobs pass it to checkout explicitly — actions/checkout
+          # refuses to fetch fork code from a pull_request_target
+          # workflow unless the fork is named, and naming it is safe
+          # here: the gate pins head_sha at label time, the label is a
+          # maintainer's approval to run that code on these machines,
+          # and the checkout keeps no credentials.
+          head_repo="${{ github.repository }}"
           # Resolve head/base entirely via the API (no checkout needed).
           # PR events compare against the PR's base branch; dispatch
           # compares against develop and can also validate A/A (base vs itself).
@@ -132,6 +142,7 @@ jobs:
               fi
               echo "run=$run" >> "$GITHUB_OUTPUT"
               head_sha="${{ github.event.pull_request.head.sha }}"
+              head_repo="${{ github.event.pull_request.head.repo.full_name }}"
               base_sha=$(gh api "repos/${{ github.repository }}/compare/${BASE_REF}...${head_sha}" \
                            --jq .merge_base_commit.sha)
               # pull_request_target runs workflow + job steps from the base
@@ -156,6 +167,7 @@ jobs:
             echo "mode=${{ inputs.mode }}" >> "$GITHUB_OUTPUT"
           fi
           echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+          echo "head_repo=$head_repo" >> "$GITHUB_OUTPUT"
           echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
           echo "tools_sha=$tools_sha" >> "$GITHUB_OUTPUT"
 
@@ -192,6 +204,7 @@ jobs:
       - name: Checkout head
         uses: actions/checkout@v4
         with:
+          repository: ${{ needs.gate.outputs.head_repo }}
           ref: ${{ needs.gate.outputs.head_sha }}
           path: ws/head
           persist-credentials: false
