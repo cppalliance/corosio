@@ -11,6 +11,7 @@
 #define BOOST_COROSIO_NATIVE_DETAIL_URING_URING_MULTISHOT_ACCEPTOR_HPP
 
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
+#include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_URING
@@ -62,10 +63,15 @@ fd_is_listening(int fd) noexcept
     return accepting != 0;
 }
 
-template<class Derived, class ImplBase, class Endpoint, class PeerService>
+template<
+    class Derived,
+    class ImplBase,
+    class Endpoint,
+    class PeerService,
+    class AcceptorService>
 class uring_multishot_acceptor_base
     : public ImplBase
-    , public std::enable_shared_from_this<Derived>
+    , public intrusive_list<Derived>::node
 {
 protected:
     struct ready_fd_node : intrusive_list<ready_fd_node>::node
@@ -104,6 +110,10 @@ protected:
     int fd_ = -1;
     uring_scheduler* sched_;
     PeerService* peer_service_;
+    /// Owning acceptor service; exposes the recycling pool to
+    /// retire(). Not used for anything else — the service already
+    /// drives shutdown/destroy from its own side.
+    AcceptorService* acceptor_svc_;
     Endpoint local_endpoint_{};
     mutable std::mutex mutex_;
     intrusive_list<ready_fd_node> ready_fds_;
@@ -136,13 +146,80 @@ private:
     // (clang-tidy bugprone-crtp-constructor-accessibility).
     friend Derived;
     uring_multishot_acceptor_base(
-        uring_scheduler& sched, PeerService& peer_svc) noexcept
+        AcceptorService& acceptor_svc,
+        uring_scheduler& sched,
+        PeerService& peer_svc) noexcept
         : sched_(&sched)
         , peer_service_(&peer_svc)
+        , acceptor_svc_(&acceptor_svc)
     {
     }
 
 public:
+    /** Close and free every fd parked in `ready_fds_`.
+
+        A multishot CQE can deliver a connection before any `accept()`
+        is outstanding to claim it; that connection's fd (and tracking
+        node) sits in `ready_fds_` until a later `accept()` consumes it
+        or the acceptor goes away. Idempotent: safe to call from both
+        `retire()` (recycling) and the destructor (pool-force-sweep
+        backstop) — the second call always sees an empty list.
+    */
+    void drain_ready_fds() noexcept
+    {
+        intrusive_list<ready_fd_node> drained;
+        {
+            std::lock_guard lk(mutex_);
+            while (auto* r = ready_fds_.pop_front())
+                drained.push_back(r);
+        }
+        while (auto* r = drained.pop_front())
+        {
+            ::close(r->fd);
+            delete r;
+        }
+    }
+
+    /** Recycle into the owning service's pool at zero references.
+
+        Reaching zero used to mean the shared_ptr destructor was about
+        to run, which is where the ready_fds_ drain and the multi_op_
+        cycle-break + CQE drain below used to live (the destructor
+        still runs them too, as a backstop for the pool's own
+        unconditional force-sweep at shutdown — both are idempotent).
+        Now reaching zero can instead mean this impl is about to go
+        back on the free list for reuse — its memory is never freed,
+        so the destructor never runs. Do the drain here, once, for
+        both outcomes: `close()` already reset `multi_op_->object_ref_` on
+        the normal path, so that reset is usually a no-op; it only
+        does real work when zero is reached some other way. Skipping
+        the ready_fds_ drain here specifically would leak every fd and
+        node still parked in it and trip `reuse()`'s `ready_fds_.empty()`
+        assert on the very next construct() that pops this impl back
+        out.
+
+        `multi_op_` itself is freed here too, rather than kept for the
+        next session: `prepare_listen_arm()` treats a non-null
+        `multi_op_` with `closing_` false and `arm_err_` zero as
+        already armed and skips re-arming — true across a re-listen
+        on the same still-open acceptor, but not across reuse, where
+        the next `listen()` is a different logical acceptor on a
+        different fd. Leaving the old `multi_op_` in place would make
+        that listen() silently believe it was already armed and never
+        submit a multishot SQE for the new fd.
+    */
+    void retire() noexcept override
+    {
+        drain_ready_fds();
+        if (multi_op_)
+        {
+            multi_op_->object_ref_.reset();
+            sched_->drain_cqes_for(multi_op_.get());
+            multi_op_.reset();
+        }
+        acceptor_svc_->pool_.recycle(static_cast<Derived*>(this));
+    }
+
     ~uring_multishot_acceptor_base() override
     {
         {
@@ -156,27 +233,17 @@ public:
             fd_ = -1;
         }
 
-        // Drain parked accepted-connection fds unconditionally. These are
-        // distinct from the listener fd and can be present even when the
-        // service close() path already closed and cleared fd_ — that path
-        // does not touch ready_fds_, so the drain must run here.
-        intrusive_list<ready_fd_node> drained;
-        {
-            std::lock_guard lk(mutex_);
-            while (auto* r = ready_fds_.pop_front())
-                drained.push_back(r);
-        }
-        while (auto* r = drained.pop_front())
-        {
-            ::close(r->fd);
-            delete r;
-        }
+        // Backstop: retire() already drains this on the normal
+        // recycle path. This call only does real work when this impl
+        // is reached by the pool's unconditional force-sweep at
+        // shutdown without ever going through retire() first.
+        drain_ready_fds();
 
-        // Break the multi_op_ → impl_ptr (shared_ptr<this>) cycle and
+        // Break the multi_op_ → object_ref_ (object_ref) cycle and
         // drain pending CQEs so unique_ptr<multi_op_> can free safely.
         if (multi_op_)
         {
-            multi_op_->impl_ptr.reset();
+            multi_op_->object_ref_.reset();
             sched_->drain_cqes_for(multi_op_.get());
         }
     }
@@ -204,7 +271,7 @@ public:
     native_handle_type release_socket() noexcept override
     {
         // Mirror the service close() path: cancel the multishot SQE and
-        // break the multi_op_ -> impl_ptr (shared_ptr<this>) cycle that
+        // break the multi_op_ -> object_ref_ (object_ref) cycle that
         // start_multishot established. Without this, the cycle keeps the
         // acceptor and its multi_op_ alive after the caller takes the fd,
         // which LeakSanitizer reports on process exit. Caller still owns
@@ -214,7 +281,7 @@ public:
             sched_->cancel_and_flush(fd_);
             drain_waiters_only();
             if (multi_op_)
-                multi_op_->impl_ptr.reset();
+                multi_op_->object_ref_.reset();
         }
         int fd          = fd_;
         fd_             = -1;
@@ -227,6 +294,35 @@ public:
         drain_waiters_only();
         if (fd_ >= 0)
             sched_->submit_cancel_by_fd(fd_);
+    }
+
+    /** Reset state for recycling.
+
+        `close()`/`release_socket()` already drove fd_, local_endpoint_,
+        and the waiter/ready-fd queues to empty before the refcount
+        reached zero, so those are asserted rather than re-cleared.
+        `closing_` and `arm_err_` are the two fields that are NOT reset
+        by that close path (closing_ is only ever cleared by a re-listen
+        on a still-live acceptor, not by close) and must be explicitly
+        reset here or the next session would see this impl as still
+        shutting down. `multi_op_` is freed by `retire()` rather
+        than kept, so a fresh one is allocated the next time this impl
+        starts a multishot arming — see its comment for why keeping it
+        across reuse would leave the new session un-armed.
+
+        @pre refs_ == 0, fd closed, no op or waiter in flight,
+        multi_op_ already freed.
+    */
+    void reuse() noexcept
+    {
+        BOOST_COROSIO_ASSERT(fd_ == -1);
+        BOOST_COROSIO_ASSERT(local_endpoint_ == Endpoint{});
+        BOOST_COROSIO_ASSERT(ready_fds_.empty());
+        BOOST_COROSIO_ASSERT(waiters_.empty());
+        BOOST_COROSIO_ASSERT(read_wait_ == nullptr);
+        BOOST_COROSIO_ASSERT(!multi_op_);
+        closing_ = false;
+        arm_err_ = 0;
     }
 
     /// Drain queued waiters with operation_aborted but do NOT submit
@@ -422,7 +518,7 @@ public:
         sched_->retire_op(
             multi_op_, [this](uring_multi_accept_op& op) noexcept {
                 std::lock_guard lk(mutex_);
-                op.impl_ptr.reset();
+                op.object_ref_.reset();
                 op.acceptor_impl = nullptr;
                 op.on_cqe        = nullptr;
                 op.retire_func   = &uring_multi_accept_op::do_retired_cqe;
@@ -523,13 +619,13 @@ public:
             multi_op_->listen_fd = fd_;
             multi_op_->acceptor_impl = this;
             multi_op_->on_cqe   = &uring_multishot_acceptor_base::on_accept_cqe;
-            multi_op_->impl_ptr = this->shared_from_this();
+            multi_op_->object_ref_ = detail::object_ref(this);
         }
         else
         {
             // Reuse the existing op (re-arm path). Reset peer scratch
             // so the kernel writes into a clean slot. listen_fd and
-            // impl_ptr are re-seeded so the op can never carry state
+            // object_ref_ are re-seeded so the op can never carry state
             // from an arming that has since been torn down. `res` is
             // one of those: an arming that failed to submit left
             // -EAGAIN there, and the reader of `res` cannot tell a
@@ -538,7 +634,7 @@ public:
             multi_op_->peer_len     = sizeof(sockaddr_storage);
             multi_op_->res          = 0;
             multi_op_->listen_fd    = fd_;
-            multi_op_->impl_ptr     = this->shared_from_this();
+            multi_op_->object_ref_  = detail::object_ref(this);
         }
 
         auto* op = multi_op_.get();
@@ -933,19 +1029,23 @@ protected:
             // Re-arm: kernel terminated multishot non-fatally.
             struct rearm_op final : scheduler_op
             {
-                std::shared_ptr<Derived> self_;
+                detail::object_ref self_ref_;
+                Derived* self_;
                 std::uint64_t generation_;
                 rearm_op(
-                    std::shared_ptr<Derived> s,
+                    detail::object_ref ref,
+                    Derived* self,
                     std::uint64_t generation) noexcept
-                    : self_(std::move(s))
+                    : self_ref_(std::move(ref))
+                    , self_(self)
                     , generation_(generation)
                 {
                 }
 
                 void operator()() override
                 {
-                    auto self       = std::move(self_);
+                    auto self_ref   = std::move(self_ref_);
+                    auto* self      = self_;
                     auto generation = generation_;
                     delete this;
                     {
@@ -972,15 +1072,26 @@ protected:
             };
             // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — CQE handler re-arm: noexcept, OOM => std::terminate is the intended behavior
             sched_->post(new rearm_op(
-                this->shared_from_this(),
+                detail::object_ref(this),
+                static_cast<Derived*>(this),
                 arm_generation_.load(std::memory_order_acquire)));
         }
     }
 };
 
-template<class Derived, class ImplBase, class Endpoint, class PeerService>
+template<
+    class Derived,
+    class ImplBase,
+    class Endpoint,
+    class PeerService,
+    class AcceptorService>
 inline void
-uring_multishot_acceptor_base<Derived, ImplBase, Endpoint, PeerService>::
+uring_multishot_acceptor_base<
+    Derived,
+    ImplBase,
+    Endpoint,
+    PeerService,
+    AcceptorService>::
     waiter_canceller::operator()() const noexcept
 {
     if (w->cancelled.exchange(true, std::memory_order_acq_rel))

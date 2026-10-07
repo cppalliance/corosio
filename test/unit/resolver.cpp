@@ -1297,7 +1297,7 @@ struct resolver_test
     // Forward resolution on IOCP dispatches through GetAddrInfoExW and
     // posts its completion (resolve_op, embedded in the win_resolver) to
     // the scheduler queue. Unlike the reverse path and both POSIX paths,
-    // the forward op takes no shared_from_this()/impl_ptr keepalive, so
+    // the forward op takes no object_ref_ keepalive, so
     // destroying the resolver frees the win_resolver the queued
     // resolve_op lives in before teardown drains that op -- a
     // use-after-free that ASan catches. localhost resolves from the hosts
@@ -1310,7 +1310,7 @@ struct resolver_test
     // only under ASan; without a sanitizer the freed read is silent.
     //
     // Contrast the reverse path, which holds the keepalive on
-    // reverse_op_.impl_ptr across the queued completion
+    // reverse_op_.object_ref_ across the queued completion
     // (win_resolver_service.hpp do_reverse_resolve_work / do_complete),
     // and so survives teardown intact.
     void testDestroyWithForwardResolveQueued()

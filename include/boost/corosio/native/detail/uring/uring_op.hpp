@@ -33,7 +33,7 @@ namespace boost::corosio::detail {
 
     `coro_op` supplies the fields common to both proactor backends
     (coroutine handle, executor, output pointers, stop_token wiring,
-    impl_ptr keepalive). This type adds the CQE result (`res`/`cqe_flags`),
+    object_ref_ keepalive). This type adds the CQE result (`res`/`cqe_flags`),
     the ring-cancel visibility flag (`sqe_set`), and the two function
     pointers the run loop uses to prep an SQE and dispatch a CQE without
     template instantiation.

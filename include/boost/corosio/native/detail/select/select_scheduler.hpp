@@ -225,7 +225,7 @@ select_scheduler::register_descriptor(
 
     {
         conditionally_enabled_mutex::scoped_lock lock(desc->mutex);
-        desc->impl_ref_.reset();
+        desc->object_ref_.reset();
         desc->read_ready  = false;
         desc->write_ready = false;
     }

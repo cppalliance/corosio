@@ -15,6 +15,7 @@
 #if BOOST_COROSIO_HAS_URING
 
 #include <boost/corosio/detail/file_service.hpp>
+#include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/native/detail/uring/uring_file_ops.hpp>
 #include <boost/corosio/native/detail/uring/uring_file_service_base.hpp>
@@ -62,13 +63,13 @@ class uring_stream_file_service;
 */
 class BOOST_COROSIO_DECL uring_stream_file final
     : public stream_file::implementation
-    , public std::enable_shared_from_this<uring_stream_file>
     , public intrusive_list<uring_stream_file>::node
 {
     friend class uring_stream_file_service;
 
-    int fd_                 = -1;
-    uring_scheduler* sched_ = nullptr;
+    int fd_                         = -1;
+    uring_scheduler* sched_         = nullptr;
+    uring_stream_file_service* svc_ = nullptr;
 
     // Per-fd op slots — embedded to eliminate per-call heap allocation.
     // Single-pending invariant per slot.
@@ -76,13 +77,36 @@ class BOOST_COROSIO_DECL uring_stream_file final
     uring_file_write_op wr_;
 
 public:
-    explicit uring_stream_file(uring_scheduler& sched) noexcept : sched_(&sched)
+    explicit uring_stream_file(
+        uring_stream_file_service& svc, uring_scheduler& sched) noexcept
+        : sched_(&sched)
+        , svc_(&svc)
     {
     }
 
     ~uring_stream_file() override
     {
         close_file();
+    }
+
+    /// Recycle into the owning service's pool. Defined out-of-line
+    /// after uring_stream_file_service for its complete type.
+    void retire() noexcept override;
+
+    /** Reset op slots for recycling.
+
+        `close_file()` already drove fd_ to its closed value before the
+        refcount reached zero; each op's own `prepare()` overwrites its
+        state before the next use, so only the `stop_cb` invariant is
+        worth asserting here.
+
+        @pre refs_ == 0, fd closed, no op in flight.
+    */
+    void reuse() noexcept
+    {
+        BOOST_COROSIO_ASSERT(fd_ == -1);
+        BOOST_COROSIO_ASSERT(!rd_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wr_.stop_cb);
     }
 
     // -- io_stream::implementation --
@@ -252,7 +276,7 @@ uring_stream_file::read_some(
     std::size_t* bytes)
 {
     rd_.prepare(
-        h, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_, shared_from_this(),
+        h, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_, detail::object_ref(this),
         buffers, token);
     sched_->work_started();
 
@@ -287,7 +311,7 @@ uring_stream_file::write_some(
     std::size_t* bytes)
 {
     wr_.prepare(
-        h, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_, shared_from_this(),
+        h, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_, detail::object_ref(this),
         buffers, token);
     sched_->work_started();
 
@@ -346,6 +370,12 @@ public:
         return static_cast<uring_stream_file&>(impl).open_file(path, mode);
     }
 };
+
+inline void
+uring_stream_file::retire() noexcept
+{
+    svc_->pool_.recycle(this);
+}
 
 } // namespace boost::corosio::detail
 

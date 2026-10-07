@@ -17,11 +17,12 @@
 #include <boost/corosio/native/detail/posix/posix_random_access_file.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_scheduler.hpp>
 #include <boost/corosio/detail/random_access_file_service.hpp>
+#include <boost/corosio/detail/object_pool.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/detail/thread_pool.hpp>
 
 #include <limits>
-#include <mutex>
-#include <unordered_map>
+#include <vector>
 
 namespace boost::corosio::detail {
 
@@ -29,6 +30,8 @@ namespace boost::corosio::detail {
 class BOOST_COROSIO_DECL posix_random_access_file_service final
     : public random_access_file_service
 {
+    friend class posix_random_access_file;
+
 public:
     explicit posix_random_access_file_service(capy::execution_context& ctx)
         : sched_(&get_scheduler(ctx))
@@ -45,16 +48,7 @@ public:
 
     io_object::implementation* construct() override
     {
-        auto ptr   = std::make_shared<posix_random_access_file>(*this);
-        auto* impl = ptr.get();
-
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            file_list_.push_back(impl);
-            file_ptrs_[impl] = std::move(ptr);
-        }
-
-        return impl;
+        return object_pool_.acquire(*this);
     }
 
     void destroy(io_object::implementation* p) override
@@ -62,7 +56,7 @@ public:
         auto& impl = static_cast<posix_random_access_file&>(*p);
         impl.cancel();
         impl.close_file();
-        destroy_impl(impl);
+        release(&impl);
     }
 
     void close(io_object::handle& h) override
@@ -90,21 +84,24 @@ public:
 
     void shutdown() override
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (auto* impl = file_list_.pop_front(); impl != nullptr;
-             impl       = file_list_.pop_front())
+        // See uring_socket_service_base::shutdown(): snapshot under an
+        // acquired reference, cancel+close without the pool lock held;
+        // shutdown() sets shutting-down and takes the snapshot in one
+        // critical section, so a close that drops the last ref deletes
+        // rather than recycles.
+        std::vector<posix_random_access_file*> live;
+        object_pool_.shutdown(
+            [&](posix_random_access_file* f)
+            {
+                acquire(f);
+                live.push_back(f);
+            });
+        for (auto* f : live)
         {
-            impl->cancel();
-            impl->close_file();
+            f->cancel();
+            f->close_file();
+            release(f);
         }
-        file_ptrs_.clear();
-    }
-
-    void destroy_impl(posix_random_access_file& impl)
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        file_list_.remove(&impl);
-        file_ptrs_.erase(&impl);
     }
 
     void post(scheduler_op* op)
@@ -143,12 +140,7 @@ public:
 private:
     scheduler* sched_;
     thread_pool_ref pool_;
-    std::mutex mutex_;
-    intrusive_list<posix_random_access_file> file_list_;
-    std::unordered_map<
-        posix_random_access_file*,
-        std::shared_ptr<posix_random_access_file>>
-        file_ptrs_;
+    object_pool<posix_random_access_file> object_pool_;
 };
 
 // ---------------------------------------------------------------------------
@@ -194,12 +186,12 @@ posix_random_access_file::read_some_at(
         op->iovecs[i].iov_len  = bufs[i].size();
     }
 
-    op->h         = h;
-    op->ex        = ex;
-    op->ec_out    = ec;
-    op->bytes_out = bytes_out;
-    op->file_     = this;
-    op->impl_ptr  = this->shared_from_this();
+    op->h           = h;
+    op->ex          = ex;
+    op->ec_out      = ec;
+    op->bytes_out   = bytes_out;
+    op->file_       = this;
+    op->object_ref_ = detail::object_ref(this);
     op->start(token);
 
     op->ex.on_work_started();
@@ -265,12 +257,12 @@ posix_random_access_file::write_some_at(
         op->iovecs[i].iov_len  = bufs[i].size();
     }
 
-    op->h         = h;
-    op->ex        = ex;
-    op->ec_out    = ec;
-    op->bytes_out = bytes_out;
-    op->file_     = this;
-    op->impl_ptr  = this->shared_from_this();
+    op->h           = h;
+    op->ex          = ex;
+    op->ec_out      = ec;
+    op->bytes_out   = bytes_out;
+    op->file_       = this;
+    op->object_ref_ = detail::object_ref(this);
     op->start(token);
 
     op->ex.on_work_started();
@@ -354,6 +346,12 @@ posix_random_access_file::raf_op::do_work(pool_work_item* w) noexcept
     }
 
     self->svc_.post(static_cast<scheduler_op*>(op));
+}
+
+inline void
+posix_random_access_file::retire() noexcept
+{
+    svc_.object_pool_.recycle(this);
 }
 
 } // namespace boost::corosio::detail

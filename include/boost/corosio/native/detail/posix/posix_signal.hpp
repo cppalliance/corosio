@@ -123,6 +123,31 @@ class posix_signal final
 public:
     explicit posix_signal(posix_signal_service& svc) noexcept;
 
+    /// Recycle into the owning service's pool. Defined out-of-line
+    /// after posix_signal_service for its complete type.
+    void retire() noexcept override;
+
+    /** Reset for recycling.
+
+        `destroy()` already calls `clear()` (empties the registration
+        list) and `disarm_stop()` before the refcount reaches zero, so
+        those are asserted rather than re-cleared. `destroy()` also
+        calls `cancel()`, which deliberately latches `cancelled_` to
+        abort any wait still unwinding — that latch is this object's
+        to clear for its next, unrelated use, not something reset()
+        can skip by asserting it already false.
+
+        @pre refs_ == 0, registration list empty, no wait in flight.
+    */
+    void reuse() noexcept
+    {
+        BOOST_COROSIO_ASSERT(signals_ == nullptr);
+        BOOST_COROSIO_ASSERT(!waiting_);
+        BOOST_COROSIO_ASSERT(!stop_cb_);
+        cancelled_       = false;
+        token_cancelled_ = false;
+    }
+
     std::coroutine_handle<> wait(
         std::coroutine_handle<>,
         capy::executor_ref,

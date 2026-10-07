@@ -11,12 +11,12 @@
 #define BOOST_COROSIO_NATIVE_DETAIL_REACTOR_REACTOR_SOCKET_SERVICE_HPP
 
 #include <boost/corosio/io/io_object.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_service_state.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
 #include <memory>
-#include <mutex>
 
 namespace boost::corosio::detail {
 
@@ -36,6 +36,15 @@ template<class Derived, class ServiceBase, class Scheduler, class Impl>
 class reactor_socket_service : public ServiceBase
 {
     friend Derived;
+
+    // The intermediate CRTP templates below (not Impl itself) are what
+    // actually reach into state_->pool_ from retire() -- see
+    // reactor_socket_finals.hpp.
+    template<class, class, class, class, class, class>
+    friend class reactor_stream_socket_impl;
+    template<class, class, class, class, class, class>
+    friend class reactor_dgram_socket_impl;
+
     using state_type = reactor_service_state<Scheduler, Impl>;
 
 protected:
@@ -52,33 +61,23 @@ public:
 
     void shutdown() override
     {
-        std::lock_guard lock(state_->mutex_);
+        state_->pool_.shutdown(
+            [this](Impl* impl)
+            {
+                static_cast<Derived*>(this)->pre_shutdown(impl);
+                impl->close_socket();
+            });
 
-        while (auto* impl = state_->impl_list_.pop_front())
-        {
-            static_cast<Derived*>(this)->pre_shutdown(impl);
-            impl->close_socket();
-        }
-
-        // Don't clear impl_ptrs_ here. The scheduler shuts down after us
-        // and drains completed_ops_, calling destroy() on each queued op.
-        // Letting ~state_ release the ptrs (during service destruction,
-        // after scheduler shutdown) keeps every impl alive until all ops
-        // have been drained.
+        // Queued ops still hold references (their own object_ref copy);
+        // the scheduler shuts down after us and drains completed_ops_,
+        // each op's destroy() releasing its reference. Shutting-down
+        // mode makes that final release() delete instead of recycle,
+        // so every impl stays alive until its ops are gone, then frees.
     }
 
     io_object::implementation* construct() override
     {
-        auto impl = std::make_shared<Impl>(static_cast<Derived&>(*this));
-        auto* raw = impl.get();
-
-        {
-            std::lock_guard lock(state_->mutex_);
-            state_->impl_ptrs_.emplace(raw, std::move(impl));
-            state_->impl_list_.push_back(raw);
-        }
-
-        return raw;
+        return state_->pool_.acquire(static_cast<Derived&>(*this));
     }
 
     void destroy(io_object::implementation* impl) override
@@ -86,9 +85,7 @@ public:
         auto* typed = static_cast<Impl*>(impl);
         static_cast<Derived*>(this)->pre_destroy(typed);
         typed->close_socket();
-        std::lock_guard lock(state_->mutex_);
-        state_->impl_list_.remove(typed);
-        state_->impl_ptrs_.erase(typed);
+        release(typed);
     }
 
     void close(io_object::handle& h) override

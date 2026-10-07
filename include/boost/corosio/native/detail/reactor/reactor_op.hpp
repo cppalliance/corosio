@@ -38,7 +38,7 @@ namespace boost::corosio::detail {
     impl pointers.
 
     Fields shared across all backends (errn, bytes_transferred,
-    cancelled, impl_ptr, perform_io, complete) live in
+    cancelled, object_ref_, perform_io, complete) live in
     reactor_op_base so the scheduler and descriptor_state can
     access them without template instantiation.
 
@@ -49,7 +49,7 @@ template<class Socket, class Acceptor>
 struct reactor_op : reactor_op_base
 {
     // The op envelope — coroutine handle h, cont, executor ex, ec_out,
-    // bytes_out, cancelled, stop_cb (+ its canceller), impl_ptr — lives in
+    // bytes_out, cancelled, stop_cb (+ its canceller), object_ref_ — lives in
     // coro_op (via reactor_op_base) and is shared with io_uring/IOCP.
     // reactor_op adds only the reactor-specific routing state below.
 
@@ -71,7 +71,7 @@ struct reactor_op : reactor_op_base
         errn              = 0;
         bytes_transferred = 0;
         cancelled.store(false, std::memory_order_relaxed);
-        impl_ptr.reset();
+        object_ref_.reset();
         socket_impl_   = nullptr;
         acceptor_impl_ = nullptr;
     }

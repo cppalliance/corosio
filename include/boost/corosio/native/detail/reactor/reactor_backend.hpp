@@ -128,14 +128,14 @@ reactor_acceptor_impl<
         op.peer_storage = peer_storage;
         op.peer_addrlen = peer_addrlen;
         op.complete(0, 0);
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         this->svc_.post(&op);
         return std::noop_coroutine();
     }
 
     if (errno == EAGAIN || errno == EWOULDBLOCK)
     {
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         this->svc_.work_started();
 
         std::lock_guard lock(this->desc_state_.mutex);
@@ -162,7 +162,7 @@ reactor_acceptor_impl<
     }
 
     op.complete(errno, 0);
-    op.impl_ptr = this->shared_from_this();
+    op.object_ref_ = detail::object_ref(this);
     this->svc_.post(&op);
     return std::noop_coroutine();
 }

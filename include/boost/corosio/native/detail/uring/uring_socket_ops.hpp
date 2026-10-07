@@ -129,7 +129,7 @@ struct uring_read_op : uring_op
         std::size_t* bytes,
         int file_descriptor,
         uring_scheduler* scheduler,
-        std::shared_ptr<void> impl,
+        detail::object_ref impl,
         detail::speculative_state* spec,
         buffer_param buffers,
         std::stop_token const& token) noexcept
@@ -140,7 +140,7 @@ struct uring_read_op : uring_op
         bytes_out    = bytes;
         fd           = file_descriptor;
         sched_       = scheduler;
-        impl_ptr     = std::move(impl);
+        object_ref_  = std::move(impl);
         spec_state   = spec;
         res          = 0;
         cqe_flags    = 0;
@@ -227,7 +227,7 @@ struct uring_write_op : uring_op
         std::size_t* bytes,
         int file_descriptor,
         uring_scheduler* scheduler,
-        std::shared_ptr<void> impl,
+        detail::object_ref impl,
         detail::speculative_state* spec,
         buffer_param buffers,
         std::stop_token const& token) noexcept
@@ -238,7 +238,7 @@ struct uring_write_op : uring_op
         bytes_out    = bytes;
         fd           = file_descriptor;
         sched_       = scheduler;
-        impl_ptr     = std::move(impl);
+        object_ref_  = std::move(impl);
         spec_state   = spec;
         res          = 0;
         cqe_flags    = 0;
@@ -336,7 +336,7 @@ struct uring_connect_op : uring_op
         std::error_code* ec,
         int file_descriptor,
         uring_scheduler* scheduler,
-        std::shared_ptr<void> impl,
+        detail::object_ref impl,
         endpoint target,
         endpoint* remote_out,
         endpoint* local_out,
@@ -348,7 +348,7 @@ struct uring_connect_op : uring_op
         bytes_out           = nullptr;
         fd                  = file_descriptor;
         sched_              = scheduler;
-        impl_ptr            = std::move(impl);
+        object_ref_         = std::move(impl);
         res                 = 0;
         cqe_flags           = 0;
         target_endpoint     = target;
@@ -586,20 +586,20 @@ struct uring_wait_op : uring_op
         std::error_code* ec,
         int file_descriptor,
         uring_scheduler* scheduler,
-        std::shared_ptr<void> impl,
+        detail::object_ref impl,
         int flags,
         std::stop_token const& token) noexcept
     {
-        h          = handle;
-        ex         = executor;
-        ec_out     = ec;
-        bytes_out  = nullptr;
-        fd         = file_descriptor;
-        sched_     = scheduler;
-        impl_ptr   = std::move(impl);
-        poll_flags = flags;
-        res        = 0;
-        cqe_flags  = 0;
+        h           = handle;
+        ex          = executor;
+        ec_out      = ec;
+        bytes_out   = nullptr;
+        fd          = file_descriptor;
+        sched_      = scheduler;
+        object_ref_ = std::move(impl);
+        poll_flags  = flags;
+        res         = 0;
+        cqe_flags   = 0;
         start(token);
     }
 
@@ -691,7 +691,7 @@ struct uring_local_connect_op : uring_op
         std::error_code* ec,
         int file_descriptor,
         uring_scheduler* scheduler,
-        std::shared_ptr<void> impl,
+        detail::object_ref impl,
         corosio::local_endpoint target,
         corosio::local_endpoint* remote_out,
         corosio::local_endpoint* local_out,
@@ -703,7 +703,7 @@ struct uring_local_connect_op : uring_op
         bytes_out           = nullptr;
         fd                  = file_descriptor;
         sched_              = scheduler;
-        impl_ptr            = std::move(impl);
+        object_ref_         = std::move(impl);
         res                 = 0;
         cqe_flags           = 0;
         target_endpoint     = target;

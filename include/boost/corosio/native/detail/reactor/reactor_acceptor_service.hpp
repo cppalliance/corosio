@@ -11,12 +11,12 @@
 #define BOOST_COROSIO_NATIVE_DETAIL_REACTOR_REACTOR_ACCEPTOR_SERVICE_HPP
 
 #include <boost/corosio/io/io_object.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_service_state.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
 #include <memory>
-#include <mutex>
 
 namespace boost::corosio::detail {
 
@@ -45,6 +45,13 @@ template<
 class reactor_acceptor_service : public ServiceBase
 {
     friend Derived;
+
+    // The intermediate CRTP template below (not Impl itself) is what
+    // actually reaches into state_->pool_ from retire() -- see
+    // reactor_socket_finals.hpp.
+    template<class, class, class, class, class, class>
+    friend class reactor_acceptor_impl;
+
     using state_type = reactor_service_state<Scheduler, Impl>;
 
 protected:
@@ -62,31 +69,23 @@ public:
 
     void shutdown() override
     {
-        std::lock_guard lock(state_->mutex_);
+        state_->pool_.shutdown([](Impl* impl) { impl->close_socket(); });
 
-        while (auto* impl = state_->impl_list_.pop_front())
-            impl->close_socket();
+        // See reactor_socket_service::shutdown(): queued ops hold their
+        // own reference; the scheduler's drain releases them after us,
+        // and shutting-down mode deletes rather than recycles at zero.
     }
 
     io_object::implementation* construct() override
     {
-        auto impl = std::make_shared<Impl>(static_cast<Derived&>(*this));
-        auto* raw = impl.get();
-
-        std::lock_guard lock(state_->mutex_);
-        state_->impl_ptrs_.emplace(raw, std::move(impl));
-        state_->impl_list_.push_back(raw);
-
-        return raw;
+        return state_->pool_.acquire(static_cast<Derived&>(*this));
     }
 
     void destroy(io_object::implementation* impl) override
     {
         auto* typed = static_cast<Impl*>(impl);
         typed->close_socket();
-        std::lock_guard lock(state_->mutex_);
-        state_->impl_list_.remove(typed);
-        state_->impl_ptrs_.erase(typed);
+        release(typed);
     }
 
     void close(io_object::handle& h) override

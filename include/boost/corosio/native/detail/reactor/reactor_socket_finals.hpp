@@ -87,6 +87,12 @@ public:
 
     ~reactor_stream_socket_impl() override = default;
 
+    /// Recycle into the owning service's pool at zero references.
+    void retire() noexcept override
+    {
+        this->svc_.state_->pool_.recycle(static_cast<Derived*>(this));
+    }
+
     std::error_code set_option(
         int level,
         int optname,
@@ -151,6 +157,12 @@ public:
     using impl_base_type = ImplBase;
 
     ~reactor_dgram_socket_impl() override = default;
+
+    /// Recycle into the owning service's pool at zero references.
+    void retire() noexcept override
+    {
+        this->svc_.state_->pool_.recycle(static_cast<Derived*>(this));
+    }
 };
 
 // ============================================================
@@ -196,6 +208,12 @@ public:
     using impl_base_type = AccImplBase;
 
     ~reactor_acceptor_impl() override = default;
+
+    /// Recycle into the owning service's pool at zero references.
+    void retire() noexcept override
+    {
+        this->svc_.state_->pool_.recycle(static_cast<Derived*>(this));
+    }
 
     std::coroutine_handle<> accept(
         std::coroutine_handle<>,

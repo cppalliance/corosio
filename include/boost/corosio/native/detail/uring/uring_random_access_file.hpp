@@ -15,6 +15,7 @@
 #if BOOST_COROSIO_HAS_URING
 
 #include <boost/corosio/detail/random_access_file_service.hpp>
+#include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/native/detail/uring/uring_file_ops.hpp>
 #include <boost/corosio/native/detail/uring/uring_file_service_base.hpp>
@@ -54,13 +55,13 @@ class uring_random_access_file_service;
 */
 class BOOST_COROSIO_DECL uring_random_access_file final
     : public random_access_file::implementation
-    , public std::enable_shared_from_this<uring_random_access_file>
     , public intrusive_list<uring_random_access_file>::node
 {
     friend class uring_random_access_file_service;
 
-    int fd_                 = -1;
-    uring_scheduler* sched_ = nullptr;
+    int fd_                               = -1;
+    uring_scheduler* sched_               = nullptr;
+    uring_random_access_file_service* svc_ = nullptr;
 
     // Random-access files legitimately support concurrent ops at
     // different offsets on the same fd (e.g. parallel reads in
@@ -68,14 +69,35 @@ class BOOST_COROSIO_DECL uring_random_access_file final
     // state across calls; ops are heap-allocated per submission.
 
 public:
-    explicit uring_random_access_file(uring_scheduler& sched) noexcept
+    explicit uring_random_access_file(
+        uring_random_access_file_service& svc,
+        uring_scheduler& sched) noexcept
         : sched_(&sched)
+        , svc_(&svc)
     {
     }
 
     ~uring_random_access_file() override
     {
         close_file();
+    }
+
+    /// Recycle into the owning service's pool. Defined out-of-line
+    /// after uring_random_access_file_service for its complete type.
+    void retire() noexcept override;
+
+    /** Reset for recycling.
+
+        `close_file()` already drove fd_ to its closed value before the
+        refcount reached zero; every op is heap-allocated per submission
+        and owns its own `stop_cb`/`object_ref` lifetime, so there is no
+        embedded op state to assert here.
+
+        @pre refs_ == 0, fd closed, no op in flight.
+    */
+    void reuse() noexcept
+    {
+        BOOST_COROSIO_ASSERT(fd_ == -1);
     }
 
     // -- random_access_file::implementation --
@@ -231,7 +253,7 @@ uring_random_access_file::read_some_at(
     auto op_guard = std::make_unique<uring_random_access_read_op>();
     op_guard->prepare(
         h, ex, ec, bytes, fd_, static_cast<std::int64_t>(user_offset), sched_,
-        shared_from_this(), buffers, token);
+        detail::object_ref(this), buffers, token);
     sched_->work_started();
 
     // Closed-object contract outranks the zero-length no-op.
@@ -269,7 +291,7 @@ uring_random_access_file::write_some_at(
     auto op_guard = std::make_unique<uring_random_access_write_op>();
     op_guard->prepare(
         h, ex, ec, bytes, fd_, static_cast<std::int64_t>(user_offset), sched_,
-        shared_from_this(), buffers, token);
+        detail::object_ref(this), buffers, token);
     sched_->work_started();
 
     // Closed-object contract outranks the zero-length no-op.
@@ -331,6 +353,12 @@ public:
             path, mode);
     }
 };
+
+inline void
+uring_random_access_file::retire() noexcept
+{
+    svc_->pool_.recycle(this);
+}
 
 } // namespace boost::corosio::detail
 
