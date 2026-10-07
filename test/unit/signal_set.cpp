@@ -680,6 +680,32 @@ struct signal_set_test
         BOOST_TEST_PASS();
     }
 
+    // A wait still parked when its context is torn down is abandoned,
+    // not resumed, even when a frame destroyed during the teardown owns
+    // the set and its destructor cancels the wait. Only IOCP can fail
+    // this: it resumes a cancelled wait inline, where POSIX posts it to a
+    // scheduler that has already drained.
+    void testTeardownDoesNotResumeParkedWait()
+    {
+        bool resumed = false;
+        {
+            io_context ioc(Backend);
+            auto owner = [](io_context& c, bool& r) -> capy::task<> {
+                signal_set s(c, SIGINT);
+                capy::run_async(c.get_executor())(
+                    [](signal_set& set, bool& out) -> capy::task<> {
+                        std::ignore = co_await set.wait();
+                        out         = true;
+                    }(s, r));
+                std::ignore = co_await corosio::delay(std::chrono::hours(1));
+            };
+            capy::run_async(ioc.get_executor())(owner(ioc, resumed));
+            std::ignore = ioc.poll(); // owner parks on the delay, waiter on s
+            BOOST_TEST(!resumed);
+        }
+        BOOST_TEST(!resumed);
+    }
+
     // The process signal table outlives every io_context, so a set still
     // registered when its context shuts down -- which an abandoned frame
     // is the only way to arrange -- has to hand the registration back
@@ -1473,6 +1499,7 @@ struct signal_set_test
 #if !COROSIO_TEST_HAS_ASAN
         // Abandon parked coroutine frames by design; see context.hpp.
         testShutdownReleasesRegistration();
+        testTeardownDoesNotResumeParkedWait();
         testShutdownKeepsOtherContextRegistered();
 #endif
     }

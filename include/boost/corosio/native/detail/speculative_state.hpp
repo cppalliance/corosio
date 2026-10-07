@@ -109,6 +109,20 @@ public:
     {
         try_write_.store(true, std::memory_order_relaxed);
     }
+
+    /** Restore the default, fully-speculative state.
+
+        The learned hint is scoped to one logical connection; a recycled
+        socket starts a new one and should not inherit the prior
+        connection's streak or perma-off latch.
+    */
+    void reset() noexcept
+    {
+        try_read_.store(true, std::memory_order_relaxed);
+        try_write_.store(true, std::memory_order_relaxed);
+        read_eagain_streak_.store(0, std::memory_order_relaxed);
+        perma_off_read_.store(false, std::memory_order_relaxed);
+    }
 };
 
 } // namespace boost::corosio::detail

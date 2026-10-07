@@ -69,6 +69,18 @@ public:
         return head_;
     }
 
+    void push_front(T* w) noexcept
+    {
+        auto* n  = static_cast<node*>(w);
+        n->prev_ = nullptr;
+        n->next_ = head_;
+        if (head_)
+            static_cast<node*>(head_)->prev_ = w;
+        else
+            tail_ = w;
+        head_ = w;
+    }
+
     void push_back(T* w) noexcept
     {
         auto* n  = static_cast<node*>(w);
@@ -118,12 +130,33 @@ public:
         return w;
     }
 
-    void remove(T* w) noexcept
+    /** Unlink @p w if it is a member of this list.
+
+        @pre @p w is either a genuine member of `*this` list, or is
+        fully detached (not linked in *any* `intrusive_list<T>`,
+        including a different instance over the same `T`). This is
+        not a membership test: `T::node` holds one shared `next_`/
+        `prev_` pair regardless of which list currently owns it, so a
+        node actually linked in a different list looks "not detached"
+        here and would be spliced out using *this* list's `head_`/
+        `tail_` for the boundary cases — corrupting both lists. A
+        caller that cannot rule that out needs its own bookkeeping
+        (e.g. a flag for which list currently owns the node) before
+        calling this.
+
+        @return True if @p w was linked in and has now been removed;
+        false if it was already detached (e.g. a reentrant call from
+        a self-referential keepalive dropping during the same
+        teardown that already popped it elsewhere). Callers that gate
+        a one-time action (recycling, deleting) on actually having
+        removed something rely on this to make that action idempotent.
+    */
+    bool remove(T* w) noexcept
     {
         auto* n = static_cast<node*>(w);
         // Already detached — nothing to do.
         if (!n->next_ && !n->prev_ && head_ != w && tail_ != w)
-            return;
+            return false;
         if (n->prev_)
             static_cast<node*>(n->prev_)->next_ = n->next_;
         else
@@ -134,6 +167,7 @@ public:
             tail_ = n->prev_;
         n->next_ = nullptr;
         n->prev_ = nullptr;
+        return true;
     }
 
     /// Invoke @p f for each element in the list.

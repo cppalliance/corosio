@@ -43,8 +43,7 @@ class BOOST_COROSIO_DECL win_local_stream_acceptor_service final
     : public local_stream_acceptor_service
 {
 public:
-    explicit win_local_stream_acceptor_service(
-        capy::execution_context& ctx);
+    explicit win_local_stream_acceptor_service(capy::execution_context& ctx);
 
     io_object::implementation* construct() override;
 
@@ -79,8 +78,10 @@ private:
 // local_stream_accept_op
 // ============================================================
 
-inline local_stream_accept_op::local_stream_accept_op() noexcept
+inline local_stream_accept_op::local_stream_accept_op(
+    win_local_stream_acceptor& acceptor_) noexcept
     : overlapped_op(&do_complete)
+    , acceptor(acceptor_)
 {
     cancel_func_ = &do_cancel_impl;
 }
@@ -95,8 +96,10 @@ local_stream_accept_op::do_cancel_impl(overlapped_op* base) noexcept
     }
 }
 
-inline local_stream_acceptor_wait_op::local_stream_acceptor_wait_op() noexcept
+inline local_stream_acceptor_wait_op::local_stream_acceptor_wait_op(
+    win_local_stream_acceptor& acceptor_) noexcept
     : overlapped_op(&do_complete)
+    , acceptor(acceptor_)
 {
     cancel_func_ = &do_cancel_impl;
 }
@@ -110,10 +113,7 @@ local_stream_acceptor_wait_op::do_cancel_impl(overlapped_op* base) noexcept
     {
         ::CancelIoEx(reinterpret_cast<HANDLE>(op->listen_socket), op);
     }
-    if (op->acceptor_ptr)
-    {
-        op->acceptor_ptr->socket_service().scheduler().cancel_wait(op);
-    }
+    op->acceptor.socket_service().scheduler().cancel_wait(op);
 }
 
 // accept_op completion handler
@@ -137,12 +137,12 @@ local_stream_accept_op::do_complete(
 
         if (op->peer_wrapper)
         {
-            op->peer_wrapper->close_internal();
+            op->acceptor.socket_service().destroy(op->peer_wrapper);
             op->peer_wrapper = nullptr;
         }
 
         op->cleanup_only();
-        op->acceptor_ptr.reset();
+        op->object_ref_.reset();
         return;
     }
 
@@ -167,7 +167,7 @@ local_stream_accept_op::do_complete(
             op->accepted_socket, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT,
             reinterpret_cast<char*>(&op->listen_socket), sizeof(SOCKET));
 
-        op->peer_wrapper->get_internal()->set_socket(op->accepted_socket);
+        op->peer_wrapper->set_socket(op->accepted_socket);
 
         sockaddr_storage local_storage{};
         int local_len = sizeof(local_storage);
@@ -186,11 +186,14 @@ local_stream_accept_op::do_complete(
             remote_ep = from_sockaddr_local(
                 remote_storage, static_cast<socklen_t>(remote_len));
 
-        op->peer_wrapper->get_internal()->set_endpoints(local_ep, remote_ep);
+        op->peer_wrapper->set_endpoints(local_ep, remote_ep);
         op->accepted_socket = INVALID_SOCKET;
 
         if (op->impl_out)
             *op->impl_out = op->peer_wrapper;
+        // Handed off to the caller: don't let a failed early return on
+        // the next accept() see this (now user-owned) pointer again.
+        op->peer_wrapper = nullptr;
     }
     else
     {
@@ -202,7 +205,7 @@ local_stream_accept_op::do_complete(
 
         if (op->peer_wrapper)
         {
-            op->acceptor_ptr->socket_service().destroy(op->peer_wrapper);
+            op->acceptor.socket_service().destroy(op->peer_wrapper);
             op->peer_wrapper = nullptr;
         }
 
@@ -212,7 +215,7 @@ local_stream_accept_op::do_complete(
 
     op->cont.h                         = op->h;
     auto saved_ex                      = op->ex;
-    auto prevent_premature_destruction = std::move(op->acceptor_ptr);
+    auto prevent_premature_destruction = std::move(op->object_ref_);
 
     dispatch_coro(saved_ex, op->cont).resume();
 }
@@ -229,62 +232,70 @@ local_stream_acceptor_wait_op::do_complete(
     if (!owner)
     {
         op->cleanup_only();
-        op->acceptor_ptr.reset();
+        op->object_ref_.reset();
         return;
     }
 
-    auto prevent_premature_destruction = std::move(op->acceptor_ptr);
+    auto prevent_premature_destruction = std::move(op->object_ref_);
     op->invoke_handler();
 }
 
 // ============================================================
-// win_local_stream_acceptor_internal
+// win_local_stream_acceptor
 // ============================================================
 
-inline win_local_stream_acceptor_internal::win_local_stream_acceptor_internal(
+inline win_local_stream_acceptor::win_local_stream_acceptor(
     win_local_stream_service& svc) noexcept
     : svc_(svc)
+    , acc_(*this)
+    , wt_(*this)
 {
 }
 
-inline win_local_stream_acceptor_internal::~win_local_stream_acceptor_internal()
+inline void
+win_local_stream_acceptor::reuse() noexcept
 {
-    svc_.unregister_acceptor_impl(*this);
+    BOOST_COROSIO_ASSERT(socket_ == INVALID_SOCKET);
+    BOOST_COROSIO_ASSERT(local_endpoint_ == corosio::local_endpoint{});
+    BOOST_COROSIO_ASSERT(!acc_.stop_cb);
+    BOOST_COROSIO_ASSERT(!wt_.stop_cb);
+    BOOST_COROSIO_ASSERT(acc_.peer_wrapper == nullptr);
+    BOOST_COROSIO_ASSERT(acc_.accepted_socket == INVALID_SOCKET);
 }
 
 inline win_local_stream_service&
-win_local_stream_acceptor_internal::socket_service() noexcept
+win_local_stream_acceptor::socket_service() noexcept
 {
     return svc_;
 }
 
-inline SOCKET
-win_local_stream_acceptor_internal::native_handle() const noexcept
+inline native_handle_type
+win_local_stream_acceptor::native_handle() const noexcept
 {
-    return socket_;
+    return static_cast<native_handle_type>(socket_);
 }
 
 inline corosio::local_endpoint
-win_local_stream_acceptor_internal::local_endpoint() const noexcept
+win_local_stream_acceptor::local_endpoint() const noexcept
 {
     return local_endpoint_;
 }
 
 inline bool
-win_local_stream_acceptor_internal::is_open() const noexcept
+win_local_stream_acceptor::is_open() const noexcept
 {
     return socket_ != INVALID_SOCKET;
 }
 
 inline void
-win_local_stream_acceptor_internal::set_local_endpoint(
+win_local_stream_acceptor::set_local_endpoint(
     corosio::local_endpoint ep) noexcept
 {
     local_endpoint_ = ep;
 }
 
 inline void
-win_local_stream_acceptor_internal::cancel() noexcept
+win_local_stream_acceptor::cancel() noexcept
 {
     if (socket_ != INVALID_SOCKET)
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
@@ -294,14 +305,14 @@ win_local_stream_acceptor_internal::cancel() noexcept
 }
 
 inline std::coroutine_handle<>
-win_local_stream_acceptor_internal::wait(
+win_local_stream_acceptor::wait(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     wait_type w,
     std::stop_token token,
     std::error_code* ec)
 {
-    wt_.acceptor_ptr  = shared_from_this();
+    wt_.object_ref_   = detail::object_ref(this);
     wt_.listen_socket = socket_;
 
     auto& op = wt_;
@@ -337,7 +348,7 @@ win_local_stream_acceptor_internal::wait(
 }
 
 inline void
-win_local_stream_acceptor_internal::close_socket() noexcept
+win_local_stream_acceptor::close_socket() noexcept
 {
     // Flag the accept op cancelled before closing so a closesocket-delivered
     // ERROR_NETNAME_DELETED is short-circuited to canceled rather than mapped
@@ -356,26 +367,33 @@ win_local_stream_acceptor_internal::close_socket() noexcept
 }
 
 inline std::coroutine_handle<>
-win_local_stream_acceptor_internal::accept(
+win_local_stream_acceptor::accept(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     std::stop_token token,
     std::error_code* ec,
     io_object::implementation** impl_out)
 {
-    acc_.acceptor_ptr = shared_from_this();
+    acc_.object_ref_ = detail::object_ref(this);
 
     auto& op = acc_;
     op.reset();
-    op.h        = h;
-    op.ex       = d;
-    op.ec_out   = ec;
-    op.impl_out = impl_out;
+    // reset() doesn't touch these -- a value left over from a prior
+    // accept() (e.g. the socket already handed to the user via
+    // *impl_out) must not survive into a completion this call fails
+    // before reassigning; do_complete's failure branch would destroy()
+    // whatever stale pointer it finds here.
+    op.peer_wrapper    = nullptr;
+    op.accepted_socket = INVALID_SOCKET;
+    op.h               = h;
+    op.ex              = d;
+    op.ec_out          = ec;
+    op.impl_out        = impl_out;
     op.start(token);
 
     svc_.work_started();
 
-    // Create wrapper for the peer socket
+    // Create a (possibly recycled) peer socket
     auto* peer_ptr = svc_.construct();
     if (!peer_ptr)
     {
@@ -453,87 +471,16 @@ win_local_stream_acceptor_internal::accept(
     return std::noop_coroutine();
 }
 
-// ============================================================
-// win_local_stream_acceptor (wrapper)
-// ============================================================
-
-inline win_local_stream_acceptor::win_local_stream_acceptor(
-    std::shared_ptr<win_local_stream_acceptor_internal> internal) noexcept
-    : internal_(std::move(internal))
-{
-}
-
-inline void
-win_local_stream_acceptor::close_internal() noexcept
-{
-    if (internal_)
-    {
-        internal_->close_socket();
-        internal_.reset();
-    }
-}
-
-inline std::coroutine_handle<>
-win_local_stream_acceptor::accept(
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    std::stop_token token,
-    std::error_code* ec,
-    io_object::implementation** impl_out)
-{
-    return internal_->accept(h, d, token, ec, impl_out);
-}
-
-inline std::coroutine_handle<>
-win_local_stream_acceptor::wait(
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    wait_type w,
-    std::stop_token token,
-    std::error_code* ec)
-{
-    return internal_->wait(h, d, w, token, ec);
-}
-
-inline corosio::local_endpoint
-win_local_stream_acceptor::local_endpoint() const noexcept
-{
-    return internal_->local_endpoint();
-}
-
-inline bool
-win_local_stream_acceptor::is_open() const noexcept
-{
-    return internal_ && internal_->is_open();
-}
-
-inline void
-win_local_stream_acceptor::cancel() noexcept
-{
-    if (internal_)
-        internal_->cancel();
-}
-
-inline native_handle_type
-win_local_stream_acceptor::native_handle() const noexcept
-{
-    if (!internal_)
-        return static_cast<native_handle_type>(INVALID_SOCKET);
-    return static_cast<native_handle_type>(internal_->native_handle());
-}
-
 inline native_handle_type
 win_local_stream_acceptor::release_socket() noexcept
 {
-    if (!internal_)
-        return static_cast<native_handle_type>(INVALID_SOCKET);
-    SOCKET s = internal_->socket_;
+    SOCKET s = socket_;
     if (s != INVALID_SOCKET)
     {
-        internal_->cancel();
+        cancel();
         dissociate_from_iocp(s);
-        internal_->socket_         = INVALID_SOCKET;
-        internal_->local_endpoint_ = corosio::local_endpoint{};
+        socket_         = INVALID_SOCKET;
+        local_endpoint_ = corosio::local_endpoint{};
     }
     return static_cast<native_handle_type>(s);
 }
@@ -542,11 +489,11 @@ inline std::error_code
 win_local_stream_acceptor::set_option(
     int level, int optname, void const* data, std::size_t size) noexcept
 {
-    if (!internal_ || !internal_->is_open())
+    if (socket_ == INVALID_SOCKET)
         return make_err(WSAENOTSOCK);
     if (::setsockopt(
-            internal_->native_handle(), level, optname,
-            reinterpret_cast<char const*>(data), static_cast<int>(size)) != 0)
+            socket_, level, optname, reinterpret_cast<char const*>(data),
+            static_cast<int>(size)) != 0)
         return make_err(WSAGetLastError());
     return {};
 }
@@ -555,21 +502,20 @@ inline std::error_code
 win_local_stream_acceptor::get_option(
     int level, int optname, void* data, std::size_t* size) const noexcept
 {
-    if (!internal_ || !internal_->is_open())
+    if (socket_ == INVALID_SOCKET)
         return make_err(WSAENOTSOCK);
     int len = static_cast<int>(*size);
     if (::getsockopt(
-            internal_->native_handle(), level, optname,
-            reinterpret_cast<char*>(data), &len) != 0)
+            socket_, level, optname, reinterpret_cast<char*>(data), &len) != 0)
         return make_err(WSAGetLastError());
     *size = static_cast<std::size_t>(len);
     return {};
 }
 
-inline win_local_stream_acceptor_internal*
-win_local_stream_acceptor::get_internal() const noexcept
+inline void
+win_local_stream_acceptor::retire() noexcept
 {
-    return internal_.get();
+    svc_.acceptor_pool_.recycle(this);
 }
 
 // ============================================================
@@ -585,38 +531,23 @@ inline win_local_stream_acceptor_service::win_local_stream_acceptor_service(
 inline io_object::implementation*
 win_local_stream_acceptor_service::construct()
 {
-    auto internal = std::make_shared<win_local_stream_acceptor_internal>(svc_);
-
-    // Allocate wrapper before mutating lists so a throw from
-    // new doesn't leave a dangling pointer in acceptor_list_.
-    auto* raw     = internal.get();
-    auto* wrapper = new win_local_stream_acceptor(std::move(internal));
-
-    {
-        std::lock_guard<win_mutex> lock(svc_.mutex_);
-        svc_.acceptor_list_.push_back(raw);
-        svc_.acceptor_wrapper_list_.push_back(wrapper);
-    }
-
-    return wrapper;
+    return svc_.acquire_acceptor_impl();
 }
 
 inline void
 win_local_stream_acceptor_service::destroy(io_object::implementation* p)
 {
-    if (p)
-    {
-        auto& wrapper = static_cast<win_local_stream_acceptor&>(*p);
-        wrapper.close_internal();
-        svc_.destroy_acceptor_impl(wrapper);
-    }
+    if (!p)
+        return;
+    auto* a = static_cast<win_local_stream_acceptor*>(p);
+    a->close_socket();
+    release(a);
 }
 
 inline void
 win_local_stream_acceptor_service::close(io_object::handle& h)
 {
-    auto& wrapper = static_cast<win_local_stream_acceptor&>(*h.get());
-    wrapper.get_internal()->close_socket();
+    static_cast<win_local_stream_acceptor*>(h.get())->close_socket();
 }
 
 inline std::error_code
@@ -626,36 +557,32 @@ win_local_stream_acceptor_service::open_acceptor_socket(
     int type,
     int protocol)
 {
-    auto* internal =
-        static_cast<win_local_stream_acceptor&>(impl).get_internal();
-    return svc_.open_acceptor_socket(*internal, family, type, protocol);
+    auto& acc = static_cast<win_local_stream_acceptor&>(impl);
+    return svc_.open_acceptor_socket(acc, family, type, protocol);
 }
 
 inline std::error_code
 win_local_stream_acceptor_service::assign_socket(
     local_stream_acceptor::implementation& impl, native_handle_type fd)
 {
-    auto* internal =
-        static_cast<win_local_stream_acceptor&>(impl).get_internal();
-    return svc_.assign_acceptor_socket(*internal, fd);
+    auto& acc = static_cast<win_local_stream_acceptor&>(impl);
+    return svc_.assign_acceptor_socket(acc, fd);
 }
 
 inline std::error_code
 win_local_stream_acceptor_service::bind_acceptor(
     local_stream_acceptor::implementation& impl, corosio::local_endpoint ep)
 {
-    auto* internal =
-        static_cast<win_local_stream_acceptor&>(impl).get_internal();
-    return svc_.bind_acceptor(*internal, ep);
+    auto& acc = static_cast<win_local_stream_acceptor&>(impl);
+    return svc_.bind_acceptor(acc, ep);
 }
 
 inline std::error_code
 win_local_stream_acceptor_service::listen_acceptor(
     local_stream_acceptor::implementation& impl, int backlog)
 {
-    auto* internal =
-        static_cast<win_local_stream_acceptor&>(impl).get_internal();
-    return svc_.listen_acceptor(*internal, backlog);
+    auto& acc = static_cast<win_local_stream_acceptor&>(impl);
+    return svc_.listen_acceptor(acc, backlog);
 }
 
 inline void

@@ -23,6 +23,7 @@
 #endif
 
 #include <boost/corosio/detail/scheduler.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/detail/thread_pool.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/resolver.hpp>
@@ -75,11 +76,11 @@ extern "C"
     Class Hierarchy
     ---------------
     - win_resolver_service (execution_context::service)
-        - Owns all win_resolver instances via shared_ptr
+        - Owns all win_resolver instances through a recycling object_pool
         - Coordinates with win_scheduler for work tracking
     - win_resolver (one per resolver object)
         - Contains embedded resolve_op and reverse_resolve_op
-        - Inherits from enable_shared_from_this for thread safety
+        - Kept alive during I/O by each op's intrusive object_ref_
     - resolve_op (overlapped_op subclass)
         - OVERLAPPED base enables IOCP integration
         - Static completion() callback invoked by Windows
@@ -88,9 +89,10 @@ extern "C"
 
     Shutdown
     --------
-    The resolver service cancels all resolvers and clears the impl map.
-    The thread pool service shuts down separately via execution_context
-    service ordering, joining all worker threads.
+    The resolver service cancels all resolvers; each then stays alive
+    until its own in-flight completion drains, same as every other
+    pooled impl. The thread pool service shuts down separately via
+    execution_context service ordering, joining all worker threads.
 
     Cancellation
     ------------
@@ -239,7 +241,6 @@ struct reverse_resolve_op : overlapped_op
 */
 class win_resolver final
     : public resolver::implementation
-    , public std::enable_shared_from_this<win_resolver>
     , public intrusive_list<win_resolver>::node
 {
     friend class win_resolver_service;
@@ -254,10 +255,26 @@ public:
         win_resolver* resolver_ = nullptr;
 
         /// Prevent impl destruction while work is in flight.
-        std::shared_ptr<win_resolver> ref_;
+        detail::object_ref ref_;
     };
 
     explicit win_resolver(win_resolver_service& svc) noexcept;
+
+    /// Recycle into the owning service's pool. Defined out-of-line
+    /// after `win_resolver_service` is complete (needs `svc_.pool_`).
+    void retire() noexcept override;
+
+    /** Reset recycled state for reuse.
+
+        Does not clear `host`/`service`/`stored_host`/`stored_service`
+        itself -- each op's own `reset()` (called at the top of the
+        next `resolve()`/`reverse_resolve()`) already does that,
+        preserving allocated capacity. That same `reset()` re-seeds
+        the op's `OVERLAPPED` fields, so they are not zeroed here.
+
+        @pre refs_ == 0, no wait in flight.
+    */
+    void reuse() noexcept;
 
     std::coroutine_handle<> resolve(
         std::coroutine_handle<>,
@@ -297,6 +314,15 @@ private:
 
     win_resolver_service& svc_;
 };
+
+inline void
+win_resolver::reuse() noexcept
+{
+    BOOST_COROSIO_ASSERT(!op_.stop_cb);
+    BOOST_COROSIO_ASSERT(!reverse_op_.stop_cb);
+    BOOST_COROSIO_ASSERT(op_.results == nullptr);
+    BOOST_COROSIO_ASSERT(op_.cancel_handle == nullptr);
+}
 
 } // namespace boost::corosio::detail
 

@@ -129,7 +129,7 @@ struct uring_read_op : uring_op
         std::size_t* bytes,
         int file_descriptor,
         uring_scheduler* scheduler,
-        std::shared_ptr<void> impl,
+        detail::object_ref impl,
         detail::speculative_state* spec,
         buffer_param buffers,
         std::stop_token const& token) noexcept
@@ -140,7 +140,7 @@ struct uring_read_op : uring_op
         bytes_out    = bytes;
         fd           = file_descriptor;
         sched_       = scheduler;
-        impl_ptr     = std::move(impl);
+        object_ref_  = std::move(impl);
         spec_state   = spec;
         res          = 0;
         cqe_flags    = 0;
@@ -227,7 +227,7 @@ struct uring_write_op : uring_op
         std::size_t* bytes,
         int file_descriptor,
         uring_scheduler* scheduler,
-        std::shared_ptr<void> impl,
+        detail::object_ref impl,
         detail::speculative_state* spec,
         buffer_param buffers,
         std::stop_token const& token) noexcept
@@ -238,7 +238,7 @@ struct uring_write_op : uring_op
         bytes_out    = bytes;
         fd           = file_descriptor;
         sched_       = scheduler;
-        impl_ptr     = std::move(impl);
+        object_ref_  = std::move(impl);
         spec_state   = spec;
         res          = 0;
         cqe_flags    = 0;
@@ -336,7 +336,7 @@ struct uring_connect_op : uring_op
         std::error_code* ec,
         int file_descriptor,
         uring_scheduler* scheduler,
-        std::shared_ptr<void> impl,
+        detail::object_ref impl,
         endpoint target,
         endpoint* remote_out,
         endpoint* local_out,
@@ -348,7 +348,7 @@ struct uring_connect_op : uring_op
         bytes_out           = nullptr;
         fd                  = file_descriptor;
         sched_              = scheduler;
-        impl_ptr            = std::move(impl);
+        object_ref_         = std::move(impl);
         res                 = 0;
         cqe_flags           = 0;
         target_endpoint     = target;
@@ -390,8 +390,9 @@ struct uring_connect_op : uring_op
 
         uring_set_result(self, false, false);
 
-        // Write endpoints only on success.
-        if (self->res >= 0)
+        // Write endpoints only on success; a close cancels the op.
+        if (self->res >= 0 &&
+            !self->cancelled.load(std::memory_order_acquire))
         {
             if (self->remote_endpoint_out)
                 *self->remote_endpoint_out = self->target_endpoint;
@@ -410,27 +411,60 @@ struct uring_connect_op : uring_op
     }
 };
 
-/** Submit an `uring_op`, reporting an SQ that stayed full.
+/** Prepare @p sqe for @p op and count it in flight.
 
-    The body behind @ref uring_submit_op and
-    @ref uring_try_submit_op; `counted` selects which of the two
-    answers an exhausted SQ ring gets.
+    @pre The caller holds the ring mutex.
+
+    @return True when this submitter must post the scheduler's
+        `submit_sqes_op` to flush the batch.
+*/
+inline bool
+uring_link_sqe(
+    uring_scheduler& sched, uring_op* op, ::io_uring_sqe* sqe) noexcept
+{
+    op->prep_func(op, sqe);
+    ::io_uring_sqe_set_data(sqe, op);
+    // Count this op against the in-flight gate in do_one: it
+    // expects exactly one F_MORE-less CQE per submitted SQE
+    // (multishot ops decrement only on the terminal CQE).
+    sched.inflight_inc();
+    // Release pairs with the acquire in uring_op::request_cancel:
+    // a stop_token firing after we release the mutex will see
+    // sqe_set==true and submit a cancel-by-user_data SQE.
+    op->sqe_set.store(true, std::memory_order_release);
+    // First submitter in a batch wins the CAS and will post
+    // submit_sqes_op; others piggyback on the same flush.
+    return !sched.submit_op_posted_exchange(true);
+}
+
+/** Submit an `uring_op` a `work_started()` already paid for.
+
+    Acquires the ring mutex, prepares the SQE, and (under the same
+    mutex) CAS-sets `submit_op_posted_`. The first submitter of a
+    batch wins the CAS and posts the scheduler's `submit_sqes_op`,
+    which later flushes all queued SQEs in a single
+    `io_uring_submit_and_get_events` call and drains any ready CQEs.
+    Subsequent submitters in the same batch piggyback — their SQEs
+    sit in the user-space SQ ring until that op dispatches.
+
+    On SQ-ring exhaustion (after one flush retry), completes the op
+    with `EAGAIN` and queues it so its handler dispatches on the next
+    `do_one` cycle, exactly as if the kernel had returned that error.
 
     @pre `op->prep_func != nullptr`.
+    @pre A `work_started()` backs this op, so the `work_finished()` the
+        scheduler spends on everything it dispatches is owed.
 
     @par Exception Safety
     Nothrow.
 
     @param sched The scheduler owning the ring.
     @param op The operation to submit.
-    @param counted True when a `work_started()` backs this op, so its
-        completion may ride the scheduler's queue.
 
-    @return `false` when the SQ stayed full and the op was left for the
-        caller to report; `true` otherwise.
+    @see uring_try_submit_op_if
 */
-inline bool
-uring_do_submit_op(uring_scheduler& sched, uring_op* op, bool counted) noexcept
+inline void
+uring_submit_op(uring_scheduler& sched, uring_op* op) noexcept
 {
     sched.lazy_init_ring();
 
@@ -458,34 +492,12 @@ uring_do_submit_op(uring_scheduler& sched, uring_op* op, bool counted) noexcept
             // work_started() pays for the work_finished() do_one spends
             // on it. (CAS path is not entered here.)
             op->res = -EAGAIN;
-            if (!counted)
-            {
-                // Nothing counted this op, so queueing it would spend a
-                // work_finished() the context never owed and drive
-                // outstanding_work_ below what is really outstanding.
-                // The owner reports the failure instead.
-                return false;
-            }
             typename uring_scheduler::lock_type lock(sched.dispatch_mutex());
             sched.push_completed_locked(op);
-            return true;
+            return;
         }
 
-        op->prep_func(op, sqe);
-        ::io_uring_sqe_set_data(sqe, op);
-        // Count this op against the in-flight gate in do_one: it
-        // expects exactly one F_MORE-less CQE per submitted SQE
-        // (multishot ops decrement only on the terminal CQE).
-        sched.inflight_inc();
-        // Release pairs with the acquire in uring_op::request_cancel:
-        // a stop_token firing after we release the mutex will see
-        // sqe_set==true and submit a cancel-by-user_data SQE.
-        op->sqe_set.store(true, std::memory_order_release);
-
-        // First submitter in a batch wins the CAS and will post
-        // submit_sqes_op; others piggyback on the same flush.
-        if (!sched.submit_op_posted_exchange(true))
-            need_post = true;
+        need_post = uring_link_sqe(sched, op, sqe);
     }
 
     if (need_post)
@@ -493,72 +505,69 @@ uring_do_submit_op(uring_scheduler& sched, uring_op* op, bool counted) noexcept
         // Flush is deferred to submit_sqes_op; post() owns the wake.
         sched.post(&sched.submit_op_ref());
     }
-    return true;
 }
 
-/** Submit an `uring_op` a `work_started()` already paid for.
+/// Outcome of @ref uring_try_submit_op_if.
+enum class uring_guarded_submit
+{
+    /// The SQE was prepared and will be flushed with the batch.
+    submitted,
+    /// `admit` declined; nothing was prepared.
+    refused,
+    /// `admit` accepted but the SQ stayed full after one flush.
+    sq_full
+};
 
-    Acquires the ring mutex, prepares the SQE, and (under the same
-    mutex) CAS-sets `submit_op_posted_`. The first submitter of a
-    batch wins the CAS and posts the scheduler's `submit_sqes_op`,
-    which later flushes all queued SQEs in a single
-    `io_uring_submit_and_get_events` call and drains any ready CQEs.
-    Subsequent submitters in the same batch piggyback — their SQEs
-    sit in the user-space SQ ring until that op dispatches.
+/** Submit an uncounted op if @p admit allows it.
 
-    On SQ-ring exhaustion (after one flush retry), completes the op
-    with `EAGAIN` and queues it so its handler dispatches on the next
-    `do_one` cycle, exactly as if the kernel had returned that error.
-    That is why this spelling reports nothing: the failure reaches the
-    caller as the operation's own `EAGAIN` completion.
+    `admit` runs under the ring mutex before an SQE is taken. A cancel
+    flushed under that mutex (`cancel_and_flush`) therefore either
+    runs before the check, which then sees the owner's closing state,
+    or follows this op's SQE in the submission queue and cancels it.
 
-    @pre `op->prep_func != nullptr`.
-    @pre A `work_started()` backs this op, so the `work_finished()` the
-        scheduler spends on everything it dispatches is owed.
-
-    @par Exception Safety
-    Nothrow.
+    @pre `op->prep_func != nullptr`. No `work_started()` backs this
+        submission, so a full SQ is reported to the caller rather than
+        queued as the op's completion.
 
     @param sched The scheduler owning the ring.
     @param op The operation to submit.
+    @param admit Called as `admit()` under the ring mutex; returns
+        whether to submit. May take a lock ordered after the ring
+        mutex. On `sq_full` it has already returned true, so the caller
+        undoes whatever it recorded.
 
-    @see uring_try_submit_op
+    @return What happened to the op.
 */
-inline void
-uring_submit_op(uring_scheduler& sched, uring_op* op) noexcept
+template<class Admit>
+[[nodiscard]] uring_guarded_submit
+uring_try_submit_op_if(
+    uring_scheduler& sched, uring_op* op, Admit admit) noexcept
 {
-    // The result is true by construction: a counted op's SQ-full path
-    // queues the op and answers through its own completion.
-    uring_do_submit_op(sched, op, true);
-}
+    sched.lazy_init_ring();
 
-/** Submit an `uring_op` nothing counted, reporting a full SQ.
+    bool need_post = false;
+    {
+        typename uring_scheduler::lock_type ring_lock(sched.ring_mutex());
+        if (!admit())
+            return uring_guarded_submit::refused;
 
-    The scheduler spends a `work_finished()` on everything it
-    dispatches out of `completed_ops_`, so an op no `work_started()`
-    backs cannot be completed through that queue: doing so drives
-    `outstanding_work_` below what is really outstanding. This spelling
-    hands an SQ that stayed full back to the owner instead, which
-    reports it through its own channel — the multishot accept arm
-    latches it and answers the accepts it can no longer serve.
+        ::io_uring_sqe* sqe = ::io_uring_get_sqe(sched.ring());
+        if (!sqe)
+        {
+            ::io_uring_submit(sched.ring());
+            sqe = ::io_uring_get_sqe(sched.ring());
+        }
+        if (!sqe)
+        {
+            op->res = -EAGAIN;
+            return uring_guarded_submit::sq_full;
+        }
+        need_post = uring_link_sqe(sched, op, sqe);
+    }
 
-    @pre `op->prep_func != nullptr`.
-
-    @par Exception Safety
-    Nothrow.
-
-    @param sched The scheduler owning the ring.
-    @param op The operation to submit.
-
-    @return True when the SQE was prepared; false when the SQ stayed
-        full after one flush and the caller owns the failure.
-
-    @see uring_submit_op
-*/
-[[nodiscard]] inline bool
-uring_try_submit_op(uring_scheduler& sched, uring_op* op) noexcept
-{
-    return uring_do_submit_op(sched, op, false);
+    if (need_post)
+        sched.post(&sched.submit_op_ref());
+    return uring_guarded_submit::submitted;
 }
 
 /** Readiness wait via `IORING_OP_POLL_ADD`.
@@ -586,20 +595,20 @@ struct uring_wait_op : uring_op
         std::error_code* ec,
         int file_descriptor,
         uring_scheduler* scheduler,
-        std::shared_ptr<void> impl,
+        detail::object_ref impl,
         int flags,
         std::stop_token const& token) noexcept
     {
-        h          = handle;
-        ex         = executor;
-        ec_out     = ec;
-        bytes_out  = nullptr;
-        fd         = file_descriptor;
-        sched_     = scheduler;
-        impl_ptr   = std::move(impl);
-        poll_flags = flags;
-        res        = 0;
-        cqe_flags  = 0;
+        h           = handle;
+        ex          = executor;
+        ec_out      = ec;
+        bytes_out   = nullptr;
+        fd          = file_descriptor;
+        sched_      = scheduler;
+        object_ref_ = std::move(impl);
+        poll_flags  = flags;
+        res         = 0;
+        cqe_flags   = 0;
         start(token);
     }
 
@@ -711,7 +720,7 @@ struct uring_local_connect_op : uring_op
         std::error_code* ec,
         int file_descriptor,
         uring_scheduler* scheduler,
-        std::shared_ptr<void> impl,
+        detail::object_ref impl,
         corosio::local_endpoint target,
         corosio::local_endpoint* remote_out,
         corosio::local_endpoint* local_out,
@@ -723,7 +732,7 @@ struct uring_local_connect_op : uring_op
         bytes_out           = nullptr;
         fd                  = file_descriptor;
         sched_              = scheduler;
-        impl_ptr            = std::move(impl);
+        object_ref_         = std::move(impl);
         res                 = 0;
         cqe_flags           = 0;
         target_endpoint     = target;
@@ -764,8 +773,9 @@ struct uring_local_connect_op : uring_op
 
         uring_set_result(self, false, false);
 
-        // Write endpoints only on success.
-        if (self->res >= 0)
+        // Write endpoints only on success; a close cancels the op.
+        if (self->res >= 0 &&
+            !self->cancelled.load(std::memory_order_acquire))
         {
             if (self->remote_endpoint_out)
                 *self->remote_endpoint_out = self->target_endpoint;

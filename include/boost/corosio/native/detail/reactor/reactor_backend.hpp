@@ -120,6 +120,8 @@ reactor_acceptor_impl<
                 if (impl_out)
                     *impl_out = nullptr;
             }
+            // Completed without parking: nothing left for a stop to cancel.
+            op.stop_cb.reset();
             op.cont.h = h;
             return dispatch_coro(ex, op.cont);
         }
@@ -128,36 +130,43 @@ reactor_acceptor_impl<
         op.peer_storage = peer_storage;
         op.peer_addrlen = peer_addrlen;
         op.complete(0, 0);
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         this->svc_.post(&op);
         return std::noop_coroutine();
     }
 
     if (errno == EAGAIN || errno == EWOULDBLOCK)
     {
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         this->svc_.work_started();
 
-        std::lock_guard lock(this->desc_state_.mutex);
-        bool io_done = false;
-        if (this->desc_state_.read_ready)
+        // Posted after the descriptor lock is released: the scheduler
+        // takes its own lock before descriptor locks.
+        bool post_now = false;
         {
-            this->desc_state_.read_ready = false;
-            op.perform_io();
-            io_done = (op.errn != EAGAIN && op.errn != EWOULDBLOCK);
-            if (!io_done)
-                op.errn = 0;
-        }
+            std::lock_guard lock(this->desc_state_.mutex);
+            bool io_done = false;
+            if (this->desc_state_.read_ready)
+            {
+                this->desc_state_.read_ready = false;
+                op.perform_io();
+                io_done = (op.errn != EAGAIN && op.errn != EWOULDBLOCK);
+                if (!io_done)
+                    op.errn = 0;
+            }
 
-        if (io_done || op.cancelled.load(std::memory_order_acquire))
+            if (io_done || op.cancelled.load(std::memory_order_acquire))
+                post_now = true;
+            else
+                this->desc_state_.read_op = &op;
+        }
+        if (post_now)
         {
             this->svc_.post(&op);
             this->svc_.work_finished();
         }
         else
         {
-            this->desc_state_.read_op = &op;
-
             // Select watches reads only for parked ops; see register_op.
             if constexpr (Traits::needs_park_notification)
                 this->svc_.scheduler().notify_reactor();
@@ -166,7 +175,7 @@ reactor_acceptor_impl<
     }
 
     op.complete(errno, 0);
-    op.impl_ptr = this->shared_from_this();
+    op.object_ref_ = detail::object_ref(this);
     this->svc_.post(&op);
     return std::noop_coroutine();
 }

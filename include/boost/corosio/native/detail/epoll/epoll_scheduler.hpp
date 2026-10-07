@@ -260,27 +260,37 @@ epoll_scheduler::register_descriptor(
     ev.events   = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLERR | EPOLLHUP;
     ev.data.ptr = desc;
 
-    bool unpollable = false;
-    if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &ev) < 0)
+    // Initialized before the add: another run thread's reactor can
+    // dispatch an event for the descriptor as soon as it is added.
+    // A completion queued by an earlier registration of the same state
+    // may still be running, so the fields it reads change under its
+    // mutex, and the mutex mode is only written when it differs.
+    if (desc->mutex.enabled() != reactor_io_locking_)
+        desc->mutex.set_enabled(reactor_io_locking_);
     {
-        // EPERM: a file type epoll cannot watch. Its I/O does not
-        // block, so adopt it unwatched, as asio does.
-        if (errno != EPERM)
-            return make_err(errno);
-        unpollable = true;
+        conditionally_enabled_mutex::scoped_lock lock(desc->mutex);
+        desc->registered_events = ev.events;
+        desc->unpollable        = false;
+        desc->fd                = fd;
+        desc->scheduler_        = this;
+        desc->ready_events_.store(0, std::memory_order_release);
+        // object_ref_ is not touched: a queued invocation from an
+        // earlier registration still owns the reference in it.
+        desc->read_ready  = false;
+        desc->write_ready = false;
     }
 
-    desc->registered_events = unpollable ? 0 : ev.events;
-    desc->unpollable        = unpollable;
-    desc->fd                = fd;
-    desc->scheduler_        = this;
-    desc->mutex.set_enabled(reactor_io_locking_);
-    desc->ready_events_.store(0, std::memory_order_relaxed);
-
-    conditionally_enabled_mutex::scoped_lock lock(desc->mutex);
-    desc->impl_ref_.reset();
-    desc->read_ready  = false;
-    desc->write_ready = false;
+    if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &ev) < 0)
+    {
+        int const err = errno;
+        conditionally_enabled_mutex::scoped_lock lock(desc->mutex);
+        desc->registered_events = 0;
+        // EPERM: a file type epoll cannot watch. Its I/O does not
+        // block, so adopt it unwatched, as asio does.
+        if (err != EPERM)
+            return make_err(err);
+        desc->unpollable = true;
+    }
     return {};
 }
 

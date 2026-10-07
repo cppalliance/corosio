@@ -19,6 +19,8 @@
 #include <boost/corosio/detail/dispatch_coro.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
+#include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/validate_fd.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_descriptor_state.hpp>
@@ -29,6 +31,7 @@
 
 #include <atomic>
 #include <coroutine>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <utility>
@@ -195,7 +198,6 @@ reactor_descriptor_wait_op<Traits, Descriptor, Acceptor>::operator()()
 template<class Derived, class Traits, class Service, class Acceptor>
 class reactor_descriptor
     : public posix_stream_descriptor::implementation
-    , public std::enable_shared_from_this<Derived>
     , public reactor_io_core<Derived, Service, typename Traits::desc_state_type>
     , public intrusive_list<Derived>::node
 {
@@ -265,7 +267,41 @@ public:
         this->cancel_all();
     }
 
+    /// Recycle into the owning service's pool at zero references.
+    void retire() noexcept override
+    {
+#if !defined(NDEBUG)
+        poison();
+#endif
+        svc_.state_->pool_.recycle(static_cast<Derived*>(this));
+    }
+
     // --- Service-facing (non-virtual) ---
+
+    /** Reset descriptor state for recycling.
+
+        Re-initializes every field it owns rather than trusting
+        `close_descriptor()`'s prior writes; see
+        reactor_basic_socket::reuse().
+
+        @pre refs_ == 0, fd closed and deregistered, no op in flight.
+    */
+    void reuse() noexcept
+    {
+        fd_ = -1;
+        nonblocking_.store(false, std::memory_order_relaxed);
+        this->reset_desc_state();
+    }
+
+#if !defined(NDEBUG)
+    /// Poison the fields `reuse()` re-initializes; see
+    /// reactor_basic_socket::poison().
+    void poison() noexcept
+    {
+        std::memset(static_cast<void*>(&fd_), 0xDB, sizeof(fd_));
+        this->poison_desc_state();
+    }
+#endif
 
     /** Adopt the fd, initialize descriptor state, and register it.
 
@@ -383,7 +419,6 @@ void
 reactor_descriptor<Derived, Traits, Service, Acceptor>::quiesce() noexcept
 {
     this->abandon_all();
-    this->unregister_fd(fd_);
     // The next adopted fd starts from an unknown flag state.
     nonblocking_.store(false, std::memory_order_relaxed);
 }
@@ -463,7 +498,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_read_some(
     if (fd_ < 0)
     {
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(EBADF, 0);
         svc_.post(&op);
         return std::noop_coroutine();
@@ -477,7 +512,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_read_some(
     {
         op.empty_buffer_read = true;
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(0, 0);
         svc_.post(&op);
         return std::noop_coroutine();
@@ -488,7 +523,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_read_some(
     if (int const nerr = arm_nonblocking())
     {
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(nerr, 0);
         svc_.post(&op);
         return std::noop_coroutine();
@@ -538,7 +573,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_read_some(
             return dispatch_coro(ex, op.cont);
         }
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(err, bytes);
         svc_.post(&op);
         return std::noop_coroutine();
@@ -547,7 +582,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_read_some(
     // EAGAIN — register with reactor
     op.fd = fd_;
     op.start(token, static_cast<Derived*>(this));
-    op.impl_ptr = this->shared_from_this();
+    op.object_ref_ = detail::object_ref(this);
 
     this->register_op(op, desc_state_.read_op, desc_state_.read_ready);
     return std::noop_coroutine();
@@ -573,7 +608,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_write_some(
     if (fd_ < 0)
     {
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(EBADF, 0);
         svc_.post(&op);
         return std::noop_coroutine();
@@ -586,7 +621,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_write_some(
     if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
     {
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(0, 0);
         svc_.post(&op);
         return std::noop_coroutine();
@@ -595,7 +630,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_write_some(
     if (int const nerr = arm_nonblocking())
     {
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(nerr, 0);
         svc_.post(&op);
         return std::noop_coroutine();
@@ -632,7 +667,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_write_some(
             return dispatch_coro(ex, op.cont);
         }
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(err, bytes);
         svc_.post(&op);
         return std::noop_coroutine();
@@ -641,7 +676,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_write_some(
     // EAGAIN — register with reactor
     op.fd = fd_;
     op.start(token, static_cast<Derived*>(this));
-    op.impl_ptr = this->shared_from_this();
+    op.object_ref_ = detail::object_ref(this);
 
     this->register_op(op, desc_state_.write_op, desc_state_.write_ready, true);
     return std::noop_coroutine();
@@ -702,7 +737,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_wait(
         op.ec_out     = ec;
         op.fd         = fd_;
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(perr, 0);
         svc_.post(&op);
         return std::noop_coroutine();
@@ -715,7 +750,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_wait(
     op.ec_out     = ec;
     op.fd         = fd_;
     op.start(token, static_cast<Derived*>(this));
-    op.impl_ptr = this->shared_from_this();
+    op.object_ref_ = detail::object_ref(this);
 
     // Force register_op's ready path so the wait op re-probes under the
     // descriptor mutex before parking. A stale write_ready latched at

@@ -38,9 +38,9 @@ class win_stream_file_internal : public win_slot_handle
 public:
     win_stream_file_internal(
         win_scheduler& sched,
-        win_state_list<win_handle_base>& list,
+        io_object::implementation& io,
         win_file_service& svc) noexcept
-        : win_slot_handle(sched, list, /*track_offset=*/true)
+        : win_slot_handle(sched, io, /*track_offset=*/true)
         , svc_(svc)
     {
     }
@@ -56,22 +56,31 @@ private:
     win_file_service& svc_;
 };
 
-/** Stream file implementation wrapper for IOCP-based I/O.
+/** Stream file implementation for IOCP-based I/O.
 
-    Public-facing implementation that holds a shared_ptr to
-    the internal state. Delegates all virtual calls.
+    Embeds its handle state and delegates every virtual call to it.
+    `win_file_service` recycles instances through its pool instead of
+    freeing them on every close.
 */
 class win_stream_file final
     : public stream_file::implementation
     , public intrusive_list<win_stream_file>::node
 {
-    std::shared_ptr<win_stream_file_internal> internal_;
+    win_file_service& svc_;
+    win_stream_file_internal internal_;
 
 public:
-    explicit win_stream_file(
-        std::shared_ptr<win_stream_file_internal> internal) noexcept;
+    explicit win_stream_file(win_file_service& svc) noexcept;
 
-    void close_internal() noexcept;
+    /// Recycle into the owning service's pool. Defined out-of-line
+    /// after `win_file_service` is complete (needs `svc_.pool_`).
+    void retire() noexcept override;
+
+    /** Assert the closed state a recycled file starts from.
+
+        @pre refs_ == 0, handle closed, no op in flight.
+    */
+    void reuse() noexcept;
 
     std::coroutine_handle<> read_some(
         std::coroutine_handle<> h,
@@ -100,7 +109,7 @@ public:
     capy::io_result<std::uint64_t>
     seek(std::int64_t offset, file_base::seek_basis origin) noexcept override;
 
-    win_stream_file_internal* get_internal() const noexcept;
+    win_stream_file_internal* get_internal() noexcept;
 };
 
 } // namespace boost::corosio::detail

@@ -27,6 +27,7 @@
 
 #include <boost/corosio/native/native_io_context.hpp>
 #include <boost/corosio/native/detail/uring/uring_descriptor.hpp>
+#include <boost/corosio/native/detail/uring/uring_descriptor_service.hpp>
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
@@ -43,12 +44,32 @@
 
 namespace boost::corosio {
 
-// Exposes the io_uring scheduler, the way multishot_acceptor.cpp does.
+// Exposes the io_uring scheduler, the way multishot_acceptor.cpp does,
+// and hands out descriptor impls the way a handle obtains them.
 struct uring_descriptor_test_context : native_io_context<uring>
 {
+    struct descriptor_deleter
+    {
+        detail::uring_descriptor_service* svc;
+        void operator()(detail::uring_descriptor* d) const noexcept
+        {
+            svc->destroy(d);
+        }
+    };
+    using descriptor_ptr =
+        std::unique_ptr<detail::uring_descriptor, descriptor_deleter>;
+
     detail::uring_scheduler& scheduler() noexcept
     {
         return *static_cast<detail::uring_scheduler*>(sched_);
+    }
+
+    descriptor_ptr make_descriptor()
+    {
+        auto& svc = use_service<detail::uring_descriptor_service>();
+        return descriptor_ptr(
+            static_cast<detail::uring_descriptor*>(svc.construct()),
+            descriptor_deleter{&svc});
     }
 };
 
@@ -113,7 +134,7 @@ struct uring_descriptor_continue_test
         // dispatch. `res` still holds the revents mask, which the
         // completion decode would read as a byte count.
         uring_descriptor_test_context ctx;
-        auto d = std::make_shared<detail::uring_descriptor>(ctx.scheduler());
+        auto d = ctx.make_descriptor();
 
         detail::uring_descriptor_read_op op;
         arm(*d, op);
@@ -139,7 +160,7 @@ struct uring_descriptor_continue_test
         // cancel-by-fd SQE finds nothing and the op's own `cancelled`
         // flag is never set. The epoch is the only thing that sees it.
         uring_descriptor_test_context ctx;
-        auto d = std::make_shared<detail::uring_descriptor>(ctx.scheduler());
+        auto d = ctx.make_descriptor();
 
         detail::uring_descriptor_write_op op;
         arm(*d, op);
@@ -160,7 +181,7 @@ struct uring_descriptor_continue_test
         // would otherwise arm a fresh poll nothing can cancel, and
         // run() would never return.
         uring_descriptor_test_context ctx;
-        auto d = std::make_shared<detail::uring_descriptor>(ctx.scheduler());
+        auto d = ctx.make_descriptor();
 
         detail::uring_descriptor_read_op op;
         arm(*d, op);
@@ -183,7 +204,7 @@ struct uring_descriptor_continue_test
         BOOST_TEST_EQ(::pipe(fds), 0);
 
         uring_descriptor_test_context ctx;
-        auto d = std::make_shared<detail::uring_descriptor>(ctx.scheduler());
+        auto d = ctx.make_descriptor();
         d->set_descriptor(fds[0]);
 
         detail::uring_descriptor_read_op op;
@@ -212,7 +233,7 @@ struct uring_descriptor_continue_test
     void testTerminalResultsAreLeftAlone()
     {
         uring_descriptor_test_context ctx;
-        auto d = std::make_shared<detail::uring_descriptor>(ctx.scheduler());
+        auto d = ctx.make_descriptor();
 
         // A poll that failed or was cancelled is already the answer.
         detail::uring_descriptor_read_op poll_failed;
@@ -247,7 +268,7 @@ struct uring_descriptor_continue_test
 
         uring_descriptor_test_context ctx;
         auto ex = ctx.get_executor();
-        auto d  = std::make_shared<detail::uring_descriptor>(ctx.scheduler());
+        auto d  = ctx.make_descriptor();
         d->set_descriptor(fds[0]);
 
         bool resumed = false;
@@ -261,7 +282,7 @@ struct uring_descriptor_continue_test
         detail::uring_descriptor_read_op op;
         op.prepare(
             coro.h, ex, &ec, &bytes, fds[0], /*file_offset=*/-1,
-            &ctx.scheduler(), d, mb, std::stop_token{});
+            &ctx.scheduler(), detail::object_ref(d.get()), mb, std::stop_token{});
         arm(*d, op);
 
         // Data is already waiting, so the poll this arms fires at once.
@@ -289,7 +310,7 @@ struct uring_descriptor_continue_test
         // cancel that bumped the epoch before the prep must turn the
         // SQE into a NOP, never a transfer on the descriptor.
         uring_descriptor_test_context ctx;
-        auto d = std::make_shared<detail::uring_descriptor>(ctx.scheduler());
+        auto d = ctx.make_descriptor();
 
         detail::uring_descriptor_read_op op;
         arm(*d, op);
@@ -311,7 +332,7 @@ struct uring_descriptor_continue_test
         BOOST_TEST_EQ(::pipe(fds), 0);
 
         uring_descriptor_test_context ctx;
-        auto d = std::make_shared<detail::uring_descriptor>(ctx.scheduler());
+        auto d = ctx.make_descriptor();
         d->set_descriptor(fds[0]);
 
         detail::uring_descriptor_write_op op;
@@ -331,7 +352,7 @@ struct uring_descriptor_continue_test
         // A stop landing after the transfer's CQE abandons nothing: the
         // transfer is done, and its byte count is the answer.
         uring_descriptor_test_context ctx;
-        auto d = std::make_shared<detail::uring_descriptor>(ctx.scheduler());
+        auto d = ctx.make_descriptor();
 
         detail::uring_descriptor_read_op op;
         arm(*d, op);
@@ -349,7 +370,7 @@ struct uring_descriptor_continue_test
         // kernel and came back with the full-SQ path's -EAGAIN. A cancel
         // that landed meanwhile is owed canceled, not try-again.
         uring_descriptor_test_context ctx;
-        auto d = std::make_shared<detail::uring_descriptor>(ctx.scheduler());
+        auto d = ctx.make_descriptor();
 
         detail::uring_descriptor_read_op op;
         arm(*d, op);
@@ -367,7 +388,7 @@ struct uring_descriptor_continue_test
         // is interrupted by the cancel and comes back as -EINTR. The
         // caller asked for the cancel, so it is owed canceled.
         uring_descriptor_test_context ctx;
-        auto d = std::make_shared<detail::uring_descriptor>(ctx.scheduler());
+        auto d = ctx.make_descriptor();
 
         detail::uring_descriptor_read_op op;
         arm(*d, op);
@@ -390,7 +411,7 @@ struct uring_descriptor_continue_test
         // A file with no poll support is ready to every poll, so a
         // re-armed poll would retry the transfer forever.
         uring_descriptor_test_context ctx;
-        auto d = std::make_shared<detail::uring_descriptor>(ctx.scheduler());
+        auto d = ctx.make_descriptor();
         d->set_descriptor(-1, /*pollable=*/false);
 
         detail::uring_descriptor_read_op op;

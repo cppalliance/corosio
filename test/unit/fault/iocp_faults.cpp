@@ -1034,7 +1034,7 @@ struct iocp_faults
        through close_socket, which asks the reactor to drop any wait op
        the descriptor might have had, and cancel() asks again. Both
        asks reach wake_self whether or not anything is parked
-       (win_tcp_socket_internal::cancel and ::close_socket).
+       (win_tcp_socket::cancel and ::close_socket).
     */
     void testWakeSendFails()
     {
@@ -1470,7 +1470,7 @@ struct iocp_faults
 
        Only the write and error waits reach the reactor at all: a wait
        for readability is a zero-byte WSARecv
-       (win_tcp_socket_internal::wait). The peer is reset before
+       (win_tcp_socket::wait). The peer is reset before
        the wait is registered, so the reactor's first poll already has
        the condition in hand and nothing here depends on a round
        landing between two coroutines.
@@ -1630,7 +1630,7 @@ struct iocp_faults
        the entry before it closes the handle, but the ask is read on
        the reactor's next pass and the handle is gone before then, so
        a poll carrying the dead descriptor is reachable in ordinary
-       use (win_tcp_socket_internal::close_socket says so).
+       use (win_tcp_socket::close_socket says so).
 
        Closed behind the library's back rather than through a
        fault_scope: the reactor answers the refusal by asking about

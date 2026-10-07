@@ -26,12 +26,15 @@
 #include <boost/corosio/wait_type.hpp>
 
 #include <boost/corosio/test/socket_pair.hpp>
+#include <boost/corosio/detail/scheduler.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_descriptor_state.hpp>
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/task.hpp>
 
 #include <atomic>
@@ -40,6 +43,7 @@
 #include <stop_token>
 #include <system_error>
 #include <thread>
+#include <tuple>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -222,11 +226,221 @@ struct mt_reactor_test
         ioc.run();
     }
 
+    // A reactor pass can hold an event for a descriptor that another run
+    // thread closes before the pass queues it. The closed socket's impl
+    // must outlive that pass, not be recycled under it. Each iteration
+    // makes a descriptor readable and destroys its socket while a second
+    // run thread polls.
+    void testCloseRacesReactorPass()
+    {
+        int lfd = ::socket(AF_INET, SOCK_STREAM, 0);
+        BOOST_TEST(lfd >= 0);
+        int one = 1;
+        ::setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+        sockaddr_in addr{};
+        addr.sin_family      = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        socklen_t len        = sizeof(addr);
+        BOOST_TEST(
+            ::bind(lfd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) ==
+            0);
+        BOOST_TEST(
+            ::getsockname(lfd, reinterpret_cast<sockaddr*>(&addr), &len) == 0);
+        BOOST_TEST(::listen(lfd, 64) == 0);
+
+        io_context ioc(Backend, 2);
+        int completed = 0;
+        capy::run_async(ioc.get_executor())(
+            [](io_context& c, int listener, sockaddr_in a,
+               int& done) -> capy::task<> {
+                for (int i = 0; i < 2000; ++i)
+                {
+                    int peer = ::socket(AF_INET, SOCK_STREAM, 0);
+                    if (::connect(
+                            peer, reinterpret_cast<sockaddr*>(&a),
+                            sizeof(a)) != 0)
+                    {
+                        ::close(peer);
+                        co_return;
+                    }
+                    int fd = ::accept(listener, nullptr, nullptr);
+                    {
+                        tcp_socket s(c);
+                        std::ignore  = s.assign(fd);
+                        char const b = 'x';
+                        std::ignore  = ::send(peer, &b, 1, 0);
+                    }
+                    ::close(peer);
+                    ++done;
+                }
+            }(ioc, lfd, addr, completed));
+
+        std::thread second([&] { ioc.run(); });
+        ioc.run();
+        second.join();
+        ::close(lfd);
+        BOOST_TEST_EQ(completed, 2000);
+    }
+
+    // An op started from a thread that is not running the context posts
+    // its completion through the scheduler lock. It must not do so while
+    // holding the descriptor lock, which the reactor takes after the
+    // scheduler lock when settling a descriptor closed during its pass.
+    // A stop racing the start makes it complete without parking, taking
+    // that posting path while the reactor settles the previous
+    // incarnation's close.
+    void testForeignStartRacesSettle()
+    {
+        int lfd = ::socket(AF_INET, SOCK_STREAM, 0);
+        BOOST_TEST(lfd >= 0);
+        sockaddr_in addr{};
+        addr.sin_family      = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        socklen_t len        = sizeof(addr);
+        BOOST_TEST(
+            ::bind(lfd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) ==
+            0);
+        BOOST_TEST(
+            ::getsockname(lfd, reinterpret_cast<sockaddr*>(&addr), &len) == 0);
+        BOOST_TEST(::listen(lfd, 64) == 0);
+        auto make_pair = [&](int& mine, int& peer) {
+            peer = ::socket(AF_INET, SOCK_STREAM, 0);
+            std::ignore = ::connect(
+                peer, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+            mine = ::accept(lfd, nullptr, nullptr);
+        };
+
+        io_context ioc(Backend, 2);
+        capy::thread_pool pool(1);
+
+        // A parked wait keeps run() polling until the end.
+        int idle_fd  = -1;
+        int idle_peer = -1;
+        make_pair(idle_fd, idle_peer);
+        tcp_socket idle(ioc);
+        BOOST_TEST(!idle.assign(idle_fd));
+        capy::run_async(ioc.get_executor())(
+            [](tcp_socket& i) -> capy::task<> {
+                std::ignore = co_await i.wait(wait_type::read);
+            }(idle));
+        std::thread runner([&] { ioc.run(); });
+
+        tcp_socket s(ioc);
+        int peer = -1;
+        std::atomic<int> finished{0};
+        for (int i = 0; i < 500; ++i)
+        {
+            if (peer >= 0)
+                ::close(peer);
+            s.close();
+            int fd = -1;
+            make_pair(fd, peer);
+            BOOST_TEST(!s.assign(fd));
+            std::stop_source stop;
+            capy::run_async(pool.get_executor(), stop.get_token())(
+                [](tcp_socket& x, std::atomic<int>& n) -> capy::task<> {
+                    std::ignore = co_await x.wait(wait_type::read);
+                    ++n;
+                }(s, finished));
+            stop.request_stop();
+            while (finished.load() == i)
+                std::this_thread::yield();
+        }
+
+        char const b = 'x';
+        std::ignore  = ::send(idle_peer, &b, 1, 0);
+        runner.join();
+        pool.join();
+        ::close(peer);
+        ::close(idle_peer);
+        ::close(lfd);
+        BOOST_TEST_EQ(finished.load(), 500);
+    }
+
+    // An invocation popped from the queue clears the descriptor's
+    // queued flag inside its critical section and keeps using the state
+    // until it unlocks. Retiring the descriptor meanwhile must not take
+    // that cleared flag to mean nothing still runs on it.
+    void testRetireWaitsForRunningInvocation()
+    {
+        struct watched_impl : io_object::implementation
+        {
+            std::atomic<bool>* inside;
+            std::atomic<bool>* retired;
+            std::atomic<bool>* retired_inside;
+
+            void retire() noexcept override
+            {
+                if (inside->load())
+                    retired_inside->store(true);
+                retired->store(true);
+            }
+        };
+
+        // Stays inside the invocation's critical section until the
+        // descriptor is retired, or long enough to show it was not.
+        struct holding_op final : detail::reactor_op_base
+        {
+            std::atomic<bool>* inside;
+            std::atomic<bool>* retired;
+
+            void perform_io() noexcept override
+            {
+                inside->store(true);
+                // Bounds the wait, not a timing assertion.
+                auto const until = std::chrono::steady_clock::now() +
+                    std::chrono::milliseconds(200);
+                while (!retired->load() &&
+                       std::chrono::steady_clock::now() < until)
+                    std::this_thread::yield();
+                inside->store(false);
+                errn = EAGAIN;
+            }
+            void operator()() override {}
+        };
+
+        io_context ioc(Backend);
+        auto& sched =
+            static_cast<detail::reactor_scheduler&>(detail::get_scheduler(ioc));
+
+        std::atomic<bool> inside{false};
+        std::atomic<bool> retired{false};
+        std::atomic<bool> retired_inside{false};
+        watched_impl impl;
+        impl.inside         = &inside;
+        impl.retired        = &retired;
+        impl.retired_inside = &retired_inside;
+        impl.refs_          = 0;
+        detail::object_ref keep(&impl);
+
+        detail::reactor_descriptor_state desc;
+        holding_op op;
+        op.inside      = &inside;
+        op.retired     = &retired;
+        desc.scheduler_ = &sched;
+        desc.read_op    = &op;
+        desc.ready_events_.store(detail::reactor_event_read);
+        desc.is_enqueued_.store(true);
+
+        std::thread popped([&] { desc.invoke_deferred_io(); });
+        while (!inside.load())
+            std::this_thread::yield();
+        sched.retire_descriptor(desc, std::move(keep));
+        popped.join();
+
+        BOOST_TEST(retired.load());
+        BOOST_TEST(!retired_inside.load());
+        desc.read_op = nullptr;
+    }
+
     void run()
     {
+        testRetireWaitsForRunningInvocation();
         testEventCompletesBatchedOps();
         testForeignPostWakesParkedFollower();
         testAcceptorWaitWakesBlockedReactor();
+        testCloseRacesReactorPass();
+        testForeignStartRacesSettle();
     }
 };
 

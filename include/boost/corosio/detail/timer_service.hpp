@@ -14,6 +14,8 @@
 #include <boost/corosio/detail/timer.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
+#include <boost/corosio/detail/object_pool.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/detail/thread_local_ptr.hpp>
 #include <boost/capy/error.hpp>
@@ -53,16 +55,19 @@ struct scheduler;
     list still threads waiters through their intrusive hooks when
     collecting several timers' waiters past the lock.
 
-    timer_service owns a min-heap of active timers and a free list
-    of recycled impls. The heap is ordered by expiry time; the
-    scheduler queries nearest_expiry() to set the epoll/timerfd
-    timeout.
+    timer_service owns a min-heap of active timers and recycles
+    retired impls through a per-service object_pool, fronted by a
+    thread-local single-slot cache. The heap is ordered by expiry
+    time; the scheduler queries nearest_expiry() to set the
+    epoll/timerfd timeout.
 
     Optimization Strategy
     ---------------------
     1. Deferred heap insertion — expires_after() stores the expiry
        but does not insert into the heap. Insertion happens in wait().
-    2. Thread-local impl cache — single-slot per-thread cache.
+    2. Thread-local impl cache — single-slot per-thread cache, in
+       front of the object_pool fallback; keeps a thread's hot impl
+       out of the shared free list.
     3. Frame-resident waiter_node with embedded completion_op —
        eliminates heap allocation per wait/fire/cancel.
     4. Cached nearest expiry — atomic avoids mutex in nearest_expiry().
@@ -79,12 +84,30 @@ struct scheduler;
 
 inline void timer_service_invalidate_cache() noexcept;
 
+/** The timer service's recycling pool.
+
+    Adds no behavior of its own — it exists only to re-expose
+    `adopt()` and `remove()` as public, so the timer service's
+    thread-local cache can transfer a cached impl's `live_` tracking
+    on both sides of the handoff: `construct()` re-adopts a
+    TL-cached impl as live, `shutdown()` detaches one before its
+    direct delete.
+*/
+class timer_object_pool : public object_pool<timer::implementation>
+{
+public:
+    using object_pool::adopt;
+    using object_pool::remove;
+};
+
 // timer_service class body — member function definitions are
 // out-of-class (after implementation and waiter_node are complete)
 class BOOST_COROSIO_DECL timer_service final
     : public capy::execution_context::service
     , public io_object::io_service
 {
+    friend struct timer::implementation;
+
 public:
     using clock_type = std::chrono::steady_clock;
     using time_point = clock_type::time_point;
@@ -128,7 +151,7 @@ private:
     BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // std:: members, dll-interface
     mutable std::mutex mutex_;
     std::vector<heap_entry> heap_;
-    timer::implementation* free_list_ = nullptr;
+    timer_object_pool pool_;
     callback on_earliest_changed_;
     bool shutting_down_ = false;
     // Avoids mutex in nearest_expiry() and empty()
@@ -213,9 +236,10 @@ private:
     inline void swap_heap(std::size_t i1, std::size_t i2);
 };
 
-// Thread-local cache avoids hot-path mutex acquisitions:
-// single-slot impl cache, validated by comparing svc_. Cleared by
-// timer_service_invalidate_cache() during shutdown.
+// Thread-local single-slot impl cache, validated by comparing svc_.
+// Keeps a hot impl out of the shared free list; both sides still
+// take the pool lock to move it in and out of live tracking.
+// Cleared by timer_service_invalidate_cache() during shutdown.
 
 inline thread_local_ptr<timer::implementation> tl_cached_impl;
 
@@ -282,6 +306,9 @@ timer_service::shutdown()
 {
     timer_service_invalidate_cache();
     shutting_down_ = true;
+    // Flag only; the real drain walks the expiry heap below, not
+    // object_pool's live_ list, so the visit callback is a no-op.
+    pool_.shutdown([](timer::implementation*) {});
 
     // Snapshot impls and detach them from the heap so that
     // coroutine-owned timer destructors (triggered by h.destroy()
@@ -316,16 +343,16 @@ timer_service::shutdown()
             if (h)
                 h.destroy();
         }
+        // Unlink from the pool's live_ list before the direct delete
+        // below, or ~object_pool()'s unconditional sweep would delete
+        // this impl a second time.
+        [[maybe_unused]] bool const removed = pool_.remove(impl);
+        BOOST_COROSIO_ASSERT(removed);
         delete impl;
     }
 
-    // Delete free-listed impls
-    while (free_list_)
-    {
-        auto* next = free_list_->next_free_;
-        delete free_list_;
-        free_list_ = next;
-    }
+    // Anything still parked in pool_ (free-listed or live with no
+    // pending wait at shutdown) is freed by object_pool's own destructor.
 }
 
 inline io_object::implementation*
@@ -335,36 +362,16 @@ timer_service::construct()
     if (impl)
     {
         impl->svc_ = this;
-        // Reset expiry_ too: a recycled impl must behave like a fresh
-        // one, whose default expiry reads as already elapsed
-        impl->expiry_ = {};
-        impl->heap_index_.store(
-            (std::numeric_limits<std::size_t>::max)(),
-            std::memory_order_relaxed);
-        impl->might_have_pending_waits_.store(false, std::memory_order_relaxed);
-        BOOST_COROSIO_ASSERT(impl->waiter_ == nullptr);
+        impl->reuse();
+        impl->refs_.store(1, std::memory_order_relaxed);
+        // The TL push that parked impl here also removed it from
+        // live_ (see destroy_impl) — re-adopt it now that it is live
+        // again.
+        pool_.adopt(impl);
         return impl;
     }
 
-    std::lock_guard lock(mutex_);
-    if (free_list_)
-    {
-        impl             = free_list_;
-        free_list_       = impl->next_free_;
-        impl->next_free_ = nullptr;
-        impl->svc_       = this;
-        impl->expiry_    = {};
-        impl->heap_index_.store(
-            (std::numeric_limits<std::size_t>::max)(),
-            std::memory_order_relaxed);
-        impl->might_have_pending_waits_.store(false, std::memory_order_relaxed);
-        BOOST_COROSIO_ASSERT(impl->waiter_ == nullptr);
-    }
-    else
-    {
-        impl = new timer::implementation(*this);
-    }
-    return impl;
+    return pool_.acquire(*this);
 }
 
 inline void
@@ -402,11 +409,20 @@ timer_service::destroy_impl(timer::implementation& impl)
     }
 
     if (try_push_tl_cache(&impl))
+    {
+        // The TL slot takes sole ownership: it is deleted directly by
+        // tl_cache_owner / the stale-service path, never through this
+        // pool, so it must leave live_ now or ~object_pool() would see
+        // it as abandoned (and, at the wrong moment, double-delete it
+        // after a later construct() re-adopts it).
+        [[maybe_unused]] bool const removed = pool_.remove(&impl);
+        BOOST_COROSIO_ASSERT(removed);
         return;
+    }
 
-    std::lock_guard lock(mutex_);
-    impl.next_free_ = free_list_;
-    free_list_      = &impl;
+    // No op keepalives on a timer impl: this is the only reference,
+    // so release() always recycles immediately via retire().
+    release(&impl);
 }
 
 inline void

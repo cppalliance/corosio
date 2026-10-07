@@ -86,4 +86,18 @@
 
 #endif // BOOST_COROSIO_MRDOCS
 
+// ThreadSanitizer cannot model a standalone std::atomic_thread_fence;
+// code that needs a different (stronger) ordering under it checks this.
+#if defined(__SANITIZE_THREAD__)
+#define BOOST_COROSIO_TSAN 1
+#elif defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+#define BOOST_COROSIO_TSAN 1
+#endif
+#endif
+
+#ifndef BOOST_COROSIO_TSAN
+#define BOOST_COROSIO_TSAN 0
+#endif
+
 #endif // BOOST_COROSIO_DETAIL_PLATFORM_HPP

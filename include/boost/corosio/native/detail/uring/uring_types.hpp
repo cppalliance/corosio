@@ -15,6 +15,7 @@
 
 #if BOOST_COROSIO_HAS_URING
 
+#include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/native/detail/uring/uring_acceptor_ops.hpp>
 #include <boost/corosio/native/detail/uring/uring_buffer.hpp>
@@ -69,8 +70,8 @@ class uring_local_datagram_service;
     read, write, and connect operations are submitted to the kernel
     via `uring_submit_op` and complete through the ring's CQE path.
 
-    The object is always owned by a `shared_ptr` managed by the service.
-    In-flight ops hold an additional `shared_ptr` copy (`impl_ptr`) so
+    The service holds one intrusive reference for as long as the impl
+    is live; in-flight ops hold an additional `object_ref_` keepalive so
     the kernel's user-data pointer remains valid until the CQE arrives.
 
     @par Thread Safety
@@ -83,12 +84,13 @@ class BOOST_COROSIO_DECL uring_tcp_socket final
           uring_tcp_socket,
           tcp_socket::implementation,
           endpoint>
+    , public intrusive_list<uring_tcp_socket>::node
 {
     friend uring_tcp_service;
 
     int family_             = AF_UNSPEC; // cached at open_socket
     uring_scheduler* sched_ = nullptr;
-    [[maybe_unused]] uring_tcp_service* svc_ = nullptr;
+    uring_tcp_service* svc_ = nullptr;
 
     // fd_ and local_endpoint_ are provided by native_socket_base (the
     // readiness/completion-agnostic socket base shared with the reactor
@@ -207,7 +209,7 @@ public:
                 return dispatch_coro(ex, rd_.cont);
             }
             rd_.prepare(
-                h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_,
+                h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
                 buffers, token);
             if (stop_now)
                 rd_.cancelled.store(true, std::memory_order_release);
@@ -222,7 +224,7 @@ public:
         }
 
         rd_.prepare(
-            h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_, buffers,
+            h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_, buffers,
             token);
         sched_->work_started();
         if (rd_.cancelled.load(std::memory_order_acquire))
@@ -286,7 +288,7 @@ public:
                 return dispatch_coro(ex, wr_.cont);
             }
             wr_.prepare(
-                h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_,
+                h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
                 buffers, token);
             if (stop_now)
                 wr_.cancelled.store(true, std::memory_order_release);
@@ -301,7 +303,7 @@ public:
         }
 
         wr_.prepare(
-            h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_, buffers,
+            h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_, buffers,
             token);
         sched_->work_started();
         if (wr_.cancelled.load(std::memory_order_acquire))
@@ -337,7 +339,7 @@ public:
             }
             conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
             conn_.prepare(
-                h, ex, ec, fd_, sched_, shared_from_this(), ep,
+                h, ex, ec, fd_, sched_, detail::object_ref(this), ep,
                 &remote_endpoint_, &local_endpoint_, token);
             conn_.cancelled.store(true, std::memory_order_release);
             sched_->work_started();
@@ -352,7 +354,7 @@ public:
         // a subsequent IORING_OP_CONNECT would see EALREADY — avoid.
         conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
         conn_.prepare(
-            h, ex, ec, fd_, sched_, shared_from_this(), ep, &remote_endpoint_,
+            h, ex, ec, fd_, sched_, detail::object_ref(this), ep, &remote_endpoint_,
             &local_endpoint_, token);
         sched_->work_started();
         if (conn_.cancelled.load(std::memory_order_acquire))
@@ -386,7 +388,7 @@ public:
             break;
         }
         wait_op_.prepare(
-            h, ex, ec, fd_, sched_, shared_from_this(), poll_flags, token);
+            h, ex, ec, fd_, sched_, detail::object_ref(this), poll_flags, token);
         sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
@@ -436,6 +438,9 @@ public:
     /// resolves before the fd number can be recycled.
     void close_socket() noexcept
     {
+        // A connect completing after this must not write endpoints into
+        // a closed impl that may be recycled.
+        conn_.request_cancel();
         if (fd_ >= 0)
         {
             sched_->cancel_and_flush(fd_);
@@ -446,6 +451,50 @@ public:
         remote_endpoint_ = endpoint{};
         local_endpoint_state_.store(
             endpoint_state::unresolved, std::memory_order_release);
+    }
+
+    /** Recycle into the owning service's pool at zero references.
+
+        Defined out-of-line after `uring_tcp_service` — its body needs
+        the service's complete type to reach the private `pool_`
+        member (reachable because this impl is a friend), and this
+        non-template member would otherwise require it right here,
+        before the service class exists in the file.
+    */
+    void retire() noexcept override;
+
+    /** Reset op slots, cached endpoints, and the speculation hint for
+        recycling.
+
+        `close_socket()` already closed fd_ before the refcount reached
+        zero; each op's own `prepare()` overwrites its iovec/addr scratch
+        before the next use. What is left: the endpoints and their
+        resolution state (a connect completing on another thread can
+        write them after close), `family_`
+        (cached by `open_socket()`, but never touched by the accepted-
+        connection `adopt_fd()` path, so a socket recycled through
+        `adopt_fd()` would otherwise keep the prior session's family),
+        the speculation hint (a per-connection performance heuristic
+        that must not leak into the next logical connection), and the
+        `stop_cb` invariant on every op slot.
+
+        @pre refs_ == 0, fd closed, no op in flight.
+    */
+    void reuse() noexcept
+    {
+        BOOST_COROSIO_ASSERT(fd_ == -1);
+        // A connect completing on another thread while the socket closed
+        // can still have written these.
+        local_endpoint_  = endpoint{};
+        remote_endpoint_ = endpoint{};
+        local_endpoint_state_.store(
+            endpoint_state::unresolved, std::memory_order_relaxed);
+        BOOST_COROSIO_ASSERT(!rd_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wr_.stop_cb);
+        BOOST_COROSIO_ASSERT(!conn_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wait_op_.stop_cb);
+        family_ = AF_UNSPEC;
+        spec_.reset();
     }
 
     endpoint local_endpoint() const noexcept override
@@ -484,9 +533,10 @@ public:
     Satisfies the `tcp_service` interface so the generic `tcp_socket`
     front-end can call `open_socket` and `bind_socket` transparently.
 
-    Socket impls are reference-counted inside the service map; raw
-    pointers returned from `construct()` remain valid until `destroy()`
-    or `shutdown()` is called.
+    Socket impls live in the service's `object_pool`. `construct()`
+    hands out a pooled impl with one reference already held; `destroy()`
+    releases it, and `retire()` recycles it onto the free list
+    instead of freeing it.
 
     @par Thread Safety
     All public member functions are thread-safe.
@@ -643,7 +693,7 @@ public:
     */
     uring_tcp_socket* adopt_fd(int fd, endpoint const& peer)
     {
-        auto p = std::make_shared<uring_tcp_socket>(*this, *sched_);
+        auto* p = this->acquire_impl();
         p->fd_ = fd;
         p->remote_endpoint_ = peer;
         // Mark the local endpoint as authoritative-but-unresolved.
@@ -654,9 +704,15 @@ public:
             uring_tcp_socket::endpoint_state::lazy_pending,
             std::memory_order_release);
 
-        return this->register_impl(std::move(p));
+        return p;
     }
 };
+
+inline void
+uring_tcp_socket::retire() noexcept
+{
+    svc_->pool_.recycle(this);
+}
 
 /** TCP acceptor implementation for io_uring.
 
@@ -672,7 +728,8 @@ class BOOST_COROSIO_DECL uring_tcp_acceptor final
           uring_tcp_acceptor,
           tcp_acceptor::implementation,
           endpoint,
-          uring_tcp_service>
+          uring_tcp_service,
+          uring_tcp_acceptor_service>
 {
     friend uring_tcp_acceptor_service;
 
@@ -680,7 +737,8 @@ class BOOST_COROSIO_DECL uring_tcp_acceptor final
         uring_tcp_acceptor,
         tcp_acceptor::implementation,
         endpoint,
-        uring_tcp_service>;
+        uring_tcp_service,
+        uring_tcp_acceptor_service>;
 
     // Readiness-wait slot. The multishot accept op delivers accepted
     // fds, but `wait()` reports raw poll readiness on the listening fd
@@ -689,11 +747,21 @@ class BOOST_COROSIO_DECL uring_tcp_acceptor final
 
 public:
     explicit uring_tcp_acceptor(
-        uring_tcp_acceptor_service&,
+        uring_tcp_acceptor_service& svc,
         uring_scheduler& sched,
         uring_tcp_service& peer_svc) noexcept
-        : base_type(sched, peer_svc)
+        : base_type(svc, sched, peer_svc)
     {
+    }
+
+    /** Extend the base reset with this acceptor's own `wait_op_` slot.
+
+        @pre refs_ == 0, no wait in flight (see base_type::reuse()).
+    */
+    void reuse() noexcept
+    {
+        base_type::reuse();
+        BOOST_COROSIO_ASSERT(!wait_op_.stop_cb);
     }
 
     std::coroutine_handle<> accept(
@@ -718,8 +786,7 @@ public:
         // instead of parking a waiter no accept machinery will signal.
         if (this->fd_ < 0)
         {
-            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept-adjacent initiation path: OOM => std::terminate is the intended behavior
-            auto* op   = new uring_accept_op();
+            auto* op   = this->acquire_node();
             op->h      = h;
             op->ex     = ex;
             op->ec_out = ec;
@@ -739,8 +806,7 @@ public:
         // fail uniformly instead of never completing.
         if (w == wait_type::write)
         {
-            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept-adjacent initiation path: OOM => std::terminate is the intended behavior
-            auto* op   = new uring_accept_op();
+            auto* op   = this->acquire_node();
             op->h      = h;
             op->ex     = ex;
             op->ec_out = ec;
@@ -751,7 +817,7 @@ public:
         // Errors are not consumed by the accept machinery, so the
         // error wait still polls the descriptor.
         wait_op_.prepare(
-            h, ex, ec, this->fd_, this->sched_, this->shared_from_this(),
+            h, ex, ec, this->fd_, this->sched_, detail::object_ref(this),
             POLLPRI | POLLERR | POLLHUP, token);
         this->sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
@@ -782,9 +848,10 @@ public:
     `tcp_acceptor` front-end can call `open_acceptor_socket`,
     `bind_acceptor`, and `listen_acceptor` transparently.
 
-    Acceptor impls are reference-counted inside the service map; raw
-    pointers returned from `construct()` remain valid until `destroy()`
-    or `shutdown()` is called.
+    Acceptor impls live in the service's `object_pool`. `construct()`
+    hands out a pooled impl with one reference already held; `destroy()`
+    releases it, and `retire()` recycles it onto the free list
+    instead of freeing it.
 
     @par Thread Safety
     All public member functions are thread-safe.
@@ -792,6 +859,9 @@ public:
 class BOOST_COROSIO_DECL uring_tcp_acceptor_service final
     : public tcp_acceptor_service
 {
+    template<class, class, class, class, class>
+    friend class uring_multishot_acceptor_base;
+
 public:
     /// Identifies this service for `execution_context` lookup.
     using key_type = tcp_acceptor_service;
@@ -809,60 +879,52 @@ public:
 
     void shutdown() override
     {
-        std::vector<std::shared_ptr<uring_tcp_acceptor>> live;
+        // See uring_socket_service_base::shutdown(): snapshot under an
+        // acquired reference, cancel without the pool lock held;
+        // shutdown() sets shutting-down and takes the snapshot in one
+        // critical section, so a cancel that drops the last ref deletes
+        // rather than recycles.
+        std::vector<uring_tcp_acceptor*> live;
+        pool_.shutdown(
+            [&](uring_tcp_acceptor* a)
+            {
+                acquire(a);
+                live.push_back(a);
+            });
+        for (auto* a : live)
         {
-            std::lock_guard lk(mutex_);
-            live.reserve(impls_.size());
-            for (auto& [_, p] : impls_)
-                live.push_back(p);
+            a->cancel();
+            release(a);
         }
-        // Cancel without the lock held to avoid inversion if cancel()
-        // re-enters the service.
-        for (auto& p : live)
-            p->cancel();
     }
 
     io_object::implementation* construct() override
     {
-        auto p =
-            std::make_shared<uring_tcp_acceptor>(*this, *sched_, *peer_svc_);
-        auto* raw = p.get();
-        std::lock_guard lk(mutex_);
-        impls_.emplace(raw, std::move(p));
-        return raw;
+        return acquire_impl();
     }
 
     void destroy(io_object::implementation* p) override
     {
         if (!p)
             return;
-        std::lock_guard lk(mutex_);
-        impls_.erase(static_cast<uring_tcp_acceptor*>(p));
+        release(static_cast<uring_tcp_acceptor*>(p));
     }
 
     // Close the fd eagerly when tcp_acceptor::close() is called, before
-    // destroy() drops the shared_ptr and the destructor runs.
+    // destroy() releases the service's reference and retire() may
+    // recycle this impl.
     void close(io_object::handle& h) override
     {
         auto* acc = static_cast<uring_tcp_acceptor*>(h.get());
         if (acc && acc->fd_ >= 0)
         {
-            // Flush the cancel SQE before closing the fd so the kernel
-            // resolves the file from the fd number while it is still
-            // valid. drain_waiters_only avoids submitting cancel-by-fd
-            // a second time (cancel_and_flush already did it).
-            sched_->cancel_and_flush(acc->fd_);
+            // Disown the arming before the cancel, then flush the
+            // cancel while the fd still names the listener.
             acc->drain_waiters_only();
+            sched_->cancel_and_flush(acc->fd_);
             ::close(acc->fd_);
-            acc->fd_ = -1;
-
-            // Break the multi_op_ -> impl_ptr (shared_ptr<this>) cycle
-            // start_multishot established. The acceptor destructor's
-            // drain_cqes_for(multi_op_.get()) is the safety net; here
-            // we just drop the cycle so the impl can be released when
-            // the user's last shared_ptr does.
-            if (acc->multi_op_)
-                acc->multi_op_->impl_ptr.reset();
+            acc->fd_             = -1;
+            acc->local_endpoint_ = endpoint{};
         }
     }
 
@@ -918,10 +980,6 @@ public:
         // The public assign() guarantees the object is closed.
         if (auto ec = validate_socket_fd(nfd, SOCK_STREAM, true))
             return ec;
-
-        // Unconditional: release_socket() also leaves the op in flight,
-        // and it clears fd_ before returning.
-        acc.retire_multishot();
 
         acc.adopt_listening_fd(nfd);
 
@@ -987,11 +1045,15 @@ public:
     }
 
 private:
+    /// Pop a recycled impl or news one, with the service reference held.
+    uring_tcp_acceptor* acquire_impl()
+    {
+        return pool_.acquire(*this, *sched_, *peer_svc_);
+    }
+
     uring_scheduler* sched_;
     uring_tcp_service* peer_svc_;
-    std::mutex mutex_;
-    std::unordered_map<uring_tcp_acceptor*, std::shared_ptr<uring_tcp_acceptor>>
-        impls_;
+    object_pool<uring_tcp_acceptor> pool_;
 };
 
 /** Unix domain stream socket implementation for io_uring.
@@ -1001,8 +1063,8 @@ private:
     kernel via `uring_submit_op` and complete through the ring's
     CQE path.
 
-    The object is always owned by a `shared_ptr` managed by the service.
-    In-flight ops hold an additional `shared_ptr` copy (`impl_ptr`) so
+    The service holds one intrusive reference for as long as the impl
+    is live; in-flight ops hold an additional `object_ref_` keepalive so
     the kernel's user-data pointer remains valid until the CQE arrives.
 
     @par Thread Safety
@@ -1015,11 +1077,12 @@ class BOOST_COROSIO_DECL uring_local_stream_socket final
           uring_local_stream_socket,
           local_stream_socket::implementation,
           corosio::local_endpoint>
+    , public intrusive_list<uring_local_stream_socket>::node
 {
     friend uring_local_stream_service;
 
-    uring_scheduler* sched_                           = nullptr;
-    [[maybe_unused]] uring_local_stream_service* svc_ = nullptr;
+    uring_scheduler* sched_          = nullptr;
+    uring_local_stream_service* svc_ = nullptr;
 
     // fd_ and local_endpoint_ live in native_socket_base, which also
     // provides native_handle/is_open/set_option/get_option/local_endpoint.
@@ -1114,7 +1177,7 @@ public:
                 return dispatch_coro(ex, rd_.cont);
             }
             rd_.prepare(
-                h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_,
+                h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
                 buffers, token);
             if (stop_now)
                 rd_.cancelled.store(true, std::memory_order_release);
@@ -1129,7 +1192,7 @@ public:
         }
 
         rd_.prepare(
-            h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_, buffers,
+            h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_, buffers,
             token);
         sched_->work_started();
         if (rd_.cancelled.load(std::memory_order_acquire))
@@ -1193,7 +1256,7 @@ public:
                 return dispatch_coro(ex, wr_.cont);
             }
             wr_.prepare(
-                h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_,
+                h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
                 buffers, token);
             if (stop_now)
                 wr_.cancelled.store(true, std::memory_order_release);
@@ -1208,7 +1271,7 @@ public:
         }
 
         wr_.prepare(
-            h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_, buffers,
+            h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_, buffers,
             token);
         sched_->work_started();
         if (wr_.cancelled.load(std::memory_order_acquire))
@@ -1244,7 +1307,7 @@ public:
             }
             conn_.addrlen = to_sockaddr(ep, conn_.addr);
             conn_.prepare(
-                h, ex, ec, fd_, sched_, shared_from_this(), ep,
+                h, ex, ec, fd_, sched_, detail::object_ref(this), ep,
                 &remote_endpoint_, &local_endpoint_, token);
             conn_.cancelled.store(true, std::memory_order_release);
             sched_->work_started();
@@ -1259,7 +1322,7 @@ public:
         // a subsequent IORING_OP_CONNECT would see EALREADY — avoid.
         conn_.addrlen = to_sockaddr(ep, conn_.addr);
         conn_.prepare(
-            h, ex, ec, fd_, sched_, shared_from_this(), ep, &remote_endpoint_,
+            h, ex, ec, fd_, sched_, detail::object_ref(this), ep, &remote_endpoint_,
             &local_endpoint_, token);
         sched_->work_started();
         if (conn_.cancelled.load(std::memory_order_acquire))
@@ -1293,7 +1356,7 @@ public:
             break;
         }
         wait_op_.prepare(
-            h, ex, ec, fd_, sched_, shared_from_this(), poll_flags, token);
+            h, ex, ec, fd_, sched_, detail::object_ref(this), poll_flags, token);
         sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
@@ -1340,6 +1403,9 @@ public:
     /// Called by the service on close()/teardown.
     void close_socket() noexcept
     {
+        // A connect completing after this must not write endpoints into
+        // a closed impl that may be recycled.
+        conn_.request_cancel();
         if (fd_ >= 0)
         {
             sched_->cancel_and_flush(fd_);
@@ -1348,6 +1414,29 @@ public:
         }
         local_endpoint_  = corosio::local_endpoint{};
         remote_endpoint_ = corosio::local_endpoint{};
+    }
+
+    /// Recycle into the owning service's pool. See
+    /// uring_tcp_socket::retire() for why this is out-of-line.
+    void retire() noexcept override;
+
+    /** Reset op slots, cached endpoints, and the speculation hint for
+        recycling. See uring_tcp_socket::reuse() for the rationale.
+
+        @pre refs_ == 0, fd closed, no op in flight.
+    */
+    void reuse() noexcept
+    {
+        BOOST_COROSIO_ASSERT(fd_ == -1);
+        // A connect completing on another thread while the socket closed
+        // can still have written these.
+        local_endpoint_  = corosio::local_endpoint{};
+        remote_endpoint_ = corosio::local_endpoint{};
+        BOOST_COROSIO_ASSERT(!rd_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wr_.stop_cb);
+        BOOST_COROSIO_ASSERT(!conn_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wait_op_.stop_cb);
+        spec_.reset();
     }
 
     corosio::local_endpoint remote_endpoint() const noexcept override
@@ -1363,9 +1452,10 @@ public:
     generic `local_stream_socket` front-end can call `open_socket` and
     `assign_socket` transparently.
 
-    Socket impls are reference-counted inside the service map; raw
-    pointers returned from `construct()` remain valid until `destroy()`
-    or `shutdown()` is called.
+    Socket impls live in the service's `object_pool`. `construct()`
+    hands out a pooled impl with one reference already held; `destroy()`
+    releases it, and `retire()` recycles it onto the free list
+    instead of freeing it.
 
     @par Thread Safety
     All public member functions are thread-safe.
@@ -1483,7 +1573,7 @@ public:
     uring_local_stream_socket*
     adopt_fd(int fd, corosio::local_endpoint const& peer)
     {
-        auto p = std::make_shared<uring_local_stream_socket>(*this, *sched_);
+        auto* p = this->acquire_impl();
         p->fd_ = fd;
         p->remote_endpoint_ = peer;
 
@@ -1492,9 +1582,15 @@ public:
         if (::getsockname(fd, reinterpret_cast<sockaddr*>(&local), &len) == 0)
             p->local_endpoint_ = sockaddr_to_local_endpoint(local, len);
 
-        return this->register_impl(std::move(p));
+        return p;
     }
 };
+
+inline void
+uring_local_stream_socket::retire() noexcept
+{
+    svc_->pool_.recycle(this);
+}
 
 /** Local-stream (Unix domain) acceptor for io_uring.
 
@@ -1509,7 +1605,8 @@ class BOOST_COROSIO_DECL uring_local_stream_acceptor final
           uring_local_stream_acceptor,
           local_stream_acceptor::implementation,
           corosio::local_endpoint,
-          uring_local_stream_service>
+          uring_local_stream_service,
+          uring_local_stream_acceptor_service>
 {
     friend uring_local_stream_acceptor_service;
 
@@ -1517,18 +1614,29 @@ class BOOST_COROSIO_DECL uring_local_stream_acceptor final
         uring_local_stream_acceptor,
         local_stream_acceptor::implementation,
         corosio::local_endpoint,
-        uring_local_stream_service>;
+        uring_local_stream_service,
+        uring_local_stream_acceptor_service>;
 
     // Readiness-wait slot. See uring_tcp_acceptor::wait_op_.
     uring_wait_op wait_op_;
 
 public:
     explicit uring_local_stream_acceptor(
-        uring_local_stream_acceptor_service&,
+        uring_local_stream_acceptor_service& svc,
         uring_scheduler& sched,
         uring_local_stream_service& peer_svc) noexcept
-        : base_type(sched, peer_svc)
+        : base_type(svc, sched, peer_svc)
     {
+    }
+
+    /** Extend the base reset with this acceptor's own `wait_op_` slot.
+
+        @pre refs_ == 0, no wait in flight (see base_type::reuse()).
+    */
+    void reuse() noexcept
+    {
+        base_type::reuse();
+        BOOST_COROSIO_ASSERT(!wait_op_.stop_cb);
     }
 
     std::coroutine_handle<> accept(
@@ -1553,8 +1661,7 @@ public:
         // instead of parking a waiter no accept machinery will signal.
         if (this->fd_ < 0)
         {
-            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept-adjacent initiation path: OOM => std::terminate is the intended behavior
-            auto* op   = new uring_accept_op();
+            auto* op   = this->acquire_node();
             op->h      = h;
             op->ex     = ex;
             op->ec_out = ec;
@@ -1574,8 +1681,7 @@ public:
         // fail uniformly instead of never completing.
         if (w == wait_type::write)
         {
-            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept-adjacent initiation path: OOM => std::terminate is the intended behavior
-            auto* op   = new uring_accept_op();
+            auto* op   = this->acquire_node();
             op->h      = h;
             op->ex     = ex;
             op->ec_out = ec;
@@ -1586,7 +1692,7 @@ public:
         // Errors are not consumed by the accept machinery, so the
         // error wait still polls the descriptor.
         wait_op_.prepare(
-            h, ex, ec, this->fd_, this->sched_, this->shared_from_this(),
+            h, ex, ec, this->fd_, this->sched_, detail::object_ref(this),
             POLLPRI | POLLERR | POLLHUP, token);
         this->sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
@@ -1618,9 +1724,10 @@ public:
     `open_acceptor_socket`, `bind_acceptor`, and `listen_acceptor`
     transparently.
 
-    Acceptor impls are reference-counted inside the service map; raw
-    pointers returned from `construct()` remain valid until `destroy()`
-    or `shutdown()` is called.
+    Acceptor impls live in the service's `object_pool`. `construct()`
+    hands out a pooled impl with one reference already held; `destroy()`
+    releases it, and `retire()` recycles it onto the free list
+    instead of freeing it.
 
     @par Thread Safety
     All public member functions are thread-safe.
@@ -1628,6 +1735,9 @@ public:
 class BOOST_COROSIO_DECL uring_local_stream_acceptor_service final
     : public local_stream_acceptor_service
 {
+    template<class, class, class, class, class>
+    friend class uring_multishot_acceptor_base;
+
 public:
     /// Identifies this service for `execution_context` lookup.
     using key_type = local_stream_acceptor_service;
@@ -1645,56 +1755,47 @@ public:
 
     void shutdown() override
     {
-        std::vector<std::shared_ptr<uring_local_stream_acceptor>> live;
+        // See uring_tcp_acceptor_service::shutdown() for the ordering
+        // rationale.
+        std::vector<uring_local_stream_acceptor*> live;
+        pool_.shutdown(
+            [&](uring_local_stream_acceptor* a)
+            {
+                acquire(a);
+                live.push_back(a);
+            });
+        for (auto* a : live)
         {
-            std::lock_guard lk(mutex_);
-            live.reserve(impls_.size());
-            for (auto& [_, p] : impls_)
-                live.push_back(p);
+            a->cancel();
+            release(a);
         }
-        // Cancel without the lock held to avoid inversion if cancel()
-        // re-enters the service.
-        for (auto& p : live)
-            p->cancel();
     }
 
     io_object::implementation* construct() override
     {
-        auto p = std::make_shared<uring_local_stream_acceptor>(
-            *this, *sched_, *peer_svc_);
-        auto* raw = p.get();
-        std::lock_guard lk(mutex_);
-        impls_.emplace(raw, std::move(p));
-        return raw;
+        return acquire_impl();
     }
 
     void destroy(io_object::implementation* p) override
     {
         if (!p)
             return;
-        std::lock_guard lk(mutex_);
-        impls_.erase(static_cast<uring_local_stream_acceptor*>(p));
+        release(static_cast<uring_local_stream_acceptor*>(p));
     }
 
     // Close the fd eagerly when local_stream_acceptor::close() is called,
-    // before destroy() drops the shared_ptr and the destructor runs.
+    // before destroy() drops the service's reference and recycling runs.
     void close(io_object::handle& h) override
     {
         auto* acc = static_cast<uring_local_stream_acceptor*>(h.get());
         if (acc && acc->fd_ >= 0)
         {
-            // cancel_and_flush submits cancel-by-fd; drain_waiters_only
-            // drains queued waiters without re-submitting it.
-            sched_->cancel_and_flush(acc->fd_);
+            // See uring_tcp_acceptor_service::close.
             acc->drain_waiters_only();
+            sched_->cancel_and_flush(acc->fd_);
             ::close(acc->fd_);
-            acc->fd_ = -1;
-
-            // Break the multi_op_ -> impl_ptr (shared_ptr<this>) cycle
-            // start_multishot established. See the symmetric comment
-            // in uring_tcp_acceptor_service::close.
-            if (acc->multi_op_)
-                acc->multi_op_->impl_ptr.reset();
+            acc->fd_             = -1;
+            acc->local_endpoint_ = corosio::local_endpoint{};
         }
     }
 
@@ -1744,10 +1845,6 @@ public:
         // The public assign() guarantees the object is closed.
         if (auto ec = validate_socket_fd(nfd, SOCK_STREAM, false))
             return ec;
-
-        // Unconditional: release_socket() also leaves the op in flight,
-        // and it clears fd_ before returning.
-        acc.retire_multishot();
 
         acc.adopt_listening_fd(nfd);
 
@@ -1814,13 +1911,15 @@ public:
     }
 
 private:
+    /// Pop a recycled impl or news one, with the service reference held.
+    uring_local_stream_acceptor* acquire_impl()
+    {
+        return pool_.acquire(*this, *sched_, *peer_svc_);
+    }
+
     uring_scheduler* sched_;
     uring_local_stream_service* peer_svc_;
-    std::mutex mutex_;
-    std::unordered_map<
-        uring_local_stream_acceptor*,
-        std::shared_ptr<uring_local_stream_acceptor>>
-        impls_;
+    object_pool<uring_local_stream_acceptor> pool_;
 };
 
 /** UDP socket implementation for io_uring.
@@ -1830,8 +1929,8 @@ private:
     to the kernel via `uring_submit_op` and complete through the ring's
     CQE path.
 
-    The object is always owned by a `shared_ptr` managed by the service.
-    In-flight ops hold an additional `shared_ptr` copy (`impl_ptr`) so
+    The service holds one intrusive reference for as long as the impl
+    is live; in-flight ops hold an additional `object_ref_` keepalive so
     the kernel's user-data pointer remains valid until the CQE arrives.
 
     @par Thread Safety
@@ -1844,12 +1943,13 @@ class BOOST_COROSIO_DECL uring_udp_socket final
           uring_udp_socket,
           udp_socket::implementation,
           corosio::endpoint>
+    , public intrusive_list<uring_udp_socket>::node
 {
     friend uring_udp_service;
 
     int family_             = AF_UNSPEC; // cached at open_socket
     uring_scheduler* sched_ = nullptr;
-    [[maybe_unused]] uring_udp_service* svc_ = nullptr;
+    uring_udp_service* svc_ = nullptr;
 
     // fd_ and local_endpoint_ live in native_socket_base, which also
     // provides native_handle/is_open/set_option/get_option/local_endpoint.
@@ -1964,7 +2064,7 @@ public:
             }
             conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
             conn_.prepare(
-                h, ex, ec, fd_, sched_, shared_from_this(), ep,
+                h, ex, ec, fd_, sched_, detail::object_ref(this), ep,
                 &remote_endpoint_, &local_endpoint_, token);
             conn_.cancelled.store(true, std::memory_order_release);
             sched_->work_started();
@@ -1979,7 +2079,7 @@ public:
         // a prior speculative ::connect would leave EINPROGRESS → EALREADY.
         conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
         conn_.prepare(
-            h, ex, ec, fd_, sched_, shared_from_this(), ep, &remote_endpoint_,
+            h, ex, ec, fd_, sched_, detail::object_ref(this), ep, &remote_endpoint_,
             &local_endpoint_, token);
         sched_->work_started();
         if (conn_.cancelled.load(std::memory_order_acquire))
@@ -2013,7 +2113,7 @@ public:
             break;
         }
         wait_op_.prepare(
-            h, ex, ec, fd_, sched_, shared_from_this(), poll_flags, token);
+            h, ex, ec, fd_, sched_, detail::object_ref(this), poll_flags, token);
         sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
@@ -2059,6 +2159,9 @@ public:
     /// Called by the service on close()/teardown.
     void close_socket() noexcept
     {
+        // A connect completing after this must not write endpoints into
+        // a closed impl that may be recycled.
+        conn_.request_cancel();
         if (fd_ >= 0)
         {
             sched_->cancel_and_flush(fd_);
@@ -2067,6 +2170,35 @@ public:
         }
         local_endpoint_  = endpoint{};
         remote_endpoint_ = endpoint{};
+    }
+
+    /// Recycle into the owning service's pool. See
+    /// uring_tcp_socket::retire() for why this is out-of-line.
+    void retire() noexcept override;
+
+    /** Reset op slots, cached endpoints, the speculation hint, and
+        `family_` for recycling. `family_` is set by `open_socket()`/
+        `assign_socket()`, not by this reset, so resetting it to
+        `AF_UNSPEC` here is defensive — it guards any future entry
+        path that constructs a usable socket without going through
+        either of those, the same hazard `uring_tcp_socket::reuse()`
+        documents for its `adopt_fd()` path.
+
+        @pre refs_ == 0, fd closed, no op in flight.
+    */
+    void reuse() noexcept
+    {
+        BOOST_COROSIO_ASSERT(fd_ == -1);
+        // A connect completing on another thread while the socket closed
+        // can still have written these.
+        local_endpoint_  = endpoint{};
+        remote_endpoint_ = endpoint{};
+        BOOST_COROSIO_ASSERT(!conn_.stop_cb);
+        BOOST_COROSIO_ASSERT(!send_.stop_cb);
+        BOOST_COROSIO_ASSERT(!recv_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wait_op_.stop_cb);
+        family_ = AF_UNSPEC;
+        spec_.reset();
     }
 
     endpoint remote_endpoint() const noexcept override
@@ -2136,7 +2268,7 @@ private:
                 return dispatch_coro(ex, send_.cont);
             }
             send_.prepare(
-                h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_,
+                h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
                 buffers, dest_len, dest_storage, to_native_msg_flags(flags),
                 token);
             if (stop_now)
@@ -2152,7 +2284,7 @@ private:
         }
 
         send_.prepare(
-            h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_, buffers,
+            h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_, buffers,
             dest_len, dest_storage, to_native_msg_flags(flags), token);
         sched_->work_started();
         if (send_.cancelled.load(std::memory_order_acquire))
@@ -2230,7 +2362,7 @@ private:
                 return dispatch_coro(ex, recv_.cont);
             }
             recv_.prepare(
-                h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_,
+                h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
                 buffers, source_out, want_source ? &write_ip_source : nullptr,
                 to_native_msg_flags(flags), token);
             if (stop_now)
@@ -2256,7 +2388,7 @@ private:
         }
 
         recv_.prepare(
-            h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_, buffers,
+            h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_, buffers,
             source_out, want_source ? &write_ip_source : nullptr,
             to_native_msg_flags(flags), token);
         sched_->work_started();
@@ -2286,9 +2418,10 @@ private:
     front-end can call `open_datagram_socket` and `bind_datagram`
     transparently.
 
-    Socket impls are reference-counted inside the service map; raw
-    pointers returned from `construct()` remain valid until `destroy()`
-    or `shutdown()` is called.
+    Socket impls live in the service's `object_pool`. `construct()`
+    hands out a pooled impl with one reference already held; `destroy()`
+    releases it, and `retire()` recycles it onto the free list
+    instead of freeing it.
 
     @par Thread Safety
     All public member functions are thread-safe.
@@ -2425,6 +2558,12 @@ public:
     }
 };
 
+inline void
+uring_udp_socket::retire() noexcept
+{
+    svc_->pool_.recycle(this);
+}
+
 /** Unix domain datagram socket implementation for io_uring.
 
     Implements `local_datagram_socket::implementation` using a proactor
@@ -2432,8 +2571,8 @@ public:
     submitted to the kernel via `uring_submit_op` and complete through
     the ring's CQE path.
 
-    The object is always owned by a `shared_ptr` managed by the service.
-    In-flight ops hold an additional `shared_ptr` copy (`impl_ptr`) so
+    The service holds one intrusive reference for as long as the impl
+    is live; in-flight ops hold an additional `object_ref_` keepalive so
     the kernel's user-data pointer remains valid until the CQE arrives.
 
     @par Thread Safety
@@ -2446,11 +2585,12 @@ class BOOST_COROSIO_DECL uring_local_datagram_socket final
           uring_local_datagram_socket,
           local_datagram_socket::implementation,
           corosio::local_endpoint>
+    , public intrusive_list<uring_local_datagram_socket>::node
 {
     friend uring_local_datagram_service;
 
-    uring_scheduler* sched_                             = nullptr;
-    [[maybe_unused]] uring_local_datagram_service* svc_ = nullptr;
+    uring_scheduler* sched_               = nullptr;
+    uring_local_datagram_service* svc_    = nullptr;
 
     // fd_ and local_endpoint_ live in native_socket_base, which also
     // provides native_handle/is_open/set_option/get_option/local_endpoint.
@@ -2565,7 +2705,7 @@ public:
             }
             conn_.addrlen = to_sockaddr(ep, conn_.addr);
             conn_.prepare(
-                h, ex, ec, fd_, sched_, shared_from_this(), ep,
+                h, ex, ec, fd_, sched_, detail::object_ref(this), ep,
                 &remote_endpoint_, &local_endpoint_, token);
             conn_.cancelled.store(true, std::memory_order_release);
             sched_->work_started();
@@ -2580,7 +2720,7 @@ public:
         // a prior speculative ::connect would leave EINPROGRESS → EALREADY.
         conn_.addrlen = to_sockaddr(ep, conn_.addr);
         conn_.prepare(
-            h, ex, ec, fd_, sched_, shared_from_this(), ep, &remote_endpoint_,
+            h, ex, ec, fd_, sched_, detail::object_ref(this), ep, &remote_endpoint_,
             &local_endpoint_, token);
         sched_->work_started();
         if (conn_.cancelled.load(std::memory_order_acquire))
@@ -2614,7 +2754,7 @@ public:
             break;
         }
         wait_op_.prepare(
-            h, ex, ec, fd_, sched_, shared_from_this(), poll_flags, token);
+            h, ex, ec, fd_, sched_, detail::object_ref(this), poll_flags, token);
         sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
@@ -2661,6 +2801,9 @@ public:
     /// Called by the service on close()/teardown.
     void close_socket() noexcept
     {
+        // A connect completing after this must not write endpoints into
+        // a closed impl that may be recycled.
+        conn_.request_cancel();
         if (fd_ >= 0)
         {
             sched_->cancel_and_flush(fd_);
@@ -2669,6 +2812,29 @@ public:
         }
         local_endpoint_  = corosio::local_endpoint{};
         remote_endpoint_ = corosio::local_endpoint{};
+    }
+
+    /// Recycle into the owning service's pool. See
+    /// uring_tcp_socket::retire() for why this is out-of-line.
+    void retire() noexcept override;
+
+    /** Reset op slots, cached endpoints, and the speculation hint for
+        recycling. See uring_tcp_socket::reuse() for the rationale.
+
+        @pre refs_ == 0, fd closed, no op in flight.
+    */
+    void reuse() noexcept
+    {
+        BOOST_COROSIO_ASSERT(fd_ == -1);
+        // A connect completing on another thread while the socket closed
+        // can still have written these.
+        local_endpoint_  = corosio::local_endpoint{};
+        remote_endpoint_ = corosio::local_endpoint{};
+        BOOST_COROSIO_ASSERT(!conn_.stop_cb);
+        BOOST_COROSIO_ASSERT(!send_.stop_cb);
+        BOOST_COROSIO_ASSERT(!recv_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wait_op_.stop_cb);
+        spec_.reset();
     }
 
     corosio::local_endpoint remote_endpoint() const noexcept override
@@ -2757,7 +2923,7 @@ private:
                 return dispatch_coro(ex, send_.cont);
             }
             send_.prepare(
-                h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_,
+                h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
                 buffers, dest_len, dest_storage, to_native_msg_flags(flags),
                 token);
             if (stop_now)
@@ -2773,7 +2939,7 @@ private:
         }
 
         send_.prepare(
-            h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_, buffers,
+            h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_, buffers,
             dest_len, dest_storage, to_native_msg_flags(flags), token);
         sched_->work_started();
         if (send_.cancelled.load(std::memory_order_acquire))
@@ -2852,7 +3018,7 @@ private:
                 return dispatch_coro(ex, recv_.cont);
             }
             recv_.prepare(
-                h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_,
+                h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
                 buffers, source_out,
                 want_source ? &write_local_source : nullptr,
                 to_native_msg_flags(flags), token);
@@ -2879,7 +3045,7 @@ private:
         }
 
         recv_.prepare(
-            h, ex, ec, bytes, fd_, sched_, shared_from_this(), &spec_, buffers,
+            h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_, buffers,
             source_out, want_source ? &write_local_source : nullptr,
             to_native_msg_flags(flags), token);
         sched_->work_started();
@@ -2909,9 +3075,10 @@ private:
     generic `local_datagram_socket` front-end can call `open_socket` and
     `bind_socket` transparently.
 
-    Socket impls are reference-counted inside the service map; raw
-    pointers returned from `construct()` remain valid until `destroy()`
-    or `shutdown()` is called.
+    Socket impls live in the service's `object_pool`. `construct()`
+    hands out a pooled impl with one reference already held; `destroy()`
+    releases it, and `retire()` recycles it onto the free list
+    instead of freeing it.
 
     @par Thread Safety
     All public member functions are thread-safe.
@@ -3040,6 +3207,12 @@ public:
         return {};
     }
 };
+
+inline void
+uring_local_datagram_socket::retire() noexcept
+{
+    svc_->pool_.recycle(this);
+}
 
 } // namespace boost::corosio::detail
 

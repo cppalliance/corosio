@@ -71,6 +71,12 @@ public:
     }
 };
 
+inline void
+uring_descriptor::retire() noexcept
+{
+    svc_->pool_.recycle(this);
+}
+
 } // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_HAS_URING

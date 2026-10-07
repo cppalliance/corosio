@@ -43,7 +43,9 @@ namespace boost::corosio::detail {
     The mutex protects operation pointers and ready flags. ready_events_
     and is_enqueued_ are atomic for lock-free reactor access.
 */
-struct reactor_descriptor_state : scheduler_op
+struct reactor_descriptor_state
+    : scheduler_op
+    , reactor_retirable
 {
     /// Protects operation pointers and ready/cancel flags.
     /// Becomes a no-op in single-threaded mode.
@@ -93,15 +95,18 @@ struct reactor_descriptor_state : scheduler_op
     reactor_scheduler const* scheduler_ = nullptr;
 
     /// Prevents impl destruction while queued in the scheduler.
-    std::shared_ptr<void> impl_ref_;
+    detail::object_ref object_ref_;
 
     /// Add ready events atomically.
     /// Release pairs with the consumer's acquire exchange on
-    /// ready_events_ so the consumer sees all flags. On x86 (TSO)
-    /// this compiles to the same LOCK OR as relaxed.
+    /// ready_events_ so the consumer sees all flags. Acquire pairs with
+    /// registration's release store, so a reactor pass on another
+    /// thread sees the state registration initialized before handing
+    /// it to the kernel. On x86 (TSO) this compiles to the same LOCK OR
+    /// as relaxed.
     void add_ready_events(std::uint32_t ev) noexcept
     {
-        ready_events_.fetch_or(ev, std::memory_order_release);
+        ready_events_.fetch_or(ev, std::memory_order_acq_rel);
     }
 
     /// Invoke deferred I/O and dispatch completions.
@@ -110,12 +115,23 @@ struct reactor_descriptor_state : scheduler_op
         invoke_deferred_io();
     }
 
+    /// Move @p keep into this state if it is queued without one.
+    void hand_off(object_ref& keep) noexcept override
+    {
+        // Locked even to read the flag: a popped invocation clears it at
+        // the start of its critical section and still uses this state
+        // until it unlocks, so an unlocked false does not mean idle.
+        conditionally_enabled_mutex::scoped_lock lock(mutex);
+        if (is_enqueued_.load(std::memory_order_acquire) && !object_ref_)
+            object_ref_ = std::move(keep);
+    }
+
     /// Destroy without invoking.
-    /// Called during scheduler::shutdown() drain. Clear impl_ref_ to break
+    /// Called during scheduler::shutdown() drain. Clear object_ref_ to break
     /// the self-referential cycle set by close_socket().
     void destroy() override
     {
-        impl_ref_.reset();
+        object_ref_.reset();
     }
 
     /** Perform deferred I/O and queue completions.
@@ -130,18 +146,22 @@ struct reactor_descriptor_state : scheduler_op
 inline void
 reactor_descriptor_state::invoke_deferred_io()
 {
-    std::shared_ptr<void> prevent_impl_destruction;
+    detail::object_ref prevent_impl_destruction;
     ready_queue local_ops;
+    // Read under the lock: once it drops, a retired owner may be
+    // recycled, so nothing below touches this state.
+    reactor_scheduler const* sched = nullptr;
 
     {
         conditionally_enabled_mutex::scoped_lock lock(mutex);
+        sched = scheduler_;
 
-        // Must clear is_enqueued_ and move impl_ref_ under the same
+        // Must clear is_enqueued_ and move object_ref_ under the same
         // lock that processes I/O. close_socket() checks is_enqueued_
         // under this mutex — without atomicity between the flag store
         // and the ref move, close_socket() could see is_enqueued_==false,
-        // skip setting impl_ref_, and destroy the impl under us.
-        prevent_impl_destruction = std::move(impl_ref_);
+        // skip setting object_ref_, and destroy the impl under us.
+        prevent_impl_destruction = std::move(object_ref_);
         is_enqueued_.store(false, std::memory_order_release);
 
         std::uint32_t ev = ready_events_.exchange(0, std::memory_order_acquire);
@@ -339,12 +359,12 @@ reactor_descriptor_state::invoke_deferred_io()
     scheduler_op* first = ready_as_op(local_ops.pop());
     if (first)
     {
-        scheduler_->post_deferred_completions(local_ops);
+        sched->post_deferred_completions(local_ops);
         (*first)();
     }
     else
     {
-        scheduler_->compensating_work_started();
+        sched->compensating_work_started();
     }
 }
 

@@ -24,7 +24,6 @@
 
 #include <coroutine>
 #include <cstdint>
-#include <memory>
 
 namespace boost::corosio::detail {
 
@@ -38,9 +37,9 @@ class win_random_access_file_internal : public win_concurrent_handle
 public:
     win_random_access_file_internal(
         win_scheduler& sched,
-        win_state_list<win_handle_base>& list,
+        io_object::implementation& io,
         win_random_access_file_service& svc) noexcept
-        : win_concurrent_handle(sched, list)
+        : win_concurrent_handle(sched, io)
         , svc_(svc)
     {
     }
@@ -54,18 +53,32 @@ private:
     win_random_access_file_service& svc_;
 };
 
-/** Random-access file implementation wrapper for IOCP-based I/O. */
+/** Random-access file implementation for IOCP-based I/O.
+
+    Embeds its handle state and delegates every virtual call to it.
+    `win_random_access_file_service` recycles instances through its
+    pool instead of freeing them on every close.
+*/
 class win_random_access_file final
     : public random_access_file::implementation
     , public intrusive_list<win_random_access_file>::node
 {
-    std::shared_ptr<win_random_access_file_internal> internal_;
+    win_random_access_file_service& svc_;
+    win_random_access_file_internal internal_;
 
 public:
     explicit win_random_access_file(
-        std::shared_ptr<win_random_access_file_internal> internal) noexcept;
+        win_random_access_file_service& svc) noexcept;
 
-    void close_internal() noexcept;
+    /// Recycle into the owning service's pool. Defined out-of-line
+    /// after `win_random_access_file_service` is complete.
+    void retire() noexcept override;
+
+    /** Assert the closed state a recycled file starts from.
+
+        @pre refs_ == 0, handle closed, no op in flight.
+    */
+    void reuse() noexcept;
 
     std::coroutine_handle<> read_some_at(
         std::uint64_t offset,
@@ -94,7 +107,7 @@ public:
     native_handle_type release() override;
     std::error_code assign(native_handle_type handle) noexcept override;
 
-    win_random_access_file_internal* get_internal() const noexcept;
+    win_random_access_file_internal* get_internal() noexcept;
 };
 
 } // namespace boost::corosio::detail

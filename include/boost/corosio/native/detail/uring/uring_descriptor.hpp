@@ -218,12 +218,16 @@ fd_is_pollable(int fd) noexcept
     return pollable;
 }
 
+class uring_descriptor_service;
+
 class BOOST_COROSIO_DECL uring_descriptor final
     : public posix_stream_descriptor::implementation
-    , public std::enable_shared_from_this<uring_descriptor>
     , public intrusive_list<uring_descriptor>::node
 {
-    uring_scheduler* sched_ = nullptr;
+    friend class uring_descriptor_service;
+
+    uring_descriptor_service* svc_ = nullptr;
+    uring_scheduler* sched_        = nullptr;
     int fd_                 = -1;
     bool pollable_          = true;
 
@@ -239,13 +243,38 @@ class BOOST_COROSIO_DECL uring_descriptor final
     uring_wait_op wait_er_;
 
 public:
-    explicit uring_descriptor(uring_scheduler& sched) noexcept : sched_(&sched)
+    uring_descriptor(
+        uring_descriptor_service& svc, uring_scheduler& sched) noexcept
+        : svc_(&svc)
+        , sched_(&sched)
     {
     }
 
     ~uring_descriptor() override
     {
         close_descriptor();
+    }
+
+    /// Recycle into the owning service's pool. Defined out-of-line
+    /// after uring_descriptor_service for its complete type.
+    void retire() noexcept override;
+
+    /** Assert the closed state a recycled descriptor starts from.
+
+        `close_descriptor()` already drove fd_ to its closed value
+        before the refcount reached zero; each op's own `prepare()`
+        overwrites its state before the next use.
+
+        @pre refs_ == 0, fd closed, no op in flight.
+    */
+    void reuse() noexcept
+    {
+        BOOST_COROSIO_ASSERT(fd_ == -1);
+        BOOST_COROSIO_ASSERT(!rd_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wr_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wait_rd_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wait_wr_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wait_er_.stop_cb);
     }
 
     // -- io_stream::implementation --
@@ -260,7 +289,7 @@ public:
     {
         rd_.prepare(
             h, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_,
-            shared_from_this(), buffers, token);
+            detail::object_ref(this), buffers, token);
         arm_slot(rd_);
         sched_->work_started();
 
@@ -293,7 +322,7 @@ public:
     {
         wr_.prepare(
             h, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_,
-            shared_from_this(), buffers, token);
+            detail::object_ref(this), buffers, token);
         arm_slot(wr_);
         sched_->work_started();
 
@@ -345,7 +374,7 @@ public:
         }
 
         op->prepare(
-            h, ex, ec, fd_, sched_, shared_from_this(), poll_flags, token);
+            h, ex, ec, fd_, sched_, detail::object_ref(this), poll_flags, token);
         sched_->work_started();
 
         if (fd_ < 0)

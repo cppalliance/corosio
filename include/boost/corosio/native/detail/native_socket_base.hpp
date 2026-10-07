@@ -27,9 +27,10 @@
     Holds the part of a socket impl that does not care whether the backend
     is readiness-based (epoll/kqueue/select, which park ops on a
     descriptor_state) or completion-based (io_uring, which submits SQEs):
-    the file descriptor, the cached local endpoint, the impl lifecycle
-    bases (enable_shared_from_this + the service's intrusive tracking node),
-    and the synchronous accessors (native_handle / options / bind).
+    the file descriptor, the cached local endpoint, and the synchronous
+    accessors (native_handle / options / bind). The impl lifecycle (the
+    intrusive refcount + the owning service's recycling pool) is carried
+    by `io_object::implementation`, not by this base.
 
     reactor_basic_socket derives from this and adds the readiness machinery
     (descriptor_state, register_op, the cancel/close that deregister from
@@ -39,8 +40,7 @@
     readiness-agnostic socket surface, while the on-EAGAIN action (park vs
     submit-SQE) and the op model stay backend-specific.
 
-    @tparam Derived   The concrete socket type (CRTP, for shared_from_this
-                      and the intrusive node).
+    @tparam Derived   The concrete socket type (CRTP).
     @tparam ImplBase  The public vtable base (tcp_socket::implementation,
                       udp_socket::implementation, ...).
     @tparam Endpoint  The endpoint type (endpoint or local_endpoint).
@@ -51,7 +51,6 @@ namespace boost::corosio::detail {
 template<class Derived, class ImplBase, class Endpoint = endpoint>
 class native_socket_base
     : public ImplBase
-    , public std::enable_shared_from_this<Derived>
 {
 protected:
     // CRTP base: not publicly constructible. The check's preferred fix

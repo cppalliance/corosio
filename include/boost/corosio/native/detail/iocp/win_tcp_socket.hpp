@@ -18,6 +18,7 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -26,20 +27,18 @@
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
 
 #include <coroutine>
-#include <memory>
 
 #include <mswsock.h>
 
 namespace boost::corosio::detail {
 
 class win_tcp_service;
-class win_tcp_socket_internal;
+class win_tcp_socket;
 
 /** Connect operation state. */
 struct connect_op : overlapped_op
 {
-    win_tcp_socket_internal& internal;
-    std::shared_ptr<win_tcp_socket_internal> internal_ptr;
+    win_tcp_socket& internal;
     endpoint target_endpoint;
 
     static void do_complete(
@@ -49,7 +48,7 @@ struct connect_op : overlapped_op
         std::uint32_t error);
     static void do_cancel_impl(overlapped_op* op) noexcept;
 
-    explicit connect_op(win_tcp_socket_internal& internal_) noexcept;
+    explicit connect_op(win_tcp_socket& internal_) noexcept;
 };
 
 /** Read operation state with buffer descriptors. */
@@ -59,8 +58,7 @@ struct read_op : overlapped_op
     WSABUF wsabufs[max_buffers];
     DWORD wsabuf_count = 0;
     DWORD flags        = 0;
-    win_tcp_socket_internal& internal;
-    std::shared_ptr<win_tcp_socket_internal> internal_ptr;
+    win_tcp_socket& internal;
 
     static void do_complete(
         void* owner,
@@ -69,7 +67,7 @@ struct read_op : overlapped_op
         std::uint32_t error);
     static void do_cancel_impl(overlapped_op* op) noexcept;
 
-    explicit read_op(win_tcp_socket_internal& internal_) noexcept;
+    explicit read_op(win_tcp_socket& internal_) noexcept;
 };
 
 /** Write operation state with buffer descriptors. */
@@ -78,8 +76,7 @@ struct write_op : overlapped_op
     static constexpr std::size_t max_buffers = 16;
     WSABUF wsabufs[max_buffers];
     DWORD wsabuf_count = 0;
-    win_tcp_socket_internal& internal;
-    std::shared_ptr<win_tcp_socket_internal> internal_ptr;
+    win_tcp_socket& internal;
 
     static void do_complete(
         void* owner,
@@ -88,7 +85,7 @@ struct write_op : overlapped_op
         std::uint32_t error);
     static void do_cancel_impl(overlapped_op* op) noexcept;
 
-    explicit write_op(win_tcp_socket_internal& internal_) noexcept;
+    explicit write_op(win_tcp_socket& internal_) noexcept;
 };
 
 /** Readiness-wait operation state.
@@ -105,8 +102,7 @@ struct wait_op : overlapped_op
     WSABUF wsabuf{};
     DWORD flags = 0;
     wait_type w = wait_type::read;
-    win_tcp_socket_internal& internal;
-    std::shared_ptr<win_tcp_socket_internal> internal_ptr;
+    win_tcp_socket& internal;
 
     static void do_complete(
         void* owner,
@@ -115,23 +111,26 @@ struct wait_op : overlapped_op
         std::uint32_t error);
     static void do_cancel_impl(overlapped_op* op) noexcept;
 
-    explicit wait_op(win_tcp_socket_internal& internal_) noexcept;
+    explicit wait_op(win_tcp_socket& internal_) noexcept;
 };
 
-/** Internal socket state for IOCP-based I/O.
+/** Socket implementation for IOCP-based I/O.
 
-    This class contains the actual state for a single socket, including
-    the native socket handle and pending operations. It derives from
-    enable_shared_from_this so operations can extend its lifetime.
+    Collapses the historical internal-state/wrapper split into one
+    pooled `io_object::implementation`: it both owns the native socket
+    handle and pending operations, and directly implements
+    `tcp_socket::implementation`. `win_tcp_service` recycles instances
+    through its pool instead of freeing them on every close, so the
+    keepalive each embedded op holds is the intrusive `object_ref` from
+    `coro_op`, not a `shared_ptr`.
 
     @note Internal implementation detail. Users interact with socket class.
 */
-class win_tcp_socket_internal
-    : public intrusive_list<win_tcp_socket_internal>::node
-    , public std::enable_shared_from_this<win_tcp_socket_internal>
+class win_tcp_socket final
+    : public tcp_socket::implementation
+    , public intrusive_list<win_tcp_socket>::node
 {
     friend class win_tcp_service;
-    friend class win_tcp_socket;
     friend struct read_op;
     friend struct write_op;
     friend struct connect_op;
@@ -144,73 +143,29 @@ class win_tcp_socket_internal
     wait_op wt_;
     SOCKET socket_ = INVALID_SOCKET;
     int family_    = AF_UNSPEC;
-
-public:
-    explicit win_tcp_socket_internal(win_tcp_service& svc) noexcept;
-    ~win_tcp_socket_internal();
-
-    std::coroutine_handle<> connect(
-        std::coroutine_handle<>,
-        capy::executor_ref,
-        endpoint,
-        std::stop_token,
-        std::error_code*);
-
-    std::coroutine_handle<> read_some(
-        std::coroutine_handle<>,
-        capy::executor_ref,
-        buffer_param,
-        std::stop_token,
-        std::error_code*,
-        std::size_t*);
-
-    std::coroutine_handle<> write_some(
-        std::coroutine_handle<>,
-        capy::executor_ref,
-        buffer_param,
-        std::stop_token,
-        std::error_code*,
-        std::size_t*);
-
-    std::coroutine_handle<> wait(
-        std::coroutine_handle<>,
-        capy::executor_ref,
-        wait_type,
-        std::stop_token,
-        std::error_code*);
-
-    SOCKET native_handle() const noexcept;
-    endpoint local_endpoint() const noexcept;
-    endpoint remote_endpoint() const noexcept;
-    bool is_open() const noexcept;
-    void cancel() noexcept;
-    void close_socket() noexcept;
-    void set_socket(SOCKET s) noexcept;
-    void set_endpoints(endpoint local, endpoint remote) noexcept;
-
-private:
     endpoint local_endpoint_;
     endpoint remote_endpoint_;
-};
-
-/** Socket implementation wrapper for IOCP-based I/O.
-
-    This class is the public-facing implementation that holds a shared_ptr
-    to the internal state. The shared_ptr is hidden from the public interface.
-
-    @note Internal implementation detail. Users interact with socket class.
-*/
-class win_tcp_socket final
-    : public tcp_socket::implementation
-    , public intrusive_list<win_tcp_socket>::node
-{
-    std::shared_ptr<win_tcp_socket_internal> internal_;
 
 public:
-    explicit win_tcp_socket(
-        std::shared_ptr<win_tcp_socket_internal> internal) noexcept;
+    explicit win_tcp_socket(win_tcp_service& svc) noexcept;
 
-    void close_internal() noexcept;
+    /// Recycle into the owning service's pool. Defined out-of-line
+    /// after `win_tcp_service` is complete (needs `svc_.pool_`).
+    void retire() noexcept override;
+
+    /** Reset recycled state for reuse.
+
+        `close_socket()` already drives the socket handle and family
+        to their closed values, and each op's completion drops its
+        `object_ref_` before `refs_` can reach zero. The endpoints are
+        reset here: a connect completing on another thread can write
+        them after the close. Each op's `OVERLAPPED` fields are
+        re-seeded by `overlapped_op::reset()` at its next submit, so
+        they are not zeroed here.
+
+        @pre refs_ == 0, socket closed, no op in flight.
+    */
+    void reuse() noexcept;
 
     std::coroutine_handle<> connect(
         std::coroutine_handle<> h,
@@ -250,7 +205,7 @@ public:
     {
         // getsockname fails with WSAEINVAL on an unbound socket, so
         // the family recorded at socket creation is authoritative
-        return to_family(internal_ ? internal_->family_ : AF_UNSPEC);
+        return to_family(family_);
     }
 
     native_handle_type release_socket() noexcept override;
@@ -268,7 +223,11 @@ public:
     endpoint remote_endpoint() const noexcept override;
     void cancel() noexcept override;
 
-    win_tcp_socket_internal* get_internal() const noexcept;
+    /// Used by the acceptor's `accept_op` to finish setting up the peer.
+    void set_socket(SOCKET s) noexcept;
+    void set_endpoints(endpoint local, endpoint remote) noexcept;
+
+    void close_socket() noexcept;
 };
 
 } // namespace boost::corosio::detail

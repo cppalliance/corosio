@@ -25,7 +25,7 @@
 
       1. disarm the stop_callback,
       2. on the shutdown-drain path (owner == nullptr) just break the
-         impl_ptr keepalive cycle and return without resuming,
+         object_ref_ keepalive cycle and return without resuming,
       3. otherwise resume the coroutine on its executor, dropping the
          keepalive only after the continuation has been handed off.
 
@@ -113,7 +113,7 @@ decode_io_result(
     @param self  The completing op.
     @return True if this was a shutdown drain — the caller must `return`
             immediately without decoding or resuming. On that path the
-            impl_ptr keepalive is dropped here (which may destroy the impl,
+            object_ref_ keepalive is dropped here (which may destroy the impl,
             and with it the op storage).
 */
 inline bool
@@ -122,7 +122,7 @@ coro_drain_if_shutdown(void* owner, coro_op* self) noexcept
     self->stop_cb.reset();
     if (owner == nullptr)
     {
-        auto suicide = std::move(self->impl_ptr);
+        auto suicide = std::move(self->object_ref_);
         return true;
     }
     return false;
@@ -130,7 +130,7 @@ coro_drain_if_shutdown(void* owner, coro_op* self) noexcept
 
 /** Resume tail shared by every proactor handler.
 
-    Resumes the op's coroutine on its executor and then drops the impl_ptr
+    Resumes the op's coroutine on its executor and then drops the object_ref_
     keepalive. The keepalive is moved into a local that is released *after*
     `resume()` returns, matching the existing io_uring ordering: the impl (and
     therefore this op's storage) may be destroyed as the local goes out of
@@ -146,7 +146,7 @@ coro_resume(coro_op* self) noexcept
     // Clear the keepalive before publishing the continuation: a strand
     // drained on another thread can reuse this op via reset() the instant
     // it runs, so this write must be ordered before the publish, not after.
-    auto suicide = std::move(self->impl_ptr);
+    auto suicide = std::move(self->object_ref_);
     auto next    = dispatch_coro(self->ex, self->cont);
     next.resume();
     // suicide drops here; may destroy impl + self.

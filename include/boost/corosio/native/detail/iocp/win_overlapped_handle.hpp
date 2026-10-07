@@ -19,6 +19,8 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
+#include <boost/corosio/io/io_object.hpp>
 #include <boost/corosio/native/detail/coro_op_complete.hpp>
 #include <boost/corosio/native/detail/iocp/win_completion_key.hpp>
 #include <boost/corosio/native/detail/iocp/win_dissociate.hpp>
@@ -34,24 +36,23 @@
 #include <atomic>
 #include <coroutine>
 #include <cstdint>
-#include <memory>
 #include <mutex>
 #include <stop_token>
 #include <system_error>
 #include <utility>
-#include <vector>
 
 /* The overlapped-handle core shared by stream_file, random_access_file,
    win_stream_handle and win_random_access_handle.
 
    Two op models sit on one handle base. The slot model embeds one read
    and one write op (one of each in flight) and either tracks a file
-   position or submits at offset 0. The concurrent model allocates an op
-   per call so any number of positional ops can be in flight.
+   position or submits at offset 0. The concurrent model takes an op
+   per call from a per-handle free list, so any number of positional
+   ops can be in flight and steady state allocates nothing.
 
-   Each front keeps the shared-pointer "state + thin wrapper" layering:
-   ops hold the state alive until their last packet drains, which can
-   outlive the wrapper.
+   Each front embeds its handle core in the pooled implementation the
+   service recycles. Ops hold a reference on that implementation until
+   their last packet drains, which can outlive the I/O object.
 */
 
 namespace boost::corosio::detail {
@@ -76,95 +77,6 @@ normalize_handle_error(DWORD err, bool is_read) noexcept
     return err;
 }
 
-/// A service's list of live states, walked by `shutdown()`.
-template<class State>
-class win_state_list
-{
-public:
-    void add(State& s) noexcept
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        list_.push_back(&s);
-    }
-
-    void remove(State& s) noexcept
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        list_.remove(&s);
-    }
-
-    void close_all() noexcept
-    {
-        // A state whose last owner is mid-destruction cannot be pinned;
-        // it is blocked in remove() on this mutex and closes itself.
-        // Pins are released outside the lock, since dropping the last
-        // one runs a destructor that calls remove().
-        std::vector<std::shared_ptr<State>> pins;
-        {
-            std::lock_guard<win_mutex> lock(mutex_);
-            for (auto* s = list_.pop_front(); s != nullptr;
-                 s       = list_.pop_front())
-                if (auto pin = s->weak_from_this().lock())
-                    pins.push_back(std::move(pin));
-        }
-        for (auto& p : pins)
-            p->close_handle();
-    }
-
-private:
-    win_mutex mutex_;
-    intrusive_list<State> list_;
-};
-
-/// A service's states and the wrappers it handed out.
-template<class Wrapper, class State>
-class win_handle_registry
-{
-public:
-    win_handle_registry() = default;
-    win_handle_registry(win_handle_registry const&) = delete;
-    win_handle_registry& operator=(win_handle_registry const&) = delete;
-
-    ~win_handle_registry()
-    {
-        for (auto* w = wrappers_.pop_front(); w != nullptr;
-             w       = wrappers_.pop_front())
-            delete w;
-    }
-
-    win_state_list<State>& states() noexcept
-    {
-        return states_;
-    }
-
-    Wrapper* add(Wrapper* w)
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        wrappers_.push_back(w);
-        return w;
-    }
-
-    void destroy(Wrapper& w) noexcept
-    {
-        w.close_internal();
-        {
-            std::lock_guard<win_mutex> lock(mutex_);
-            wrappers_.remove(&w);
-        }
-        delete &w;
-    }
-
-    void shutdown() noexcept
-    {
-        states_.close_all();
-    }
-
-private:
-    win_state_list<State> states_;
-    win_mutex mutex_;
-    intrusive_list<Wrapper> wrappers_;
-};
-
 class win_handle_base;
 
 /// An overlapped read or write on an adopted handle.
@@ -173,29 +85,24 @@ struct handle_io_op : overlapped_op
     void* buf              = nullptr;
     DWORD buf_len          = 0;
     win_handle_base* owner = nullptr;
-    std::shared_ptr<win_handle_base> keep_alive;
 
     explicit handle_io_op(func_type f) noexcept;
     static void do_cancel_impl(overlapped_op* base) noexcept;
 };
 
-/** State shared by every overlapped handle front. */
+/** State shared by every overlapped handle front.
+
+    Embedded in the implementation named by `io`, whose reference the
+    in-flight ops hold.
+*/
 class win_handle_base
-    : public intrusive_list<win_handle_base>::node
-    , public std::enable_shared_from_this<win_handle_base>
 {
 public:
     win_handle_base(
-        win_scheduler& sched, win_state_list<win_handle_base>& list) noexcept
+        win_scheduler& sched, io_object::implementation& io) noexcept
         : sched_(sched)
-        , list_(list)
+        , io_(io)
     {
-        list_.add(*this);
-    }
-
-    ~win_handle_base()
-    {
-        list_.remove(*this);
     }
 
     win_handle_base(win_handle_base const&)            = delete;
@@ -268,7 +175,7 @@ protected:
     /** Issue ReadFile/WriteFile for an op the caller has set up.
 
         The caller has filled `h`, `ex`, `ec_out`, `bytes_out`,
-        `is_read`, `owner` and `keep_alive`, called `start(token)` and
+        `is_read`, `owner` and `object_ref_`, called `start(token)` and
         `work_started()`.
     */
     void start_io(
@@ -325,7 +232,7 @@ protected:
     }
 
     win_scheduler& sched_;
-    win_state_list<win_handle_base>& list_;
+    io_object::implementation& io_;
     HANDLE handle_ = INVALID_HANDLE_VALUE;
 };
 
@@ -349,9 +256,9 @@ class win_slot_handle : public win_handle_base
 public:
     win_slot_handle(
         win_scheduler& sched,
-        win_state_list<win_handle_base>& list,
+        io_object::implementation& io,
         bool track_offset) noexcept
-        : win_handle_base(sched, list)
+        : win_handle_base(sched, io)
         , track_offset_(track_offset)
     {
     }
@@ -438,7 +345,7 @@ protected:
             if (!owner)
             {
                 op->cleanup_only();
-                op->keep_alive.reset();
+                op->object_ref_.reset();
                 return;
             }
 
@@ -453,7 +360,7 @@ protected:
                     op->bytes_transferred, std::memory_order_acq_rel);
 
             op->dwError = normalize_handle_error(op->dwError, op->is_read);
-            auto prevent_premature_destruction = std::move(op->keep_alive);
+            auto prevent_premature_destruction = std::move(op->object_ref_);
             op->invoke_handler();
         }
     };
@@ -468,7 +375,7 @@ protected:
         std::error_code* ec,
         std::size_t* bytes_out)
     {
-        op.keep_alive = shared_from_this();
+        op.object_ref_ = detail::object_ref(&io_);
         op.reset();
         op.owner     = this;
         op.is_read   = is_read;
@@ -500,6 +407,14 @@ class win_concurrent_handle : public win_handle_base
 {
 public:
     using win_handle_base::win_handle_base;
+
+    // The recycled ops belong to the implementation's storage, which
+    // survives recycling; only its destruction frees them.
+    ~win_concurrent_handle()
+    {
+        while (auto* op = free_ops_.pop_front())
+            delete op;
+    }
 
     std::coroutine_handle<> read_some_at(
         std::uint64_t offset,
@@ -574,17 +489,15 @@ protected:
         {
             auto* op   = static_cast<concurrent_op*>(base);
             auto* self = static_cast<win_concurrent_handle*>(op->owner);
-            auto keep  = std::move(op->keep_alive);
+            // Dropped after the op is back on the free list, so a final
+            // release never runs under ops_mutex_.
+            auto keep = std::move(op->object_ref_);
             op->stop_cb.reset();
-            {
-                std::lock_guard<win_mutex> lock(self->ops_mutex_);
-                self->outstanding_ops_.remove(op);
-            }
 
             if (!owner)
             {
                 op->h = {};
-                delete op;
+                self->recycle_op(op);
                 return;
             }
 
@@ -600,10 +513,19 @@ protected:
             capy::continuation* c = op->user_cont;
             c->h                  = op->h;
             capy::executor_ref ex = op->ex;
-            delete op;
+            // Once recycled, a concurrent initiation may refill the op.
+            self->recycle_op(op);
             dispatch_coro(ex, *c).resume();
         }
     };
+
+    /// Move a finished op from `outstanding_ops_` to `free_ops_`.
+    void recycle_op(concurrent_op* op) noexcept
+    {
+        std::lock_guard<win_mutex> lock(ops_mutex_);
+        outstanding_ops_.remove(op);
+        free_ops_.push_front(op);
+    }
 
     void request_cancel_all() noexcept
     {
@@ -622,8 +544,14 @@ protected:
         std::error_code* ec,
         std::size_t* bytes_out)
     {
-        auto* op       = new concurrent_op();
-        op->keep_alive = shared_from_this();
+        concurrent_op* op;
+        {
+            std::lock_guard<win_mutex> lock(ops_mutex_);
+            op = free_ops_.pop_front();
+        }
+        if (!op)
+            op = new concurrent_op();
+        op->object_ref_ = detail::object_ref(&io_);
         op->reset();
         op->owner     = this;
         op->is_read   = is_read;
@@ -645,6 +573,7 @@ protected:
 
     win_mutex ops_mutex_;
     intrusive_list<concurrent_op> outstanding_ops_;
+    intrusive_list<concurrent_op> free_ops_;
 };
 
 } // namespace boost::corosio::detail

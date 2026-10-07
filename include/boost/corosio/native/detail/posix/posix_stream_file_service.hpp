@@ -17,10 +17,11 @@
 #include <boost/corosio/native/detail/posix/posix_stream_file.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_scheduler.hpp>
 #include <boost/corosio/detail/file_service.hpp>
+#include <boost/corosio/detail/object_pool.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/detail/thread_pool.hpp>
 
-#include <mutex>
-#include <unordered_map>
+#include <vector>
 
 namespace boost::corosio::detail {
 
@@ -31,6 +32,8 @@ namespace boost::corosio::detail {
 */
 class BOOST_COROSIO_DECL posix_stream_file_service final : public file_service
 {
+    friend class posix_stream_file;
+
 public:
     explicit posix_stream_file_service(capy::execution_context& ctx)
         : sched_(&get_scheduler(ctx))
@@ -46,16 +49,7 @@ public:
 
     io_object::implementation* construct() override
     {
-        auto ptr   = std::make_shared<posix_stream_file>(*this);
-        auto* impl = ptr.get();
-
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            file_list_.push_back(impl);
-            file_ptrs_[impl] = std::move(ptr);
-        }
-
-        return impl;
+        return object_pool_.acquire(*this);
     }
 
     void destroy(io_object::implementation* p) override
@@ -63,7 +57,7 @@ public:
         auto& impl = static_cast<posix_stream_file&>(*p);
         impl.cancel();
         impl.close_file();
-        destroy_impl(impl);
+        release(&impl);
     }
 
     void close(io_object::handle& h) override
@@ -90,21 +84,24 @@ public:
 
     void shutdown() override
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (auto* impl = file_list_.pop_front(); impl != nullptr;
-             impl       = file_list_.pop_front())
+        // See uring_socket_service_base::shutdown(): snapshot under an
+        // acquired reference, cancel+close without the pool lock held;
+        // shutdown() sets shutting-down and takes the snapshot in one
+        // critical section, so a close that drops the last ref deletes
+        // rather than recycles.
+        std::vector<posix_stream_file*> live;
+        object_pool_.shutdown(
+            [&](posix_stream_file* f)
+            {
+                acquire(f);
+                live.push_back(f);
+            });
+        for (auto* f : live)
         {
-            impl->cancel();
-            impl->close_file();
+            f->cancel();
+            f->close_file();
+            release(f);
         }
-        file_ptrs_.clear();
-    }
-
-    void destroy_impl(posix_stream_file& impl)
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        file_list_.remove(&impl);
-        file_ptrs_.erase(&impl);
     }
 
     void post(scheduler_op* op)
@@ -143,10 +140,7 @@ public:
 private:
     scheduler* sched_;
     thread_pool_ref pool_;
-    std::mutex mutex_;
-    intrusive_list<posix_stream_file> file_list_;
-    std::unordered_map<posix_stream_file*, std::shared_ptr<posix_stream_file>>
-        file_ptrs_;
+    object_pool<posix_stream_file> object_pool_;
 };
 
 // ---------------------------------------------------------------------------
@@ -205,7 +199,7 @@ posix_stream_file::read_some(
     op.ex.on_work_started();
 
     read_pool_op_.file_ = this;
-    read_pool_op_.ref_  = this->shared_from_this();
+    read_pool_op_.ref_  = detail::object_ref(this);
     read_pool_op_.func_ = &posix_stream_file::do_read_work;
     if (auto pec = svc_.pool().post(&read_pool_op_))
     {
@@ -260,7 +254,7 @@ posix_stream_file::do_read_work(pool_work_item* w) noexcept
         }
     }
 
-    op.impl_ptr = std::move(pw->ref_);
+    op.object_ref_ = std::move(pw->ref_);
     self->svc_.post(&op);
 }
 
@@ -316,7 +310,7 @@ posix_stream_file::write_some(
     op.ex.on_work_started();
 
     write_pool_op_.file_ = this;
-    write_pool_op_.ref_  = this->shared_from_this();
+    write_pool_op_.ref_  = detail::object_ref(this);
     write_pool_op_.func_ = &posix_stream_file::do_write_work;
     if (auto pec = svc_.pool().post(&write_pool_op_))
     {
@@ -371,8 +365,14 @@ posix_stream_file::do_write_work(pool_work_item* w) noexcept
         }
     }
 
-    op.impl_ptr = std::move(pw->ref_);
+    op.object_ref_ = std::move(pw->ref_);
     self->svc_.post(&op);
+}
+
+inline void
+posix_stream_file::retire() noexcept
+{
+    svc_.object_pool_.recycle(this);
 }
 
 } // namespace boost::corosio::detail

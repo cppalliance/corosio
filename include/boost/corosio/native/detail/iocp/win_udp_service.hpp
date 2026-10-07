@@ -16,13 +16,13 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/object_pool.hpp>
 #include <boost/corosio/detail/udp_service.hpp>
 
 #include <boost/corosio/native/detail/iocp/win_dissociate.hpp>
 #include <boost/corosio/native/detail/iocp/win_udp_socket.hpp>
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
 #include <boost/corosio/native/detail/iocp/win_completion_key.hpp>
-#include <boost/corosio/native/detail/iocp/win_mutex.hpp>
 #include <boost/corosio/native/detail/iocp/win_wsa_init.hpp>
 
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
@@ -45,6 +45,8 @@ class BOOST_COROSIO_DECL win_udp_service final
     : private win_wsa_init
     , public udp_service
 {
+    friend class win_udp_socket;
+
 public:
     io_object::implementation* construct() override;
 
@@ -53,8 +55,6 @@ public:
     void close(io_object::handle& h) override;
 
     explicit win_udp_service(capy::execution_context& ctx);
-
-    ~win_udp_service();
 
     win_udp_service(win_udp_service const&)            = delete;
     win_udp_service& operator=(win_udp_service const&) = delete;
@@ -71,12 +71,8 @@ public:
     std::error_code
     bind_datagram(udp_socket::implementation& impl, endpoint ep) override;
 
-    void destroy_impl(win_udp_socket& impl);
-
-    void unregister_impl(win_udp_socket_internal& impl);
-
     std::error_code open_socket(
-        win_udp_socket_internal& impl, int family, int type, int protocol);
+        win_udp_socket& impl, int family, int type, int protocol);
 
     void post(overlapped_op* op);
     void on_pending(overlapped_op* op) noexcept;
@@ -92,54 +88,51 @@ public:
 
 private:
     win_scheduler& sched_;
+    void* iocp_;
     BOOST_COROSIO_MSVC_WARNING_PUSH
     BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // detail:: members, dll-interface
-    win_mutex mutex_;
-    intrusive_list<win_udp_socket_internal> socket_list_;
-    intrusive_list<win_udp_socket> wrapper_list_;
+    object_pool<win_udp_socket> pool_;
     BOOST_COROSIO_MSVC_WARNING_POP
-    void* iocp_;
 };
 
 // Operation constructors
 
-inline send_to_op::send_to_op(win_udp_socket_internal& internal_) noexcept
+inline send_to_op::send_to_op(win_udp_socket& internal_) noexcept
     : overlapped_op(&do_complete)
     , internal(internal_)
 {
     cancel_func_ = &do_cancel_impl;
 }
 
-inline recv_from_op::recv_from_op(win_udp_socket_internal& internal_) noexcept
+inline recv_from_op::recv_from_op(win_udp_socket& internal_) noexcept
     : overlapped_op(&do_complete)
     , internal(internal_)
 {
     cancel_func_ = &do_cancel_impl;
 }
 
-inline udp_connect_op::udp_connect_op(
-    win_udp_socket_internal& internal_) noexcept
+inline udp_connect_op::udp_connect_op(win_udp_socket& internal_) noexcept
     : overlapped_op(&do_complete)
     , internal(internal_)
 {
     cancel_func_ = &do_cancel_impl;
 }
 
-inline udp_send_op::udp_send_op(win_udp_socket_internal& internal_) noexcept
+inline udp_send_op::udp_send_op(win_udp_socket& internal_) noexcept
     : overlapped_op(&do_complete)
     , internal(internal_)
 {
     cancel_func_ = &do_cancel_impl;
 }
 
-inline udp_recv_op::udp_recv_op(win_udp_socket_internal& internal_) noexcept
+inline udp_recv_op::udp_recv_op(win_udp_socket& internal_) noexcept
     : overlapped_op(&do_complete)
     , internal(internal_)
 {
     cancel_func_ = &do_cancel_impl;
 }
 
-inline udp_wait_op::udp_wait_op(win_udp_socket_internal& internal_) noexcept
+inline udp_wait_op::udp_wait_op(win_udp_socket& internal_) noexcept
     : overlapped_op(&do_complete)
     , internal(internal_)
 {
@@ -153,10 +146,9 @@ send_to_op::do_cancel_impl(overlapped_op* base) noexcept
 {
     auto* op = static_cast<send_to_op*>(base);
     op->cancelled.store(true, std::memory_order_release);
-    if (op->internal.is_open())
+    if (op->internal.socket_ != INVALID_SOCKET)
     {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
+        ::CancelIoEx(reinterpret_cast<HANDLE>(op->internal.socket_), op);
     }
 }
 
@@ -165,10 +157,9 @@ recv_from_op::do_cancel_impl(overlapped_op* base) noexcept
 {
     auto* op = static_cast<recv_from_op*>(base);
     op->cancelled.store(true, std::memory_order_release);
-    if (op->internal.is_open())
+    if (op->internal.socket_ != INVALID_SOCKET)
     {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
+        ::CancelIoEx(reinterpret_cast<HANDLE>(op->internal.socket_), op);
     }
 }
 
@@ -186,11 +177,11 @@ send_to_op::do_complete(
     if (!owner)
     {
         op->cleanup_only();
-        op->internal_ptr.reset();
+        op->object_ref_.reset();
         return;
     }
 
-    auto prevent_premature_destruction = std::move(op->internal_ptr);
+    auto prevent_premature_destruction = std::move(op->object_ref_);
     op->invoke_handler();
 }
 
@@ -208,7 +199,7 @@ recv_from_op::do_complete(
     if (!owner)
     {
         op->cleanup_only();
-        op->internal_ptr.reset();
+        op->object_ref_.reset();
         return;
     }
 
@@ -220,7 +211,7 @@ recv_from_op::do_complete(
         *op->source_out = from_sockaddr(op->source_storage);
     }
 
-    auto prevent_premature_destruction = std::move(op->internal_ptr);
+    auto prevent_premature_destruction = std::move(op->object_ref_);
     op->invoke_handler();
 }
 
@@ -238,10 +229,9 @@ udp_send_op::do_cancel_impl(overlapped_op* base) noexcept
 {
     auto* op = static_cast<udp_send_op*>(base);
     op->cancelled.store(true, std::memory_order_release);
-    if (op->internal.is_open())
+    if (op->internal.socket_ != INVALID_SOCKET)
     {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
+        ::CancelIoEx(reinterpret_cast<HANDLE>(op->internal.socket_), op);
     }
 }
 
@@ -250,10 +240,9 @@ udp_recv_op::do_cancel_impl(overlapped_op* base) noexcept
 {
     auto* op = static_cast<udp_recv_op*>(base);
     op->cancelled.store(true, std::memory_order_release);
-    if (op->internal.is_open())
+    if (op->internal.socket_ != INVALID_SOCKET)
     {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
+        ::CancelIoEx(reinterpret_cast<HANDLE>(op->internal.socket_), op);
     }
 }
 
@@ -262,10 +251,9 @@ udp_wait_op::do_cancel_impl(overlapped_op* base) noexcept
 {
     auto* op = static_cast<udp_wait_op*>(base);
     op->cancelled.store(true, std::memory_order_release);
-    if (op->internal.is_open())
+    if (op->internal.socket_ != INVALID_SOCKET)
     {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
+        ::CancelIoEx(reinterpret_cast<HANDLE>(op->internal.socket_), op);
     }
     op->internal.svc_.scheduler().cancel_wait(op);
 }
@@ -284,7 +272,7 @@ udp_connect_op::do_complete(
     if (!owner)
     {
         op->cleanup_only();
-        op->internal_ptr.reset();
+        op->object_ref_.reset();
         return;
     }
 
@@ -302,7 +290,7 @@ udp_connect_op::do_complete(
         op->internal.remote_endpoint_ = op->target_endpoint;
     }
 
-    auto prevent_premature_destruction = std::move(op->internal_ptr);
+    auto prevent_premature_destruction = std::move(op->object_ref_);
     op->invoke_handler();
 }
 
@@ -318,11 +306,11 @@ udp_send_op::do_complete(
     if (!owner)
     {
         op->cleanup_only();
-        op->internal_ptr.reset();
+        op->object_ref_.reset();
         return;
     }
 
-    auto prevent_premature_destruction = std::move(op->internal_ptr);
+    auto prevent_premature_destruction = std::move(op->object_ref_);
     op->invoke_handler();
 }
 
@@ -338,11 +326,11 @@ udp_recv_op::do_complete(
     if (!owner)
     {
         op->cleanup_only();
-        op->internal_ptr.reset();
+        op->object_ref_.reset();
         return;
     }
 
-    auto prevent_premature_destruction = std::move(op->internal_ptr);
+    auto prevent_premature_destruction = std::move(op->object_ref_);
     op->invoke_handler();
 }
 
@@ -358,18 +346,17 @@ udp_wait_op::do_complete(
     if (!owner)
     {
         op->cleanup_only();
-        op->internal_ptr.reset();
+        op->object_ref_.reset();
         return;
     }
 
-    auto prevent_premature_destruction = std::move(op->internal_ptr);
+    auto prevent_premature_destruction = std::move(op->object_ref_);
     op->invoke_handler();
 }
 
-// win_udp_socket_internal
+// win_udp_socket
 
-inline win_udp_socket_internal::win_udp_socket_internal(
-    win_udp_service& svc) noexcept
+inline win_udp_socket::win_udp_socket(win_udp_service& svc) noexcept
     : svc_(svc)
     , wr_(*this)
     , rd_(*this)
@@ -380,37 +367,43 @@ inline win_udp_socket_internal::win_udp_socket_internal(
 {
 }
 
-inline win_udp_socket_internal::~win_udp_socket_internal()
+inline void
+win_udp_socket::reuse() noexcept
 {
-    svc_.unregister_impl(*this);
+    BOOST_COROSIO_ASSERT(socket_ == INVALID_SOCKET);
+    BOOST_COROSIO_ASSERT(family_ == AF_UNSPEC);
+    // A connect completing on another thread while the socket closed
+    // can still have written these.
+    local_endpoint_  = endpoint{};
+    remote_endpoint_ = endpoint{};
+    BOOST_COROSIO_ASSERT(!wr_.stop_cb);
+    BOOST_COROSIO_ASSERT(!rd_.stop_cb);
+    BOOST_COROSIO_ASSERT(!conn_.stop_cb);
+    BOOST_COROSIO_ASSERT(!send_wr_.stop_cb);
+    BOOST_COROSIO_ASSERT(!recv_rd_.stop_cb);
+    BOOST_COROSIO_ASSERT(!wt_.stop_cb);
 }
 
-inline SOCKET
-win_udp_socket_internal::native_handle() const noexcept
+inline native_handle_type
+win_udp_socket::native_handle() const noexcept
 {
-    return socket_;
+    return static_cast<native_handle_type>(socket_);
 }
 
 inline endpoint
-win_udp_socket_internal::local_endpoint() const noexcept
+win_udp_socket::local_endpoint() const noexcept
 {
     return local_endpoint_;
 }
 
 inline endpoint
-win_udp_socket_internal::remote_endpoint() const noexcept
+win_udp_socket::remote_endpoint() const noexcept
 {
     return remote_endpoint_;
 }
 
-inline bool
-win_udp_socket_internal::is_open() const noexcept
-{
-    return socket_ != INVALID_SOCKET;
-}
-
 inline std::coroutine_handle<>
-win_udp_socket_internal::send_to(
+win_udp_socket::send_to(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     buffer_param param,
@@ -420,8 +413,8 @@ win_udp_socket_internal::send_to(
     std::error_code* ec,
     std::size_t* bytes_out)
 {
-    // Keep internal alive during I/O
-    wr_.internal_ptr = shared_from_this();
+    // Keep this socket alive during I/O
+    wr_.object_ref_ = detail::object_ref(this);
 
     auto& op = wr_;
     op.reset();
@@ -473,7 +466,7 @@ win_udp_socket_internal::send_to(
 }
 
 inline std::coroutine_handle<>
-win_udp_socket_internal::recv_from(
+win_udp_socket::recv_from(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     buffer_param param,
@@ -483,8 +476,8 @@ win_udp_socket_internal::recv_from(
     std::error_code* ec,
     std::size_t* bytes_out)
 {
-    // Keep internal alive during I/O
-    rd_.internal_ptr = shared_from_this();
+    // Keep this socket alive during I/O
+    rd_.object_ref_ = detail::object_ref(this);
 
     auto& op = rd_;
     op.reset();
@@ -546,14 +539,14 @@ win_udp_socket_internal::recv_from(
 
 // UDP connect is synchronous on Windows
 inline std::coroutine_handle<>
-win_udp_socket_internal::connect(
+win_udp_socket::connect(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     endpoint ep,
     std::stop_token token,
     std::error_code* ec)
 {
-    conn_.internal_ptr = shared_from_this();
+    conn_.object_ref_ = detail::object_ref(this);
 
     auto& op = conn_;
     op.reset();
@@ -580,7 +573,7 @@ win_udp_socket_internal::connect(
 }
 
 inline std::coroutine_handle<>
-win_udp_socket_internal::send(
+win_udp_socket::send(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     buffer_param param,
@@ -589,7 +582,7 @@ win_udp_socket_internal::send(
     std::error_code* ec,
     std::size_t* bytes_out)
 {
-    send_wr_.internal_ptr = shared_from_this();
+    send_wr_.object_ref_ = detail::object_ref(this);
 
     auto& op = send_wr_;
     op.reset();
@@ -634,7 +627,7 @@ win_udp_socket_internal::send(
 }
 
 inline std::coroutine_handle<>
-win_udp_socket_internal::recv(
+win_udp_socket::recv(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     buffer_param param,
@@ -643,7 +636,7 @@ win_udp_socket_internal::recv(
     std::error_code* ec,
     std::size_t* bytes_out)
 {
-    recv_rd_.internal_ptr = shared_from_this();
+    recv_rd_.object_ref_ = detail::object_ref(this);
 
     auto& op = recv_rd_;
     op.reset();
@@ -696,14 +689,14 @@ win_udp_socket_internal::recv(
 }
 
 inline std::coroutine_handle<>
-win_udp_socket_internal::wait(
+win_udp_socket::wait(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     wait_type w,
     std::stop_token token,
     std::error_code* ec)
 {
-    wt_.internal_ptr = shared_from_this();
+    wt_.object_ref_ = detail::object_ref(this);
 
     auto& op = wt_;
     op.reset();
@@ -734,7 +727,7 @@ win_udp_socket_internal::wait(
 }
 
 inline void
-win_udp_socket_internal::cancel() noexcept
+win_udp_socket::cancel() noexcept
 {
     if (socket_ != INVALID_SOCKET)
     {
@@ -751,7 +744,7 @@ win_udp_socket_internal::cancel() noexcept
 }
 
 inline void
-win_udp_socket_internal::close_socket() noexcept
+win_udp_socket::close_socket() noexcept
 {
     // Flag every op cancelled before closing so a closesocket-delivered
     // ERROR_NETNAME_DELETED is short-circuited to canceled rather than mapped
@@ -777,106 +770,6 @@ win_udp_socket_internal::close_socket() noexcept
     remote_endpoint_ = endpoint{};
 }
 
-// win_udp_socket
-
-inline win_udp_socket::win_udp_socket(
-    std::shared_ptr<win_udp_socket_internal> internal) noexcept
-    : internal_(std::move(internal))
-{
-}
-
-inline void
-win_udp_socket::close_internal() noexcept
-{
-    if (internal_)
-    {
-        internal_->close_socket();
-        internal_.reset();
-    }
-}
-
-inline std::coroutine_handle<>
-win_udp_socket::send_to(
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    buffer_param buf,
-    endpoint dest,
-    int flags,
-    std::stop_token token,
-    std::error_code* ec,
-    std::size_t* bytes)
-{
-    return internal_->send_to(h, d, buf, dest, flags, token, ec, bytes);
-}
-
-inline std::coroutine_handle<>
-win_udp_socket::recv_from(
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    buffer_param buf,
-    endpoint* source,
-    int flags,
-    std::stop_token token,
-    std::error_code* ec,
-    std::size_t* bytes)
-{
-    return internal_->recv_from(h, d, buf, source, flags, token, ec, bytes);
-}
-
-inline std::coroutine_handle<>
-win_udp_socket::connect(
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    endpoint ep,
-    std::stop_token token,
-    std::error_code* ec)
-{
-    return internal_->connect(h, d, ep, token, ec);
-}
-
-inline std::coroutine_handle<>
-win_udp_socket::send(
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    buffer_param buf,
-    int flags,
-    std::stop_token token,
-    std::error_code* ec,
-    std::size_t* bytes)
-{
-    return internal_->send(h, d, buf, flags, token, ec, bytes);
-}
-
-inline std::coroutine_handle<>
-win_udp_socket::recv(
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    buffer_param buf,
-    int flags,
-    std::stop_token token,
-    std::error_code* ec,
-    std::size_t* bytes)
-{
-    return internal_->recv(h, d, buf, flags, token, ec, bytes);
-}
-
-inline std::coroutine_handle<>
-win_udp_socket::wait(
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    wait_type w,
-    std::stop_token token,
-    std::error_code* ec)
-{
-    return internal_->wait(h, d, w, token, ec);
-}
-
-inline native_handle_type
-win_udp_socket::native_handle() const noexcept
-{
-    return static_cast<native_handle_type>(internal_->native_handle());
-}
-
 inline std::error_code
 win_udp_socket::shutdown(udp_socket::shutdown_type what) noexcept
 {
@@ -895,7 +788,7 @@ win_udp_socket::shutdown(udp_socket::shutdown_type what) noexcept
     default:
         return make_err(WSAEINVAL);
     }
-    if (::shutdown(internal_->native_handle(), how) != 0)
+    if (::shutdown(socket_, how) != 0)
         return make_err(WSAGetLastError());
     return {};
 }
@@ -903,15 +796,15 @@ win_udp_socket::shutdown(udp_socket::shutdown_type what) noexcept
 inline native_handle_type
 win_udp_socket::release_socket() noexcept
 {
-    SOCKET s = internal_->socket_;
+    SOCKET s = socket_;
     if (s != INVALID_SOCKET)
     {
-        internal_->cancel();
+        cancel();
         dissociate_from_iocp(s);
-        internal_->socket_          = INVALID_SOCKET;
-        internal_->family_          = AF_UNSPEC;
-        internal_->local_endpoint_  = endpoint{};
-        internal_->remote_endpoint_ = endpoint{};
+        socket_          = INVALID_SOCKET;
+        family_          = AF_UNSPEC;
+        local_endpoint_  = endpoint{};
+        remote_endpoint_ = endpoint{};
     }
     return static_cast<native_handle_type>(s);
 }
@@ -921,8 +814,8 @@ win_udp_socket::set_option(
     int level, int optname, void const* data, std::size_t size) noexcept
 {
     if (::setsockopt(
-            internal_->native_handle(), level, optname,
-            reinterpret_cast<char const*>(data), static_cast<int>(size)) != 0)
+            socket_, level, optname, reinterpret_cast<char const*>(data),
+            static_cast<int>(size)) != 0)
         return make_err(WSAGetLastError());
     return {};
 }
@@ -933,35 +826,16 @@ win_udp_socket::get_option(
 {
     int len = static_cast<int>(*size);
     if (::getsockopt(
-            internal_->native_handle(), level, optname,
-            reinterpret_cast<char*>(data), &len) != 0)
+            socket_, level, optname, reinterpret_cast<char*>(data), &len) != 0)
         return make_err(WSAGetLastError());
     *size = static_cast<std::size_t>(len);
     return {};
 }
 
-inline endpoint
-win_udp_socket::local_endpoint() const noexcept
-{
-    return internal_->local_endpoint();
-}
-
-inline endpoint
-win_udp_socket::remote_endpoint() const noexcept
-{
-    return internal_->remote_endpoint();
-}
-
 inline void
-win_udp_socket::cancel() noexcept
+win_udp_socket::retire() noexcept
 {
-    internal_->cancel();
-}
-
-inline win_udp_socket_internal*
-win_udp_socket::get_internal() const noexcept
-{
-    return internal_.get();
+    svc_.pool_.recycle(this);
 }
 
 // win_udp_service
@@ -972,83 +846,37 @@ inline win_udp_service::win_udp_service(capy::execution_context& ctx)
 {
 }
 
-inline win_udp_service::~win_udp_service()
-{
-    for (auto* w = wrapper_list_.pop_front(); w != nullptr;
-         w       = wrapper_list_.pop_front())
-        delete w;
-}
-
 inline void
 win_udp_service::shutdown()
 {
-    std::lock_guard<win_mutex> lock(mutex_);
-
-    for (auto* impl = socket_list_.pop_front(); impl != nullptr;
-         impl       = socket_list_.pop_front())
-    {
-        impl->close_socket();
-    }
+    pool_.shutdown([](win_udp_socket* impl) { impl->close_socket(); });
 }
 
 inline io_object::implementation*
 win_udp_service::construct()
 {
-    auto internal = std::make_shared<win_udp_socket_internal>(*this);
-
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        socket_list_.push_back(internal.get());
-    }
-
-    auto* wrapper = new win_udp_socket(std::move(internal));
-
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        wrapper_list_.push_back(wrapper);
-    }
-
-    return wrapper;
+    return pool_.acquire(*this);
 }
 
 inline void
 win_udp_service::destroy(io_object::implementation* p)
 {
-    if (p)
-    {
-        auto& wrapper = static_cast<win_udp_socket&>(*p);
-        wrapper.close_internal();
-        destroy_impl(wrapper);
-    }
+    if (!p)
+        return;
+    auto* s = static_cast<win_udp_socket*>(p);
+    s->close_socket();
+    release(s);
 }
 
 inline void
 win_udp_service::close(io_object::handle& h)
 {
-    auto& wrapper = static_cast<win_udp_socket&>(*h.get());
-    wrapper.get_internal()->close_socket();
-}
-
-inline void
-win_udp_service::destroy_impl(win_udp_socket& impl)
-{
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        wrapper_list_.remove(&impl);
-    }
-    delete &impl;
-}
-
-inline void
-win_udp_service::unregister_impl(win_udp_socket_internal& impl)
-{
-    std::lock_guard<win_mutex> lock(mutex_);
-    socket_list_.remove(&impl);
+    static_cast<win_udp_socket*>(h.get())->close_socket();
 }
 
 inline std::error_code
 win_udp_service::open_socket(
-    win_udp_socket_internal& impl, int family, int type, int protocol)
+    win_udp_socket& impl, int family, int type, int protocol)
 {
     impl.close_socket();
 
@@ -1085,19 +913,18 @@ inline std::error_code
 win_udp_service::open_datagram_socket(
     udp_socket::implementation& impl, int family, int type, int protocol)
 {
-    auto& wrapper = static_cast<win_udp_socket&>(impl);
-    return open_socket(*wrapper.get_internal(), family, type, protocol);
+    auto& sock = static_cast<win_udp_socket&>(impl);
+    return open_socket(sock, family, type, protocol);
 }
 
 inline std::error_code
 win_udp_service::assign_socket(
     udp_socket::implementation& impl, native_handle_type fd)
 {
-    auto& wrapper  = static_cast<win_udp_socket&>(impl);
-    auto* internal = wrapper.get_internal();
+    auto& sock = static_cast<win_udp_socket&>(impl);
 
-    SOCKET sock = static_cast<SOCKET>(fd);
-    if (sock == INVALID_SOCKET)
+    SOCKET s = static_cast<SOCKET>(fd);
+    if (s == INVALID_SOCKET)
         return make_err(WSAENOTSOCK);
 
     // SO_PROTOCOL_INFOW works on an unbound socket, unlike getsockname
@@ -1105,7 +932,7 @@ win_udp_service::assign_socket(
     WSAPROTOCOL_INFOW proto_info{};
     int proto_len = sizeof(proto_info);
     if (::getsockopt(
-            sock, SOL_SOCKET, SO_PROTOCOL_INFOW,
+            s, SOL_SOCKET, SO_PROTOCOL_INFOW,
             reinterpret_cast<char*>(&proto_info), &proto_len) != 0)
         return make_err(::WSAGetLastError());
     if (proto_info.iAddressFamily != AF_INET &&
@@ -1115,27 +942,26 @@ win_udp_service::assign_socket(
         return make_err(WSAEPROTOTYPE);
 
     HANDLE result = ::CreateIoCompletionPort(
-        reinterpret_cast<HANDLE>(sock), static_cast<HANDLE>(iocp_), key_io, 0);
+        reinterpret_cast<HANDLE>(s), static_cast<HANDLE>(iocp_), key_io, 0);
     if (result == nullptr)
         return make_err(::GetLastError());
 
-    internal->socket_ = sock;
-    internal->family_ = proto_info.iAddressFamily;
+    sock.socket_ = s;
+    sock.family_ = proto_info.iAddressFamily;
 
     endpoint local_ep, remote_ep;
     sockaddr_storage local_storage{};
     int local_len = sizeof(local_storage);
     if (::getsockname(
-            sock, reinterpret_cast<sockaddr*>(&local_storage), &local_len) == 0)
+            s, reinterpret_cast<sockaddr*>(&local_storage), &local_len) == 0)
         local_ep = detail::from_sockaddr(local_storage);
     sockaddr_storage remote_storage{};
     int remote_len = sizeof(remote_storage);
     if (::getpeername(
-            sock, reinterpret_cast<sockaddr*>(&remote_storage), &remote_len) ==
-        0)
+            s, reinterpret_cast<sockaddr*>(&remote_storage), &remote_len) == 0)
         remote_ep = detail::from_sockaddr(remote_storage);
-    internal->local_endpoint_  = local_ep;
-    internal->remote_endpoint_ = remote_ep;
+    sock.local_endpoint_  = local_ep;
+    sock.remote_endpoint_ = remote_ep;
 
     return {};
 }
@@ -1143,14 +969,13 @@ win_udp_service::assign_socket(
 inline std::error_code
 win_udp_service::bind_datagram(udp_socket::implementation& impl, endpoint ep)
 {
-    auto& wrapper  = static_cast<win_udp_socket&>(impl);
-    auto* internal = wrapper.get_internal();
-    SOCKET sock    = internal->socket_;
+    auto& sock  = static_cast<win_udp_socket&>(impl);
+    SOCKET s    = sock.socket_;
 
     sockaddr_storage storage{};
     socklen_t addrlen = detail::to_sockaddr(ep, storage);
     if (::bind(
-            sock, reinterpret_cast<sockaddr*>(&storage),
+            s, reinterpret_cast<sockaddr*>(&storage),
             static_cast<int>(addrlen)) == SOCKET_ERROR)
         return make_err(::WSAGetLastError());
 
@@ -1158,8 +983,8 @@ win_udp_service::bind_datagram(udp_socket::implementation& impl, endpoint ep)
     sockaddr_storage local_storage{};
     int local_len = sizeof(local_storage);
     if (::getsockname(
-            sock, reinterpret_cast<sockaddr*>(&local_storage), &local_len) == 0)
-        internal->local_endpoint_ = detail::from_sockaddr(local_storage);
+            s, reinterpret_cast<sockaddr*>(&local_storage), &local_len) == 0)
+        sock.local_endpoint_ = detail::from_sockaddr(local_storage);
 
     return {};
 }
