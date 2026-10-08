@@ -26,7 +26,6 @@
 #include <cstdint>
 #include <filesystem>
 #include <limits>
-#include <memory>
 #include <mutex>
 #include <system_error>
 #include <unordered_map>
@@ -66,7 +65,87 @@ class BOOST_COROSIO_DECL uring_random_access_file final
     // Random-access files legitimately support concurrent ops at
     // different offsets on the same fd (e.g. parallel reads in
     // testConcurrentReads). Embedding a single slot would smash
-    // state across calls; ops are heap-allocated per submission.
+    // state across calls; ops recycle through per-file free lists
+    // so concurrency is unbounded but steady state allocates
+    // nothing. The storage belongs to this impl (it survives
+    // recycling) and only the destructor frees it.
+
+    /** Pooled random-access op: completion recycles instead of
+        deleting.
+
+        Reuses the heap variant's submission/finish machinery but
+        swaps the completion handler (the func-pointer convention
+        makes that one protected assignment) for one that returns the
+        op to its file's free list. The inherited `object_ref_`
+        keepalive is dropped only after the push, so a final release
+        never runs under `ops_mutex_`.
+    */
+    template<class Base>
+    struct pooled_op final
+        : Base
+        , intrusive_list<pooled_op<Base>>::node
+    {
+        uring_random_access_file* file_ = nullptr;
+
+        pooled_op() noexcept
+        {
+            this->func_ = &do_pooled_handler;
+        }
+
+        static void do_pooled_handler(
+            void* owner,
+            scheduler_op* base,
+            std::uint32_t /*bytes*/,
+            std::uint32_t /*error*/) noexcept
+        {
+            auto* self = static_cast<pooled_op*>(base);
+            self->stop_cb.reset();
+            auto keep = std::move(self->object_ref_);
+            if (owner == nullptr)
+            {
+                self->file_->release_op(self);
+                return;
+            }
+            auto next = Base::finish(self);
+            self->file_->release_op(self);
+            next.resume();
+        }
+    };
+
+    using pooled_read_op  = pooled_op<uring_random_access_read_op>;
+    using pooled_write_op = pooled_op<uring_random_access_write_op>;
+
+    std::mutex ops_mutex_;
+    intrusive_list<pooled_read_op> free_reads_;
+    intrusive_list<pooled_write_op> free_writes_;
+
+    /// Pop a recycled op of the given kind, or allocate on the cold
+    /// path; `prepare()` resets every per-use field.
+    template<class Op>
+    Op* acquire_op(intrusive_list<Op>& free_list)
+    {
+        Op* op;
+        {
+            std::lock_guard<std::mutex> lock(ops_mutex_);
+            op = free_list.pop_front();
+        }
+        if (!op)
+            op = new Op();
+        op->file_ = this;
+        return op;
+    }
+
+    void release_op(pooled_read_op* op) noexcept
+    {
+        std::lock_guard<std::mutex> lock(ops_mutex_);
+        free_reads_.push_front(op);
+    }
+
+    void release_op(pooled_write_op* op) noexcept
+    {
+        std::lock_guard<std::mutex> lock(ops_mutex_);
+        free_writes_.push_front(op);
+    }
 
 public:
     explicit uring_random_access_file(
@@ -80,6 +159,10 @@ public:
     ~uring_random_access_file() override
     {
         close_file();
+        while (auto* op = free_reads_.pop_front())
+            delete op;
+        while (auto* op = free_writes_.pop_front())
+            delete op;
     }
 
     /// Recycle into the owning service's pool. Defined out-of-line
@@ -89,9 +172,10 @@ public:
     /** Reset for recycling.
 
         `close_file()` already drove fd_ to its closed value before the
-        refcount reached zero; every op is heap-allocated per submission
-        and owns its own `stop_cb`/`object_ref` lifetime, so there is no
-        embedded op state to assert here.
+        refcount reached zero; every op holds its own `object_ref`
+        while in flight, so none can be outstanding here. The free
+        lists deliberately survive recycling — the storage belongs to
+        this impl and only the destructor frees it.
 
         @pre refs_ == 0, fd closed, no op in flight.
     */
@@ -250,8 +334,8 @@ uring_random_access_file::read_some_at(
     std::error_code* ec,
     std::size_t* bytes)
 {
-    auto op_guard = std::make_unique<uring_random_access_read_op>();
-    op_guard->prepare(
+    auto* op = acquire_op(free_reads_);
+    op->prepare(
         h, ex, ec, bytes, fd_, static_cast<std::int64_t>(user_offset), sched_,
         detail::object_ref(this), buffers, token);
     sched_->work_started();
@@ -259,22 +343,22 @@ uring_random_access_file::read_some_at(
     // Closed-object contract outranks the zero-length no-op.
     if (fd_ < 0)
     {
-        op_guard->empty_buffer = false;
-        op_guard->res          = -EBADF;
+        op->empty_buffer = false;
+        op->res          = -EBADF;
         uring_scheduler::lock_type lock(sched_->dispatch_mutex());
-        sched_->push_completed_locked(op_guard.release());
+        sched_->push_completed_locked(op);
         return std::noop_coroutine();
     }
 
-    if (op_guard->empty_buffer ||
-        op_guard->cancelled.load(std::memory_order_acquire))
+    if (op->empty_buffer ||
+        op->cancelled.load(std::memory_order_acquire))
     {
         uring_scheduler::lock_type lock(sched_->dispatch_mutex());
-        sched_->push_completed_locked(op_guard.release());
+        sched_->push_completed_locked(op);
         return std::noop_coroutine();
     }
 
-    uring_submit_op(*sched_, op_guard.release());
+    uring_submit_op(*sched_, op);
     return std::noop_coroutine();
 }
 
@@ -288,8 +372,8 @@ uring_random_access_file::write_some_at(
     std::error_code* ec,
     std::size_t* bytes)
 {
-    auto op_guard = std::make_unique<uring_random_access_write_op>();
-    op_guard->prepare(
+    auto* op = acquire_op(free_writes_);
+    op->prepare(
         h, ex, ec, bytes, fd_, static_cast<std::int64_t>(user_offset), sched_,
         detail::object_ref(this), buffers, token);
     sched_->work_started();
@@ -297,22 +381,22 @@ uring_random_access_file::write_some_at(
     // Closed-object contract outranks the zero-length no-op.
     if (fd_ < 0)
     {
-        op_guard->empty_buffer = false;
-        op_guard->res          = -EBADF;
+        op->empty_buffer = false;
+        op->res          = -EBADF;
         uring_scheduler::lock_type lock(sched_->dispatch_mutex());
-        sched_->push_completed_locked(op_guard.release());
+        sched_->push_completed_locked(op);
         return std::noop_coroutine();
     }
 
-    if (op_guard->empty_buffer ||
-        op_guard->cancelled.load(std::memory_order_acquire))
+    if (op->empty_buffer ||
+        op->cancelled.load(std::memory_order_acquire))
     {
         uring_scheduler::lock_type lock(sched_->dispatch_mutex());
-        sched_->push_completed_locked(op_guard.release());
+        sched_->push_completed_locked(op);
         return std::noop_coroutine();
     }
 
-    uring_submit_op(*sched_, op_guard.release());
+    uring_submit_op(*sched_, op);
     return std::noop_coroutine();
 }
 

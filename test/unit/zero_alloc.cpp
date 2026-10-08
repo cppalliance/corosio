@@ -27,6 +27,7 @@
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
+#include <boost/corosio/random_access_file.hpp>
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/delay.hpp>
 
@@ -37,6 +38,7 @@
 #include <chrono>
 #include <type_traits>
 
+#include "temp_path.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -228,11 +230,56 @@ struct zero_alloc_test
         BOOST_TEST_EQ(alloc_count.load(std::memory_order_relaxed), 0LL);
     }
 
+    // Random-access file churn: each read_some_at/write_some_at used
+    // to heap-allocate its op; both now recycle through the file's
+    // free lists, so a warmed write+read round trip is zero-alloc on
+    // every backend (posix thread-pool path and native uring path).
+    void testRafChurnIsZeroAlloc()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        test::temp_file tmp("zero_alloc_raf_", "warm");
+        random_access_file f(ioc);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_write));
+
+        char buf[4] = {};
+        auto one_rw = [&] {
+            bool wrote = false, read = false;
+            capy::run_async(ex)(
+                [](random_access_file& file, char* b, bool& w,
+                   bool& r) -> capy::task<> {
+                    auto [ec1, n1] = co_await file.write_some_at(
+                        0, capy::const_buffer("abcd", 4));
+                    w              = !ec1 && n1 == 4;
+                    auto [ec2, n2] = co_await file.read_some_at(
+                        0, capy::mutable_buffer(b, 4));
+                    r = !ec2 && n2 == 4;
+                }(f, buf, wrote, read));
+            ioc.run();
+            ioc.restart();
+            BOOST_TEST(wrote);
+            BOOST_TEST(read);
+        };
+
+        for (int i = 0; i < warmup_cycles; ++i)
+            one_rw();
+
+        alloc_count.store(0, std::memory_order_relaxed);
+        alloc_armed.store(true, std::memory_order_relaxed);
+        for (int i = 0; i < measured_cycles; ++i)
+            one_rw();
+        alloc_armed.store(false, std::memory_order_relaxed);
+
+        BOOST_TEST_EQ(alloc_count.load(std::memory_order_relaxed), 0LL);
+    }
+
     void run()
     {
         testAcceptEchoCloseIsZeroAlloc();
         testReuseIdentityIsZeroAlloc();
         testDelayChurnIsZeroAlloc();
+        testRafChurnIsZeroAlloc();
     }
 };
 

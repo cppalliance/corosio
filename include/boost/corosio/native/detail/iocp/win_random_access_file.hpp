@@ -25,6 +25,7 @@
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
 
 #include <coroutine>
+#include <mutex>
 #include <cstdint>
 
 namespace boost::corosio::detail {
@@ -34,9 +35,11 @@ class win_random_access_file;
 
 /** Per-operation state for concurrent random-access file IOCP I/O.
 
-    Heap-allocated for each async read/write, enabling unlimited
-    concurrent operations on the same file. Self-deletes on
-    completion or shutdown.
+    Acquired from the file's free list for each async read/write,
+    enabling unlimited concurrent operations on the same file.
+    Recycles into that free list on completion or shutdown, so
+    steady-state reads and writes allocate nothing; the file
+    destructor frees the recycled storage.
 */
 struct raf_concurrent_op
     : overlapped_op
@@ -59,9 +62,10 @@ struct raf_concurrent_op
 /** Random-access file implementation for IOCP-based I/O.
 
     Collapses the historical internal-state/wrapper split into one
-    pooled `io_object::implementation`. Each async operation
-    heap-allocates a `raf_concurrent_op`, allowing unlimited
-    concurrent reads and writes.
+    pooled `io_object::implementation`. Each async operation acquires
+    a `raf_concurrent_op` from the per-file free list, allowing
+    unlimited concurrent reads and writes without steady-state
+    allocation.
 */
 class win_random_access_file final
     : public random_access_file::implementation
@@ -73,7 +77,26 @@ class win_random_access_file final
     win_random_access_file_service& svc_;
     win_mutex ops_mutex_;
     intrusive_list<raf_concurrent_op> outstanding_ops_;
+    /// Recycled ops (guarded by `ops_mutex_`). Survives impl
+    /// recycling — the storage belongs to this impl and only the
+    /// destructor frees it.
+    intrusive_list<raf_concurrent_op> free_ops_;
     HANDLE handle_ = INVALID_HANDLE_VALUE;
+
+    /// Pop a recycled op (re-arming its keepalive), or allocate on
+    /// the cold path; the caller's `reset()` clears per-use state.
+    raf_concurrent_op* acquire_op()
+    {
+        raf_concurrent_op* op;
+        {
+            std::lock_guard<win_mutex> lock(ops_mutex_);
+            op = free_ops_.pop_front();
+        }
+        if (!op)
+            op = new raf_concurrent_op(*this);
+        op->object_ref_ = detail::object_ref(this);
+        return op;
+    }
 
 public:
     explicit win_random_access_file(
@@ -86,11 +109,20 @@ public:
 
     /** Reset recycled state for reuse.
 
+        `free_ops_` deliberately survives recycling; only the
+        destructor frees it.
+
         @pre refs_ == 0, handle closed, no op in flight (per-op
         `raf_concurrent_op` holds its own `object_ref`, so `refs_`
         cannot reach zero while one is outstanding).
     */
     void reuse() noexcept;
+
+    ~win_random_access_file() override
+    {
+        while (auto* op = free_ops_.pop_front())
+            delete op;
+    }
 
     std::coroutine_handle<> read_some_at(
         std::uint64_t offset,

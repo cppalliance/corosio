@@ -175,7 +175,7 @@ posix_random_access_file::read_some_at(
         return h;
     }
 
-    auto* op    = new raf_op();
+    auto* op    = acquire_op();
     op->is_read = true;
     op->offset  = offset;
 
@@ -209,7 +209,7 @@ posix_random_access_file::read_some_at(
         // like the closed-descriptor and zero-length exits above rather
         // than through a completion the scheduler has to carry back.
         // destroy() is the discard the op never reaching the queue
-        // needs: it unlinks, unwinds the work count and frees.
+        // needs: it unlinks, unwinds the work count and recycles.
         op->destroy();
         *ec        = pec;
         *bytes_out = 0;
@@ -246,7 +246,7 @@ posix_random_access_file::write_some_at(
         return h;
     }
 
-    auto* op    = new raf_op();
+    auto* op    = acquire_op();
     op->is_read = false;
     op->offset  = offset;
 
@@ -280,7 +280,7 @@ posix_random_access_file::write_some_at(
         // like the closed-descriptor and zero-length exits above rather
         // than through a completion the scheduler has to carry back.
         // destroy() is the discard the op never reaching the queue
-        // needs: it unlinks, unwinds the work count and frees.
+        // needs: it unlinks, unwinds the work count and recycles.
         op->destroy();
         *ec        = pec;
         *bytes_out = 0;

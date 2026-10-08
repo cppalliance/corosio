@@ -152,12 +152,12 @@ raf_concurrent_op::do_complete(
         // Shutdown path: clean up without invoking
         op->stop_cb.reset();
         op->h = {};
+        auto keep = std::move(op->object_ref_);
         {
             std::lock_guard<win_mutex> lock(op->file_->ops_mutex_);
             op->file_->outstanding_ops_.remove(op);
+            op->file_->free_ops_.push_front(op);
         }
-        op->object_ref_.reset();
-        delete op;
         return;
     }
 
@@ -175,17 +175,17 @@ raf_concurrent_op::do_complete(
         op->is_read, static_cast<std::size_t>(op->bytes_transferred),
         op->empty_buffer);
 
-    {
-        std::lock_guard<win_mutex> lock(op->file_->ops_mutex_);
-        op->file_->outstanding_ops_.remove(op);
-    }
-
     auto coro = op->h;
     // Hold the keepalive across the resume, like every other IOCP op:
     // it may be the last reference to the implementation the op was
-    // working on behalf of.
+    // working on behalf of. Copy out everything needed first — once
+    // the op is on free_ops_ a concurrent initiation may refill it.
     auto prevent_premature_destruction = std::move(op->object_ref_);
-    delete op;
+    {
+        std::lock_guard<win_mutex> lock(op->file_->ops_mutex_);
+        op->file_->outstanding_ops_.remove(op);
+        op->file_->free_ops_.push_front(op);
+    }
     coro.resume();
 }
 
@@ -316,9 +316,7 @@ win_random_access_file::read_some_at(
 {
     static constexpr std::size_t max_buffers = 16;
 
-    auto* op      = new raf_concurrent_op(*this);
-    op->object_ref_ = detail::object_ref(this);
-
+    auto* op = acquire_op();
     op->reset();
     op->is_read   = true;
     op->h         = h;
@@ -398,9 +396,7 @@ win_random_access_file::write_some_at(
 {
     static constexpr std::size_t max_buffers = 16;
 
-    auto* op      = new raf_concurrent_op(*this);
-    op->object_ref_ = detail::object_ref(this);
-
+    auto* op = acquire_op();
     op->reset();
     op->is_read   = false;
     op->h         = h;
