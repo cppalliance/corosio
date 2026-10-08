@@ -349,6 +349,11 @@ select_scheduler::run_task(lock_type& lock, context_type& ctx, long timeout_us)
     fd_entry snapshot[FD_SETSIZE];
     int snapshot_count = 0;
 
+    // The caller may have released the lock to hand queued work to a
+    // peer, and deregister_descriptor() erases from this map under it.
+    if (!lock.owns_lock())
+        lock.lock();
+
     for (auto& [fd, desc] : registered_descs_)
     {
         if (snapshot_count < FD_SETSIZE)
