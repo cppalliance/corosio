@@ -23,6 +23,7 @@
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/task.hpp>
 
 #include "context.hpp"
@@ -36,6 +37,7 @@
 #include <fstream>
 #include <optional>
 #include <atomic>
+#include <latch>
 #include <limits>
 #include <stop_token>
 #include <string>
@@ -719,6 +721,94 @@ struct random_access_file_test
         BOOST_TEST(!resumed);
     }
 
+    // A completion whose awaiting coroutine runs on a non-io_context
+    // executor takes dispatch_coro's deferring branch: the executor
+    // queues the op's EMBEDDED continuation by reference and returns
+    // noop, after which the handler recycles the op. A second
+    // initiation can then pop the recycled op and its own inline
+    // completion overwrites the continuation the foreign queue still
+    // points into — the queued resume then targets the wrong (already
+    // finished) coroutine and the first awaiter is lost.
+    //
+    // Sequencing is causal, not timed: a single-worker pool runs C1
+    // up to its submission, then parks on a latch (FIFO guarantees
+    // C1 suspended first); the io_context thread processes C1's
+    // completion (queued into the parked pool), refills the op via
+    // C2, and only then releases the worker.
+    void testDeferredExecutorCompletion()
+    {
+        io_context ioc(Backend);
+        capy::thread_pool pool(1);
+
+        temp_file tmp("raf_deferred_", "abcdefgh");
+        random_access_file f(ioc);
+        BOOST_TEST(!f.open(tmp.path, file_base::read_only));
+
+        std::latch started(1);
+        std::latch hold(1);
+        std::atomic<bool> c1_done{false};
+        std::atomic<bool> c2_done{false};
+        char b1[4] = {};
+        char b2[4] = {};
+
+        // C1: initiates from the pool worker; completion must be
+        // dispatched back to the pool executor (the deferring path).
+        capy::run_async(pool.get_executor())(
+            [](random_access_file& fl, char* b,
+               std::atomic<bool>& done) -> capy::task<>
+            {
+                auto [ec, n] =
+                    co_await fl.read_some_at(0, capy::mutable_buffer(b, 4));
+                done = !ec && n == 4;
+            }(f, b1, c1_done));
+
+        // Parked behind C1 on the single worker: when this runs, C1
+        // has already submitted and suspended.
+        capy::run_async(pool.get_executor())(
+            [](std::latch& s, std::latch& h) -> capy::task<>
+            {
+                s.count_down();
+                h.wait();
+                co_return;
+            }(started, hold));
+
+        started.wait();
+
+        // Process C1's completion: the handler queues C1's resume
+        // into the (parked) pool and recycles the op.
+        ioc.run();
+        ioc.restart();
+
+        // Refill: C2 pops the recycled op; its inline completion
+        // reuses the op's continuation while the pool still holds it.
+        capy::run_async(ioc.get_executor())(
+            [](random_access_file& fl, char* b,
+               std::atomic<bool>& done) -> capy::task<>
+            {
+                auto [ec, n] =
+                    co_await fl.read_some_at(0, capy::mutable_buffer(b, 4));
+                done = !ec && n == 4;
+            }(f, b2, c2_done));
+        ioc.run();
+        ioc.restart();
+        BOOST_TEST(c2_done.load());
+
+        // Release the worker; it now dequeues what it believes is
+        // C1's continuation. Drain with a sentinel queued after it.
+        hold.count_down();
+        std::latch drained(1);
+        capy::run_async(pool.get_executor())(
+            [](std::latch& d) -> capy::task<>
+            {
+                d.count_down();
+                co_return;
+            }(drained));
+        drained.wait();
+
+        BOOST_TEST(c1_done.load());
+        pool.join();
+    }
+
     void run()
     {
         testConstruction();
@@ -757,6 +847,11 @@ struct random_access_file_test
         testClosedFileErrors();
         testClosedAtOpsComplete();
         testStopRaceReportsTransfer();
+        // The recycling hazard under test is uring's (pooled op +
+        // deferring dispatch); the property asserted — an awaiter on
+        // a foreign executor resumes exactly once — holds on every
+        // backend, so all of them run it.
+        testDeferredExecutorCompletion();
 #if BOOST_COROSIO_POSIX
         testSyncOnPipeFails();
         testHugeOffsetFails();

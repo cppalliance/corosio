@@ -13,12 +13,14 @@
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/shutdown_type.hpp>
 #include <boost/corosio/wait_type.hpp>
+#include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_basic_socket.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_descriptor_state.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
 #include <boost/capy/buffers.hpp>
 
 #include <coroutine>
+#include <cstring>
 
 #include <errno.h>
 #include <sys/socket.h>
@@ -282,6 +284,41 @@ public:
         return fd;
     }
 
+    /** Reset op slots and the cached peer for recycling.
+
+        Each op's own `reset()` runs again at its next `do_*` call
+        before any field is read, so only `remote_endpoint_` needs an
+        active reset here; `stop_cb` is checked instead of reset — a
+        still-armed callback would mean a stop_token outlived the op's
+        completion, which `reset()` always disengages, so asserting it
+        is what actually catches a missed completion rather than
+        papering over it.
+
+        @pre refs_ == 0, fd closed and deregistered, no op in flight.
+    */
+    void reuse() noexcept
+    {
+        base_type::reuse();
+        remote_endpoint_ = Endpoint{};
+        BOOST_COROSIO_ASSERT(!conn_.stop_cb);
+        BOOST_COROSIO_ASSERT(!rd_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wr_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wait_rd_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wait_wr_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wait_er_.stop_cb);
+    }
+
+#if !defined(NDEBUG)
+    /// Extend base_type::poison() to the cached peer endpoint.
+    void poison() noexcept
+    {
+        base_type::poison();
+        std::memset(
+            static_cast<void*>(&remote_endpoint_), 0xDB,
+            sizeof(remote_endpoint_));
+    }
+#endif
+
 private:
     // CRTP callbacks for reactor_basic_socket cancel/close
 
@@ -389,7 +426,7 @@ reactor_stream_socket<
         op.fd              = this->fd_;
         op.target_endpoint = ep;
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(err, 0);
         this->svc_.post(&op);
         return std::noop_coroutine();
@@ -403,7 +440,7 @@ reactor_stream_socket<
     op.fd              = this->fd_;
     op.target_endpoint = ep;
     op.start(token, static_cast<Derived*>(this));
-    op.impl_ptr = this->shared_from_this();
+    op.object_ref_ = detail::object_ref(this);
 
     this->register_op(
         op, this->desc_state_.connect_op, this->desc_state_.write_ready, true);
@@ -451,7 +488,7 @@ reactor_stream_socket<
         op.ec_out    = ec;
         op.bytes_out = bytes_out;
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(EBADF, 0);
         this->svc_.post(&op);
         return std::noop_coroutine();
@@ -468,7 +505,7 @@ reactor_stream_socket<
         op.ec_out            = ec;
         op.bytes_out         = bytes_out;
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(0, 0);
         this->svc_.post(&op);
         return std::noop_coroutine();
@@ -522,7 +559,7 @@ reactor_stream_socket<
         op.ec_out    = ec;
         op.bytes_out = bytes_out;
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(err, bytes);
         this->svc_.post(&op);
         return std::noop_coroutine();
@@ -535,7 +572,7 @@ reactor_stream_socket<
     op.bytes_out = bytes_out;
     op.fd        = this->fd_;
     op.start(token, static_cast<Derived*>(this));
-    op.impl_ptr = this->shared_from_this();
+    op.object_ref_ = detail::object_ref(this);
 
     this->register_op(
         op, this->desc_state_.read_op, this->desc_state_.read_ready);
@@ -583,7 +620,7 @@ reactor_stream_socket<
         op.ec_out    = ec;
         op.bytes_out = bytes_out;
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(EBADF, 0);
         this->svc_.post(&op);
         return std::noop_coroutine();
@@ -600,7 +637,7 @@ reactor_stream_socket<
         op.ec_out    = ec;
         op.bytes_out = bytes_out;
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(0, 0);
         this->svc_.post(&op);
         return std::noop_coroutine();
@@ -643,7 +680,7 @@ reactor_stream_socket<
         op.ec_out    = ec;
         op.bytes_out = bytes_out;
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(err, bytes);
         this->svc_.post(&op);
         return std::noop_coroutine();
@@ -656,7 +693,7 @@ reactor_stream_socket<
     op.bytes_out = bytes_out;
     op.fd        = this->fd_;
     op.start(token, static_cast<Derived*>(this));
-    op.impl_ptr = this->shared_from_this();
+    op.object_ref_ = detail::object_ref(this);
 
     this->register_op(
         op, this->desc_state_.write_op, this->desc_state_.write_ready, true);
@@ -737,7 +774,7 @@ reactor_stream_socket<
         op.ec_out     = ec;
         op.fd         = this->fd_;
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(perr, 0);
         this->svc_.post(&op);
         return std::noop_coroutine();
@@ -750,7 +787,7 @@ reactor_stream_socket<
     op.ec_out     = ec;
     op.fd         = this->fd_;
     op.start(token, static_cast<Derived*>(this));
-    op.impl_ptr = this->shared_from_this();
+    op.object_ref_ = detail::object_ref(this);
 
     // Force register_op's ready path so the wait op re-probes under
     // the descriptor mutex before parking. An edge consumed between

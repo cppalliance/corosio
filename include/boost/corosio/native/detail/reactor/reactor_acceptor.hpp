@@ -12,12 +12,14 @@
 
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/wait_type.hpp>
+#include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_op_base.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_descriptor_state.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
 
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <utility>
@@ -58,7 +60,6 @@ template<
     class Endpoint = endpoint>
 class reactor_acceptor
     : public ImplBase
-    , public std::enable_shared_from_this<Derived>
     , public intrusive_list<Derived>::node
 {
     friend Derived;
@@ -258,6 +259,64 @@ public:
     /** Release the acceptor without closing the fd. */
     native_handle_type do_release_socket() noexcept;
 
+    /** Reset descriptor state for recycling.
+
+        Actively re-initializes every field it owns rather than
+        trusting `close_socket()`'s prior writes to still be there —
+        see reactor_basic_socket::reuse() for the same rationale.
+        `object_ref_` and `is_enqueued_` are asserted instead: `poison()`
+        never touches them, so they must already hold their
+        zero-action-complete state.
+
+        @pre refs_ == 0, fd closed and deregistered, no op in flight.
+    */
+    void reuse() noexcept
+    {
+        fd_                           = -1;
+        local_endpoint_               = Endpoint{};
+        desc_state_.fd                = -1;
+        desc_state_.registered_events = 0;
+        desc_state_.read_op           = nullptr;
+        desc_state_.wait_read_op      = nullptr;
+        desc_state_.wait_write_op     = nullptr;
+        desc_state_.wait_error_op     = nullptr;
+        desc_state_.read_ready        = false;
+        desc_state_.write_ready       = false;
+        BOOST_COROSIO_ASSERT(!desc_state_.object_ref_);
+        BOOST_COROSIO_ASSERT(!desc_state_.is_enqueued_.load(
+            std::memory_order_relaxed));
+        BOOST_COROSIO_ASSERT(!acc_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wait_rd_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wait_wr_.stop_cb);
+        BOOST_COROSIO_ASSERT(!wait_er_.stop_cb);
+    }
+
+#if !defined(NDEBUG)
+    /** Poison the fields `reuse()` re-initializes, before the pool
+        parks this impl on the free list. See
+        reactor_basic_socket::poison() for the full rationale and the
+        list of fields deliberately left untouched.
+
+        @pre refs_ == 0, fd closed and deregistered, no op in flight.
+    */
+    void poison() noexcept
+    {
+        auto smash = [](auto& field) {
+            std::memset(static_cast<void*>(&field), 0xDB, sizeof(field));
+        };
+        smash(fd_);
+        smash(local_endpoint_);
+        smash(desc_state_.fd);
+        smash(desc_state_.registered_events);
+        smash(desc_state_.read_op);
+        smash(desc_state_.wait_read_op);
+        smash(desc_state_.wait_write_op);
+        smash(desc_state_.wait_error_op);
+        smash(desc_state_.read_ready);
+        smash(desc_state_.write_ready);
+    }
+#endif
+
     /** Bind the acceptor socket to an endpoint.
 
         Caches the resolved local endpoint (including ephemeral
@@ -300,10 +359,6 @@ reactor_acceptor<
     ImplBase,
     Endpoint>::cancel_single_op(Op& op) noexcept
 {
-    auto self = this->weak_from_this().lock();
-    if (!self)
-        return;
-
     op.request_cancel();
 
     reactor_op_base* claimed = nullptr;
@@ -320,7 +375,7 @@ reactor_acceptor<
     }
     if (claimed)
     {
-        op.impl_ptr = self;
+        op.object_ref_ = detail::object_ref(this);
         svc_.post(&op);
         svc_.work_finished();
     }
@@ -372,44 +427,40 @@ reactor_acceptor<
     ImplBase,
     Endpoint>::do_close_socket() noexcept
 {
-    auto self = this->weak_from_this().lock();
-    if (self)
+    acc_.request_cancel();
+    wait_rd_.request_cancel();
+    wait_wr_.request_cancel();
+    wait_er_.request_cancel();
+
+    reactor_op_base* claimed_acc = nullptr;
+    reactor_op_base* claimed_wr  = nullptr;
+    reactor_op_base* claimed_ww  = nullptr;
+    reactor_op_base* claimed_we  = nullptr;
     {
-        acc_.request_cancel();
-        wait_rd_.request_cancel();
-        wait_wr_.request_cancel();
-        wait_er_.request_cancel();
+        std::lock_guard lock(desc_state_.mutex);
+        claimed_acc = std::exchange(desc_state_.read_op, nullptr);
+        claimed_wr  = std::exchange(desc_state_.wait_read_op, nullptr);
+        claimed_ww  = std::exchange(desc_state_.wait_write_op, nullptr);
+        claimed_we  = std::exchange(desc_state_.wait_error_op, nullptr);
+        desc_state_.read_ready  = false;
+        desc_state_.write_ready = false;
 
-        reactor_op_base* claimed_acc = nullptr;
-        reactor_op_base* claimed_wr  = nullptr;
-        reactor_op_base* claimed_ww  = nullptr;
-        reactor_op_base* claimed_we  = nullptr;
-        {
-            std::lock_guard lock(desc_state_.mutex);
-            claimed_acc = std::exchange(desc_state_.read_op, nullptr);
-            claimed_wr  = std::exchange(desc_state_.wait_read_op, nullptr);
-            claimed_ww  = std::exchange(desc_state_.wait_write_op, nullptr);
-            claimed_we  = std::exchange(desc_state_.wait_error_op, nullptr);
-            desc_state_.read_ready  = false;
-            desc_state_.write_ready = false;
-
-            if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
-                desc_state_.impl_ref_ = self;
-        }
-
-        auto repost = [&](reactor_op_base* claimed, reactor_op_base& op) {
-            if (claimed)
-            {
-                op.impl_ptr = self;
-                svc_.post(&op);
-                svc_.work_finished();
-            }
-        };
-        repost(claimed_acc, acc_);
-        repost(claimed_wr, wait_rd_);
-        repost(claimed_ww, wait_wr_);
-        repost(claimed_we, wait_er_);
+        if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
+            desc_state_.object_ref_ = detail::object_ref(this);
     }
+
+    auto repost = [&](reactor_op_base* claimed, reactor_op_base& op) {
+        if (claimed)
+        {
+            op.object_ref_ = detail::object_ref(this);
+            svc_.post(&op);
+            svc_.work_finished();
+        }
+    };
+    repost(claimed_acc, acc_);
+    repost(claimed_wr, wait_rd_);
+    repost(claimed_ww, wait_wr_);
+    repost(claimed_we, wait_er_);
 
     if (fd_ >= 0)
     {
@@ -445,44 +496,40 @@ reactor_acceptor<
     ImplBase,
     Endpoint>::do_release_socket() noexcept
 {
-    auto self = this->weak_from_this().lock();
-    if (self)
+    acc_.request_cancel();
+    wait_rd_.request_cancel();
+    wait_wr_.request_cancel();
+    wait_er_.request_cancel();
+
+    reactor_op_base* claimed_acc = nullptr;
+    reactor_op_base* claimed_wr  = nullptr;
+    reactor_op_base* claimed_ww  = nullptr;
+    reactor_op_base* claimed_we  = nullptr;
     {
-        acc_.request_cancel();
-        wait_rd_.request_cancel();
-        wait_wr_.request_cancel();
-        wait_er_.request_cancel();
+        std::lock_guard lock(desc_state_.mutex);
+        claimed_acc = std::exchange(desc_state_.read_op, nullptr);
+        claimed_wr  = std::exchange(desc_state_.wait_read_op, nullptr);
+        claimed_ww  = std::exchange(desc_state_.wait_write_op, nullptr);
+        claimed_we  = std::exchange(desc_state_.wait_error_op, nullptr);
+        desc_state_.read_ready  = false;
+        desc_state_.write_ready = false;
 
-        reactor_op_base* claimed_acc = nullptr;
-        reactor_op_base* claimed_wr  = nullptr;
-        reactor_op_base* claimed_ww  = nullptr;
-        reactor_op_base* claimed_we  = nullptr;
-        {
-            std::lock_guard lock(desc_state_.mutex);
-            claimed_acc = std::exchange(desc_state_.read_op, nullptr);
-            claimed_wr  = std::exchange(desc_state_.wait_read_op, nullptr);
-            claimed_ww  = std::exchange(desc_state_.wait_write_op, nullptr);
-            claimed_we  = std::exchange(desc_state_.wait_error_op, nullptr);
-            desc_state_.read_ready  = false;
-            desc_state_.write_ready = false;
-
-            if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
-                desc_state_.impl_ref_ = self;
-        }
-
-        auto repost = [&](reactor_op_base* claimed, reactor_op_base& op) {
-            if (claimed)
-            {
-                op.impl_ptr = self;
-                svc_.post(&op);
-                svc_.work_finished();
-            }
-        };
-        repost(claimed_acc, acc_);
-        repost(claimed_wr, wait_rd_);
-        repost(claimed_ww, wait_wr_);
-        repost(claimed_we, wait_er_);
+        if (desc_state_.is_enqueued_.load(std::memory_order_acquire))
+            desc_state_.object_ref_ = detail::object_ref(this);
     }
+
+    auto repost = [&](reactor_op_base* claimed, reactor_op_base& op) {
+        if (claimed)
+        {
+            op.object_ref_ = detail::object_ref(this);
+            svc_.post(&op);
+            svc_.work_finished();
+        }
+    };
+    repost(claimed_acc, acc_);
+    repost(claimed_wr, wait_rd_);
+    repost(claimed_ww, wait_wr_);
+    repost(claimed_we, wait_er_);
 
     native_handle_type released = fd_;
 
@@ -606,7 +653,7 @@ reactor_acceptor<
         op.ec_out     = ec;
         op.fd         = this->fd_;
         op.start(token, static_cast<Derived*>(this));
-        op.impl_ptr = this->shared_from_this();
+        op.object_ref_ = detail::object_ref(this);
         op.complete(ENOTSUP, 0);
         svc_.post(&op);
         return std::noop_coroutine();
@@ -637,7 +684,7 @@ reactor_acceptor<
     op.ec_out     = ec;
     op.fd         = this->fd_;
     op.start(token, static_cast<Derived*>(this));
-    op.impl_ptr = this->shared_from_this();
+    op.object_ref_ = detail::object_ref(this);
 
     // A listener's readiness can predate the wait: an adopted or
     // shared descriptor has history the reactor never saw, and an

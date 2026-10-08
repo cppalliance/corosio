@@ -69,7 +69,7 @@ struct uring_dgram_send_op : uring_op
         std::size_t* bytes,
         int file_descriptor,
         uring_scheduler* scheduler,
-        std::shared_ptr<void> impl,
+        detail::object_ref impl,
         detail::speculative_state* spec,
         buffer_param buffers,
         socklen_t dest_addr_len,
@@ -77,17 +77,17 @@ struct uring_dgram_send_op : uring_op
         int flags,
         std::stop_token const& token) noexcept
     {
-        h          = handle;
-        ex         = executor;
-        ec_out     = ec;
-        bytes_out  = bytes;
-        fd         = file_descriptor;
-        sched_     = scheduler;
-        impl_ptr   = std::move(impl);
-        spec_state = spec;
-        res        = 0;
-        cqe_flags  = 0;
-        msg_flags  = flags;
+        h           = handle;
+        ex          = executor;
+        ec_out      = ec;
+        bytes_out   = bytes;
+        fd          = file_descriptor;
+        sched_      = scheduler;
+        object_ref_ = std::move(impl);
+        spec_state  = spec;
+        res         = 0;
+        cqe_flags   = 0;
+        msg_flags   = flags;
 
         iovec_count = copy_to_iovec(buffers, iovecs);
 
@@ -207,7 +207,7 @@ struct uring_dgram_recv_op : uring_op
         std::size_t* bytes,
         int file_descriptor,
         uring_scheduler* scheduler,
-        std::shared_ptr<void> impl,
+        detail::object_ref impl,
         detail::speculative_state* spec,
         buffer_param buffers,
         void* source_ctx,
@@ -215,17 +215,17 @@ struct uring_dgram_recv_op : uring_op
         int flags,
         std::stop_token const& token) noexcept
     {
-        h          = handle;
-        ex         = executor;
-        ec_out     = ec;
-        bytes_out  = bytes;
-        fd         = file_descriptor;
-        sched_     = scheduler;
-        impl_ptr   = std::move(impl);
-        spec_state = spec;
-        res        = 0;
-        cqe_flags  = 0;
-        msg_flags  = flags;
+        h           = handle;
+        ex          = executor;
+        ec_out      = ec;
+        bytes_out   = bytes;
+        fd          = file_descriptor;
+        sched_      = scheduler;
+        object_ref_ = std::move(impl);
+        spec_state  = spec;
+        res         = 0;
+        cqe_flags   = 0;
+        msg_flags   = flags;
 
         iovec_count = copy_to_iovec(buffers, iovecs);
 

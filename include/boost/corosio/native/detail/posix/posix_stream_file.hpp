@@ -56,7 +56,8 @@
     to a shared thread pool, with completion posted back to the scheduler.
 
     This follows the same pattern as posix_resolver: pool_work_item for
-    dispatch, scheduler_op for completion, shared_from_this for lifetime.
+    dispatch, scheduler_op for completion, an object_ref keepalive on
+    each op for lifetime while its pool work is in flight.
 
     Completion Flow
     ---------------
@@ -84,7 +85,6 @@ class posix_stream_file_service;
 */
 class posix_stream_file final
     : public stream_file::implementation
-    , public std::enable_shared_from_this<posix_stream_file>
     , public intrusive_list<posix_stream_file>::node
 {
     friend class posix_stream_file_service;
@@ -117,7 +117,7 @@ public:
             is_read           = false;
             cancelled.store(false, std::memory_order_relaxed);
             stop_cb.reset();
-            impl_ptr.reset();
+            object_ref_.reset();
             ec_out    = nullptr;
             bytes_out = nullptr;
         }
@@ -130,10 +130,30 @@ public:
     struct pool_op : pool_work_item
     {
         posix_stream_file* file_ = nullptr;
-        std::shared_ptr<posix_stream_file> ref_;
+        detail::object_ref ref_;
     };
 
     explicit posix_stream_file(posix_stream_file_service& svc) noexcept;
+
+    /// Recycle into the owning service's pool. Defined out-of-line
+    /// after posix_stream_file_service for its complete type.
+    void retire() noexcept override;
+
+    /** Reset op slots for recycling.
+
+        `close_file()` already drove fd_ to its closed value before
+        the refcount reached zero; each op's own `reset()` runs again
+        before its next use, so only the `stop_cb` invariant is worth
+        asserting here.
+
+        @pre refs_ == 0, fd closed, no op in flight.
+    */
+    void reuse() noexcept
+    {
+        BOOST_COROSIO_ASSERT(fd_ == -1);
+        BOOST_COROSIO_ASSERT(!read_op_.stop_cb);
+        BOOST_COROSIO_ASSERT(!write_op_.stop_cb);
+    }
 
     // -- io_stream::implementation --
 
@@ -385,10 +405,10 @@ posix_stream_file::file_op::operator()()
         errn != 0 ? make_err(errn) : std::error_code{}, is_read,
         bytes_transferred, /*empty_buffer=*/false);
 
-    // Move impl_ptr to a local so members remain valid through
-    // dispatch — impl_ptr may be the last shared_ptr keeping
-    // the parent posix_stream_file (which embeds this file_op) alive.
-    auto prevent_destroy = std::move(impl_ptr);
+    // Move object_ref_ to a local so members remain valid through
+    // dispatch — this may be the last reference keeping the parent
+    // posix_stream_file (which embeds this file_op) alive.
+    auto prevent_destroy = std::move(object_ref_);
     ex.on_work_finished();
     cont.h = h;
     dispatch_coro(ex, cont).resume();
@@ -399,7 +419,7 @@ posix_stream_file::file_op::destroy()
 {
     stop_cb.reset();
     auto local_ex = ex;
-    impl_ptr.reset();
+    object_ref_.reset();
     local_ex.on_work_finished();
 }
 

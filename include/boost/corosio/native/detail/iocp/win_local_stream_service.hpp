@@ -15,6 +15,7 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include <boost/corosio/detail/config.hpp>
+#include <boost/corosio/detail/object_pool.hpp>
 #include <boost/corosio/detail/local_stream_service.hpp>
 
 #include <boost/corosio/native/detail/iocp/win_dissociate.hpp>
@@ -23,7 +24,6 @@
 #include <boost/corosio/native/detail/iocp/win_tcp_acceptor_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
 #include <boost/corosio/native/detail/iocp/win_completion_key.hpp>
-#include <boost/corosio/native/detail/iocp/win_mutex.hpp>
 #include <boost/corosio/native/detail/iocp/win_wsa_init.hpp>
 
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
@@ -33,10 +33,6 @@
 #include <ws2tcpip.h>
 
 namespace boost::corosio::detail {
-
-class win_local_stream_acceptor;
-class win_local_stream_acceptor_internal;
-class win_local_stream_acceptor_service;
 
 /* IOCP local stream socket service.
 
@@ -48,6 +44,9 @@ class BOOST_COROSIO_DECL win_local_stream_service final
     : private win_wsa_init
     , public local_stream_service
 {
+    friend class win_local_stream_socket;
+    friend class win_local_stream_acceptor;
+
 public:
     io_object::implementation* construct() override;
 
@@ -56,8 +55,6 @@ public:
     void close(io_object::handle& h) override;
 
     explicit win_local_stream_service(capy::execution_context& ctx);
-
-    ~win_local_stream_service();
 
     win_local_stream_service(win_local_stream_service const&) = delete;
     win_local_stream_service&
@@ -75,34 +72,22 @@ public:
         local_stream_socket::implementation& impl,
         native_handle_type fd) override;
 
-    void destroy_impl(win_local_stream_socket& impl);
-
-    void unregister_impl(win_local_stream_socket_internal& impl);
-
     std::error_code open_socket_internal(
-        win_local_stream_socket_internal& impl,
-        int family,
-        int type,
-        int protocol);
+        win_local_stream_socket& impl, int family, int type, int protocol);
 
-    void destroy_acceptor_impl(win_local_stream_acceptor& impl);
-
-    void unregister_acceptor_impl(win_local_stream_acceptor_internal& impl);
+    win_local_stream_acceptor* acquire_acceptor_impl();
 
     std::error_code open_acceptor_socket(
-        win_local_stream_acceptor_internal& impl,
-        int family,
-        int type,
-        int protocol);
+        win_local_stream_acceptor& impl, int family, int type, int protocol);
 
     std::error_code assign_acceptor_socket(
-        win_local_stream_acceptor_internal& impl, native_handle_type fd);
-
-    std::error_code bind_acceptor(
-        win_local_stream_acceptor_internal& impl, corosio::local_endpoint ep);
+        win_local_stream_acceptor& impl, native_handle_type fd);
 
     std::error_code
-    listen_acceptor(win_local_stream_acceptor_internal& impl, int backlog);
+    bind_acceptor(win_local_stream_acceptor& impl, corosio::local_endpoint ep);
+
+    std::error_code
+    listen_acceptor(win_local_stream_acceptor& impl, int backlog);
 
     void* native_handle() const noexcept;
     LPFN_CONNECTEX connect_ex() const noexcept;
@@ -121,19 +106,14 @@ public:
     }
 
 private:
-    friend class win_local_stream_acceptor_service;
-
     win_tcp_service& tcp_svc_;
     win_scheduler& sched_;
+    void* iocp_;
     BOOST_COROSIO_MSVC_WARNING_PUSH
     BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // detail:: members, dll-interface
-    win_mutex mutex_;
-    intrusive_list<win_local_stream_socket_internal> socket_list_;
-    intrusive_list<win_local_stream_acceptor_internal> acceptor_list_;
-    intrusive_list<win_local_stream_socket> socket_wrapper_list_;
-    intrusive_list<win_local_stream_acceptor> acceptor_wrapper_list_;
+    object_pool<win_local_stream_socket> pool_;
+    object_pool<win_local_stream_acceptor> acceptor_pool_;
     BOOST_COROSIO_MSVC_WARNING_POP
-    void* iocp_;
 };
 
 // ============================================================
@@ -141,7 +121,7 @@ private:
 // ============================================================
 
 inline local_stream_connect_op::local_stream_connect_op(
-    win_local_stream_socket_internal& internal_) noexcept
+    win_local_stream_socket& internal_) noexcept
     : overlapped_op(&do_complete)
     , internal(internal_)
 {
@@ -149,7 +129,7 @@ inline local_stream_connect_op::local_stream_connect_op(
 }
 
 inline local_stream_read_op::local_stream_read_op(
-    win_local_stream_socket_internal& internal_) noexcept
+    win_local_stream_socket& internal_) noexcept
     : overlapped_op(&do_complete)
     , internal(internal_)
 {
@@ -157,7 +137,7 @@ inline local_stream_read_op::local_stream_read_op(
 }
 
 inline local_stream_write_op::local_stream_write_op(
-    win_local_stream_socket_internal& internal_) noexcept
+    win_local_stream_socket& internal_) noexcept
     : overlapped_op(&do_complete)
     , internal(internal_)
 {
@@ -165,7 +145,7 @@ inline local_stream_write_op::local_stream_write_op(
 }
 
 inline local_stream_wait_op::local_stream_wait_op(
-    win_local_stream_socket_internal& internal_) noexcept
+    win_local_stream_socket& internal_) noexcept
     : overlapped_op(&do_complete)
     , internal(internal_)
 {
@@ -181,10 +161,9 @@ local_stream_connect_op::do_cancel_impl(overlapped_op* base) noexcept
 {
     auto* op = static_cast<local_stream_connect_op*>(base);
     op->cancelled.store(true, std::memory_order_release);
-    if (op->internal.is_open())
+    if (op->internal.socket_ != INVALID_SOCKET)
     {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
+        ::CancelIoEx(reinterpret_cast<HANDLE>(op->internal.socket_), op);
     }
 }
 
@@ -193,10 +172,9 @@ local_stream_read_op::do_cancel_impl(overlapped_op* base) noexcept
 {
     auto* op = static_cast<local_stream_read_op*>(base);
     op->cancelled.store(true, std::memory_order_release);
-    if (op->internal.is_open())
+    if (op->internal.socket_ != INVALID_SOCKET)
     {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
+        ::CancelIoEx(reinterpret_cast<HANDLE>(op->internal.socket_), op);
     }
 }
 
@@ -205,10 +183,9 @@ local_stream_write_op::do_cancel_impl(overlapped_op* base) noexcept
 {
     auto* op = static_cast<local_stream_write_op*>(base);
     op->cancelled.store(true, std::memory_order_release);
-    if (op->internal.is_open())
+    if (op->internal.socket_ != INVALID_SOCKET)
     {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
+        ::CancelIoEx(reinterpret_cast<HANDLE>(op->internal.socket_), op);
     }
 }
 
@@ -217,10 +194,9 @@ local_stream_wait_op::do_cancel_impl(overlapped_op* base) noexcept
 {
     auto* op = static_cast<local_stream_wait_op*>(base);
     op->cancelled.store(true, std::memory_order_release);
-    if (op->internal.is_open())
+    if (op->internal.socket_ != INVALID_SOCKET)
     {
-        ::CancelIoEx(
-            reinterpret_cast<HANDLE>(op->internal.native_handle()), op);
+        ::CancelIoEx(reinterpret_cast<HANDLE>(op->internal.socket_), op);
     }
     op->internal.svc_.scheduler().cancel_wait(op);
 }
@@ -241,31 +217,31 @@ local_stream_connect_op::do_complete(
     if (!owner)
     {
         op->cleanup_only();
-        op->internal_ptr.reset();
+        op->object_ref_.reset();
         return;
     }
 
     bool success =
         (op->dwError == 0 && !op->cancelled.load(std::memory_order_acquire));
-    if (success && op->internal.is_open())
+    if (success && op->internal.socket_ != INVALID_SOCKET)
     {
         // Required after ConnectEx
         ::setsockopt(
-            op->internal.native_handle(), SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT,
+            op->internal.socket_, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT,
             nullptr, 0);
 
         corosio::local_endpoint local_ep;
         sockaddr_storage local_storage{};
         int local_len = sizeof(local_storage);
         if (::getsockname(
-                op->internal.native_handle(),
+                op->internal.socket_,
                 reinterpret_cast<sockaddr*>(&local_storage), &local_len) == 0)
             local_ep = from_sockaddr_local(
                 local_storage, static_cast<socklen_t>(local_len));
         op->internal.set_endpoints(local_ep, op->target_endpoint);
     }
 
-    auto prevent_premature_destruction = std::move(op->internal_ptr);
+    auto prevent_premature_destruction = std::move(op->object_ref_);
     op->invoke_handler();
 }
 
@@ -285,11 +261,11 @@ local_stream_read_op::do_complete(
     if (!owner)
     {
         op->cleanup_only();
-        op->internal_ptr.reset();
+        op->object_ref_.reset();
         return;
     }
 
-    auto prevent_premature_destruction = std::move(op->internal_ptr);
+    auto prevent_premature_destruction = std::move(op->object_ref_);
     op->invoke_handler();
 }
 
@@ -309,11 +285,11 @@ local_stream_write_op::do_complete(
     if (!owner)
     {
         op->cleanup_only();
-        op->internal_ptr.reset();
+        op->object_ref_.reset();
         return;
     }
 
-    auto prevent_premature_destruction = std::move(op->internal_ptr);
+    auto prevent_premature_destruction = std::move(op->object_ref_);
     op->invoke_handler();
 }
 
@@ -333,19 +309,19 @@ local_stream_wait_op::do_complete(
     if (!owner)
     {
         op->cleanup_only();
-        op->internal_ptr.reset();
+        op->object_ref_.reset();
         return;
     }
 
-    auto prevent_premature_destruction = std::move(op->internal_ptr);
+    auto prevent_premature_destruction = std::move(op->object_ref_);
     op->invoke_handler();
 }
 
 // ============================================================
-// win_local_stream_socket_internal
+// win_local_stream_socket
 // ============================================================
 
-inline win_local_stream_socket_internal::win_local_stream_socket_internal(
+inline win_local_stream_socket::win_local_stream_socket(
     win_local_stream_service& svc) noexcept
     : svc_(svc)
     , conn_(*this)
@@ -355,43 +331,26 @@ inline win_local_stream_socket_internal::win_local_stream_socket_internal(
 {
 }
 
-inline win_local_stream_socket_internal::~win_local_stream_socket_internal()
+inline void
+win_local_stream_socket::reuse() noexcept
 {
-    svc_.unregister_impl(*this);
-}
-
-inline SOCKET
-win_local_stream_socket_internal::native_handle() const noexcept
-{
-    return socket_;
-}
-
-inline corosio::local_endpoint
-win_local_stream_socket_internal::local_endpoint() const noexcept
-{
-    return local_endpoint_;
-}
-
-inline corosio::local_endpoint
-win_local_stream_socket_internal::remote_endpoint() const noexcept
-{
-    return remote_endpoint_;
-}
-
-inline bool
-win_local_stream_socket_internal::is_open() const noexcept
-{
-    return socket_ != INVALID_SOCKET;
+    BOOST_COROSIO_ASSERT(socket_ == INVALID_SOCKET);
+    BOOST_COROSIO_ASSERT(local_endpoint_ == corosio::local_endpoint{});
+    BOOST_COROSIO_ASSERT(remote_endpoint_ == corosio::local_endpoint{});
+    BOOST_COROSIO_ASSERT(!conn_.stop_cb);
+    BOOST_COROSIO_ASSERT(!rd_.stop_cb);
+    BOOST_COROSIO_ASSERT(!wr_.stop_cb);
+    BOOST_COROSIO_ASSERT(!wt_.stop_cb);
 }
 
 inline void
-win_local_stream_socket_internal::set_socket(SOCKET s) noexcept
+win_local_stream_socket::set_socket(SOCKET s) noexcept
 {
     socket_ = s;
 }
 
 inline void
-win_local_stream_socket_internal::set_endpoints(
+win_local_stream_socket::set_endpoints(
     corosio::local_endpoint local, corosio::local_endpoint remote) noexcept
 {
     local_endpoint_  = local;
@@ -399,14 +358,14 @@ win_local_stream_socket_internal::set_endpoints(
 }
 
 inline std::coroutine_handle<>
-win_local_stream_socket_internal::connect(
+win_local_stream_socket::connect(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     corosio::local_endpoint ep,
     std::stop_token token,
     std::error_code* ec)
 {
-    conn_.internal_ptr = shared_from_this();
+    conn_.object_ref_ = detail::object_ref(this);
 
     auto& op = conn_;
     op.reset();
@@ -469,7 +428,7 @@ win_local_stream_socket_internal::connect(
 }
 
 inline std::coroutine_handle<>
-win_local_stream_socket_internal::read_some(
+win_local_stream_socket::read_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     buffer_param param,
@@ -477,7 +436,7 @@ win_local_stream_socket_internal::read_some(
     std::error_code* ec,
     std::size_t* bytes_out)
 {
-    rd_.internal_ptr = shared_from_this();
+    rd_.object_ref_ = detail::object_ref(this);
 
     auto& op = rd_;
     op.reset();
@@ -540,7 +499,7 @@ win_local_stream_socket_internal::read_some(
 }
 
 inline std::coroutine_handle<>
-win_local_stream_socket_internal::write_some(
+win_local_stream_socket::write_some(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     buffer_param param,
@@ -548,7 +507,7 @@ win_local_stream_socket_internal::write_some(
     std::error_code* ec,
     std::size_t* bytes_out)
 {
-    wr_.internal_ptr = shared_from_this();
+    wr_.object_ref_ = detail::object_ref(this);
 
     auto& op = wr_;
     op.reset();
@@ -607,14 +566,14 @@ win_local_stream_socket_internal::write_some(
 }
 
 inline std::coroutine_handle<>
-win_local_stream_socket_internal::wait(
+win_local_stream_socket::wait(
     std::coroutine_handle<> h,
     capy::executor_ref d,
     wait_type w,
     std::stop_token token,
     std::error_code* ec)
 {
-    wt_.internal_ptr = shared_from_this();
+    wt_.object_ref_ = detail::object_ref(this);
 
     auto& op = wt_;
     op.reset();
@@ -672,7 +631,7 @@ win_local_stream_socket_internal::wait(
 }
 
 inline void
-win_local_stream_socket_internal::cancel() noexcept
+win_local_stream_socket::cancel() noexcept
 {
     if (socket_ != INVALID_SOCKET)
     {
@@ -687,7 +646,7 @@ win_local_stream_socket_internal::cancel() noexcept
 }
 
 inline void
-win_local_stream_socket_internal::close_socket() noexcept
+win_local_stream_socket::close_socket() noexcept
 {
     // Flag every op cancelled before closing so a closesocket-delivered
     // ERROR_NETNAME_DELETED is short-circuited to canceled rather than mapped
@@ -709,72 +668,6 @@ win_local_stream_socket_internal::close_socket() noexcept
     remote_endpoint_ = corosio::local_endpoint{};
 }
 
-// ============================================================
-// win_local_stream_socket (wrapper)
-// ============================================================
-
-inline win_local_stream_socket::win_local_stream_socket(
-    std::shared_ptr<win_local_stream_socket_internal> internal) noexcept
-    : internal_(std::move(internal))
-{
-}
-
-inline void
-win_local_stream_socket::close_internal() noexcept
-{
-    if (internal_)
-    {
-        internal_->close_socket();
-        internal_.reset();
-    }
-}
-
-inline std::coroutine_handle<>
-win_local_stream_socket::connect(
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    corosio::local_endpoint ep,
-    std::stop_token token,
-    std::error_code* ec)
-{
-    return internal_->connect(h, d, ep, token, ec);
-}
-
-inline std::coroutine_handle<>
-win_local_stream_socket::read_some(
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    buffer_param buf,
-    std::stop_token token,
-    std::error_code* ec,
-    std::size_t* bytes)
-{
-    return internal_->read_some(h, d, buf, token, ec, bytes);
-}
-
-inline std::coroutine_handle<>
-win_local_stream_socket::write_some(
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    buffer_param buf,
-    std::stop_token token,
-    std::error_code* ec,
-    std::size_t* bytes)
-{
-    return internal_->write_some(h, d, buf, token, ec, bytes);
-}
-
-inline std::coroutine_handle<>
-win_local_stream_socket::wait(
-    std::coroutine_handle<> h,
-    capy::executor_ref d,
-    wait_type w,
-    std::stop_token token,
-    std::error_code* ec)
-{
-    return internal_->wait(h, d, w, token, ec);
-}
-
 inline std::error_code
 win_local_stream_socket::shutdown(
     local_stream_socket::shutdown_type what) noexcept
@@ -794,7 +687,7 @@ win_local_stream_socket::shutdown(
     default:
         return make_err(WSAEINVAL);
     }
-    if (::shutdown(internal_->native_handle(), how) != 0)
+    if (::shutdown(socket_, how) != 0)
         return make_err(WSAGetLastError());
     return {};
 }
@@ -802,23 +695,23 @@ win_local_stream_socket::shutdown(
 inline native_handle_type
 win_local_stream_socket::native_handle() const noexcept
 {
-    return static_cast<native_handle_type>(internal_->native_handle());
+    return static_cast<native_handle_type>(socket_);
 }
 
 inline native_handle_type
 win_local_stream_socket::release_socket() noexcept
 {
-    SOCKET s = internal_->socket_;
+    SOCKET s = socket_;
     if (s != INVALID_SOCKET)
     {
-        internal_->cancel();
+        cancel();
         // Sever the port association so the descriptor can be
         // adopted again; best-effort, the caller keeps a working
         // socket either way.
         dissociate_from_iocp(s);
-        internal_->socket_          = INVALID_SOCKET;
-        internal_->local_endpoint_  = corosio::local_endpoint{};
-        internal_->remote_endpoint_ = corosio::local_endpoint{};
+        socket_          = INVALID_SOCKET;
+        local_endpoint_  = corosio::local_endpoint{};
+        remote_endpoint_ = corosio::local_endpoint{};
     }
     return static_cast<native_handle_type>(s);
 }
@@ -828,8 +721,8 @@ win_local_stream_socket::set_option(
     int level, int optname, void const* data, std::size_t size) noexcept
 {
     if (::setsockopt(
-            internal_->native_handle(), level, optname,
-            reinterpret_cast<char const*>(data), static_cast<int>(size)) != 0)
+            socket_, level, optname, reinterpret_cast<char const*>(data),
+            static_cast<int>(size)) != 0)
         return make_err(WSAGetLastError());
     return {};
 }
@@ -840,8 +733,7 @@ win_local_stream_socket::get_option(
 {
     int len = static_cast<int>(*size);
     if (::getsockopt(
-            internal_->native_handle(), level, optname,
-            reinterpret_cast<char*>(data), &len) != 0)
+            socket_, level, optname, reinterpret_cast<char*>(data), &len) != 0)
         return make_err(WSAGetLastError());
     *size = static_cast<std::size_t>(len);
     return {};
@@ -850,25 +742,19 @@ win_local_stream_socket::get_option(
 inline corosio::local_endpoint
 win_local_stream_socket::local_endpoint() const noexcept
 {
-    return internal_->local_endpoint();
+    return local_endpoint_;
 }
 
 inline corosio::local_endpoint
 win_local_stream_socket::remote_endpoint() const noexcept
 {
-    return internal_->remote_endpoint();
+    return remote_endpoint_;
 }
 
 inline void
-win_local_stream_socket::cancel() noexcept
+win_local_stream_socket::retire() noexcept
 {
-    internal_->cancel();
-}
-
-inline win_local_stream_socket_internal*
-win_local_stream_socket::get_internal() const noexcept
-{
-    return internal_.get();
+    svc_.pool_.recycle(this);
 }
 
 // ============================================================
@@ -883,89 +769,36 @@ inline win_local_stream_service::win_local_stream_service(
 {
 }
 
-inline win_local_stream_service::~win_local_stream_service()
-{
-    for (auto* w = socket_wrapper_list_.pop_front(); w != nullptr;
-         w       = socket_wrapper_list_.pop_front())
-        delete w;
-
-    for (auto* w = acceptor_wrapper_list_.pop_front(); w != nullptr;
-         w       = acceptor_wrapper_list_.pop_front())
-        delete w;
-}
-
 inline void
 win_local_stream_service::shutdown()
 {
-    std::lock_guard<win_mutex> lock(mutex_);
+    pool_.shutdown(
+        [](win_local_stream_socket* impl) { impl->close_socket(); });
 
-    for (auto* impl = socket_list_.pop_front(); impl != nullptr;
-         impl       = socket_list_.pop_front())
-    {
-        impl->close_socket();
-    }
-
-    for (auto* impl = acceptor_list_.pop_front(); impl != nullptr;
-         impl       = acceptor_list_.pop_front())
-    {
-        impl->close_socket();
-    }
+    acceptor_pool_.shutdown(
+        [](win_local_stream_acceptor* impl) { impl->close_socket(); });
 }
 
 inline io_object::implementation*
 win_local_stream_service::construct()
 {
-    auto internal = std::make_shared<win_local_stream_socket_internal>(*this);
-
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        socket_list_.push_back(internal.get());
-    }
-
-    auto* wrapper = new win_local_stream_socket(std::move(internal));
-
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        socket_wrapper_list_.push_back(wrapper);
-    }
-
-    return wrapper;
+    return pool_.acquire(*this);
 }
 
 inline void
 win_local_stream_service::destroy(io_object::implementation* p)
 {
-    if (p)
-    {
-        auto& wrapper = static_cast<win_local_stream_socket&>(*p);
-        wrapper.close_internal();
-        destroy_impl(wrapper);
-    }
+    if (!p)
+        return;
+    auto* s = static_cast<win_local_stream_socket*>(p);
+    s->close_socket();
+    release(s);
 }
 
 inline void
 win_local_stream_service::close(io_object::handle& h)
 {
-    auto& wrapper = static_cast<win_local_stream_socket&>(*h.get());
-    wrapper.get_internal()->close_socket();
-}
-
-inline void
-win_local_stream_service::destroy_impl(win_local_stream_socket& impl)
-{
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        socket_wrapper_list_.remove(&impl);
-    }
-    delete &impl;
-}
-
-inline void
-win_local_stream_service::unregister_impl(
-    win_local_stream_socket_internal& impl)
-{
-    std::lock_guard<win_mutex> lock(mutex_);
-    socket_list_.remove(&impl);
+    static_cast<win_local_stream_socket*>(h.get())->close_socket();
 }
 
 inline std::error_code
@@ -975,22 +808,20 @@ win_local_stream_service::open_socket(
     int type,
     int protocol)
 {
-    auto& wrapper = static_cast<win_local_stream_socket&>(impl);
-    return open_socket_internal(
-        *wrapper.get_internal(), family, type, protocol);
+    auto& sock = static_cast<win_local_stream_socket&>(impl);
+    return open_socket_internal(sock, family, type, protocol);
 }
 
 inline std::error_code
 win_local_stream_service::assign_socket(
     local_stream_socket::implementation& impl, native_handle_type fd)
 {
-    auto& wrapper  = static_cast<win_local_stream_socket&>(impl);
-    auto& internal = *wrapper.get_internal();
+    auto& sock = static_cast<win_local_stream_socket&>(impl);
 
-    SOCKET sock = static_cast<SOCKET>(fd);
-    if (sock == INVALID_SOCKET)
+    SOCKET s = static_cast<SOCKET>(fd);
+    if (s == INVALID_SOCKET)
         return make_err(WSAENOTSOCK);
-    if (sock == internal.socket_)
+    if (s == sock.socket_)
         return std::make_error_code(std::errc::invalid_argument);
 
     // SO_PROTOCOL_INFOW works on an unbound socket, unlike getsockname
@@ -999,7 +830,7 @@ win_local_stream_service::assign_socket(
     WSAPROTOCOL_INFOW proto_info{};
     int proto_len = sizeof(proto_info);
     if (::getsockopt(
-            sock, SOL_SOCKET, SO_PROTOCOL_INFOW,
+            s, SOL_SOCKET, SO_PROTOCOL_INFOW,
             reinterpret_cast<char*>(&proto_info), &proto_len) != 0)
         return make_err(::WSAGetLastError());
     if (proto_info.iAddressFamily != AF_UNIX)
@@ -1011,32 +842,31 @@ win_local_stream_service::assign_socket(
     // shares descriptor state the way the reactor path does, so a
     // failed association must not cost the caller their old socket.
     HANDLE result = ::CreateIoCompletionPort(
-        reinterpret_cast<HANDLE>(sock), static_cast<HANDLE>(iocp_), key_io, 0);
+        reinterpret_cast<HANDLE>(s), static_cast<HANDLE>(iocp_), key_io, 0);
     if (result == nullptr)
         return make_err(::GetLastError());
 
-    internal.close_socket();
-    internal.socket_ = sock;
+    sock.close_socket();
+    sock.socket_ = s;
 
     sockaddr_storage local{};
     int local_len = sizeof(local);
     corosio::local_endpoint lep{}, rep{};
-    if (::getsockname(sock, reinterpret_cast<sockaddr*>(&local), &local_len) ==
-        0)
+    if (::getsockname(s, reinterpret_cast<sockaddr*>(&local), &local_len) == 0)
         lep = from_sockaddr_local(local, static_cast<socklen_t>(local_len));
     sockaddr_storage remote{};
     int remote_len = sizeof(remote);
-    if (::getpeername(
-            sock, reinterpret_cast<sockaddr*>(&remote), &remote_len) == 0)
+    if (::getpeername(s, reinterpret_cast<sockaddr*>(&remote), &remote_len) ==
+        0)
         rep = from_sockaddr_local(remote, static_cast<socklen_t>(remote_len));
-    internal.local_endpoint_  = lep;
-    internal.remote_endpoint_ = rep;
+    sock.local_endpoint_  = lep;
+    sock.remote_endpoint_ = rep;
     return {};
 }
 
 inline std::error_code
 win_local_stream_service::open_socket_internal(
-    win_local_stream_socket_internal& impl, int family, int type, int protocol)
+    win_local_stream_socket& impl, int family, int type, int protocol)
 {
     impl.close_socket();
 
@@ -1111,30 +941,15 @@ win_local_stream_service::work_finished() noexcept
     sched_.work_finished();
 }
 
-inline void
-win_local_stream_service::destroy_acceptor_impl(win_local_stream_acceptor& impl)
+inline win_local_stream_acceptor*
+win_local_stream_service::acquire_acceptor_impl()
 {
-    {
-        std::lock_guard<win_mutex> lock(mutex_);
-        acceptor_wrapper_list_.remove(&impl);
-    }
-    delete &impl;
-}
-
-inline void
-win_local_stream_service::unregister_acceptor_impl(
-    win_local_stream_acceptor_internal& impl)
-{
-    std::lock_guard<win_mutex> lock(mutex_);
-    acceptor_list_.remove(&impl);
+    return acceptor_pool_.acquire(*this);
 }
 
 inline std::error_code
 win_local_stream_service::open_acceptor_socket(
-    win_local_stream_acceptor_internal& impl,
-    int family,
-    int type,
-    int protocol)
+    win_local_stream_acceptor& impl, int family, int type, int protocol)
 {
     impl.close_socket();
 
@@ -1160,7 +975,7 @@ win_local_stream_service::open_acceptor_socket(
 
 inline std::error_code
 win_local_stream_service::assign_acceptor_socket(
-    win_local_stream_acceptor_internal& impl, native_handle_type fd)
+    win_local_stream_acceptor& impl, native_handle_type fd)
 {
     SOCKET sock = static_cast<SOCKET>(fd);
     if (sock == INVALID_SOCKET)
@@ -1205,7 +1020,7 @@ win_local_stream_service::assign_acceptor_socket(
 
 inline std::error_code
 win_local_stream_service::bind_acceptor(
-    win_local_stream_acceptor_internal& impl, corosio::local_endpoint ep)
+    win_local_stream_acceptor& impl, corosio::local_endpoint ep)
 {
     // Reject abstract sockets on Windows
     if (ep.is_abstract())
@@ -1226,7 +1041,7 @@ win_local_stream_service::bind_acceptor(
 
 inline std::error_code
 win_local_stream_service::listen_acceptor(
-    win_local_stream_acceptor_internal& impl, int backlog)
+    win_local_stream_acceptor& impl, int backlog)
 {
     SOCKET sock = impl.socket_;
 

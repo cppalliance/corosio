@@ -335,7 +335,7 @@ public:
         Callers must hold neither.
 
         @pre After @p prepare runs, @p slot must hold no reference back
-            to its owner (`impl_ptr` cleared, back-pointers nulled).
+            to its owner (`object_ref_` cleared, back-pointers nulled).
             `release_retired_op` deletes the op from inside the CQE
             loop with `ring_mutex_` held, so its destructor must not
             re-enter the scheduler or touch the owner.
@@ -742,8 +742,8 @@ uring_scheduler::shutdown()
     // for every live impl. The CQEs that result either land in
     // completed_ops_ (drained here as op->destroy()) or stay in the
     // kernel ring; ~scheduler's io_uring_queue_exit cleans the
-    // latter up at process teardown. Self-referential impl_ptr
-    // cycles (e.g. multishot acceptor's multi_op_->impl_ptr) are
+    // latter up at process teardown. Self-referential object_ref_
+    // cycles (e.g. multishot acceptor's multi_op_->object_ref_) are
     // broken explicitly inside each service before the scheduler
     // shutdown runs.
     lock_type lock(dispatch_mutex_);

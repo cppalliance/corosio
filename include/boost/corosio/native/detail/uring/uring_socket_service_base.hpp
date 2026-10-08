@@ -14,13 +14,12 @@
 
 #if BOOST_COROSIO_HAS_URING
 
+#include <boost/corosio/detail/object_pool.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/corosio/native/detail/uring/uring_scheduler.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
-#include <memory>
-#include <mutex>
-#include <unordered_map>
 #include <vector>
 
 /*
@@ -28,23 +27,23 @@
 
     construct / destroy / shutdown / close / scheduler() are identical across
     uring_tcp_service, uring_udp_service, uring_local_stream_service,
-    and uring_local_datagram_service — they all make_shared the impl, track
-    it in a raw->shared_ptr map, cancel on shutdown, and close eagerly. This
+    and uring_local_datagram_service — they all pop-or-new the impl from a
+    per-service recycling pool, cancel on shutdown, and close eagerly. This
     base factors that out; the concrete services add only the protocol-
     specific open/bind/adopt.
 
     This is io_uring's own service base rather than a reuse of
-    reactor_socket_service: io_uring tracks impls in a map (the reactor uses
-    an intrusive list + map), cancels (not closes) on shutdown, and constructs
-    impls with a (service&, scheduler&) ctor. Reusing the reactor template
-    would force io_uring sockets to adopt the intrusive node, a close-on-
-    shutdown behavior change, and an Impl(Derived&) ctor — high churn and a
-    teardown behavior change for marginal extra sharing. See
+    reactor_socket_service: io_uring cancels (not closes) on shutdown and
+    constructs impls with a (service&, scheduler&) ctor, vs. the reactor's
+    close-on-shutdown and Impl(Derived&) ctor. Reusing the reactor template
+    would force a teardown behavior change for marginal extra sharing. See
     tasks/proactor-dedup-decisions.md (#13).
 
     Requirements on Socket: a `(Derived& service, uring_scheduler& sched)`
-    constructor and a `void close_socket() noexcept` method (cancel in-flight
-    ops + close fd + reset cached endpoints).
+    constructor, a `void close_socket() noexcept` method (cancel in-flight
+    ops + close fd + reset cached endpoints), a `void reuse() noexcept`
+    method, and derivation from `intrusive_list<Socket>::node` (the pool's
+    live/free linkage).
 
     @tparam Derived     The concrete service (CRTP, passed to the Socket ctor).
     @tparam ServiceBase The abstract service vtable base (tcp_service, ...).
@@ -57,6 +56,7 @@ template<class Derived, class ServiceBase, class Socket>
 class uring_socket_service_base : public ServiceBase
 {
     friend Derived;
+    friend Socket;
 
     // Private CRTP ctor: only `Derived` (the concrete service, a friend)
     // constructs the base — prevents inheriting with the wrong Derived
@@ -71,41 +71,42 @@ public:
 
     void shutdown() override
     {
-        // Snapshot live impls, then cancel without the lock held to avoid
-        // inversion if cancel() ever re-enters the service. Impls stay owned
-        // by impls_ until ~service (after the scheduler drains its queue),
-        // keeping every impl alive while its cancel CQEs are processed.
-        std::vector<std::shared_ptr<Socket>> live;
+        // Snapshot live impls under an acquired reference, then cancel
+        // without the pool lock held to avoid inversion if cancel() ever
+        // re-enters the service. shutdown() sets shutting-down and
+        // takes the snapshot under one critical section, so each
+        // cancel's own release (if it drops the last ref) deletes
+        // rather than recycles. In-flight ops hold their own
+        // references, so every impl stays alive while its cancel CQEs
+        // are processed.
+        std::vector<Socket*> live;
+        pool_.shutdown(
+            [&](Socket* s)
+            {
+                acquire(s);
+                live.push_back(s);
+            });
+        for (auto* s : live)
         {
-            std::lock_guard lk(mutex_);
-            live.reserve(impls_.size());
-            for (auto& [_, p] : impls_)
-                live.push_back(p);
+            s->cancel();
+            release(s);
         }
-        for (auto& p : live)
-            p->cancel();
     }
 
     io_object::implementation* construct() override
     {
-        auto p =
-            std::make_shared<Socket>(static_cast<Derived&>(*this), *sched_);
-        auto* raw = p.get();
-        std::lock_guard lk(mutex_);
-        impls_.emplace(raw, std::move(p));
-        return raw;
+        return acquire_impl();
     }
 
     void destroy(io_object::implementation* p) override
     {
         if (!p)
             return;
-        std::lock_guard lk(mutex_);
-        impls_.erase(static_cast<Socket*>(p));
+        release(static_cast<Socket*>(p));
     }
 
     // Close the fd eagerly when the public close() is called, before
-    // destroy() drops the shared_ptr and the destructor runs.
+    // destroy() drops the service's reference and recycling runs.
     void close(io_object::handle& h) override
     {
         if (auto* sock = static_cast<Socket*>(h.get()))
@@ -119,19 +120,18 @@ public:
     }
 
 protected:
-    /// Register an externally-built impl (used by adopt_fd on stream
-    /// services after accept(2)). Returns the raw pointer.
-    Socket* register_impl(std::shared_ptr<Socket> p)
+    /** Pop a recycled impl or news one, with the service reference held.
+
+        Used by both `construct()` and the `adopt_fd` accepted-connection
+        path (which additionally calls `assign_fd()` on the result).
+    */
+    Socket* acquire_impl()
     {
-        auto* raw = p.get();
-        std::lock_guard lk(mutex_);
-        impls_.emplace(raw, std::move(p));
-        return raw;
+        return pool_.acquire(static_cast<Derived&>(*this), *sched_);
     }
 
     uring_scheduler* sched_;
-    std::mutex mutex_;
-    std::unordered_map<Socket*, std::shared_ptr<Socket>> impls_;
+    object_pool<Socket> pool_;
 
 private:
     uring_socket_service_base(uring_socket_service_base const&) = delete;

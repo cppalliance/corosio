@@ -71,7 +71,7 @@ public:
         int file_descriptor,
         std::int64_t file_offset,
         uring_scheduler* scheduler,
-        std::shared_ptr<void> impl,
+        detail::object_ref impl,
         buffer_param buffers,
         std::stop_token const& token) noexcept
     {
@@ -82,7 +82,7 @@ public:
         fd           = file_descriptor;
         offset       = file_offset;
         sched_       = scheduler;
-        impl_ptr     = std::move(impl);
+        object_ref_  = std::move(impl);
         res          = 0;
         cqe_flags    = 0;
         iovec_count  = copy_to_iovec(buffers, iovecs);
@@ -217,7 +217,7 @@ public:
         int file_descriptor,
         std::int64_t file_offset,
         uring_scheduler* scheduler,
-        std::shared_ptr<void> impl,
+        detail::object_ref impl,
         buffer_param buffers,
         std::stop_token const& token) noexcept
     {
@@ -228,7 +228,7 @@ public:
         fd           = file_descriptor;
         offset       = file_offset;
         sched_       = scheduler;
-        impl_ptr     = std::move(impl);
+        object_ref_  = std::move(impl);
         res          = 0;
         cqe_flags    = 0;
         iovec_count  = copy_to_iovec(buffers, iovecs);

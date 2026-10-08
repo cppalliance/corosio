@@ -35,7 +35,6 @@
 #include <cstdint>
 #include <filesystem>
 #include <limits>
-#include <memory>
 #include <mutex>
 #include <optional>
 #include <stop_token>
@@ -51,12 +50,13 @@
     POSIX Random-Access File Implementation
     ========================================
 
-    Each async read/write heap-allocates an raf_op that serves
-    as both the thread-pool work item and the scheduler completion
-    op. This allows unlimited concurrent operations on the same
-    file object, matching Asio's per-op allocation model.
+    Each async read/write acquires an raf_op that serves as both the
+    thread-pool work item and the scheduler completion op. This
+    allows unlimited concurrent operations on the same file object.
 
-    The raf_op self-deletes on completion or shutdown.
+    Ops recycle through the file's free_ops_ list on completion or
+    shutdown, so steady-state reads and writes allocate nothing; the
+    file destructor frees the recycled storage.
 */
 
 namespace boost::corosio::detail {
@@ -67,7 +67,6 @@ class posix_random_access_file_service;
 /** Random-access file implementation for POSIX backends. */
 class posix_random_access_file final
     : public random_access_file::implementation
-    , public std::enable_shared_from_this<posix_random_access_file>
     , public intrusive_list<posix_random_access_file>::node
 {
     friend class posix_random_access_file_service;
@@ -75,13 +74,15 @@ class posix_random_access_file final
 public:
     static constexpr std::size_t max_buffers = 16;
 
-    /** Per-operation state, heap-allocated for each async call.
+    /** Per-operation state, acquired from the file's free list.
 
         Inherits from `coro_op` (for scheduler completion plus the shared
         coroutine, cancellation and keepalive machinery) and
-        `pool_work_item` (for thread-pool dispatch). Linked into the
-        file's outstanding_ops_ list for cancellation tracking. `coro_op`
-        leads the base list so a `scheduler_op*` round-trips.
+        `pool_work_item` (for thread-pool dispatch). The intrusive hook
+        links it into `outstanding_ops_` while in flight and `free_ops_`
+        once recycled — membership is strictly sequential, so one hook
+        serves both under `ops_mutex_`. `coro_op` leads the base list so
+        a `scheduler_op*` round-trips.
     */
     struct raf_op final
         : coro_op
@@ -95,7 +96,7 @@ public:
         int errn                      = 0;
         std::size_t bytes_transferred = 0;
 
-        // Raw back-pointer for the typed work; `impl_ptr` is the keepalive.
+        // Raw back-pointer for the typed work; `object_ref_` is the keepalive.
         posix_random_access_file* file_ = nullptr;
 
         void operator()() override;
@@ -107,6 +108,34 @@ public:
 
     explicit posix_random_access_file(
         posix_random_access_file_service& svc) noexcept;
+
+    /// Recycle into the owning service's pool. Defined out-of-line
+    /// after posix_random_access_file_service for its complete type.
+    void retire() noexcept override;
+
+    /** Reset for recycling.
+
+        `close_file()` already drove fd_ to its closed value before
+        the refcount reached zero. Every `raf_op` holds its own
+        `object_ref` while in flight, so the refcount cannot reach
+        zero while one is outstanding — asserting `outstanding_ops_`
+        is empty is therefore a precondition check, not a defensive
+        one. `free_ops_` deliberately survives recycling: the storage
+        belongs to this impl and only the destructor frees it.
+
+        @pre refs_ == 0, fd closed, no op in flight.
+    */
+    void reuse() noexcept
+    {
+        BOOST_COROSIO_ASSERT(fd_ == -1);
+        BOOST_COROSIO_ASSERT(outstanding_ops_.empty());
+    }
+
+    ~posix_random_access_file() override
+    {
+        while (auto* op = free_ops_.pop_front())
+            delete op;
+    }
 
     // -- random_access_file::implementation --
 
@@ -153,10 +182,32 @@ public:
     void close_file() noexcept;
 
 private:
+    /** Pop a recycled op, or allocate on the cold path.
+
+        Per-use fields are filled by the caller; the fields `prepare`-
+        style reuse must not inherit from the previous run (`errn`,
+        `bytes_transferred`) are reset here. `start()` resets the
+        cancellation machinery.
+    */
+    raf_op* acquire_op()
+    {
+        raf_op* op;
+        {
+            std::lock_guard<std::mutex> lock(ops_mutex_);
+            op = free_ops_.pop_front();
+        }
+        if (!op)
+            op = new raf_op();
+        op->errn              = 0;
+        op->bytes_transferred = 0;
+        return op;
+    }
+
     posix_random_access_file_service& svc_;
     int fd_ = -1;
     std::mutex ops_mutex_;
     intrusive_list<raf_op> outstanding_ops_;
+    intrusive_list<raf_op> free_ops_;
 };
 
 // ---------------------------------------------------------------------------
@@ -291,16 +342,20 @@ posix_random_access_file::raf_op::operator()()
         errn != 0 ? make_err(errn) : std::error_code{}, is_read,
         bytes_transferred, /*empty_buffer=*/false);
 
+    // Copy out everything needed after recycling: once this op is on
+    // free_ops_ a concurrent initiation may pop and refill it. The
+    // keepalive drops after the push so a final release never runs
+    // under ops_mutex_.
+    auto keep = std::move(object_ref_);
+    auto coro = h;
+    auto exec = ex;
     {
         std::lock_guard<std::mutex> lock(file_->ops_mutex_);
         file_->outstanding_ops_.remove(this);
+        file_->free_ops_.push_front(this);
     }
-
-    impl_ptr.reset();
-
-    auto coro = h;
-    ex.on_work_finished();
-    delete this;
+    keep.reset();
+    exec.on_work_finished();
     coro.resume();
 }
 
@@ -310,13 +365,15 @@ inline void
 posix_random_access_file::raf_op::destroy()
 {
     stop_cb.reset();
+    auto keep = std::move(object_ref_);
+    auto exec = ex;
     {
         std::lock_guard<std::mutex> lock(file_->ops_mutex_);
         file_->outstanding_ops_.remove(this);
+        file_->free_ops_.push_front(this);
     }
-    impl_ptr.reset();
-    ex.on_work_finished();
-    delete this;
+    keep.reset();
+    exec.on_work_finished();
 }
 
 } // namespace boost::corosio::detail

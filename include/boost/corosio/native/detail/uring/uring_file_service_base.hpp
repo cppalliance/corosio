@@ -14,33 +14,34 @@
 
 #if BOOST_COROSIO_HAS_URING
 
-#include <boost/corosio/detail/intrusive.hpp>
+#include <boost/corosio/detail/object_pool.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/corosio/native/detail/uring/uring_scheduler.hpp>
 
-#include <memory>
-#include <mutex>
-#include <unordered_map>
+#include <vector>
 
 /*
     Shared lifecycle plumbing for io_uring file services.
 
     uring_stream_file_service and uring_random_access_file_service were
     byte-for-byte identical apart from the impl type and open_file's parameter
-    type: both make_shared the file impl from the scheduler, track it in an
-    intrusive list + raw->shared_ptr map, and close every file on shutdown.
-    This base factors that out; the concrete services add only open_file.
+    type: both pop-or-new the file impl from a per-service recycling pool
+    and close every file on shutdown. This base factors that out; the
+    concrete services add only open_file.
 
     This is a separate base from uring_socket_service_base because file
-    services differ from socket services in three ways that match the reactor
-    socket service instead: they track via an intrusive list + map (sockets:
-    map only), they CLOSE files on shutdown (sockets: cancel only), and the
-    impl ctor takes just the scheduler (sockets: service + scheduler). See
-    tasks/proactor-dedup-decisions.md (#14).
+    services differ from socket services in two ways that match the reactor
+    socket service instead: they CLOSE files on shutdown (sockets: cancel
+    only), and the impl ctor takes just the scheduler (sockets: service +
+    scheduler). See tasks/proactor-dedup-decisions.md (#14).
 
-    Requirements on File: derive from enable_shared_from_this<File> and
-    intrusive_list<File>::node, a `File(uring_scheduler&)` constructor, and
-    a `void close_file() noexcept` method (cancel in-flight ops + close fd).
+    Requirements on File: derive from intrusive_list<File>::node, a
+    `File(Derived&, uring_scheduler&)` constructor, a
+    `void close_file() noexcept` method (cancel in-flight ops + close fd),
+    a `void reuse() noexcept` method, and a `retire()` override that
+    recycles through the owning service's private `pool_` member
+    (reachable because `File` is a friend).
 
     @tparam Derived     The concrete service (CRTP; unused today but kept for
                         symmetry / future hooks).
@@ -55,6 +56,7 @@ template<class Derived, class ServiceBase, class File>
 class uring_file_service_base : public ServiceBase
 {
     friend Derived;
+    friend File;
 
     // Private CRTP ctor: only `Derived` (the concrete service, a friend)
     // constructs the base — prevents inheriting with the wrong Derived
@@ -69,14 +71,7 @@ public:
 
     io_object::implementation* construct() override
     {
-        auto ptr   = std::make_shared<File>(*sched_);
-        auto* impl = ptr.get();
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            file_list_.push_back(impl);
-            file_ptrs_[impl] = std::move(ptr);
-        }
-        return impl;
+        return pool_.acquire(static_cast<Derived&>(*this), *sched_);
     }
 
     void destroy(io_object::implementation* p) override
@@ -84,9 +79,7 @@ public:
         // close_file() already does cancel_and_flush(fd_) before ::close.
         auto& impl = static_cast<File&>(*p);
         impl.close_file();
-        std::lock_guard<std::mutex> lock(mutex_);
-        file_list_.remove(&impl);
-        file_ptrs_.erase(&impl);
+        release(&impl);
     }
 
     void close(io_object::handle& h) override
@@ -97,13 +90,23 @@ public:
 
     void shutdown() override
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (auto* impl = file_list_.pop_front(); impl != nullptr;
-             impl       = file_list_.pop_front())
+        // See uring_socket_service_base::shutdown(): snapshot under an
+        // acquired reference, close without the pool lock held;
+        // shutdown() sets shutting-down and takes the snapshot in one
+        // critical section, so a close that drops the last ref deletes
+        // rather than recycles.
+        std::vector<File*> live;
+        pool_.shutdown(
+            [&](File* f)
+            {
+                acquire(f);
+                live.push_back(f);
+            });
+        for (auto* f : live)
         {
-            impl->close_file();
+            f->close_file();
+            release(f);
         }
-        file_ptrs_.clear();
     }
 
     /// Return the scheduler used by files created by this service.
@@ -114,9 +117,7 @@ public:
 
 protected:
     uring_scheduler* sched_;
-    std::mutex mutex_;
-    intrusive_list<File> file_list_;
-    std::unordered_map<File*, std::shared_ptr<File>> file_ptrs_;
+    object_pool<File> pool_;
 
 private:
     uring_file_service_base(uring_file_service_base const&)            = delete;

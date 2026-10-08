@@ -154,7 +154,22 @@ struct uring_accept_op : uring_op
         sockaddr_storage const& peer,
         socklen_t peer_len) noexcept = nullptr;
 
+    /** Disposal hook, run exactly once when the op is consumed.
+
+        Heap-allocated ops delete themselves (the default); the
+        multishot acceptor's pooled nodes override this to return to
+        their acceptor's free list instead. Factoring disposal out of
+        `do_handler` is what lets one completion routine serve both
+        ownership models.
+    */
+    void (*dispose)(uring_accept_op*) noexcept = &dispose_delete;
+
     uring_accept_op() noexcept : uring_op(&do_handler, &do_cqe) {}
+
+    static void dispose_delete(uring_accept_op* op) noexcept
+    {
+        delete op;
+    }
 
     // LCOV_EXCL_START: never receives a CQE; present for vtable
     // completeness.
@@ -172,7 +187,7 @@ struct uring_accept_op : uring_op
 
         if (owner == nullptr)
         {
-            delete self;
+            self->dispose(self);
             return;
         }
 
@@ -184,10 +199,7 @@ struct uring_accept_op : uring_op
                 *self->ec_out = was_cancelled
                     ? std::error_code(capy::error::canceled)
                     : make_err(self->err);
-            self->cont.h = self->h;
-            auto next    = dispatch_coro(self->ex, self->cont);
-            delete self;
-            next.resume();
+            resume_and_dispose(self);
             return;
         }
 
@@ -205,9 +217,21 @@ struct uring_accept_op : uring_op
         if (self->ec_out)
             *self->ec_out = {};
 
+        resume_and_dispose(self);
+    }
+
+    /** Dispose the op, then resume its awaiter.
+
+        dispatch_coro does not retain the op's embedded continuation
+        (a deferring executor gets a frame-owned one), so disposing
+        before the resume is safe: a concurrent accept may refill the
+        recycled node immediately without touching anything queued.
+    */
+    static void resume_and_dispose(uring_accept_op* self)
+    {
         self->cont.h = self->h;
         auto next    = dispatch_coro(self->ex, self->cont);
-        delete self;
+        self->dispose(self);
         next.resume();
     }
 };

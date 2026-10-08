@@ -59,10 +59,8 @@ tcp_socket::open_for_family(int family, int type, int protocol) noexcept
 {
 #if BOOST_COROSIO_HAS_IOCP
     auto& svc          = static_cast<detail::win_tcp_service&>(h_.service());
-    auto& wrapper      = static_cast<tcp_socket::implementation&>(*h_.get());
-    std::error_code ec = svc.open_socket(
-        *static_cast<detail::win_tcp_socket&>(wrapper).get_internal(), family,
-        type, protocol);
+    auto& sock         = static_cast<detail::win_tcp_socket&>(*h_.get());
+    std::error_code ec = svc.open_socket(sock, family, type, protocol);
 #else
     auto& svc          = static_cast<detail::tcp_service&>(h_.service());
     std::error_code ec = svc.open_socket(
@@ -77,9 +75,8 @@ tcp_socket::assign(native_handle_type fd) noexcept
 {
 #if BOOST_COROSIO_HAS_IOCP
     auto& svc          = static_cast<detail::win_tcp_service&>(h_.service());
-    auto& wrapper      = static_cast<tcp_socket::implementation&>(*h_.get());
-    std::error_code ec = svc.assign_socket(
-        *static_cast<detail::win_tcp_socket&>(wrapper).get_internal(), fd);
+    auto& sock         = static_cast<detail::win_tcp_socket&>(*h_.get());
+    std::error_code ec = svc.assign_socket(sock, fd);
 #else
     auto& svc          = static_cast<detail::tcp_service&>(h_.service());
     std::error_code ec = svc.assign_socket(
@@ -104,10 +101,9 @@ tcp_socket::bind(endpoint ep) noexcept
     if (!is_open())
         return make_error_code(std::errc::bad_file_descriptor);
 #if BOOST_COROSIO_HAS_IOCP
-    auto& svc     = static_cast<detail::win_tcp_service&>(h_.service());
-    auto& wrapper = static_cast<tcp_socket::implementation&>(*h_.get());
-    return svc.bind_socket(
-        *static_cast<detail::win_tcp_socket&>(wrapper).get_internal(), ep);
+    auto& svc  = static_cast<detail::win_tcp_service&>(h_.service());
+    auto& sock = static_cast<detail::win_tcp_socket&>(*h_.get());
+    return svc.bind_socket(sock, ep);
 #else
     auto& svc = static_cast<detail::tcp_service&>(h_.service());
     return svc.bind_socket(

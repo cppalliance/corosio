@@ -31,9 +31,9 @@ namespace boost::corosio {
 
     This class holds either an IPv4 or an IPv6 address. Code that works with
     both families carries one value instead of branching between @ref
-    ipv4_address and @ref ipv6_address. Family-generic queries such as @ref
-    is_loopback dispatch to the held address, and @ref to_v4 / @ref to_v6
-    recover the family-specific form.
+    ipv4_address and @ref ipv6_address. Family-generic queries such as
+    @ref is_loopback dispatch to the held address, and @ref to_v4 /
+    @ref to_v6 recover the family-specific form.
 
     A v4-mapped IPv6 address (`::ffff:a.b.c.d`) is an IPv6-family
     value: it does not compare equal to the IPv4 address it maps.

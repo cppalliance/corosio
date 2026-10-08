@@ -11,6 +11,7 @@
 #define BOOST_COROSIO_NATIVE_DETAIL_URING_URING_MULTISHOT_ACCEPTOR_HPP
 
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
+#include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_URING
@@ -32,7 +33,6 @@
 #include <coroutine>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <stop_token>
 #include <system_error>
 
@@ -62,10 +62,15 @@ fd_is_listening(int fd) noexcept
     return accepting != 0;
 }
 
-template<class Derived, class ImplBase, class Endpoint, class PeerService>
+template<
+    class Derived,
+    class ImplBase,
+    class Endpoint,
+    class PeerService,
+    class AcceptorService>
 class uring_multishot_acceptor_base
     : public ImplBase
-    , public std::enable_shared_from_this<Derived>
+    , public intrusive_list<Derived>::node
 {
 protected:
     struct ready_fd_node : intrusive_list<ready_fd_node>::node
@@ -75,22 +80,34 @@ protected:
         socklen_t peer_len = 0;
     };
 
-    struct waiter_node;
+    /** Pooled accept node: parked waiter and posted completion in one.
 
-    struct waiter_canceller
-    {
-        waiter_node* w;
-        void operator()() const noexcept;
-    };
+        A parked accept used to be a `waiter_node` whose fields were
+        copied into a freshly allocated `uring_accept_op` at every
+        completion boundary. The two had strictly sequential lifetimes
+        (a waiter *becomes* a completion), so this node is both at
+        once — the intrusive hook parks it in `waiters_`/`free_nodes_`
+        and the inherited op posts it to the scheduler. Nodes recycle
+        through the owning acceptor's `free_nodes_` via `dispose`, so
+        steady-state accepts allocate nothing.
 
-    struct waiter_node : intrusive_list<waiter_node>::node
+        The inherited `cancelled` flag is the claim token: delivery,
+        arming-failure, and cancellation each claim the node with one
+        `exchange`, and the loser leaves completion to the winner.
+        Because the flag also decides how `do_handler` reports the
+        completion, every claiming path stores the final status after
+        `stop_cb.reset()` (which synchronizes with any in-flight
+        canceller) and before posting.
+
+        While in flight — parked or posted — the node holds an
+        `object_ref` on its acceptor (the inherited `object_ref_`
+        slot), so the impl cannot retire out from under `dispose`.
+    */
+    struct accept_node
+        : uring_accept_op
+        , intrusive_list<accept_node>::node
     {
-        std::coroutine_handle<> h;
-        capy::executor_ref ex;
-        std::error_code* ec_out              = nullptr;
-        io_object::implementation** impl_out = nullptr;
-        Derived* owner                       = nullptr;
-        std::atomic<bool> cancelled{false};
+        Derived* owner = nullptr;
         /// True once linked into `waiters_` (guarded by `mutex_`).
         /// The stop callback is armed before the node is queued, so
         /// cancel_waiter must not unlink a node it never queued.
@@ -98,21 +115,50 @@ protected:
         /// A readiness wait rather than an accept: completion
         /// observes a pending connection without consuming it.
         bool peek = false;
-        std::optional<std::stop_callback<waiter_canceller>> stop_cb;
+
+        accept_node() noexcept
+        {
+            this->dispose = &recycle_thunk;
+        }
+
+        /// Claim the node for cancellation (the stop token fired);
+        /// losing the exchange means a delivery already owns it.
+        void on_cancel() noexcept override
+        {
+            if (this->cancelled.exchange(true, std::memory_order_acq_rel))
+                return;
+            owner->cancel_waiter(this);
+        }
+
+        static void recycle_thunk(uring_accept_op* op) noexcept
+        {
+            auto* n = static_cast<accept_node*>(op);
+            n->owner->release_node(n);
+        }
     };
 
     int fd_ = -1;
     uring_scheduler* sched_;
     PeerService* peer_service_;
+    /// Owning acceptor service; exposes the recycling pool to
+    /// retire(). Not used for anything else — the service already
+    /// drives shutdown/destroy from its own side.
+    AcceptorService* acceptor_svc_;
     Endpoint local_endpoint_{};
     mutable std::mutex mutex_;
     intrusive_list<ready_fd_node> ready_fds_;
-    intrusive_list<waiter_node> waiters_;
+    intrusive_list<accept_node> waiters_;
+    /// Recycled accept nodes and ready-fd nodes (guarded by `mutex_`).
+    /// Both survive impl recycling — the storage belongs to this impl
+    /// and only the destructor frees it — so steady-state accepts
+    /// allocate nothing.
+    intrusive_list<accept_node> free_nodes_;
+    intrusive_list<ready_fd_node> free_ready_;
     /// Single parked readiness wait (guarded by `mutex_`). Multishot
     /// accepting drains the kernel queue instantly, so a listener's
     /// readiness lives in `ready_fds_`, not in `poll()`; the wait is
     /// completed by the next delivery instead of a kernel poll.
-    waiter_node* read_wait_ = nullptr;
+    accept_node* read_wait_ = nullptr;
     std::unique_ptr<uring_multi_accept_op> multi_op_;
     bool closing_ = false;
     /// Non-zero once an arming failed to reach the kernel (guarded by
@@ -136,13 +182,151 @@ private:
     // (clang-tidy bugprone-crtp-constructor-accessibility).
     friend Derived;
     uring_multishot_acceptor_base(
-        uring_scheduler& sched, PeerService& peer_svc) noexcept
+        AcceptorService& acceptor_svc,
+        uring_scheduler& sched,
+        PeerService& peer_svc) noexcept
         : sched_(&sched)
         , peer_service_(&peer_svc)
+        , acceptor_svc_(&acceptor_svc)
     {
     }
 
+protected:
+    /** Pop a recycled accept node, or allocate on the cold path.
+
+        Resets every per-use field and arms the `object_ref` keepalive
+        on this acceptor; the caller fills the request fields and
+        either parks or posts the node. OOM on the cold path
+        terminates, matching every other noexcept initiation path.
+    */
+    accept_node* acquire_node() noexcept
+    {
+        accept_node* n;
+        {
+            std::lock_guard lk(mutex_);
+            n = free_nodes_.pop_front();
+        }
+        if (!n)
+        {
+            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept initiation path: OOM => std::terminate is the intended behavior
+            n = new accept_node();
+        }
+        n->owner             = static_cast<Derived*>(this);
+        n->queued            = false;
+        n->peek              = false;
+        n->err               = 0;
+        n->accepted_fd       = -1;
+        n->peer_len          = 0;
+        n->ec_out            = nullptr;
+        n->impl_out          = nullptr;
+        n->peer_endpoint_out = nullptr;
+        n->peer_service      = nullptr;
+        n->adopt_fn          = nullptr;
+        n->cancelled.store(false, std::memory_order_relaxed);
+        n->object_ref_ = detail::object_ref(this);
+        return n;
+    }
+
+    /** Return a consumed node to the free list; `dispose` target.
+
+        The keepalive is moved out first and dropped after the lock,
+        so a final release (which may reenter this impl's retire())
+        never runs under `mutex_`.
+    */
+    void release_node(accept_node* n) noexcept
+    {
+        auto keep = std::move(n->object_ref_);
+        {
+            std::lock_guard lk(mutex_);
+            free_nodes_.push_front(n);
+        }
+    }
+
+    /// Pop a recycled ready-fd node, or allocate on the cold path.
+    /// @pre `mutex_` is held.
+    ready_fd_node* acquire_ready_locked() noexcept
+    {
+        if (auto* r = free_ready_.pop_front())
+        {
+            r->fd       = -1;
+            r->peer_len = 0;
+            return r;
+        }
+        // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — CQE handler: noexcept, OOM => std::terminate is the intended behavior
+        return new ready_fd_node{};
+    }
+
 public:
+    /** Close and free every fd parked in `ready_fds_`.
+
+        A multishot CQE can deliver a connection before any `accept()`
+        is outstanding to claim it; that connection's fd (and tracking
+        node) sits in `ready_fds_` until a later `accept()` consumes it
+        or the acceptor goes away. Idempotent: safe to call from both
+        `retire()` (recycling) and the destructor (pool-force-sweep
+        backstop) — the second call always sees an empty list.
+    */
+    void drain_ready_fds() noexcept
+    {
+        intrusive_list<ready_fd_node> drained;
+        {
+            std::lock_guard lk(mutex_);
+            while (auto* r = ready_fds_.pop_front())
+                drained.push_back(r);
+        }
+        if (drained.empty())
+            return;
+        intrusive_list<ready_fd_node> recycled;
+        while (auto* r = drained.pop_front())
+        {
+            ::close(r->fd);
+            recycled.push_back(r);
+        }
+        std::lock_guard lk(mutex_);
+        while (auto* r = recycled.pop_front())
+            free_ready_.push_front(r);
+    }
+
+    /** Recycle into the owning service's pool at zero references.
+
+        Reaching zero used to mean the shared_ptr destructor was about
+        to run, which is where the ready_fds_ drain and the multi_op_
+        cycle-break + CQE drain below used to live (the destructor
+        still runs them too, as a backstop for the pool's own
+        unconditional force-sweep at shutdown — both are idempotent).
+        Now reaching zero can instead mean this impl is about to go
+        back on the free list for reuse — its memory is never freed,
+        so the destructor never runs. Do the drain here, once, for
+        both outcomes: `close()` already reset `multi_op_->object_ref_` on
+        the normal path, so that reset is usually a no-op; it only
+        does real work when zero is reached some other way. Skipping
+        the ready_fds_ drain here specifically would leak every fd and
+        node still parked in it and trip `reuse()`'s `ready_fds_.empty()`
+        assert on the very next construct() that pops this impl back
+        out.
+
+        `multi_op_` itself is freed here too, rather than kept for the
+        next session: `prepare_listen_arm()` treats a non-null
+        `multi_op_` with `closing_` false and `arm_err_` zero as
+        already armed and skips re-arming — true across a re-listen
+        on the same still-open acceptor, but not across reuse, where
+        the next `listen()` is a different logical acceptor on a
+        different fd. Leaving the old `multi_op_` in place would make
+        that listen() silently believe it was already armed and never
+        submit a multishot SQE for the new fd.
+    */
+    void retire() noexcept override
+    {
+        drain_ready_fds();
+        if (multi_op_)
+        {
+            multi_op_->object_ref_.reset();
+            sched_->drain_cqes_for(multi_op_.get());
+            multi_op_.reset();
+        }
+        acceptor_svc_->pool_.recycle(static_cast<Derived*>(this));
+    }
+
     ~uring_multishot_acceptor_base() override
     {
         {
@@ -156,29 +340,28 @@ public:
             fd_ = -1;
         }
 
-        // Drain parked accepted-connection fds unconditionally. These are
-        // distinct from the listener fd and can be present even when the
-        // service close() path already closed and cleared fd_ — that path
-        // does not touch ready_fds_, so the drain must run here.
-        intrusive_list<ready_fd_node> drained;
-        {
-            std::lock_guard lk(mutex_);
-            while (auto* r = ready_fds_.pop_front())
-                drained.push_back(r);
-        }
-        while (auto* r = drained.pop_front())
-        {
-            ::close(r->fd);
-            delete r;
-        }
+        // Backstop: retire() already drains this on the normal
+        // recycle path. This call only does real work when this impl
+        // is reached by the pool's unconditional force-sweep at
+        // shutdown without ever going through retire() first.
+        drain_ready_fds();
 
-        // Break the multi_op_ → impl_ptr (shared_ptr<this>) cycle and
+        // Break the multi_op_ → object_ref_ (object_ref) cycle and
         // drain pending CQEs so unique_ptr<multi_op_> can free safely.
         if (multi_op_)
         {
-            multi_op_->impl_ptr.reset();
+            multi_op_->object_ref_.reset();
             sched_->drain_cqes_for(multi_op_.get());
         }
+
+        // The recycled-node storage belongs to this impl and is only
+        // freed here; in-flight nodes hold an object_ref on this impl,
+        // so none can still be parked or posted once the count reached
+        // zero (or the pool's force-sweep ran after scheduler drain).
+        while (auto* n = free_nodes_.pop_front())
+            delete n;
+        while (auto* r = free_ready_.pop_front())
+            delete r;
     }
 
     Endpoint local_endpoint() const noexcept override
@@ -204,7 +387,7 @@ public:
     native_handle_type release_socket() noexcept override
     {
         // Mirror the service close() path: cancel the multishot SQE and
-        // break the multi_op_ -> impl_ptr (shared_ptr<this>) cycle that
+        // break the multi_op_ -> object_ref_ (object_ref) cycle that
         // start_multishot established. Without this, the cycle keeps the
         // acceptor and its multi_op_ alive after the caller takes the fd,
         // which LeakSanitizer reports on process exit. Caller still owns
@@ -214,7 +397,7 @@ public:
             sched_->cancel_and_flush(fd_);
             drain_waiters_only();
             if (multi_op_)
-                multi_op_->impl_ptr.reset();
+                multi_op_->object_ref_.reset();
         }
         int fd          = fd_;
         fd_             = -1;
@@ -229,13 +412,42 @@ public:
             sched_->submit_cancel_by_fd(fd_);
     }
 
+    /** Reset state for recycling.
+
+        `close()`/`release_socket()` already drove fd_, local_endpoint_,
+        and the waiter/ready-fd queues to empty before the refcount
+        reached zero, so those are asserted rather than re-cleared.
+        `closing_` and `arm_err_` are the two fields that are NOT reset
+        by that close path (closing_ is only ever cleared by a re-listen
+        on a still-live acceptor, not by close) and must be explicitly
+        reset here or the next session would see this impl as still
+        shutting down. `multi_op_` is freed by `retire()` rather
+        than kept, so a fresh one is allocated the next time this impl
+        starts a multishot arming — see its comment for why keeping it
+        across reuse would leave the new session un-armed.
+
+        @pre refs_ == 0, fd closed, no op or waiter in flight,
+        multi_op_ already freed.
+    */
+    void reuse() noexcept
+    {
+        BOOST_COROSIO_ASSERT(fd_ == -1);
+        BOOST_COROSIO_ASSERT(local_endpoint_ == Endpoint{});
+        BOOST_COROSIO_ASSERT(ready_fds_.empty());
+        BOOST_COROSIO_ASSERT(waiters_.empty());
+        BOOST_COROSIO_ASSERT(read_wait_ == nullptr);
+        BOOST_COROSIO_ASSERT(!multi_op_);
+        closing_ = false;
+        arm_err_ = 0;
+    }
+
     /// Drain queued waiters with operation_aborted but do NOT submit
     /// any kernel cancel for the fd. Used by service close() paths
     /// that have already submitted (or are about to submit) the
     /// cancel-by-fd themselves via `cancel_and_flush`.
     void drain_waiters_only() noexcept
     {
-        intrusive_list<waiter_node> drained;
+        intrusive_list<accept_node> drained;
         {
             std::lock_guard lk(mutex_);
             closing_ = true;
@@ -253,16 +465,11 @@ public:
 
         while (auto* w = drained.pop_front())
         {
+            // reset() synchronizes with an in-flight canceller; after
+            // it the stored status is ours to set.
             w->stop_cb.reset();
-            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept destructor path: OOM => std::terminate is the intended behavior
-            auto* op     = new uring_accept_op();
-            op->h        = w->h;
-            op->ex       = w->ex;
-            op->ec_out   = w->ec_out;
-            op->impl_out = w->impl_out;
-            op->cancelled.store(true, std::memory_order_release);
-            delete w;
-            sched_->post(op);
+            w->cancelled.store(true, std::memory_order_release);
+            sched_->post(w);
             sched_->work_finished();
         }
     }
@@ -280,6 +487,12 @@ public:
         std::stop_token const& token,
         std::error_code* ec) noexcept
     {
+        auto* w   = acquire_node();
+        w->h      = h;
+        w->ex     = ex;
+        w->ec_out = ec;
+        w->peek   = true;
+
         bool ready   = false;
         bool aborted = false;
         {
@@ -295,31 +508,17 @@ public:
         }
         if (ready || aborted)
         {
-            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept initiation path: OOM => std::terminate is the intended behavior
-            auto* op   = new uring_accept_op();
-            op->h      = h;
-            op->ex     = ex;
-            op->ec_out = ec;
             if (aborted)
-                op->cancelled.store(true, std::memory_order_release);
-            sched_->post(op);
+                w->cancelled.store(true, std::memory_order_release);
+            sched_->post(w);
             return;
         }
-
-        // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept initiation path: OOM => std::terminate is the intended behavior
-        auto* w   = new waiter_node{};
-        w->h      = h;
-        w->ex     = ex;
-        w->ec_out = ec;
-        w->owner  = static_cast<Derived*>(this);
-        w->peek   = true;
 
         // Same protocol as accept parking: arm the callback before
         // the node is visible and outside `mutex_` (a pre-stopped
         // token invokes the canceller synchronously, and the
         // canceller takes `mutex_`).
-        if (token.stop_possible())
-            w->stop_cb.emplace(token, waiter_canceller{w});
+        w->start(token);
 
         bool was_cancelled = false;
         int arm_err        = 0;
@@ -348,16 +547,9 @@ public:
         }
 
         w->stop_cb.reset();
-        // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept initiation path: OOM => std::terminate is the intended behavior
-        auto* op   = new uring_accept_op();
-        op->h      = w->h;
-        op->ex     = w->ex;
-        op->ec_out = w->ec_out;
-        op->err    = arm_err;
-        if (was_cancelled)
-            op->cancelled.store(true, std::memory_order_release);
-        delete w;
-        sched_->post(op);
+        w->err = arm_err;
+        w->cancelled.store(was_cancelled, std::memory_order_release);
+        sched_->post(w);
     }
 
     std::error_code set_option(
@@ -422,7 +614,7 @@ public:
         sched_->retire_op(
             multi_op_, [this](uring_multi_accept_op& op) noexcept {
                 std::lock_guard lk(mutex_);
-                op.impl_ptr.reset();
+                op.object_ref_.reset();
                 op.acceptor_impl = nullptr;
                 op.on_cqe        = nullptr;
                 op.retire_func   = &uring_multi_accept_op::do_retired_cqe;
@@ -523,13 +715,13 @@ public:
             multi_op_->listen_fd = fd_;
             multi_op_->acceptor_impl = this;
             multi_op_->on_cqe   = &uring_multishot_acceptor_base::on_accept_cqe;
-            multi_op_->impl_ptr = this->shared_from_this();
+            multi_op_->object_ref_ = detail::object_ref(this);
         }
         else
         {
             // Reuse the existing op (re-arm path). Reset peer scratch
             // so the kernel writes into a clean slot. listen_fd and
-            // impl_ptr are re-seeded so the op can never carry state
+            // object_ref_ are re-seeded so the op can never carry state
             // from an arming that has since been torn down. `res` is
             // one of those: an arming that failed to submit left
             // -EAGAIN there, and the reader of `res` cannot tell a
@@ -538,7 +730,7 @@ public:
             multi_op_->peer_len     = sizeof(sockaddr_storage);
             multi_op_->res          = 0;
             multi_op_->listen_fd    = fd_;
-            multi_op_->impl_ptr     = this->shared_from_this();
+            multi_op_->object_ref_  = detail::object_ref(this);
         }
 
         auto* op = multi_op_.get();
@@ -569,7 +761,7 @@ public:
     */
     void fail_arm(int err) noexcept
     {
-        intrusive_list<waiter_node> claimed;
+        intrusive_list<accept_node> claimed;
         {
             std::lock_guard lk(mutex_);
             arm_err_ = err;
@@ -577,7 +769,7 @@ public:
             // canceller already claimed belongs to it: cancel_waiter
             // is waiting on this mutex to unlink the node itself, so
             // it has to still be in the list when it gets in.
-            intrusive_list<waiter_node> keep;
+            intrusive_list<accept_node> keep;
             while (auto* w = waiters_.pop_front())
             {
                 if (!w->cancelled.exchange(true, std::memory_order_acq_rel))
@@ -598,16 +790,13 @@ public:
 
         while (auto* w = claimed.pop_front())
         {
+            // The exchange above was a claim, not the completion
+            // status: after reset() quiesces the canceller, restore
+            // the flag so the handler reports `err`, not canceled.
             w->stop_cb.reset();
-            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept arming path: OOM => std::terminate is the intended behavior
-            auto* op     = new uring_accept_op();
-            op->h        = w->h;
-            op->ex       = w->ex;
-            op->ec_out   = w->ec_out;
-            op->impl_out = w->impl_out;
-            op->err      = err;
-            delete w;
-            sched_->post(op);
+            w->err = err;
+            w->cancelled.store(false, std::memory_order_release);
+            sched_->post(w);
             sched_->work_finished(); // balance the waiter's work_started
         }
     }
@@ -622,6 +811,12 @@ public:
         std::error_code* ec,
         io_object::implementation** impl_out)
     {
+        auto* w     = acquire_node();
+        w->h        = h;
+        w->ex       = ex;
+        w->ec_out   = ec;
+        w->impl_out = impl_out;
+
         sockaddr_storage peer_storage{};
         socklen_t peer_len = sizeof(peer_storage);
         int accepted_fd    = ::accept4(
@@ -629,78 +824,55 @@ public:
             SOCK_NONBLOCK | SOCK_CLOEXEC);
         if (accepted_fd >= 0)
         {
-            auto* op         = new uring_accept_op();
-            op->h            = h;
-            op->ex           = ex;
-            op->ec_out       = ec;
-            op->impl_out     = impl_out;
-            op->peer_service = peer_service_;
-            op->adopt_fn     = &Derived::adopt_thunk;
-            op->accepted_fd  = accepted_fd;
-            op->peer_storage = peer_storage;
-            op->peer_len     = peer_len;
-            sched_->post(op);
+            w->peer_service = peer_service_;
+            w->adopt_fn     = &Derived::adopt_thunk;
+            w->accepted_fd  = accepted_fd;
+            w->peer_storage = peer_storage;
+            w->peer_len     = peer_len;
+            sched_->post(w);
             return;
         }
         // accept4 returned <0 — only EAGAIN/EWOULDBLOCK should fall
         // through to the parked/waiter path. Other errors (EBADF, etc.)
         // surface through the existing scheduler-completion path so the
-        // user sees them via the op's ec_out. Build an op with `err`
-        // set so do_handler delivers make_err(err).
+        // user sees them via the node's ec_out: `err` set means
+        // do_handler delivers make_err(err).
         if (errno != EAGAIN && errno != EWOULDBLOCK)
         {
-            int saved_errno = errno;
-            auto* op        = new uring_accept_op();
-            op->h           = h;
-            op->ex          = ex;
-            op->ec_out      = ec;
-            op->impl_out    = impl_out;
-            op->err         = saved_errno;
-            sched_->post(op);
+            w->err = errno;
+            sched_->post(w);
             return;
         }
 
-        uring_accept_op* ready_op = nullptr;
+        bool have_ready = false;
         {
             std::lock_guard lk(mutex_);
             if (auto* r = ready_fds_.pop_front())
             {
-                ready_op               = new uring_accept_op();
-                ready_op->h            = h;
-                ready_op->ex           = ex;
-                ready_op->ec_out       = ec;
-                ready_op->impl_out     = impl_out;
-                ready_op->peer_service = peer_service_;
-                ready_op->adopt_fn     = &Derived::adopt_thunk;
-                ready_op->accepted_fd  = r->fd;
-                ready_op->peer_storage = r->peer;
-                ready_op->peer_len     = r->peer_len;
-                delete r;
+                w->peer_service = peer_service_;
+                w->adopt_fn     = &Derived::adopt_thunk;
+                w->accepted_fd  = r->fd;
+                w->peer_storage = r->peer;
+                w->peer_len     = r->peer_len;
+                free_ready_.push_front(r);
+                have_ready = true;
             }
         }
-        if (ready_op)
+        if (have_ready)
         {
             // Post outside the lock — acceptor mutex_ must never be
             // held while dispatch_mutex_ is acquired by sched_->post().
-            sched_->post(ready_op);
+            sched_->post(w);
             return;
         }
-
-        auto* w     = new waiter_node{};
-        w->h        = h;
-        w->ex       = ex;
-        w->ec_out   = ec;
-        w->impl_out = impl_out;
-        w->owner    = static_cast<Derived*>(this);
 
         // Arm the stop callback before the node is visible in
         // `waiters_` and outside `mutex_`: an already-stopped token
         // invokes the canceller synchronously from emplace, and
         // cancel_waiter takes `mutex_` (self-deadlock if held).
         // Arming pre-queue also keeps the CQE handler from claiming
-        // and deleting a node whose callback is not yet constructed.
-        if (token.stop_possible())
-            w->stop_cb.emplace(token, waiter_canceller{w});
+        // a node whose callback is not yet constructed.
+        w->start(token);
 
         bool was_cancelled = false;
         {
@@ -715,29 +887,18 @@ public:
             {
                 // A connection arrived while the callback was armed;
                 // prefer it over parking the waiter behind it.
-                ready_op               = new uring_accept_op();
-                ready_op->h            = h;
-                ready_op->ex           = ex;
-                ready_op->ec_out       = ec;
-                ready_op->impl_out     = impl_out;
-                ready_op->peer_service = peer_service_;
-                ready_op->adopt_fn     = &Derived::adopt_thunk;
-                ready_op->accepted_fd  = r->fd;
-                ready_op->peer_storage = r->peer;
-                ready_op->peer_len     = r->peer_len;
-                delete r;
+                w->peer_service = peer_service_;
+                w->adopt_fn     = &Derived::adopt_thunk;
+                w->accepted_fd  = r->fd;
+                w->peer_storage = r->peer;
+                w->peer_len     = r->peer_len;
+                free_ready_.push_front(r);
             }
             else if (arm_err_ != 0)
             {
                 // No arming reached the kernel, so no CQE will deliver
                 // a connection: parking here would park for good.
-                // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — noexcept accept path: OOM => std::terminate is the intended behavior
-                ready_op           = new uring_accept_op();
-                ready_op->h        = h;
-                ready_op->ex       = ex;
-                ready_op->ec_out   = ec;
-                ready_op->impl_out = impl_out;
-                ready_op->err      = arm_err_;
+                w->err = arm_err_;
             }
             else
             {
@@ -748,34 +909,20 @@ public:
             }
         }
 
-        if (was_cancelled)
-        {
-            auto* op     = new uring_accept_op();
-            op->h        = w->h;
-            op->ex       = w->ex;
-            op->ec_out   = w->ec_out;
-            op->impl_out = w->impl_out;
-            op->cancelled.store(true, std::memory_order_release);
-            w->stop_cb.reset();
-            delete w;
-            sched_->post(op);
-            return;
-        }
-
         w->stop_cb.reset();
-        delete w;
-        sched_->post(ready_op);
+        w->cancelled.store(was_cancelled, std::memory_order_release);
+        sched_->post(w);
     }
 
-    void cancel_waiter(waiter_node* w) noexcept
+    void cancel_waiter(accept_node* w) noexcept
     {
         {
             std::lock_guard lk(mutex_);
             if (closing_)
-                return; // on_accept_cqe_impl will drain with closing_ set
+                return; // drain_waiters_only will complete with closing_ set
             if (!w->queued)
                 return; // not queued yet; the parking path observes
-                        // `cancelled` and completes the op
+                        // `cancelled` and completes the node
             if (w->peek)
             {
                 if (read_wait_ != w)
@@ -787,17 +934,13 @@ public:
                 waiters_.remove(w);
             }
         }
-        // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — stop-token callback: noexcept, OOM => std::terminate is the intended behavior
-        auto* op     = new uring_accept_op();
-        op->h        = w->h;
-        op->ex       = w->ex;
-        op->ec_out   = w->ec_out;
-        op->impl_out = w->impl_out;
-        op->cancelled.store(true, std::memory_order_release);
-        delete w;
-        // post() increments outstanding_work_; balances the work_started()
-        // from accept() when the waiter was queued.
-        sched_->post(op);
+        // `cancelled` is already true (the claim that routed here);
+        // that is also the completion status, so post as-is. The node's
+        // stop_cb is still engaged — do_handler resets it, and running
+        // that reset from the handler thread while this callback
+        // returns is the stop_callback destructor's documented
+        // wait-or-self case.
+        sched_->post(w);
         sched_->work_finished(); // balance the work_started() from accept()
     }
 
@@ -812,9 +955,9 @@ protected:
     void on_accept_cqe_impl(int new_fd, int err, bool more) noexcept
     {
         bool was_closing          = false;
-        waiter_node* matched      = nullptr;
-        waiter_node* claimed_peek = nullptr;
-        intrusive_list<waiter_node> closing_waiters;
+        accept_node* matched      = nullptr;
+        accept_node* claimed_peek = nullptr;
+        intrusive_list<accept_node> closing_waiters;
         {
             std::lock_guard lk(mutex_);
             was_closing = closing_;
@@ -855,8 +998,7 @@ protected:
                 }
                 else if (new_fd >= 0)
                 {
-                    // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — CQE handler: noexcept, OOM => std::terminate is the intended behavior
-                    auto* node     = new ready_fd_node{};
+                    auto* node     = acquire_ready_locked();
                     node->fd       = new_fd;
                     node->peer     = multi_op_->peer_storage;
                     node->peer_len = multi_op_->peer_len;
@@ -865,8 +1007,7 @@ protected:
             }
             else if (new_fd >= 0)
             {
-                // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — CQE handler: noexcept, OOM => std::terminate is the intended behavior
-                auto* node     = new ready_fd_node{};
+                auto* node     = acquire_ready_locked();
                 node->fd       = new_fd;
                 node->peer     = multi_op_->peer_storage;
                 node->peer_len = multi_op_->peer_len;
@@ -874,57 +1015,42 @@ protected:
             }
         }
 
+        // Each claim's exchange set `cancelled`; after reset() has
+        // quiesced any in-flight canceller, restore the flag to the
+        // real completion status before posting.
         if (claimed_peek)
         {
             claimed_peek->stop_cb.reset();
-            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — CQE handler: noexcept, OOM => std::terminate is the intended behavior
-            auto* op   = new uring_accept_op();
-            op->h      = claimed_peek->h;
-            op->ex     = claimed_peek->ex;
-            op->ec_out = claimed_peek->ec_out;
-            delete claimed_peek;
-            sched_->post(op);
+            claimed_peek->cancelled.store(false, std::memory_order_release);
+            sched_->post(claimed_peek);
             sched_->work_finished(); // balance the parking work_started
         }
 
         if (matched)
         {
             matched->stop_cb.reset();
-            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — CQE handler: noexcept, OOM => std::terminate is the intended behavior
-            auto* op         = new uring_accept_op();
-            op->h            = matched->h;
-            op->ex           = matched->ex;
-            op->ec_out       = matched->ec_out;
-            op->impl_out     = matched->impl_out;
-            op->peer_service = peer_service_;
-            op->adopt_fn     = &Derived::adopt_thunk;
+            matched->peer_service = peer_service_;
+            matched->adopt_fn     = &Derived::adopt_thunk;
             if (err)
             {
-                op->err = err;
+                matched->err = err;
             }
             else if (new_fd >= 0)
             {
-                op->accepted_fd  = new_fd;
-                op->peer_storage = multi_op_->peer_storage;
-                op->peer_len     = multi_op_->peer_len;
+                matched->accepted_fd  = new_fd;
+                matched->peer_storage = multi_op_->peer_storage;
+                matched->peer_len     = multi_op_->peer_len;
             }
-            delete matched;
-            sched_->post(op);
+            matched->cancelled.store(false, std::memory_order_release);
+            sched_->post(matched);
             sched_->work_finished(); // balance waiter's work_started
         }
 
         while (auto* w = closing_waiters.pop_front())
         {
             w->stop_cb.reset();
-            // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — CQE handler shutdown path: noexcept, OOM => std::terminate is the intended behavior
-            auto* op     = new uring_accept_op();
-            op->h        = w->h;
-            op->ex       = w->ex;
-            op->ec_out   = w->ec_out;
-            op->impl_out = w->impl_out;
-            op->cancelled.store(true, std::memory_order_release);
-            delete w;
-            sched_->post(op);
+            w->cancelled.store(true, std::memory_order_release);
+            sched_->post(w);
             sched_->work_finished(); // balance waiter's work_started
         }
 
@@ -933,19 +1059,23 @@ protected:
             // Re-arm: kernel terminated multishot non-fatally.
             struct rearm_op final : scheduler_op
             {
-                std::shared_ptr<Derived> self_;
+                detail::object_ref self_ref_;
+                Derived* self_;
                 std::uint64_t generation_;
                 rearm_op(
-                    std::shared_ptr<Derived> s,
+                    detail::object_ref ref,
+                    Derived* self,
                     std::uint64_t generation) noexcept
-                    : self_(std::move(s))
+                    : self_ref_(std::move(ref))
+                    , self_(self)
                     , generation_(generation)
                 {
                 }
 
                 void operator()() override
                 {
-                    auto self       = std::move(self_);
+                    auto self_ref   = std::move(self_ref_);
+                    auto* self      = self_;
                     auto generation = generation_;
                     delete this;
                     {
@@ -972,21 +1102,12 @@ protected:
             };
             // NOLINTNEXTLINE(bugprone-unhandled-exception-at-new) — CQE handler re-arm: noexcept, OOM => std::terminate is the intended behavior
             sched_->post(new rearm_op(
-                this->shared_from_this(),
+                detail::object_ref(this),
+                static_cast<Derived*>(this),
                 arm_generation_.load(std::memory_order_acquire)));
         }
     }
 };
-
-template<class Derived, class ImplBase, class Endpoint, class PeerService>
-inline void
-uring_multishot_acceptor_base<Derived, ImplBase, Endpoint, PeerService>::
-    waiter_canceller::operator()() const noexcept
-{
-    if (w->cancelled.exchange(true, std::memory_order_acq_rel))
-        return;
-    w->owner->cancel_waiter(w);
-}
 
 } // namespace boost::corosio::detail
 

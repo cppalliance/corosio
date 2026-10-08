@@ -12,6 +12,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/continuation.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 
@@ -93,7 +94,7 @@ struct coro_op : scheduler_op
     /// Keeps the owning impl alive while the op is in flight (the kernel
     /// owns user buffers until completion). Dropped in the handler's resume
     /// tail (see coro_op_complete.hpp).
-    std::shared_ptr<void> impl_ptr;
+    detail::object_ref object_ref_;
 
     /// Default-construct for virtual-dispatch backends (the reactors, which
     /// override operator()/destroy() and leave func_ null).

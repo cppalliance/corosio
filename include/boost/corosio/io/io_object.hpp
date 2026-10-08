@@ -15,6 +15,8 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
+#include <atomic>
+#include <cstddef>
 #include <utility>
 
 namespace boost::corosio {
@@ -49,11 +51,35 @@ public:
     class handle;
 
     /** Derived types dispatch platform-specific I/O operations through it.
+
+        Reference-counted: the owning service holds one reference
+        (`refs_` starts at 1); in-flight operations hold additional
+        references through `detail::object_ref`. When the count reaches
+        zero, `retire()` runs — services recycle the impl into
+        their free-list there.
     */
     struct implementation
     {
         /// Destroy the implementation; called only through @ref io_service.
         virtual ~implementation() = default;
+
+        /** Retire the implementation once the reference count reaches zero.
+
+            Every concrete implementation's override follows the
+            same shape: recycle into the owning service's pool member
+            as the final statement. The service befriends the
+            implementation so it can reach that private member
+            directly. Any required last-rites cleanup — releasing
+            state that is only safe to tear down once idle — runs as
+            ordinary statements immediately before the recycle.
+            Whichever action runs — recycle or delete — must be the
+            final statement: nothing touches the implementation
+            after.
+        */
+        virtual void retire() noexcept = 0;
+
+        /// In-flight + service references; starts at the service's 1.
+        std::atomic<std::size_t> refs_{1};
     };
 
     /** Constructs, closes, and destroys platform implementations on
@@ -65,10 +91,28 @@ public:
         /// Destroy the service; the execution context outlives it.
         virtual ~io_service() = default;
 
-        /// Construct a new implementation instance.
+        /** Construct a new implementation instance.
+
+            May return a recycled implementation taken from the
+            service's free-list (populated by `implementation::retire`)
+            instead of allocating new storage.
+        */
         virtual implementation* construct() = 0;
 
-        /// Destroy the implementation, closing kernel resources and freeing memory.
+        /** Close kernel resources and release the service's reference.
+
+            Called whenever a handle relinquishes its current
+            implementation, not only on destruction. Handle
+            destruction, move-assignment onto a handle that already
+            owns one (the replaced implementation is destroyed, the
+            incoming one is not), and `handle::reset()` all invoke
+            this. It closes the underlying descriptor and drops the
+            service's own reference. In-flight operations may still
+            hold references of their own, so the implementation is
+            not necessarily recycled or freed here. That happens in
+            `implementation::retire` whenever the reference count
+            actually reaches zero.
+        */
         virtual void destroy(implementation* impl) = 0;
 
         /// Close the I/O object, releasing kernel resources without deallocating.
@@ -156,6 +200,14 @@ public:
 
         /** Replace the implementation, destroying the old one.
 
+            @pre The handle is already bound to a service (constructed
+                via the service-taking constructor, not the default
+                one) — the old implementation is destroyed through
+                that service.
+            @pre @p p, if non-null, was constructed by this handle's
+                own service. The service that destroys it later must
+                be the one that knows how to close it.
+
             @param p The new implementation to own. May be nullptr.
         */
         void reset(implementation* p) noexcept
@@ -190,7 +242,8 @@ protected:
 
     /** Create a handle bound to a service found in the context.
 
-        @tparam Service The service type whose key_type is used for lookup.
+        @tparam Service The service type whose `key_type` is used for
+            lookup.
         @param ctx The execution context to search for the service.
 
         @return A handle owning a freshly constructed implementation.
