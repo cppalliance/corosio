@@ -199,10 +199,7 @@ struct uring_accept_op : uring_op
                 *self->ec_out = was_cancelled
                     ? std::error_code(capy::error::canceled)
                     : make_err(self->err);
-            self->cont.h = self->h;
-            auto next    = dispatch_coro(self->ex, self->cont);
-            self->dispose(self);
-            next.resume();
+            resume_and_dispose(self);
             return;
         }
 
@@ -220,6 +217,18 @@ struct uring_accept_op : uring_op
         if (self->ec_out)
             *self->ec_out = {};
 
+        resume_and_dispose(self);
+    }
+
+    /** Dispose the op, then resume its awaiter.
+
+        dispatch_coro does not retain the op's embedded continuation
+        (a deferring executor gets a frame-owned one), so disposing
+        before the resume is safe: a concurrent accept may refill the
+        recycled node immediately without touching anything queued.
+    */
+    static void resume_and_dispose(uring_accept_op* self)
+    {
         self->cont.h = self->h;
         auto next    = dispatch_coro(self->ex, self->cont);
         self->dispose(self);

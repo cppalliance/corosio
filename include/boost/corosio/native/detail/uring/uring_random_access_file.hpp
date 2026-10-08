@@ -106,6 +106,10 @@ class BOOST_COROSIO_DECL uring_random_access_file final
                 self->file_->release_op(self);
                 return;
             }
+            // finish() routes through dispatch_coro, which does not
+            // retain the op's embedded continuation, so releasing
+            // before the resume is safe even for a deferring
+            // executor.
             auto next = Base::finish(self);
             self->file_->release_op(self);
             next.resume();

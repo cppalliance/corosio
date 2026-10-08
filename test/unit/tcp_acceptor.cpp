@@ -19,9 +19,13 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/task.hpp>
 
+#include <atomic>
 #include <chrono>
+#include <latch>
+#include <type_traits>
 #include <cstdint>
 #include <stdexcept>
 #include <stop_token>
@@ -1833,6 +1837,97 @@ struct tcp_acceptor_test
         BOOST_TEST(acceptOneThrough(ioc, acc, port, true));
     }
 
+    // Accept-path twin of random_access_file's
+    // testDeferredExecutorCompletion: an accept awaited from a
+    // non-io_context executor takes dispatch_coro's deferring branch,
+    // where the queued continuation must survive the accept node's
+    // recycling. Sequencing is causal (latches + single-worker FIFO),
+    // not timed.
+    void testDeferredExecutorCompletion()
+    {
+        io_context ioc(Backend);
+        capy::thread_pool pool(1);
+
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.open());
+        acc.set_option(socket_option::reuse_address(true));
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!acc.listen());
+        endpoint ep(ipv4_address::loopback(), acc.local_endpoint().port());
+
+        std::latch started(1);
+        std::latch hold(1);
+        std::atomic<bool> c1_done{false};
+        std::atomic<bool> c2_done{false};
+        tcp_socket s1(ioc);
+        tcp_socket s2(ioc);
+
+        // C1: accept awaited on the pool executor (deferring path).
+        capy::run_async(pool.get_executor())(
+            [](tcp_acceptor& a, tcp_socket& s,
+               std::atomic<bool>& done) -> capy::task<>
+            {
+                auto [ec] = co_await a.accept(s);
+                done      = !ec;
+            }(acc, s1, c1_done));
+
+        // Parked behind C1 on the single worker: when this runs, C1
+        // has already parked its accept and suspended.
+        capy::run_async(pool.get_executor())(
+            [](std::latch& s, std::latch& h) -> capy::task<>
+            {
+                s.count_down();
+                h.wait();
+                co_return;
+            }(started, hold));
+        started.wait();
+
+        // Deliver C1's connection: the completion queues C1's resume
+        // into the parked pool and recycles the accept node.
+        tcp_socket client1(ioc);
+        capy::run_async(ioc.get_executor())(
+            [](tcp_socket& c, endpoint e) -> capy::task<>
+            {
+                std::ignore = co_await c.connect(e);
+            }(client1, ep));
+        ioc.run();
+        ioc.restart();
+
+        // Refill: C2 accepts on the io_context executor, popping the
+        // recycled node; its inline completion reuses the node's
+        // continuation while the pool still holds it.
+        tcp_socket client2(ioc);
+        capy::run_async(ioc.get_executor())(
+            [](tcp_acceptor& a, tcp_socket& s,
+               std::atomic<bool>& done) -> capy::task<>
+            {
+                auto [ec] = co_await a.accept(s);
+                done      = !ec;
+            }(acc, s2, c2_done));
+        capy::run_async(ioc.get_executor())(
+            [](tcp_socket& c, endpoint e) -> capy::task<>
+            {
+                std::ignore = co_await c.connect(e);
+            }(client2, ep));
+        ioc.run();
+        ioc.restart();
+        BOOST_TEST(c2_done.load());
+
+        // Release the worker and drain with a sentinel.
+        hold.count_down();
+        std::latch drained(1);
+        capy::run_async(pool.get_executor())(
+            [](std::latch& d) -> capy::task<>
+            {
+                d.count_down();
+                co_return;
+            }(drained));
+        drained.wait();
+
+        BOOST_TEST(c1_done.load());
+        pool.join();
+    }
+
     void run()
     {
         testConstruction();
@@ -1840,6 +1935,11 @@ struct tcp_acceptor_test
         testOptions();
         testMoveConstruct();
         testMoveAssign();
+
+        // The recycling hazard under test is uring's (pooled accept
+        // node + deferring dispatch); the exactly-once-resume
+        // property holds on every backend, so all of them run it.
+        testDeferredExecutorCompletion();
 
         // Cancellation
         testCancelAccept();

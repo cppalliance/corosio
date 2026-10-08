@@ -146,6 +146,8 @@ coro_resume(coro_op* self) noexcept
     // Clear the keepalive before publishing the continuation: a strand
     // drained on another thread can reuse this op via reset() the instant
     // it runs, so this write must be ordered before the publish, not after.
+    // dispatch_coro does not retain cont, so the op may be reused the
+    // moment the awaiter runs; nothing of self is touched after this.
     auto suicide = std::move(self->object_ref_);
     auto next    = dispatch_coro(self->ex, self->cont);
     next.resume();
