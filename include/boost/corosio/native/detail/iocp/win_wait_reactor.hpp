@@ -476,6 +476,13 @@ win_wait_reactor::run()
 {
     std::vector<WSAPOLLFD> pollfds;
 
+    // Hoisted like pollfds: the swap under the lock trades buffers
+    // with pending_register_/pending_cancel_, so the capacities
+    // ping-pong between these locals and the members and no wake
+    // allocates once both sides are warm.
+    std::vector<entry> to_add;
+    std::vector<overlapped_op*> to_cancel;
+
     // What the ops still parked here are told on the way out, and what
     // every later register_wait is told too. Ending on a poll the
     // provider refused is not a cancellation, and an op that reports
@@ -485,8 +492,8 @@ win_wait_reactor::run()
     while (!stop_.load(std::memory_order_acquire))
     {
         // Drain pending register/cancel under the lock.
-        std::vector<entry> to_add;
-        std::vector<overlapped_op*> to_cancel;
+        to_add.clear();
+        to_cancel.clear();
         {
             std::lock_guard lock(mutex_);
             to_add.swap(pending_register_);
