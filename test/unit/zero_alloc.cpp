@@ -28,6 +28,7 @@
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/random_access_file.hpp>
+#include <boost/corosio/tcp_server.hpp>
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/delay.hpp>
 
@@ -36,6 +37,9 @@
 #include <boost/capy/task.hpp>
 
 #include <chrono>
+#include <memory>
+#include <tuple>
+#include <vector>
 #include <type_traits>
 
 #include "temp_path.hpp"
@@ -274,12 +278,117 @@ struct zero_alloc_test
         BOOST_TEST_EQ(alloc_count.load(std::memory_order_relaxed), 0LL);
     }
 
+    // tcp_server connection churn: launching a worker used to cost a
+    // fresh stop_source state, a globally allocated launch_wrapper
+    // frame, and a heap wrapper op for the bare-handle post. All
+    // three now recycle (reused stop state, frame_alloc_mixin,
+    // frame-embedded continuation), so a warmed connect/echo/close
+    // round trip through the server allocates nothing. Select keeps
+    // its documented 2/cycle registered_descs_ cost.
+    void testServerChurnIsZeroAlloc()
+    {
+        struct echo_worker : tcp_server::worker_base
+        {
+            io_context& ctx;
+            tcp_socket sock;
+            explicit echo_worker(io_context& c) : ctx(c), sock(c) {}
+            tcp_socket& socket() override
+            {
+                return sock;
+            }
+            void run(tcp_server::launcher launch) override
+            {
+                launch(
+                    ctx.get_executor(),
+                    [](tcp_socket* s) -> capy::task<>
+                    {
+                        char b[8];
+                        auto [ec, n] = co_await s->read_some(
+                            capy::mutable_buffer(b, sizeof(b)));
+                        if (!ec)
+                            std::ignore = co_await s->write_some(
+                                capy::const_buffer(b, n));
+                        s->close();
+                    }(&sock));
+            }
+        };
+
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        tcp_server srv(ioc, ex);
+        {
+            std::vector<std::unique_ptr<tcp_server::worker_base>> v;
+            for (int i = 0; i < 2; ++i)
+                v.push_back(std::make_unique<echo_worker>(ioc));
+            srv.set_workers(std::move(v));
+        }
+        BOOST_TEST(!srv.bind(endpoint(ipv4_address::loopback(), 0)));
+        auto port = srv.local_endpoint().port();
+        endpoint ep(ipv4_address::loopback(), port);
+        srv.start();
+
+        auto one_conn = [&] {
+            bool echoed = false;
+            capy::run_async(ex)(
+                [](io_context& c, endpoint target, bool& ok) -> capy::task<>
+                {
+                    tcp_socket s(c);
+                    auto [ec1] = co_await s.connect(target);
+                    if (ec1)
+                        co_return;
+                    char const out = 'z';
+                    auto [ec2, n2] =
+                        co_await s.write_some(capy::const_buffer(&out, 1));
+                    if (ec2 || n2 != 1)
+                        co_return;
+                    char in        = 0;
+                    auto [ec3, n3] =
+                        co_await s.read_some(capy::mutable_buffer(&in, 1));
+                    ok = !ec3 && n3 == 1 && in == out;
+                }(ioc, ep, echoed));
+            // Pump one event at a time: the server's pending accept
+            // keeps the context busy forever, so a plain run() (or a
+            // full run_for window) would never return promptly.
+            while (!echoed && ioc.run_one_for(std::chrono::seconds(5)) != 0)
+            {
+            }
+            ioc.restart();
+            BOOST_TEST(echoed);
+        };
+
+        for (int i = 0; i < warmup_cycles; ++i)
+            one_conn();
+
+        alloc_count.store(0, std::memory_order_relaxed);
+        alloc_armed.store(true, std::memory_order_relaxed);
+        for (int i = 0; i < measured_cycles; ++i)
+            one_conn();
+        alloc_armed.store(false, std::memory_order_relaxed);
+
+#if BOOST_COROSIO_HAS_SELECT
+        if constexpr (
+            std::is_same_v<std::decay_t<decltype(Backend)>, select_t>)
+            BOOST_TEST_EQ(
+                alloc_count.load(std::memory_order_relaxed),
+                static_cast<long long>(2 * measured_cycles));
+        else
+#endif
+            BOOST_TEST_EQ(alloc_count.load(std::memory_order_relaxed), 0LL);
+
+        srv.stop();
+        ioc.run();
+    }
+
     void run()
     {
+        if (!alloc_counter_is_live("boost.corosio.zero_alloc"))
+            return;
         testAcceptEchoCloseIsZeroAlloc();
         testReuseIdentityIsZeroAlloc();
         testDelayChurnIsZeroAlloc();
         testRafChurnIsZeroAlloc();
+        testServerChurnIsZeroAlloc();
     }
 };
 

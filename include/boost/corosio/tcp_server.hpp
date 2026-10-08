@@ -22,6 +22,7 @@
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/ex/any_executor.hpp>
+#include <boost/capy/ex/frame_alloc_mixin.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -171,10 +172,16 @@ private:
     template<capy::Executor Ex>
     struct launch_wrapper
     {
-        struct promise_type
+        // frame_alloc_mixin routes the frame through the thread-local
+        // recycling allocator, so a warmed per-connection launch does
+        // not hit the global allocator.
+        struct promise_type : capy::frame_alloc_mixin
         {
             Ex ex; // Executor stored directly in frame (outlives child tasks)
             capy::io_env env_;
+            /// Embedded post node: the start posts this instead of the
+            /// bare handle, which would heap-allocate a wrapper op.
+            capy::continuation cont_;
 
             // For regular coroutines: first arg is executor, second is stop token
             template<class E, class S, class... Args>
@@ -526,15 +533,25 @@ public:
                 }
             } guard{srv_, w};
 
-            // Reset worker's stop source for this connection
-            w->stop_ = {};
-            auto st  = w->stop_.get_token();
+            // A stop_source allocates shared state on construction;
+            // reuse the worker's across connections and replace it
+            // only once a stop has actually been delivered (the state
+            // is then latched for good).
+            if (w->stop_.stop_requested())
+                w->stop_ = {};
+            auto st = w->stop_.get_token();
 
             auto wrapper =
                 launch_coro<Executor>{}(ex, st, srv_, std::move(task), w);
 
-            // Executor and stop token stored in promise via constructor
-            ex.post(std::exchange(wrapper.h, nullptr)); // Release before post
+            // Executor and stop token stored in promise via
+            // constructor. Post through the frame-embedded
+            // continuation — posting the bare handle would allocate a
+            // wrapper op. The frame stays suspended until the
+            // executor resumes it, so the node outlives the queue.
+            auto h = std::exchange(wrapper.h, nullptr); // Release before post
+            h.promise().cont_.h = h;
+            ex.post(h.promise().cont_);
             guard.w = nullptr; // Success - dismiss guard
         }
     };
