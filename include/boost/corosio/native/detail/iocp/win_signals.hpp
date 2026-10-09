@@ -392,9 +392,9 @@ win_signal::wait(
             *ec = make_error_code(capy::error::canceled);
         if (signal_out)
             *signal_out = 0;
-        dispatch_coro(d, *pending_op_.cont).resume();
-        // resumed inline for an io_context executor, not posted to the
-        // scheduler queue.
+        // Posted, never resumed inline: this is the caller's own
+        // suspend, and a loop of such waits would nest frames.
+        d.post(*pending_op_.cont);
         return std::noop_coroutine();
     }
 
@@ -696,7 +696,7 @@ win_signals::cancel_wait(win_signal& impl)
             *op->ec_out = make_error_code(capy::error::canceled);
         if (op->signal_out)
             *op->signal_out = 0;
-        dispatch_coro(op->d, *op->cont).resume();
+        op->d.post(*op->cont);
         sched_.work_finished();
     }
 }
@@ -726,7 +726,7 @@ win_signals::cancel_wait_token(win_signal& impl) noexcept
             *op->ec_out = make_error_code(capy::error::canceled);
         if (op->signal_out)
             *op->signal_out = 0;
-        dispatch_coro(op->d, *op->cont).resume();
+        op->d.post(*op->cont);
         sched_.work_finished();
     }
 }
@@ -797,10 +797,10 @@ win_signals::start_wait(win_signal& impl, signal_op* op)
         }
     }
 
-    // Dispatch outside the lock to avoid deadlock if the resumed
-    // coroutine re-enters cancel()/add()/remove()
+    // Posted outside the lock: this runs inside the caller's own
+    // suspend, so resuming it here would nest frames.
     if (was_cancelled)
-        dispatch_coro(op->d, *op->cont).resume();
+        op->d.post(*op->cont);
 }
 
 inline void

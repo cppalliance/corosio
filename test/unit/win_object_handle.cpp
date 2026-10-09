@@ -253,6 +253,26 @@ struct win_object_handle_test
         BOOST_TEST(ec == capy::cond::canceled);
     }
 
+    // The stop lands before the wait is published, so wait() itself
+    // must claim the op for it, consuming no signal.
+    void testStopTokenStoppedBeforeWait()
+    {
+        io_context ioc(Backend);
+        win_object_handle o(ioc);
+        HANDLE ev = adopt_event(o, false, true);
+        std::stop_source ss;
+        ss.request_stop();
+        std::error_code ec;
+        auto waiter = [&]() -> capy::task<> {
+            auto [e] = co_await o.wait();
+            ec = e;
+        };
+        capy::run_async(ioc.get_executor(), ss.get_token())(waiter());
+        ioc.run();
+        BOOST_TEST(ec == capy::cond::canceled);
+        BOOST_TEST(::WaitForSingleObject(ev, 0) == WAIT_OBJECT_0);
+    }
+
     // Busy-waits about @p n iterations; volatile keeps the loop.
     static void spin(int n) noexcept
     {
@@ -585,6 +605,7 @@ struct win_object_handle_test
         testSecondWaitIsInProgress();
         testCancel();
         testStopToken();
+        testStopTokenStoppedBeforeWait();
         testSignalBeforeCancelReportsSuccess();
         testSignalRacingCancelIsNeverLost();
         testCloseWithPendingWait();

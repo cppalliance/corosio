@@ -1059,6 +1059,25 @@ struct io_context_shutdown_test
         BOOST_TEST_EQ(destroyed, 3);
     }
 
+    // A stopped context still owns what was posted after the stop: its
+    // shutdown destroys those frames even though the stop's own wakeup
+    // is queued ahead of them.
+    void testShutdownAfterStopDestroysPostedFrames()
+    {
+        int destroyed = 0;
+
+        {
+            io_context ioc(Backend);
+            auto ex = ioc.get_executor();
+
+            ioc.stop();
+            post_coro(ex, make_destroy_coro(destroyed));
+            post_coro(ex, make_destroy_coro(destroyed));
+        }
+
+        BOOST_TEST_EQ(destroyed, 2);
+    }
+
     void testConstructionWithBackendAndOptions()
     {
         // Exercises the templated io_context(Backend, options, hint)
@@ -1076,6 +1095,7 @@ struct io_context_shutdown_test
     void run()
     {
         testShutdownDestroysPostedCoroutineFrames();
+        testShutdownAfterStopDestroysPostedFrames();
         testConstructionWithBackendAndOptions();
     }
 };

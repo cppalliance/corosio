@@ -263,7 +263,16 @@ resolve_op::completion(DWORD dwError, DWORD /*bytes*/, OVERLAPPED* ov)
     svc.callbacks_pending_.fetch_sub(1, std::memory_order_release);
 }
 
-inline resolve_op::resolve_op() noexcept : overlapped_op(&do_complete) {}
+inline resolve_op::resolve_op() noexcept : overlapped_op(&do_complete)
+{
+    cancel_func_ = &do_cancel_impl;
+}
+
+inline void
+resolve_op::do_cancel_impl(overlapped_op* base) noexcept
+{
+    static_cast<resolve_op*>(base)->impl->cancel_lookup();
+}
 
 inline void
 resolve_op::do_complete(
@@ -428,6 +437,7 @@ win_resolver::resolve(
     // Under the lock: the handle written here and the callback that
     // retires it must not interleave.
     int result;
+    HANDLE late_cancel = nullptr;
     {
         std::lock_guard<win_mutex> lock(cancel_mutex_);
         op.cancel_handle = nullptr;
@@ -445,6 +455,20 @@ win_resolver::resolve(
             op.cancel_handle = nullptr;
             svc.callbacks_pending_.fetch_sub(1, std::memory_order_relaxed);
         }
+        // A stop before the lookup was issued found no handle to cancel.
+        // Claimed under the lock: once it is released the callback may
+        // complete the op and recycle this impl.
+        else if (op.cancelled.load(std::memory_order_acquire))
+        {
+            late_cancel      = op.cancel_handle;
+            op.cancel_handle = nullptr;
+        }
+    }
+
+    if (late_cancel)
+    {
+        ::GetAddrInfoExCancel(&late_cancel);
+        return std::noop_coroutine();
     }
 
     if (result != WSA_IO_PENDING)
@@ -517,7 +541,12 @@ win_resolver::cancel() noexcept
 {
     op_.request_cancel();
     reverse_op_.request_cancel();
+    cancel_lookup();
+}
 
+inline void
+win_resolver::cancel_lookup() noexcept
+{
     // Whoever claims the handle owns it: the callback retires it on
     // entry, and a claim consumes it, so neither a racing callback nor a
     // second cancel() reaches one Windows has reclaimed.

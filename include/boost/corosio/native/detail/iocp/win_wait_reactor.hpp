@@ -344,22 +344,12 @@ win_wait_reactor::wake_self() noexcept
 inline void
 win_wait_reactor::register_wait(SOCKET fd, wait_type w, overlapped_op* op)
 {
-    // If the op was already cancelled (e.g. pre-cancelled stop_token
-    // fired synchronously before this call), complete immediately
-    // instead of registering.  Otherwise the reactor would park the
-    // op forever because the earlier cancel_wait() found nothing to
-    // cancel in registered_.
-    if (op->cancelled.load(std::memory_order_acquire))
-    {
-        sched_.on_completion(op, 0, 0);
-        return;
-    }
-
     if (DWORD const err = queue_register(entry{fd, w, op}); err != 0)
     {
         // Nothing would ever drain a parked op, and the refusal knows
-        // why: the abort a stop drains with, the error the polling
-        // thread died of, or the system declining a thread.
+        // why: a cancel that came first, the abort a stop drains with,
+        // the error the polling thread died of, or the system declining
+        // a thread.
         sched_.on_completion(op, err, 0);
         return;
     }
@@ -387,6 +377,13 @@ win_wait_reactor::queue_register(entry const& e)
         return ERROR_OPERATION_ABORTED;
     if (dead_err_)
         return dead_err_;
+
+    // A cancel that arrived before this register found nothing parked
+    // and was dropped. Every canceller flags the op before it takes
+    // this lock to ask, so either the flag is seen here or the ask is
+    // queued after the register and finds it.
+    if (e.op->cancelled.load(std::memory_order_acquire))
+        return ERROR_OPERATION_ABORTED;
 
     // A polling thread costs a thread per context, and a context that
     // never waits never pays for one; the first wait is what starts it.
@@ -421,6 +418,10 @@ win_wait_reactor::cancel_wait(overlapped_op* op)
         // already answered whatever was parked, and a register that
         // arrived after them was refused at its caller.
         if (stop_.load(std::memory_order_acquire) || dead_err_)
+            return;
+        // No thread yet means nothing was ever parked; every socket's
+        // close asks, and the queue would only grow.
+        if (!thread_.joinable())
             return;
         pending_cancel_.push_back(op);
     }
@@ -594,16 +595,25 @@ win_wait_reactor::run()
             // wait, because reading it resets it.
             if (e.w == wait_type::error && (pfd.revents & err_bits))
             {
-                int so_err = 0;
-                int sz     = sizeof(so_err);
-                if (::getsockopt(
-                        e.fd, SOL_SOCKET, SO_ERROR,
-                        reinterpret_cast<char*>(&so_err), &sz) == 0 &&
-                    so_err != 0)
-                    err = static_cast<DWORD>(so_err);
-                else
-                    // The contract is to report a non-zero error_code.
-                    err = WSAECONNABORTED;
+                // close() flags the op and queues its cancel under this
+                // lock before closesocket, so the probe either finishes
+                // first or sees the flag. A flagged op's number may
+                // already name another socket, whose error a probe
+                // would steal; the handler reports the cancel instead.
+                std::lock_guard lock(mutex_);
+                if (!e.op->cancelled.load(std::memory_order_acquire))
+                {
+                    int so_err = 0;
+                    int sz     = sizeof(so_err);
+                    if (::getsockopt(
+                            e.fd, SOL_SOCKET, SO_ERROR,
+                            reinterpret_cast<char*>(&so_err), &sz) == 0 &&
+                        so_err != 0)
+                        err = static_cast<DWORD>(so_err);
+                    else
+                        // The contract is to report a non-zero error_code.
+                        err = WSAECONNABORTED;
+                }
             }
 
             sched_.on_completion(e.op, err, 0);

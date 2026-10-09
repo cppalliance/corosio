@@ -1027,14 +1027,12 @@ struct iocp_faults
        coalesces into that phantom, and the poll they were meant to end
        is indefinite.
 
-       This context never registers a wait, so no polling thread is
-       ever started and nothing drains the flag -- a latch here would
-       be permanent, which is what makes the second send the
-       observable. Both sends come from the socket: open() goes
-       through close_socket, which asks the reactor to drop any wait op
-       the descriptor might have had, and cancel() asks again. Both
-       asks reach wake_self whether or not anything is parked
-       (win_tcp_socket::cancel and ::close_socket).
+       A parked wait starts the polling thread, so the cancels below
+       have a thread to wake. A cancel only sends once the byte already
+       in the channel is drained, so they repeat until two sends have
+       failed; a latch would coalesce every later wake into the phantom,
+       and the final cancel, sent with nothing failing, would never
+       reach the thread.
     */
     void testWakeSendFails()
     {
@@ -1045,18 +1043,49 @@ struct iocp_faults
         }
         {
             io_context ioc(iocp);
-            // Thread-local, not any_thread: two process-wide scopes
-            // cannot be alive at once, and every call below is on this
-            // thread. Armed before open(), whose own ask is the first
-            // send and the one that has to leave the flag clear.
-            fault_scope first(sys::send, WSAENOBUFS, 1);
-            fault_scope second(sys::send, WSAENOBUFS, 2);
-            tcp_socket s(ioc);
-            BOOST_TEST(!s.open(family::v4));
-            s.cancel();
-            BOOST_TEST(first.fired());
-            BOOST_TEST(second.fired());
-            s.close();
+            auto pair = make_socket_pair(ioc);
+            auto& s1  = pair.first;
+            auto& s2  = pair.second;
+            std::error_code parked_ec;
+            bool parked_done = false;
+            bool expired     = false;
+            bool fired       = false;
+            auto parked      = [&]() -> capy::task<> {
+                auto [ec]   = co_await s1.wait(wait_type::error);
+                parked_ec   = ec;
+                parked_done = true;
+            };
+            auto breaker = [&]() -> capy::task<> {
+                {
+                    // Thread-local, not any_thread: every send below is
+                    // on this thread. The pauses bound the retries, not
+                    // a timing assertion.
+                    fault_scope first(sys::send, WSAENOBUFS, 1);
+                    fault_scope second(sys::send, WSAENOBUFS, 2);
+                    for (int i = 0; i < 100 && !second.fired(); ++i)
+                    {
+                        s1.cancel();
+                        std::ignore = co_await corosio::delay(
+                            std::chrono::milliseconds(5));
+                    }
+                    fired = first.fired() && second.fired();
+                }
+                s1.cancel();
+                for (int i = 0; i < 100 && !parked_done; ++i)
+                    std::ignore =
+                        co_await corosio::delay(std::chrono::milliseconds(5));
+                ioc.stop();
+            };
+            capy::run_async(ioc.get_executor())(parked());
+            capy::run_async(ioc.get_executor())(breaker());
+            capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
+            ioc.run();
+            BOOST_TEST(fired);
+            BOOST_TEST(!expired);
+            BOOST_TEST(parked_done);
+            BOOST_TEST(parked_ec == capy::error::canceled);
+            s1.close();
+            s2.close();
         }
         // And a context whose wakes all failed still answers a wait
         // rather than leaving it outstanding. Nothing raises the error
