@@ -9,6 +9,7 @@
 
 // Test that header file is self-contained.
 #include <boost/corosio/io_context.hpp>
+#include <boost/corosio/delay.hpp>
 
 #include <boost/capy/ex/async_event.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -19,6 +20,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <stop_token>
 #include <sstream>
 #include <thread>
 #include <vector>
@@ -687,6 +689,25 @@ struct io_context_test
         ex.on_work_finished();
     }
 
+    // A timer armed beyond the bound must not stretch run_for past it.
+    // A genuine hang surfaces as a harness timeout.
+    void testRunForWithLaterTimer()
+    {
+        io_context ioc(Backend);
+        std::stop_source stop;
+        capy::run_async(ioc.get_executor(), stop.get_token())(
+            []() -> capy::task<> {
+                std::ignore = co_await delay(std::chrono::hours(1));
+            }());
+
+        std::ignore = ioc.run_for(std::chrono::milliseconds(50));
+        BOOST_TEST(ioc.run_one_for(std::chrono::milliseconds(50)) == 0);
+
+        stop.request_stop();
+        ioc.restart();
+        ioc.run();
+    }
+
     void testExecutorRunningInThisThread()
     {
         io_context ioc(Backend);
@@ -1003,6 +1024,7 @@ struct io_context_test
         testRunFor();
         testRunForWithOutstandingWork();
         testRunOneForWithOutstandingWork();
+        testRunForWithLaterTimer();
         testExecutorRunningInThisThread();
         testMultithreaded();
         testHintOneIsThreadSafe();
