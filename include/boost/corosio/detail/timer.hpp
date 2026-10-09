@@ -101,9 +101,10 @@ public:
         // unlocked fast-out that reads them is either re-validated under
         // the mutex or safe under a stale value in both directions, and
         // any locked writer / locked reader pair is already ordered by
-        // the mutex. All accesses therefore use memory_order_relaxed,
-        // which keeps the lock-free fast paths fence-free while making
-        // the concurrent reads well-defined.
+        // the mutex, so heap_index_ is relaxed. A false flag is the
+        // exception: a canceller that trusts it skips the lock and may
+        // recycle the impl, so drains store it with release and the
+        // fast-out loads it with acquire.
         /// Index in the timer service's min-heap, or `npos`.
         std::atomic<std::size_t> heap_index_{npos};
 

@@ -35,6 +35,8 @@
 #include <system_error>
 
 #include <concepts>
+#include <boost/capy/continuation.hpp>
+
 #include <coroutine>
 #include <cstddef>
 #include <stop_token>
@@ -99,7 +101,8 @@ public:
     {
         /** Initiate an asynchronous `send_to` operation.
 
-            @param h Coroutine handle to resume on completion.
+            @param cont Continuation to resume on completion; it lives in
+                the awaiting frame until then.
             @param ex Executor for dispatching the completion.
             @param buf The buffer data to send.
             @param dest The destination endpoint.
@@ -111,7 +114,7 @@ public:
             @return Coroutine handle to resume immediately.
         */
         virtual std::coroutine_handle<> send_to(
-            std::coroutine_handle<> h,
+            capy::continuation& cont,
             capy::executor_ref ex,
             buffer_param buf,
             corosio::local_endpoint dest,
@@ -122,7 +125,8 @@ public:
 
         /** Initiate an asynchronous `recv_from` operation.
 
-            @param h Coroutine handle to resume on completion.
+            @param cont Continuation to resume on completion; it lives in
+                the awaiting frame until then.
             @param ex Executor for dispatching the completion.
             @param buf The buffer to receive into.
             @param source Output endpoint for the sender's address.
@@ -134,7 +138,7 @@ public:
             @return Coroutine handle to resume immediately.
         */
         virtual std::coroutine_handle<> recv_from(
-            std::coroutine_handle<> h,
+            capy::continuation& cont,
             capy::executor_ref ex,
             buffer_param buf,
             corosio::local_endpoint* source,
@@ -145,7 +149,8 @@ public:
 
         /** Initiate an asynchronous connect to set the default peer.
 
-            @param h Coroutine handle to resume on completion.
+            @param cont Continuation to resume on completion; it lives in
+                the awaiting frame until then.
             @param ex Executor for dispatching the completion.
             @param ep The remote endpoint to connect to.
             @param token Stop token for cancellation.
@@ -154,7 +159,7 @@ public:
             @return Coroutine handle to resume immediately.
         */
         virtual std::coroutine_handle<> connect(
-            std::coroutine_handle<> h,
+            capy::continuation& cont,
             capy::executor_ref ex,
             corosio::local_endpoint ep,
             std::stop_token token,
@@ -162,7 +167,8 @@ public:
 
         /** Initiate an asynchronous connected send operation.
 
-            @param h Coroutine handle to resume on completion.
+            @param cont Continuation to resume on completion; it lives in
+                the awaiting frame until then.
             @param ex Executor for dispatching the completion.
             @param buf The buffer data to send.
             @param flags Message flags (e.g. `message_flags::do_not_route`).
@@ -173,7 +179,7 @@ public:
             @return Coroutine handle to resume immediately.
         */
         virtual std::coroutine_handle<> send(
-            std::coroutine_handle<> h,
+            capy::continuation& cont,
             capy::executor_ref ex,
             buffer_param buf,
             int flags,
@@ -183,7 +189,8 @@ public:
 
         /** Initiate an asynchronous connected `recv` operation.
 
-            @param h Coroutine handle to resume on completion.
+            @param cont Continuation to resume on completion; it lives in
+                the awaiting frame until then.
             @param ex Executor for dispatching the completion.
             @param buf The buffer to receive into.
             @param flags Message flags (e.g. `message_flags::peek`).
@@ -194,7 +201,7 @@ public:
             @return Coroutine handle to resume immediately.
         */
         virtual std::coroutine_handle<> recv(
-            std::coroutine_handle<> h,
+            capy::continuation& cont,
             capy::executor_ref ex,
             buffer_param buf,
             int flags,
@@ -208,7 +215,8 @@ public:
             specified direction, or an error condition is
             reported. No bytes are transferred.
 
-            @param h Coroutine handle to resume on completion.
+            @param cont Continuation to resume on completion; it lives in
+                the awaiting frame until then.
             @param ex Executor for dispatching the completion.
             @param w The direction to wait on.
             @param token Stop token for cancellation.
@@ -217,7 +225,7 @@ public:
             @return Coroutine handle to resume immediately.
         */
         virtual std::coroutine_handle<> wait(
-            std::coroutine_handle<> h,
+            capy::continuation& cont,
             capy::executor_ref ex,
             wait_type w,
             std::stop_token token,
@@ -334,10 +342,10 @@ public:
         int flags_;
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return s_.get().send_to(
-                h, ex, buf_, dest_, flags_, token_, &ec_, &bytes_);
+                cont, ex, buf_, dest_, flags_, token_, &ec_, &bytes_);
         }
     };
 
@@ -371,10 +379,10 @@ public:
         int flags_;
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return s_.get().recv_from(
-                h, ex, buf_, &source_, flags_, token_, &ec_, &bytes_);
+                cont, ex, buf_, &source_, flags_, token_, &ec_, &bytes_);
         }
     };
 
@@ -401,9 +409,9 @@ public:
         corosio::local_endpoint endpoint_;
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
-            return s_.get().connect(h, ex, endpoint_, token_, &ec_);
+            return s_.get().connect(cont, ex, endpoint_, token_, &ec_);
         }
     };
 
@@ -425,9 +433,9 @@ public:
         wait_type w_;
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
-            return s_.get().wait(h, ex, w_, token_, &ec_);
+            return s_.get().wait(cont, ex, w_, token_, &ec_);
         }
     };
 
@@ -456,9 +464,9 @@ public:
         int flags_;
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
-            return s_.get().send(h, ex, buf_, flags_, token_, &ec_, &bytes_);
+            return s_.get().send(cont, ex, buf_, flags_, token_, &ec_, &bytes_);
         }
     };
 
@@ -487,9 +495,9 @@ public:
         int flags_;
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
-            return s_.get().recv(h, ex, buf_, flags_, token_, &ec_, &bytes_);
+            return s_.get().recv(cont, ex, buf_, flags_, token_, &ec_, &bytes_);
         }
     };
 

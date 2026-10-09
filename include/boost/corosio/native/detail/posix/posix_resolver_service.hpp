@@ -273,8 +273,7 @@ posix_resolver::resolve_op::operator()()
     // reference to the implementation this op is embedded in.
     auto prevent_destroy = std::move(object_ref_);
     ex.on_work_finished();
-    cont.h = h;
-    dispatch_coro(ex, cont).resume();
+    dispatch_coro(ex, *cont).resume();
 }
 
 inline void
@@ -330,8 +329,7 @@ posix_resolver::reverse_resolve_op::operator()()
     // reference to the implementation this op is embedded in.
     auto prevent_destroy = std::move(object_ref_);
     ex.on_work_finished();
-    cont.h = h;
-    dispatch_coro(ex, cont).resume();
+    dispatch_coro(ex, *cont).resume();
 }
 
 inline void
@@ -348,7 +346,7 @@ posix_resolver::reverse_resolve_op::destroy()
 
 inline std::coroutine_handle<>
 posix_resolver::resolve(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref ex,
     std::string_view host,
     std::string_view service,
@@ -360,13 +358,12 @@ posix_resolver::resolve(
     if (svc_.resolver_unavailable())
     {
         *ec        = std::make_error_code(std::errc::operation_not_supported);
-        op_.cont.h = h;
-        return dispatch_coro(ex, op_.cont);
+        return dispatch_coro(ex, cont);
     }
 
     auto& op = op_;
     op.reset();
-    op.h       = h;
+    op.cont    = &cont;
     op.ex      = ex;
     op.ec_out  = ec;
     op.out     = out;
@@ -392,15 +389,14 @@ posix_resolver::resolve(
         op.stop_cb.reset();
         op.ex.on_work_finished();
         *ec       = pec;
-        op.cont.h = h;
-        return dispatch_coro(ex, op.cont);
+        return dispatch_coro(ex, cont);
     }
     return std::noop_coroutine();
 }
 
 inline std::coroutine_handle<>
 posix_resolver::reverse_resolve(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref ex,
     endpoint const& ep,
     reverse_flags flags,
@@ -411,13 +407,12 @@ posix_resolver::reverse_resolve(
     if (svc_.resolver_unavailable())
     {
         *ec = std::make_error_code(std::errc::operation_not_supported);
-        reverse_op_.cont.h = h;
-        return dispatch_coro(ex, reverse_op_.cont);
+        return dispatch_coro(ex, cont);
     }
 
     auto& op = reverse_op_;
     op.reset();
-    op.h          = h;
+    op.cont       = &cont;
     op.ex         = ex;
     op.ec_out     = ec;
     op.result_out = result_out;
@@ -442,8 +437,7 @@ posix_resolver::reverse_resolve(
         op.stop_cb.reset();
         op.ex.on_work_finished();
         *ec       = pec;
-        op.cont.h = h;
-        return dispatch_coro(ex, op.cont);
+        return dispatch_coro(ex, cont);
     }
     return std::noop_coroutine();
 }

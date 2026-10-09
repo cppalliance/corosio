@@ -110,7 +110,7 @@ class BOOST_COROSIO_DECL uring_random_access_file final
                 return;
             }
             Base::finish(self);
-            auto* c = self->awaiting;
+            auto* c = self->cont;
             auto ex = self->ex;
             self->file_->release_op(self);
             dispatch_coro(ex, *c).resume();
@@ -349,9 +349,8 @@ uring_random_access_file::read_some_at(
 {
     auto* op = acquire_op(free_reads_);
     op->prepare(
-        cont.h, ex, ec, bytes, fd_, static_cast<std::int64_t>(user_offset),
+        cont, ex, ec, bytes, fd_, static_cast<std::int64_t>(user_offset),
         sched_, detail::object_ref(this), buffers, token);
-    op->awaiting = &cont;
     sched_->work_started();
 
     // Closed-object contract outranks the zero-length no-op.
@@ -388,9 +387,8 @@ uring_random_access_file::write_some_at(
 {
     auto* op = acquire_op(free_writes_);
     op->prepare(
-        cont.h, ex, ec, bytes, fd_, static_cast<std::int64_t>(user_offset),
+        cont, ex, ec, bytes, fd_, static_cast<std::int64_t>(user_offset),
         sched_, detail::object_ref(this), buffers, token);
-    op->awaiting = &cont;
     sched_->work_started();
 
     // Closed-object contract outranks the zero-length no-op.

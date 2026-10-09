@@ -11,6 +11,9 @@
 
 // Test that header file is self-contained.
 #include <boost/corosio/openssl_stream.hpp>
+#ifdef BOOST_COROSIO_HAS_WOLFSSL
+#include <boost/corosio/wolfssl_stream.hpp>
+#endif
 
 #include <boost/capy/read.hpp>
 
@@ -464,6 +467,11 @@ struct openssl_stream_test
     void run()
     {
         test::testIoBeforeHandshake(make_stream);
+        test::testDestroyWithPendingRead(make_stream, false);
+        test::testDestroyWithPendingRead(make_stream, true);
+        test::testMoveWithPendingRead(make_stream);
+        test::testDestroyWithPartialWriteInFlight(make_stream);
+        test::testDestroyTypeErasedOwnerWithPendingRead(make_stream);
         test::testHandshakeFuse(make_stream);
         test::testReadWriteFuse(make_stream);
         test::testShutdownFuse(make_stream);
@@ -485,6 +493,14 @@ struct openssl_stream_test
         test::testRecordBoundaryTransfer(make_stream);
         test::testShutdownOverRead(make_stream);
         test::testShutdownSimultaneousClose(make_stream);
+        test::testShutdownWithUnreadRecordAhead(make_stream);
+        test::testUnawaitedReadOutlivesContext(make_stream);
+        test::testUnawaitedReadOutlivesUnwoundOwner(make_stream);
+        test::testCancelPendingRead(make_stream, true);
+        test::testCancelPendingRead(make_stream, false);
+#ifdef BOOST_COROSIO_HAS_WOLFSSL
+        test::testDestroyNestedOwnerWithPendingRead<openssl_stream, wolfssl_stream>();
+#endif
         test::testPartialReadWithError(make_stream);
         test::testCancelParkedReader(make_stream);
         test::testFullDuplexMtStrand(make_stream);

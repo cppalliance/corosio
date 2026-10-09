@@ -925,6 +925,7 @@ engine::perform(engine_op op, void* data, std::size_t len)
         ret = wolfSSL_write(ssl_, data, static_cast<int>(len));
         break;
     case engine_op::shutdown:
+    {
         // Both close_notifies already exchanged: the bidirectional close
         // is complete. Re-calling wolfSSL_shutdown on some builds
         // re-initiates the close (clearing RECEIVED_SHUTDOWN and re-queuing
@@ -944,8 +945,45 @@ engine::perform(engine_op op, void* data, std::size_t len)
                                      : engine_want::done,
                 {},
                 0};
+
+        bool const resumed =
+            (wolfSSL_get_shutdown(ssl_) & WOLFSSL_SENT_SHUTDOWN) != 0;
         ret = wolfSSL_shutdown(ssl_);
+        // wolfSSL_shutdown returns after each non-alert record (a session
+        // ticket, application data), as SHUTDOWN_NOT_DONE or WANT_READ,
+        // even when the peer's close_notify is already staged behind it.
+        // Keep feeding it what is staged; parking on the transport would
+        // wait for bytes that have already arrived.
+        while (resumed &&
+               (ret == WOLFSSL_SHUTDOWN_NOT_DONE ||
+                (ret != WOLFSSL_SUCCESS &&
+                 wolfSSL_get_error(ssl_, ret) == WOLFSSL_ERROR_WANT_READ)))
+        {
+            // wolfSSL will not look past application data nobody has
+            // read. Like OpenSSL, drop it and fail the shutdown rather
+            // than hand it to a later read.
+            if (wolfSSL_pending(ssl_) > 0)
+            {
+                char sink[256];
+                while (wolfSSL_pending(ssl_) > 0 &&
+                       wolfSSL_read(ssl_, sink, sizeof(sink)) > 0)
+                {
+                }
+                return {
+                    pending_output() > 0 ? engine_want::output_then_done
+                                         : engine_want::done,
+                    std::error_code(APP_DATA_READY, wolfssl_category()), 0};
+            }
+
+            auto const staged = in_len_ - in_pos_;
+            if (staged == 0)
+                break;
+            ret = wolfSSL_shutdown(ssl_);
+            if (in_len_ - in_pos_ == staged && wolfSSL_pending(ssl_) == 0)
+                break;
+        }
         break;
+    }
     }
 
     // Some wolfSSL builds clear the shutdown bitmask on a read that

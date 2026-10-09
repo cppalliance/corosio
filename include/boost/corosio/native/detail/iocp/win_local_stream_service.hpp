@@ -366,7 +366,7 @@ win_local_stream_socket::set_endpoints(
 
 inline std::coroutine_handle<>
 win_local_stream_socket::connect(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     corosio::local_endpoint ep,
     std::stop_token token,
@@ -376,7 +376,7 @@ win_local_stream_socket::connect(
 
     auto& op = conn_;
     op.reset();
-    op.h               = h;
+    op.cont            = &cont;
     op.ex              = d;
     op.ec_out          = ec;
     op.target_endpoint = ep;
@@ -436,7 +436,7 @@ win_local_stream_socket::connect(
 
 inline std::coroutine_handle<>
 win_local_stream_socket::read_some(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     buffer_param param,
     std::stop_token token,
@@ -448,7 +448,7 @@ win_local_stream_socket::read_some(
     auto& op = rd_;
     op.reset();
     op.is_read   = true;
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = d;
     op.ec_out    = ec;
     op.bytes_out = bytes_out;
@@ -507,7 +507,7 @@ win_local_stream_socket::read_some(
 
 inline std::coroutine_handle<>
 win_local_stream_socket::write_some(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     buffer_param param,
     std::stop_token token,
@@ -518,7 +518,7 @@ win_local_stream_socket::write_some(
 
     auto& op = wr_;
     op.reset();
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = d;
     op.ec_out    = ec;
     op.bytes_out = bytes_out;
@@ -574,7 +574,7 @@ win_local_stream_socket::write_some(
 
 inline std::coroutine_handle<>
 win_local_stream_socket::wait(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     wait_type w,
     std::stop_token token,
@@ -584,7 +584,7 @@ win_local_stream_socket::wait(
 
     auto& op = wt_;
     op.reset();
-    op.h            = h;
+    op.cont         = &cont;
     op.ex           = d;
     op.ec_out       = ec;
     op.bytes_out    = nullptr;

@@ -205,8 +205,7 @@ struct uring_accept_op : uring_op
                 *self->ec_out = was_cancelled
                     ? std::error_code(capy::error::canceled)
                     : make_err(self->err);
-            self->cont.h = self->h;
-            auto next    = dispatch_coro(self->ex, self->cont);
+            auto next = dispatch_coro(self->ex, *self->cont);
             self->dispose(self);
             next.resume();
             return;
@@ -226,8 +225,7 @@ struct uring_accept_op : uring_op
         if (self->ec_out)
             *self->ec_out = {};
 
-        self->cont.h = self->h;
-        auto next    = dispatch_coro(self->ex, self->cont);
+        auto next = dispatch_coro(self->ex, *self->cont);
         self->dispose(self);
         next.resume();
     }

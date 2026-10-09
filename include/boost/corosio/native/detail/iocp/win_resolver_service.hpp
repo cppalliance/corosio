@@ -317,12 +317,11 @@ resolve_op::do_complete(
         op->results = nullptr;
     }
 
-    op->cont.h = op->h;
     // Hold the keepalive across the dispatch: it may be the last
     // reference to the implementation this op is embedded in.
     auto prevent_destroy = std::move(op->object_ref_);
     svc.work_finished();
-    dispatch_coro(op->ex, op->cont).resume();
+    dispatch_coro(op->ex, *op->cont).resume();
 }
 
 // reverse_resolve_op
@@ -373,12 +372,11 @@ reverse_resolve_op::do_complete(
             std::move(op->stored_host), std::move(op->stored_service)};
     }
 
-    op->cont.h = op->h;
     // Hold the keepalive across the dispatch: it may be the last
     // reference to the implementation this op is embedded in.
     auto prevent_destroy = std::move(op->object_ref_);
     svc.work_finished();
-    dispatch_coro(op->ex, op->cont).resume();
+    dispatch_coro(op->ex, *op->cont).resume();
 }
 
 // win_resolver
@@ -390,7 +388,7 @@ inline win_resolver::win_resolver(win_resolver_service& svc) noexcept
 
 inline std::coroutine_handle<>
 win_resolver::resolve(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     std::string_view host,
     std::string_view service,
@@ -401,7 +399,7 @@ win_resolver::resolve(
 {
     auto& op = op_;
     op.reset();
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = d;
     op.ec_out    = ec;
     op.out       = out;
@@ -471,7 +469,7 @@ win_resolver::resolve(
 
 inline std::coroutine_handle<>
 win_resolver::reverse_resolve(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     endpoint const& ep,
     reverse_flags flags,
@@ -481,7 +479,7 @@ win_resolver::reverse_resolve(
 {
     auto& op = reverse_op_;
     op.reset();
-    op.h          = h;
+    op.cont       = &cont;
     op.ex         = d;
     op.ec_out     = ec;
     op.result_out = result_out;
@@ -507,8 +505,7 @@ win_resolver::reverse_resolve(
         op.stop_cb.reset();
         svc_.work_finished();
         *ec       = pec;
-        op.cont.h = h;
-        return dispatch_coro(d, op.cont);
+        return dispatch_coro(d, cont);
     }
     // The work the pool took completes on its own thread and is always
     // posted to the scheduler queue, never inline.

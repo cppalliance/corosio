@@ -220,65 +220,127 @@ cqe_fault_scope::fired() const noexcept
 
 namespace {
 
-// Static, not owned by the hold: a held call can still be leaving it
+// Static, not owned by a hold: a held call can still be leaving it
 // when the hold is destroyed.
-struct preadv_hold_state
+struct hold_state
 {
     std::mutex m;
     std::condition_variable cv;
     bool armed    = false;
     bool held     = false;
     bool released = false;
-} g_preadv_hold;
+};
+
+hold_state g_preadv_hold;
+hold_state g_pwritev_hold;
+
+void
+arm_hold(hold_state& h, char const* name)
+{
+    std::lock_guard<std::mutex> lock(h.m);
+    if (h.armed)
+    {
+        std::fprintf(stderr, "%s: a hold is already alive\n", name);
+        std::abort();
+    }
+    h.armed    = true;
+    h.held     = false;
+    h.released = false;
+}
+
+void
+disarm_hold(hold_state& h)
+{
+    std::lock_guard<std::mutex> lock(h.m);
+    h.armed    = false;
+    h.released = true;
+    h.cv.notify_all();
+}
+
+void
+wait_hold(hold_state& h)
+{
+    std::unique_lock<std::mutex> lock(h.m);
+    h.cv.wait(lock, [&] { return h.held; });
+}
+
+void
+release_hold(hold_state& h)
+{
+    std::lock_guard<std::mutex> lock(h.m);
+    h.released = true;
+    h.cv.notify_all();
+}
+
+void
+hold_if_armed(hold_state& h) noexcept
+{
+    std::unique_lock<std::mutex> lock(h.m);
+    if (!h.armed || h.held)
+        return;
+    h.held = true;
+    h.cv.notify_all();
+    h.cv.wait(lock, [&] { return h.released; });
+}
 
 } // namespace
 
 preadv_hold::preadv_hold()
 {
-    std::lock_guard<std::mutex> lock(g_preadv_hold.m);
-    if (g_preadv_hold.armed)
-    {
-        std::fputs("preadv_hold: a hold is already alive\n", stderr);
-        std::abort();
-    }
-    g_preadv_hold.armed    = true;
-    g_preadv_hold.held     = false;
-    g_preadv_hold.released = false;
+    arm_hold(g_preadv_hold, "preadv_hold");
 }
 
 preadv_hold::~preadv_hold()
 {
-    std::lock_guard<std::mutex> lock(g_preadv_hold.m);
-    g_preadv_hold.armed    = false;
-    g_preadv_hold.released = true;
-    g_preadv_hold.cv.notify_all();
+    disarm_hold(g_preadv_hold);
 }
 
 void
 preadv_hold::wait_held()
 {
-    std::unique_lock<std::mutex> lock(g_preadv_hold.m);
-    g_preadv_hold.cv.wait(lock, [] { return g_preadv_hold.held; });
+    wait_hold(g_preadv_hold);
 }
 
 void
 preadv_hold::release()
 {
-    std::lock_guard<std::mutex> lock(g_preadv_hold.m);
-    g_preadv_hold.released = true;
-    g_preadv_hold.cv.notify_all();
+    release_hold(g_preadv_hold);
+}
+
+pwritev_hold::pwritev_hold()
+{
+    arm_hold(g_pwritev_hold, "pwritev_hold");
+}
+
+pwritev_hold::~pwritev_hold()
+{
+    disarm_hold(g_pwritev_hold);
+}
+
+void
+pwritev_hold::wait_held()
+{
+    wait_hold(g_pwritev_hold);
+}
+
+void
+pwritev_hold::release()
+{
+    release_hold(g_pwritev_hold);
 }
 
 // Called by the preadv shadow once the real call has returned.
 void
 hold_preadv_if_armed() noexcept
 {
-    std::unique_lock<std::mutex> lock(g_preadv_hold.m);
-    if (!g_preadv_hold.armed || g_preadv_hold.held)
-        return;
-    g_preadv_hold.held = true;
-    g_preadv_hold.cv.notify_all();
-    g_preadv_hold.cv.wait(lock, [] { return g_preadv_hold.released; });
+    hold_if_armed(g_preadv_hold);
+}
+
+// Called by the pwritev shadow before the real call.
+void
+hold_pwritev_if_armed() noexcept
+{
+    hold_if_armed(g_pwritev_hold);
 }
 
 } // namespace boost::corosio::test::fault
@@ -914,6 +976,7 @@ extern "C" ssize_t
 pwritev(int fd, iovec const* v, int n, off_t o)
 {
     COROSIO_FAULT_REAL(pwritev, ssize_t (*)(int, iovec const*, int, off_t));
+    hold_pwritev_if_armed();
     if (should_fail(sys::pwritev))
         return -1;
     std::size_t c;
@@ -955,6 +1018,7 @@ extern "C" ssize_t
 pwritev64(int fd, iovec const* v, int n, off64_t o)
 {
     COROSIO_FAULT_REAL(pwritev64, ssize_t (*)(int, iovec const*, int, off64_t));
+    hold_pwritev_if_armed();
     if (should_fail(sys::pwritev))
         return -1;
     std::size_t c;

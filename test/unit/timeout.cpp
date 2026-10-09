@@ -28,7 +28,9 @@
 #include <atomic>
 #include <chrono>
 #include <coroutine>
+#include <cstddef>
 #include <cstdint>
+#include <memory_resource>
 #include <ratio>
 #include <stdexcept>
 #include <stop_token>
@@ -76,6 +78,29 @@ stop_only_payload()
     auto [ec] = co_await delay(std::chrono::seconds(10));
     co_return capy::io_result<int>{ec, 99};
 }
+
+// Counts the blocks it hands out that are still live.
+struct counting_resource : std::pmr::memory_resource
+{
+    int live = 0;
+
+    void* do_allocate(std::size_t n, std::size_t align) override
+    {
+        ++live;
+        return std::pmr::new_delete_resource()->allocate(n, align);
+    }
+
+    void do_deallocate(void* p, std::size_t n, std::size_t align) override
+    {
+        --live;
+        std::pmr::new_delete_resource()->deallocate(p, n, align);
+    }
+
+    bool do_is_equal(std::pmr::memory_resource const& o) const noexcept override
+    {
+        return this == &o;
+    }
+};
 
 template<auto Backend>
 struct timeout_test
@@ -743,8 +768,31 @@ struct timeout_test
         }
     }
 
+    // The timer coroutine behind timeout() can outlive the chain that
+    // awaited it, so it must not be allocated from that chain's
+    // allocator, which the chain's owner may free once it completes.
+    void testDetachedTimerOutlivesChainAllocator()
+    {
+        io_context ioc(Backend);
+        counting_resource mr;
+        bool done = false;
+        capy::run_async(ioc.get_executor(), &mr, [&]() {
+            done = true;
+        })([]() -> capy::task<> {
+            std::ignore = co_await timeout(
+                delay(std::chrono::milliseconds(1)), std::chrono::seconds(10));
+        }());
+        while (!done && ioc.run_one() != 0)
+        {
+        }
+        BOOST_TEST(done);
+        BOOST_TEST_EQ(mr.live, 0);
+        ioc.run();
+    }
+
     void run()
     {
+        testDetachedTimerOutlivesChainAllocator();
         testInnerWins();
         testDeadlineWins();
         testTimePointDeadlineWins();

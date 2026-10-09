@@ -18,6 +18,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/signal_set.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
+#include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -45,9 +46,11 @@ enum
 
 struct signal_op : scheduler_op
 {
-    std::coroutine_handle<> h;
-    capy::continuation cont;
+    /// The awaitable's continuation; see coro_op::cont.
+    capy::continuation* cont = nullptr;
     capy::executor_ref d;
+    /// Holds the owning set while this op sits in the scheduler queue.
+    detail::object_ref keep;
     std::error_code* ec_out   = nullptr;
     int* signal_out           = nullptr;
     int signal_number         = 0;
@@ -149,7 +152,7 @@ public:
     }
 
     std::coroutine_handle<> wait(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         std::stop_token,
         std::error_code*,

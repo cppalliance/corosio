@@ -123,7 +123,7 @@ struct uring_read_op : uring_op
         @pre This slot has no in-flight op (its prior op completed).
     */
     void prepare(
-        std::coroutine_handle<> handle,
+        capy::continuation& awaiting,
         capy::executor_ref executor,
         std::error_code* ec,
         std::size_t* bytes,
@@ -134,7 +134,7 @@ struct uring_read_op : uring_op
         buffer_param buffers,
         std::stop_token const& token) noexcept
     {
-        h            = handle;
+        cont         = &awaiting;
         ex           = executor;
         ec_out       = ec;
         bytes_out    = bytes;
@@ -221,7 +221,7 @@ struct uring_write_op : uring_op
 
     /** Reset and initialize for a new submission. See uring_read_op::prepare. */
     void prepare(
-        std::coroutine_handle<> handle,
+        capy::continuation& awaiting,
         capy::executor_ref executor,
         std::error_code* ec,
         std::size_t* bytes,
@@ -232,7 +232,7 @@ struct uring_write_op : uring_op
         buffer_param buffers,
         std::stop_token const& token) noexcept
     {
-        h            = handle;
+        cont         = &awaiting;
         ex           = executor;
         ec_out       = ec;
         bytes_out    = bytes;
@@ -331,7 +331,7 @@ struct uring_connect_op : uring_op
         caller, not the op.
     */
     void prepare(
-        std::coroutine_handle<> handle,
+        capy::continuation& awaiting,
         capy::executor_ref executor,
         std::error_code* ec,
         int file_descriptor,
@@ -342,7 +342,7 @@ struct uring_connect_op : uring_op
         endpoint* local_out,
         std::stop_token const& token) noexcept
     {
-        h                   = handle;
+        cont                = &awaiting;
         ex                  = executor;
         ec_out              = ec;
         bytes_out           = nullptr;
@@ -590,7 +590,7 @@ struct uring_wait_op : uring_op
 
     /** Reset and initialize for a new submission. */
     void prepare(
-        std::coroutine_handle<> handle,
+        capy::continuation& awaiting,
         capy::executor_ref executor,
         std::error_code* ec,
         int file_descriptor,
@@ -599,7 +599,7 @@ struct uring_wait_op : uring_op
         int flags,
         std::stop_token const& token) noexcept
     {
-        h           = handle;
+        cont        = &awaiting;
         ex          = executor;
         ec_out      = ec;
         bytes_out   = nullptr;
@@ -715,7 +715,7 @@ struct uring_local_connect_op : uring_op
         Caller pre-fills `addr` and `addrlen` (see uring_connect_op::prepare).
     */
     void prepare(
-        std::coroutine_handle<> handle,
+        capy::continuation& awaiting,
         capy::executor_ref executor,
         std::error_code* ec,
         int file_descriptor,
@@ -726,7 +726,7 @@ struct uring_local_connect_op : uring_op
         corosio::local_endpoint* local_out,
         std::stop_token const& token) noexcept
     {
-        h                   = handle;
+        cont                = &awaiting;
         ex                  = executor;
         ec_out              = ec;
         bytes_out           = nullptr;

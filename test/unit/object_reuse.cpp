@@ -38,12 +38,14 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/ex/strand.hpp>
 #include <boost/capy/task.hpp>
 
 #include <chrono>
 #include <csignal>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <stop_token>
 #include <system_error>
 #include <tuple>
@@ -257,11 +259,76 @@ struct object_reuse_test
         BOOST_TEST(server2.is_open());
     }
 
+    // A completion resumed through a strand is queued there by
+    // reference. Destroying the socket recycles its impl while that
+    // entry waits, and a new socket may reuse the impl and complete an
+    // operation of its own before the strand reaches the entry. The
+    // original reader must still be resumed, once, with its own result.
+    void testStrandCompletionOutlivesRecycle()
+    {
+        io_context ioc(Backend);
+        capy::strand st(ioc.get_executor());
+        auto [s1, s2] =
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto sock = std::make_unique<tcp_socket>(std::move(s1));
+        auto [q1, q2] =
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        ioc.restart();
+
+        int resumed = 0;
+        std::error_code rec;
+        char buf[1];
+        capy::run_async(st)(
+            [](tcp_socket& s, char* b, int& n,
+               std::error_code& ec) -> capy::task<> {
+                auto [e, k] = co_await s.read_some(capy::mutable_buffer(b, 1));
+                std::ignore = k;
+                ec          = e;
+                ++n;
+            }(*sock, buf, resumed, rec));
+
+        std::optional<tcp_socket> fresh;
+        bool reused_done = false;
+        char pbuf[1];
+        auto reuse = [](io_context& ioc, std::optional<tcp_socket>& f,
+                        native_handle_type h, char* pb,
+                        bool& done) -> capy::task<> {
+            f.emplace(ioc);
+            BOOST_TEST(!f->assign(h));
+            auto [e, k] = co_await f->read_some(capy::mutable_buffer(pb, 1));
+            BOOST_TEST(!e);
+            BOOST_TEST_EQ(k, 1u);
+            done = true;
+        };
+
+        // Destroying the socket queues the reader's completion ahead of
+        // the strand's turn, so the strand holds the reuse first and the
+        // reader behind it. The byte written first lets the reuse's read
+        // complete without waiting.
+        capy::run_async(ioc.get_executor())(
+            [](capy::strand<io_context::executor_type> st,
+               std::unique_ptr<tcp_socket>& sock, tcp_socket& peer,
+               capy::task<> reuse) -> capy::task<> {
+                char c      = 'x';
+                auto [e, k] = co_await peer.write_some(capy::const_buffer(&c, 1));
+                BOOST_TEST(!e);
+                BOOST_TEST_EQ(k, 1u);
+                sock.reset();
+                capy::run_async(st)(std::move(reuse));
+            }(st, sock, q2, reuse(ioc, fresh, q1.release(), pbuf, reused_done)));
+
+        ioc.run();
+        BOOST_TEST_EQ(resumed, 1);
+        BOOST_TEST(rec == capy::cond::canceled);
+        BOOST_TEST(reused_done);
+    }
+
     void run()
     {
         testAbandonedReadThenReuse();
         testConnectThenDestroyRecycles();
         testAcceptorRecycleDrainsBufferedConnection();
+        testStrandCompletionOutlivesRecycle();
     }
 };
 

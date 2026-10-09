@@ -89,6 +89,7 @@ struct object_pool_test
             a->pool = &pool;
             release(a);                       // parked in free_
             BOOST_TEST(!try_acquire(a));
+            BOOST_TEST(!object_ref::try_from(a));
             auto* b = pool.acquire();         // still recyclable intact
             BOOST_TEST_EQ(b, a);
             BOOST_TEST_EQ(b->refs_.load(), 1u);

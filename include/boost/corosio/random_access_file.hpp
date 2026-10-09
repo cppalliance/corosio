@@ -169,7 +169,6 @@ public:
         random_access_file& f_;
         std::uint64_t offset_;
         MutableBufferSequence buffers_;
-        mutable capy::continuation cont_;
 
         read_some_at_awaitable(
             random_access_file& f,
@@ -185,14 +184,13 @@ public:
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             // The continuation lives in the awaiting frame, which stays
             // put until resumption -- unlike the per-call op, which is
             // freed before the coroutine runs.
-            cont_.h = h;
             return f_.get().read_some_at(
-                offset_, cont_, ex, buffers_, this->token_, &this->ec_,
+                offset_, cont, ex, buffers_, this->token_, &this->ec_,
                 &this->bytes_);
         }
     };
@@ -210,7 +208,6 @@ public:
         random_access_file& f_;
         std::uint64_t offset_;
         ConstBufferSequence buffers_;
-        mutable capy::continuation cont_;
 
         write_some_at_awaitable(
             random_access_file& f,
@@ -226,11 +223,10 @@ public:
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
-            cont_.h = h;
             return f_.get().write_some_at(
-                offset_, cont_, ex, buffers_, this->token_, &this->ec_,
+                offset_, cont, ex, buffers_, this->token_, &this->ec_,
                 &this->bytes_);
         }
     };
@@ -411,17 +407,19 @@ public:
         `release()` cancels pending operations first. On Windows, the
         object keeps the handle and this throws if one is still in
         flight. It does the same if Windows refuses to detach the
-        handle from the execution context's completion port. Call
+        handle from the execution context's completion port. Where
+        file I/O runs on a thread pool, it throws likewise while a
+        worker thread is already performing an operation. Call
         `release()` again once the cancelled operations have
         completed. Detaching requires Windows 8.1 or later.
 
         @return The native file descriptor or handle.
 
         @throws std::system_error `errc::bad_file_descriptor` if the
-            file is not open. On Windows,
-            `errc::device_or_resource_busy` if an operation is still in
-            flight, or `errc::operation_not_supported` if the handle
-            cannot be detached.
+            file is not open, or `errc::device_or_resource_busy` if an
+            operation is still using the handle, as described above. On
+            Windows, it also throws `errc::operation_not_supported` if
+            the handle cannot be detached.
     */
     native_handle_type release();
 

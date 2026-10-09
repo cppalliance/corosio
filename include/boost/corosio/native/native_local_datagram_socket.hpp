@@ -101,10 +101,10 @@ class native_local_datagram_socket : public local_datagram_socket
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return self_.get_impl().send_to(
-                h, ex, buffers_, dest_, flags_, this->token_, &this->ec_,
+                cont, ex, buffers_, dest_, flags_, this->token_, &this->ec_,
                 &this->bytes_);
         }
     };
@@ -132,10 +132,10 @@ class native_local_datagram_socket : public local_datagram_socket
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return self_.get_impl().recv_from(
-                h, ex, buffers_, &source_, flags_, this->token_, &this->ec_,
+                cont, ex, buffers_, &source_, flags_, this->token_, &this->ec_,
                 &this->bytes_);
         }
     };
@@ -153,9 +153,10 @@ class native_local_datagram_socket : public local_datagram_socket
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
-            return self_.get_impl().wait(h, ex, w_, this->token_, &this->ec_);
+            return self_.get_impl().wait(
+                cont, ex, w_, this->token_, &this->ec_);
         }
     };
 
@@ -174,10 +175,10 @@ class native_local_datagram_socket : public local_datagram_socket
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return self_.get_impl().connect(
-                h, ex, endpoint_, this->token_, &this->ec_);
+                cont, ex, endpoint_, this->token_, &this->ec_);
         }
     };
 
@@ -200,10 +201,10 @@ class native_local_datagram_socket : public local_datagram_socket
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return self_.get_impl().send(
-                h, ex, buffers_, flags_, this->token_, &this->ec_,
+                cont, ex, buffers_, flags_, this->token_, &this->ec_,
                 &this->bytes_);
         }
     };
@@ -227,10 +228,10 @@ class native_local_datagram_socket : public local_datagram_socket
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return self_.get_impl().recv(
-                h, ex, buffers_, flags_, this->token_, &this->ec_,
+                cont, ex, buffers_, flags_, this->token_, &this->ec_,
                 &this->bytes_);
         }
     };

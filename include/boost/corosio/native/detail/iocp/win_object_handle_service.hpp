@@ -115,8 +115,7 @@ public:
         // The op may complete and the object be destroyed on another
         // thread before wait() returns; this pin outlives both.
         auto const pin = op_.object_ref_;
-        op_.user_cont  = &cont;
-        op_.h          = cont.h;
+        op_.cont       = &cont;
         op_.ex         = ex;
         op_.ec_out     = ec;
         op_.bytes_out  = nullptr;
@@ -206,7 +205,6 @@ private:
     struct wait_op : overlapped_op
     {
         win_object_handle_state* self = nullptr;
-        capy::continuation* user_cont = nullptr;
 
         wait_op() noexcept : overlapped_op(&do_complete)
         {
@@ -249,8 +247,7 @@ private:
                         iocp_make_err(op->dwError, /*accept_path=*/false);
             }
 
-            capy::continuation* cont = op->user_cont;
-            cont->h                  = op->h;
+            capy::continuation* cont = op->cont;
             capy::executor_ref ex    = op->ex;
 
             // Last touch of op_: from here a new wait() may reset it.

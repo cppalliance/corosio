@@ -26,6 +26,8 @@
 
 #include <cassert>
 #include <concepts>
+#include <boost/capy/continuation.hpp>
+
 #include <coroutine>
 #include <stop_token>
 #include <string>
@@ -217,10 +219,10 @@ class BOOST_COROSIO_DECL resolver : public io_object
         resolve_flags flags_;
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return r_.get().resolve(
-                h, ex, host_, service_, flags_, token_, &ec_, &value_);
+                cont, ex, host_, service_, flags_, token_, &ec_, &value_);
         }
     };
 
@@ -245,12 +247,12 @@ class BOOST_COROSIO_DECL resolver : public io_object
         resolve_flags flags_;
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             // An empty service reaches the system resolver as null,
             // which is the host-only query
             return r_.get().resolve(
-                h, ex, host_, {}, flags_, token_, &ec_, &value_);
+                cont, ex, host_, {}, flags_, token_, &ec_, &value_);
         }
 
     public:
@@ -304,10 +306,10 @@ class BOOST_COROSIO_DECL resolver : public io_object
         reverse_flags flags_;
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return r_.get().reverse_resolve(
-                h, ex, ep_, flags_, token_, &ec_, &value_);
+                cont, ex, ep_, flags_, token_, &ec_, &value_);
         }
     };
 
@@ -519,7 +521,8 @@ public:
     {
         /** Initiate an asynchronous forward DNS resolution.
 
-            @param h Coroutine handle to resume on completion.
+            @param cont Continuation to resume on completion; it lives in
+                the awaiting frame until then.
             @param ex Executor for dispatching the completion.
             @param host The host name or address literal to resolve.
             @param service The service name or port number.
@@ -531,7 +534,7 @@ public:
             @return Coroutine handle to resume immediately.
         */
         virtual std::coroutine_handle<> resolve(
-            std::coroutine_handle<> h,
+            capy::continuation& cont,
             capy::executor_ref ex,
             std::string_view host,
             std::string_view service,
@@ -542,7 +545,8 @@ public:
 
         /** Initiate an asynchronous reverse DNS resolution.
 
-            @param h Coroutine handle to resume on completion.
+            @param cont Continuation to resume on completion; it lives in
+                the awaiting frame until then.
             @param ex Executor for dispatching the completion.
             @param ep The endpoint to resolve.
             @param flags Flags controlling the lookup.
@@ -553,7 +557,7 @@ public:
             @return Coroutine handle to resume immediately.
         */
         virtual std::coroutine_handle<> reverse_resolve(
-            std::coroutine_handle<> h,
+            capy::continuation& cont,
             capy::executor_ref ex,
             endpoint const& ep,
             reverse_flags flags,

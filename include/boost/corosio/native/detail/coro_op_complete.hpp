@@ -142,12 +142,11 @@ coro_drain_if_shutdown(void* owner, coro_op* self) noexcept
 inline void
 coro_resume(coro_op* self) noexcept
 {
-    self->cont.h = self->h;
     // Clear the keepalive before publishing the continuation: a strand
     // drained on another thread can reuse this op via reset() the instant
     // it runs, so this write must be ordered before the publish, not after.
     auto suicide = std::move(self->object_ref_);
-    auto next    = dispatch_coro(self->ex, self->cont);
+    auto next    = dispatch_coro(self->ex, *self->cont);
     next.resume();
     // suicide drops here; may destroy impl + self.
 }

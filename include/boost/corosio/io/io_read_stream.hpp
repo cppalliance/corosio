@@ -18,6 +18,8 @@
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
 
+#include <boost/capy/continuation.hpp>
+
 #include <coroutine>
 #include <cstddef>
 #include <stop_token>
@@ -65,16 +67,17 @@ protected:
         MutableBufferSequence buffers_;
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return ios_.do_read_some(
-                h, ex, buffers_, this->token_, &this->ec_, &this->bytes_);
+                cont, ex, buffers_, this->token_, &this->ec_, &this->bytes_);
         }
     };
 
     /** Dispatch a read through the concrete implementation.
 
-        @param h Coroutine handle to resume on completion.
+        @param cont Continuation to resume on completion; it lives in
+            the awaiting frame until then.
         @param ex Executor for dispatching the completion.
         @param buffers Target buffer sequence.
         @param token Stop token for cancellation.
@@ -84,7 +87,7 @@ protected:
         @return Coroutine handle to resume immediately.
     */
     virtual std::coroutine_handle<> do_read_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buffers,
         std::stop_token token,

@@ -620,26 +620,20 @@ make_mocket_pair(
             done_out  = true;
         }(acc, accepted_socket, accept_ec, accept_done));
 
+    // A failed connect leaves nothing for the accept to receive.
     capy::run_async(ex)(
-        [](Socket& s, endpoint ep, std::error_code& ec_out,
+        [](Socket& s, Acceptor& a, endpoint ep, std::error_code& ec_out,
            bool& done_out) -> capy::task<> {
             auto [ec] = co_await s.connect(ep);
             ec_out    = ec;
             done_out  = true;
-        }(peer, endpoint(ipv4_address::loopback(), port), connect_ec,
+            if (ec)
+                a.cancel();
+        }(peer, acc, endpoint(ipv4_address::loopback(), port), connect_ec,
                            connect_done));
 
     ctx.run();
     ctx.restart();
-
-    if (!accept_done || accept_ec)
-    {
-        std::fprintf(
-            stderr, "make_mocket_pair: accept failed (done=%d, ec=%s)\n",
-            accept_done, accept_ec.message().c_str());
-        acc.close();
-        throw std::runtime_error("mocket accept failed");
-    }
 
     if (!connect_done || connect_ec)
     {
@@ -649,6 +643,15 @@ make_mocket_pair(
         acc.close();
         accepted_socket.close();
         throw std::runtime_error("mocket connect failed");
+    }
+
+    if (!accept_done || accept_ec)
+    {
+        std::fprintf(
+            stderr, "make_mocket_pair: accept failed (done=%d, ec=%s)\n",
+            accept_done, accept_ec.message().c_str());
+        acc.close();
+        throw std::runtime_error("mocket accept failed");
     }
 
     m.socket() = std::move(accepted_socket);

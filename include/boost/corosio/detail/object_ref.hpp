@@ -103,6 +103,24 @@ public:
             acquire(p_);
     }
 
+    /** Create a reference to `p` unless its count already reached zero.
+
+        The way to take a reference from a raw pointer: a context that
+        holds none may find the count at zero, and must not revive it.
+
+        @param p The implementation to reference.
+
+        @return A reference to `p`, or an empty `object_ref` if `p` is
+            retiring.
+    */
+    static object_ref try_from(io_object::implementation* p) noexcept
+    {
+        object_ref r;
+        if (try_acquire(p))
+            r.p_ = p;
+        return r;
+    }
+
     /// Construct a copy, acquiring another reference to `other`'s target.
     object_ref(object_ref const& other) noexcept : p_(other.p_)
     {

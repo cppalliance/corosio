@@ -92,10 +92,10 @@ class native_stream_file : public stream_file
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return self_.get_impl().read_some(
-                h, ex, buffers_, this->token_, &this->ec_, &this->bytes_);
+                cont, ex, buffers_, this->token_, &this->ec_, &this->bytes_);
         }
     };
 
@@ -114,10 +114,10 @@ class native_stream_file : public stream_file
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return self_.get_impl().write_some(
-                h, ex, buffers_, this->token_, &this->ec_, &this->bytes_);
+                cont, ex, buffers_, this->token_, &this->ec_, &this->bytes_);
         }
     };
 

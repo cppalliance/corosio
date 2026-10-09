@@ -26,6 +26,8 @@
 #include <boost/capy/concept/executor.hpp>
 
 #include <concepts>
+#include <boost/capy/continuation.hpp>
+
 #include <coroutine>
 #include <stop_token>
 #include <system_error>
@@ -148,7 +150,8 @@ public:
             given direction, or an error condition is reported. No
             bytes are transferred and no descriptor flag is changed.
 
-            @param h Coroutine handle to resume on completion.
+            @param cont Continuation to resume on completion; it lives in
+                the awaiting frame until then.
             @param ex Executor for dispatching the completion.
             @param w The direction to wait on.
             @param token Stop token for cancellation.
@@ -156,7 +159,7 @@ public:
             @return Coroutine handle to resume immediately.
         */
         virtual std::coroutine_handle<> wait(
-            std::coroutine_handle<> h,
+            capy::continuation& cont,
             capy::executor_ref ex,
             wait_type w,
             std::stop_token token,
@@ -201,9 +204,9 @@ public:
         wait_type w_;
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
-            return d_.get().wait(h, ex, w_, token_, &ec_);
+            return d_.get().wait(cont, ex, w_, token_, &ec_);
         }
     };
 

@@ -64,7 +64,7 @@ public:
         offset for random-access files.
     */
     void prepare(
-        std::coroutine_handle<> handle,
+        capy::continuation& awaiting,
         capy::executor_ref executor,
         std::error_code* ec,
         std::size_t* bytes,
@@ -75,7 +75,7 @@ public:
         buffer_param buffers,
         std::stop_token const& token) noexcept
     {
-        h            = handle;
+        cont         = &awaiting;
         ex           = executor;
         ec_out       = ec;
         bytes_out    = bytes;
@@ -150,10 +150,6 @@ struct uring_file_read_op : uring_file_read_op_base
 /// at different offsets on the same fd can be in flight concurrently.
 struct uring_random_access_read_op : uring_file_read_op_base
 {
-    /// The awaitable's continuation, not the embedded `cont`: this op is
-    /// freed before the coroutine resumes, possibly on another thread.
-    capy::continuation* awaiting = nullptr;
-
     uring_random_access_read_op() noexcept
         : uring_file_read_op_base(&do_handler)
     {
@@ -175,7 +171,7 @@ struct uring_random_access_read_op : uring_file_read_op_base
         }
 
         finish(self);
-        auto* c = self->awaiting;
+        auto* c = self->cont;
         auto ex = self->ex;
         delete self;
         dispatch_coro(ex, *c).resume();
@@ -212,7 +208,7 @@ public:
         See uring_file_read_op_base::prepare for the offset convention.
     */
     void prepare(
-        std::coroutine_handle<> handle,
+        capy::continuation& awaiting,
         capy::executor_ref executor,
         std::error_code* ec,
         std::size_t* bytes,
@@ -223,7 +219,7 @@ public:
         buffer_param buffers,
         std::stop_token const& token) noexcept
     {
-        h            = handle;
+        cont         = &awaiting;
         ex           = executor;
         ec_out       = ec;
         bytes_out    = bytes;
@@ -294,10 +290,6 @@ struct uring_file_write_op : uring_file_write_op_base
 /// Heap-allocated file write op for random_access_file.
 struct uring_random_access_write_op : uring_file_write_op_base
 {
-    /// The awaitable's continuation, not the embedded `cont`: this op is
-    /// freed before the coroutine resumes, possibly on another thread.
-    capy::continuation* awaiting = nullptr;
-
     uring_random_access_write_op() noexcept
         : uring_file_write_op_base(&do_handler)
     {
@@ -319,7 +311,7 @@ struct uring_random_access_write_op : uring_file_write_op_base
         }
 
         finish(self);
-        auto* c = self->awaiting;
+        auto* c = self->cont;
         auto ex = self->ex;
         delete self;
         dispatch_coro(ex, *c).resume();

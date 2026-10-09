@@ -19,6 +19,7 @@
 #include <boost/corosio/native/detail/reactor/reactor_descriptor_state.hpp>
 #include <boost/corosio/native/detail/msg_flags.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/buffers.hpp>
 
 #include <coroutine>
@@ -132,7 +133,7 @@ public:
     // --- Virtual method overrides (satisfy ImplBase pure virtuals) ---
 
     std::coroutine_handle<> send_to(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buf,
         Endpoint dest,
@@ -141,11 +142,11 @@ public:
         std::error_code* ec,
         std::size_t* bytes_out) override
     {
-        return do_send_to(h, ex, buf, dest, flags, token, ec, bytes_out);
+        return do_send_to(cont, ex, buf, dest, flags, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> recv_from(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buf,
         Endpoint* source,
@@ -154,21 +155,21 @@ public:
         std::error_code* ec,
         std::size_t* bytes_out) override
     {
-        return do_recv_from(h, ex, buf, source, flags, token, ec, bytes_out);
+        return do_recv_from(cont, ex, buf, source, flags, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> connect(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         Endpoint ep,
         std::stop_token token,
         std::error_code* ec) override
     {
-        return do_connect(h, ex, ep, token, ec);
+        return do_connect(cont, ex, ep, token, ec);
     }
 
     std::coroutine_handle<> send(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buf,
         int flags,
@@ -176,11 +177,11 @@ public:
         std::error_code* ec,
         std::size_t* bytes_out) override
     {
-        return do_send(h, ex, buf, flags, token, ec, bytes_out);
+        return do_send(cont, ex, buf, flags, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> recv(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buf,
         int flags,
@@ -188,7 +189,7 @@ public:
         std::error_code* ec,
         std::size_t* bytes_out) override
     {
-        return do_recv(h, ex, buf, flags, token, ec, bytes_out);
+        return do_recv(cont, ex, buf, flags, token, ec, bytes_out);
     }
 
     void cancel() noexcept override
@@ -197,13 +198,13 @@ public:
     }
 
     std::coroutine_handle<> wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         wait_type w,
         std::stop_token token,
         std::error_code* ec) override
     {
-        return do_wait(h, ex, w, token, ec);
+        return do_wait(cont, ex, w, token, ec);
     }
 
     // --- End virtual overrides ---
@@ -228,7 +229,7 @@ public:
         On EAGAIN, registers with the reactor.
     */
     std::coroutine_handle<> do_send_to(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         buffer_param,
         Endpoint const&,
@@ -244,7 +245,7 @@ public:
         On EAGAIN, registers with the reactor.
     */
     std::coroutine_handle<> do_recv_from(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         buffer_param,
         Endpoint*,
@@ -261,7 +262,7 @@ public:
         records the peer address in the kernel.
     */
     std::coroutine_handle<> do_connect(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         Endpoint const&,
         std::stop_token const&,
@@ -273,7 +274,7 @@ public:
         with msg_name=nullptr.
     */
     std::coroutine_handle<> do_send(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         buffer_param,
         int flags,
@@ -287,7 +288,7 @@ public:
         with msg_name=nullptr.
     */
     std::coroutine_handle<> do_recv(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         buffer_param,
         int flags,
@@ -305,7 +306,7 @@ public:
         completes only while a non-blocking write can make progress.
     */
     std::coroutine_handle<> do_wait(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         wait_type,
         std::stop_token const&,
@@ -471,7 +472,7 @@ reactor_datagram_socket<
     ImplBase,
     Endpoint>::
     do_send_to(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param param,
         Endpoint const& dest,
@@ -527,10 +528,9 @@ reactor_datagram_socket<
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            op.cont.h  = h;
-            return dispatch_coro(ex, op.cont);
+            return dispatch_coro(ex, cont);
         }
-        op.h         = h;
+        op.cont      = &cont;
         op.ex        = ex;
         op.ec_out    = ec;
         op.bytes_out = bytes_out;
@@ -542,7 +542,7 @@ reactor_datagram_socket<
     }
 
     // EAGAIN — register with reactor
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = ex;
     op.ec_out    = ec;
     op.bytes_out = bytes_out;
@@ -582,7 +582,7 @@ reactor_datagram_socket<
     ImplBase,
     Endpoint>::
     do_recv_from(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param param,
         Endpoint* source,
@@ -600,7 +600,7 @@ reactor_datagram_socket<
 
     if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
     {
-        op.h         = h;
+        op.cont      = &cont;
         op.ex        = ex;
         op.ec_out    = ec;
         op.bytes_out = bytes_out;
@@ -649,10 +649,9 @@ reactor_datagram_socket<
             if (source && !err && n >= 0)
                 *source = from_sockaddr_as(
                     op.source_storage, op.source_addrlen, Endpoint{});
-            op.cont.h = h;
-            return dispatch_coro(ex, op.cont);
+            return dispatch_coro(ex, cont);
         }
-        op.h         = h;
+        op.cont      = &cont;
         op.ex        = ex;
         op.ec_out    = ec;
         op.bytes_out = bytes_out;
@@ -664,7 +663,7 @@ reactor_datagram_socket<
     }
 
     // EAGAIN — register with reactor
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = ex;
     op.ec_out    = ec;
     op.bytes_out = bytes_out;
@@ -704,7 +703,7 @@ reactor_datagram_socket<
     ImplBase,
     Endpoint>::
     do_connect(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         Endpoint const& ep,
         std::stop_token const& token,
@@ -736,11 +735,10 @@ reactor_datagram_socket<
     if (this->svc_.scheduler().try_consume_inline_budget())
     {
         *ec       = err ? make_err(err) : std::error_code{};
-        op.cont.h = h;
-        return dispatch_coro(ex, op.cont);
+        return dispatch_coro(ex, cont);
     }
     op.reset();
-    op.h               = h;
+    op.cont            = &cont;
     op.ex              = ex;
     op.ec_out          = ec;
     op.fd              = this->fd_;
@@ -780,7 +778,7 @@ reactor_datagram_socket<
     ImplBase,
     Endpoint>::
     do_send(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param param,
         int flags,
@@ -830,10 +828,9 @@ reactor_datagram_socket<
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            op.cont.h  = h;
-            return dispatch_coro(ex, op.cont);
+            return dispatch_coro(ex, cont);
         }
-        op.h         = h;
+        op.cont      = &cont;
         op.ex        = ex;
         op.ec_out    = ec;
         op.bytes_out = bytes_out;
@@ -845,7 +842,7 @@ reactor_datagram_socket<
     }
 
     // EAGAIN — register with reactor
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = ex;
     op.ec_out    = ec;
     op.bytes_out = bytes_out;
@@ -885,7 +882,7 @@ reactor_datagram_socket<
     ImplBase,
     Endpoint>::
     do_recv(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param param,
         int flags,
@@ -901,7 +898,7 @@ reactor_datagram_socket<
 
     if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
     {
-        op.h         = h;
+        op.cont      = &cont;
         op.ex        = ex;
         op.ec_out    = ec;
         op.bytes_out = bytes_out;
@@ -942,10 +939,9 @@ reactor_datagram_socket<
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            op.cont.h  = h;
-            return dispatch_coro(ex, op.cont);
+            return dispatch_coro(ex, cont);
         }
-        op.h         = h;
+        op.cont      = &cont;
         op.ex        = ex;
         op.ec_out    = ec;
         op.bytes_out = bytes_out;
@@ -957,7 +953,7 @@ reactor_datagram_socket<
     }
 
     // EAGAIN — register with reactor
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = ex;
     op.ec_out    = ec;
     op.bytes_out = bytes_out;
@@ -997,7 +993,7 @@ reactor_datagram_socket<
     ImplBase,
     Endpoint>::
     do_wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         wait_type w,
         std::stop_token const& token,
@@ -1038,12 +1034,11 @@ reactor_datagram_socket<
         if (this->svc_.scheduler().try_consume_inline_budget())
         {
             *ec       = perr ? make_err(perr) : std::error_code{};
-            op.cont.h = h;
-            return dispatch_coro(ex, op.cont);
+            return dispatch_coro(ex, cont);
         }
         op.reset();
         op.wait_event = event;
-        op.h          = h;
+        op.cont       = &cont;
         op.ex         = ex;
         op.ec_out     = ec;
         op.fd         = this->fd_;
@@ -1056,7 +1051,7 @@ reactor_datagram_socket<
 
     op.reset();
     op.wait_event = event;
-    op.h          = h;
+    op.cont       = &cont;
     op.ex         = ex;
     op.ec_out     = ec;
     op.fd         = this->fd_;

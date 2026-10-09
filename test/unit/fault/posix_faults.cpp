@@ -28,9 +28,12 @@
 #include <boost/corosio/stream_file.hpp>
 
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
+#include <boost/corosio/test/socket_pair.hpp>
+#include <boost/corosio/test/mocket.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -83,6 +86,56 @@ struct posix_common_faults
         BOOST_TEST(f.fired());
         BOOST_TEST(ec == std::errc::too_many_files_open);
         BOOST_TEST(!s.is_open());
+    }
+
+    // A connect refused outright (an exhausted ephemeral range) must
+    // fail the pair rather than leave it waiting on an accept that can
+    // no longer arrive. io_uring connects through the ring, out of the
+    // hook's reach.
+    void testSocketPairConnectFails()
+    {
+#if BOOST_COROSIO_HAS_URING
+        if constexpr (std::is_same_v<
+                          std::remove_cvref_t<decltype(Backend)>, uring_t>)
+            return;
+#endif
+        io_context ioc(Backend);
+        fault_scope f(sys::connect, EADDRNOTAVAIL);
+        bool threw = false;
+        try
+        {
+            std::ignore =
+                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        }
+        catch (std::runtime_error const&)
+        {
+            threw = true;
+        }
+        BOOST_TEST(f.fired());
+        BOOST_TEST(threw);
+    }
+
+    // Same for the mocket pair, built the same way over a socket pair.
+    void testMocketPairConnectFails()
+    {
+#if BOOST_COROSIO_HAS_URING
+        if constexpr (std::is_same_v<
+                          std::remove_cvref_t<decltype(Backend)>, uring_t>)
+            return;
+#endif
+        io_context ioc(Backend);
+        fault_scope f(sys::connect, EADDRNOTAVAIL);
+        bool threw = false;
+        try
+        {
+            std::ignore = test::make_mocket_pair(ioc);
+        }
+        catch (std::runtime_error const&)
+        {
+            threw = true;
+        }
+        BOOST_TEST(f.fired());
+        BOOST_TEST(threw);
     }
 
     void testBindFails()
@@ -673,12 +726,71 @@ struct posix_common_faults
         ::unlink(p2.c_str());
     }
 
+    // A pool worker that has committed to a write must not write
+    // through the descriptor number after close() and an unrelated
+    // open() have given that number to another file.
+    template<class File>
+    void closeDuringPoolWrite(char const* tag)
+    {
+        if constexpr (ring_files)
+            return;
+        if (!hook_is_live(sys::pwritev))
+        {
+            skip_dead_hook("pwritev");
+            return;
+        }
+        auto p1 = temp_path((std::string(tag) + "_a").c_str());
+        auto p2 = temp_path((std::string(tag) + "_b").c_str());
+        std::ofstream(p1).flush();
+        std::ofstream(p2).flush();
+
+        io_context ioc(Backend);
+        File f(ioc);
+        BOOST_TEST(!f.open(p1, file_base::write_only));
+
+        pwritev_hold hold;
+        std::string const payload(4096, 'a');
+        int other   = -1;
+        auto writer = [&]() -> capy::task<> {
+            if constexpr (std::is_same_v<File, stream_file>)
+                std::ignore = co_await f.write_some(
+                    capy::const_buffer(payload.data(), payload.size()));
+            else
+                std::ignore = co_await f.write_some_at(
+                    0, capy::const_buffer(payload.data(), payload.size()));
+        };
+        auto swapper = [&]() -> capy::task<> {
+            hold.wait_held();
+            f.close();
+            other = ::open(p2.c_str(), O_WRONLY | O_CLOEXEC);
+            BOOST_TEST(other >= 0);
+            hold.release();
+            co_return;
+        };
+        capy::run_async(ioc.get_executor())(writer());
+        capy::run_async(ioc.get_executor())(swapper());
+        ioc.run();
+
+        ::close(other);
+        BOOST_TEST_EQ(std::filesystem::file_size(p2), 0u);
+        ::unlink(p1.c_str());
+        ::unlink(p2.c_str());
+    }
+
+    void testCloseDuringPoolWriteSparesReusedDescriptor()
+    {
+        closeDuringPoolWrite<stream_file>("sf_reuse");
+        closeDuringPoolWrite<random_access_file>("raf_reuse");
+    }
+
     void run()
     {
         if (skip_under_valgrind())
             return;
         testSocketOpenFails();
         testBindFails();
+        testSocketPairConnectFails();
+        testMocketPairConnectFails();
         testSetOptionFails();
         testGetOptionFails();
         testAssignValidateFails();
@@ -693,6 +805,7 @@ struct posix_common_faults
         testStreamFileSyncOps();
         testStreamFileIoFails();
         testAssignDuringFinishedReadKeepsNewOffset();
+        testCloseDuringPoolWriteSparesReusedDescriptor();
         testRandomAccessFileFails();
         testResolverFails();
         testSignalTeardownWalk();

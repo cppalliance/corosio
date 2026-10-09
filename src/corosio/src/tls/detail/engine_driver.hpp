@@ -23,6 +23,7 @@
 #include <boost/capy/task.hpp>
 #include <boost/capy/write.hpp>
 
+#include <atomic>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -157,7 +158,23 @@ class engine_driver
     // Large enough to hold the largest possible TLS record.
     static constexpr std::size_t buffer_size_ = std::size_t{17} * 1024;
 
-    capy::any_stream* s_;
+    // Operations hold a reference across their suspensions, so the
+    // driver outlives the stream that created it until they finish.
+    std::atomic<std::size_t> refs_{1};
+
+    // Set when the stream is destroyed: no transport call may follow.
+    std::atomic<bool> orphaned_{false};
+
+    // Transport calls in flight. Once orphaned, the owned transport is
+    // destroyed when this reaches zero: right away for a stream with no
+    // call parked, so it never outlives its context waiting on an
+    // operation nobody awaits.
+    std::atomic<std::size_t> calls_{0};
+    std::atomic<bool> transport_gone_{false};
+
+    // The transport in owning mode; s_ refers to it without owning.
+    tls_owned_transport owned_;
+    capy::any_stream s_;
     tls_context ctx_;
     Engine eng_;
 
@@ -209,6 +226,9 @@ class engine_driver
         // order even when both directions produce output.
         while (eng_.pending_output() > 0 || out_len_ > 0)
         {
+            if (orphaned())
+                co_return make_error_code(capy::error::canceled);
+
             // Take the abandoned tail (from an earlier failed write in
             // this loop or a prior flush) into a local and append fresh
             // engine ciphertext behind it, preserving record order.
@@ -229,8 +249,34 @@ class engine_driver
                 co_return make_error_code(
                     std::errc::
                         no_buffer_space); // LCOV_EXCL_LINE unreachable: transport returned 0 with no error unreachable: pending bytes confirmed
-            auto [ec, wn] = co_await capy::write(
-                *s_, capy::const_buffer(out_buf_.data(), n));
+            // capy::write's loop, with the stream's destruction checked
+            // between partial writes: once orphaned, the transport is
+            // no longer this driver's to write to.
+            std::error_code ec;
+            std::size_t wn = 0;
+            while (wn < n)
+            {
+                transport_call call(*this);
+                if (!call)
+                {
+                    ec = make_error_code(capy::error::canceled);
+                    break;
+                }
+                auto [wec, k] = co_await s_.write_some(
+                    capy::const_buffer(out_buf_.data() + wn, n - wn));
+                call.end();
+                wn += k;
+                if (wn < n && wec)
+                {
+                    ec = wec;
+                    break;
+                }
+                if (wn < n && orphaned())
+                {
+                    ec = make_error_code(capy::error::canceled);
+                    break;
+                }
+            }
             if (ec)
             {
                 // wn bytes already reached the peer; keep only the unsent
@@ -274,6 +320,9 @@ class engine_driver
         if (read_gen_ != gen)
             co_return std::error_code{};
 
+        if (orphaned())
+            co_return make_error_code(capy::error::canceled);
+
         // Read the transport straight into the engine's input staging:
         // input_area() hands back the contiguous writable run, so no
         // staging buffer or deposit copy sits between the socket and the
@@ -285,7 +334,16 @@ class engine_driver
         if (cap == 0)
             co_return std::error_code{};
 
-        auto [ec, n] = co_await s_->read_some(capy::mutable_buffer(dst, cap));
+        transport_call call(*this);
+        if (!call)
+            co_return make_error_code(capy::error::canceled);
+        auto [ec, n] = co_await s_.read_some(capy::mutable_buffer(dst, cap));
+        call.end();
+
+        // The stream went away while the read was parked; its result
+        // belongs to no one.
+        if (orphaned())
+            co_return make_error_code(capy::error::canceled);
 
         // ReadStream permits n>0 alongside ec (IOCP forwards
         // bytes_transferred on failed completions; a canceled read can
@@ -310,6 +368,66 @@ class engine_driver
                 no_buffer_space); // LCOV_EXCL_LINE unreachable: staging cannot stay empty
     }
 
+    void destroy_transport() noexcept
+    {
+        if (transport_gone_.exchange(true, std::memory_order_acq_rel))
+            return;
+        auto const owned = std::exchange(owned_, tls_owned_transport{});
+        if (owned.destroy)
+            owned.destroy(owned.p);
+    }
+
+    // Return false once orphaned: the transport may already be gone.
+    // The orphan check follows the count's increment, pairing with
+    // orphan()'s store-then-load, so one side always sees the other.
+    bool begin_transport_call() noexcept
+    {
+        calls_.fetch_add(1, std::memory_order_seq_cst);
+        if (!orphaned_.load(std::memory_order_seq_cst))
+            return true;
+        end_transport_call();
+        return false;
+    }
+
+    void end_transport_call() noexcept
+    {
+        if (calls_.fetch_sub(1, std::memory_order_seq_cst) == 1 &&
+            orphaned_.load(std::memory_order_seq_cst))
+            destroy_transport();
+    }
+
+    // A transport call that also ends when its frame is unwound while
+    // parked, so the count never pins an orphaned transport.
+    class transport_call
+    {
+        engine_driver* d_;
+
+    public:
+        ~transport_call()
+        {
+            end();
+        }
+
+        explicit transport_call(engine_driver& d) noexcept
+            : d_(d.begin_transport_call() ? &d : nullptr)
+        {
+        }
+
+        transport_call(transport_call const&)            = delete;
+        transport_call& operator=(transport_call const&) = delete;
+
+        explicit operator bool() const noexcept
+        {
+            return d_ != nullptr;
+        }
+
+        void end() noexcept
+        {
+            if (d_)
+                std::exchange(d_, nullptr)->end_transport_call();
+        }
+    };
+
     // A prior read/write already reported its full transfer as success;
     // the trailing flush error it deferred surfaces on the next call
     // instead. Each entry point takes it exactly once.
@@ -323,16 +441,88 @@ class engine_driver
 public:
     /** Construct a driver over a transport stream.
 
-        @param s The transport; the caller keeps it alive and repoints
-        it on move via `rebind_stream`.
+        The driver starts with one reference, the creating stream's.
+
+        @param s The transport.
+        @param owned The transport `s` refers to, when the stream owns
+        it; the driver destroys it on @ref orphan.
         @param ctx The TLS context handed to the engine's handshake
         preparation.
     */
-    engine_driver(capy::any_stream& s, tls_context ctx)
-        : s_(&s)
+    engine_driver(
+        capy::any_stream s, tls_owned_transport owned, tls_context ctx)
+        : owned_(owned)
+        , s_(std::move(s))
         , ctx_(std::move(ctx))
     {
         out_buf_.resize(buffer_size_);
+    }
+
+    ~engine_driver()
+    {
+        destroy_transport();
+    }
+
+    engine_driver(engine_driver const&)            = delete;
+    engine_driver& operator=(engine_driver const&) = delete;
+
+    /// Add a reference for an operation in flight.
+    void add_ref() noexcept
+    {
+        refs_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    /// Drop a reference; return true if it was the last.
+    bool release_ref() noexcept
+    {
+        return refs_.fetch_sub(1, std::memory_order_acq_rel) == 1;
+    }
+
+    /** Detach the driver from its destroyed stream.
+
+        Operations still in flight finish as canceled without touching
+        the transport again. An owned transport is destroyed now when
+        no transport call is parked on it; otherwise it is told to
+        cancel, if it can, and destroyed when the last parked call
+        returns.
+    */
+    void orphan() noexcept
+    {
+        // Counted as a call itself, so a parked call returning meanwhile
+        // cannot destroy the transport under the cancel.
+        calls_.fetch_add(1, std::memory_order_seq_cst);
+        orphaned_.store(true, std::memory_order_seq_cst);
+        if (owned_.cancel)
+            owned_.cancel(owned_.p);
+        end_transport_call();
+    }
+
+    /// Cancel the owned transport's pending operations, if it can.
+    void cancel_transport() noexcept
+    {
+        if (!begin_transport_call())
+            return;
+        if (owned_.cancel)
+            owned_.cancel(owned_.p);
+        end_transport_call();
+    }
+
+    /// Return true once the stream has been destroyed.
+    bool orphaned() const noexcept
+    {
+        return orphaned_.load(std::memory_order_acquire);
+    }
+
+    /// Return the transport.
+    capy::any_stream& stream() noexcept
+    {
+        return s_;
+    }
+
+    /// Return the transport.
+    capy::any_stream const& stream() const noexcept
+    {
+        return s_;
     }
 
     /// Return the engine for backend-specific setup.
@@ -345,12 +535,6 @@ public:
     tls_context const& context() const noexcept
     {
         return ctx_;
-    }
-
-    /// Point the driver at the transport's post-move location.
-    void rebind_stream(capy::any_stream& s) noexcept
-    {
-        s_ = &s;
     }
 
     /// Set the hostname applied to the next client handshake.
@@ -693,6 +877,87 @@ public:
         }
     }
 };
+
+/** A reference to a TLS stream's driver held by an operation.
+
+    Taken when the operation is created, so a stream destroyed or
+    moved before the operation is awaited or finishes leaves its
+    driver alive until the operation lets go.
+
+    @tparam Impl The stream's implementation, derived from
+        @ref engine_driver.
+*/
+template<class Impl>
+class driver_ref
+{
+    Impl* p_;
+
+public:
+    /// Construct, adding a reference to @p p.
+    explicit driver_ref(Impl* p) noexcept : p_(p)
+    {
+        p_->add_ref();
+    }
+
+    /// Construct by taking @p other's reference.
+    driver_ref(driver_ref&& other) noexcept
+        : p_(std::exchange(other.p_, nullptr))
+    {
+    }
+
+    driver_ref(driver_ref const&)            = delete;
+    driver_ref& operator=(driver_ref const&) = delete;
+    driver_ref& operator=(driver_ref&&)      = delete;
+
+    /// Destroy, deleting the driver if this was its last reference.
+    ~driver_ref()
+    {
+        if (p_ && p_->release_ref())
+            delete p_;
+    }
+
+    /// Return the driver.
+    Impl* operator->() const noexcept
+    {
+        return p_;
+    }
+};
+
+/// Read through a driver an operation keeps alive.
+template<class Impl>
+capy::io_task<std::size_t>
+driver_read_some(
+    driver_ref<Impl> d,
+    capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers)
+{
+    co_return co_await d->do_read_some(buffers);
+}
+
+/// Write through a driver an operation keeps alive.
+template<class Impl>
+capy::io_task<std::size_t>
+driver_write_some(
+    driver_ref<Impl> d,
+    capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers)
+{
+    co_return co_await d->do_write_some(buffers);
+}
+
+/// Handshake through a driver an operation keeps alive.
+template<class Impl>
+capy::io_task<>
+driver_handshake(driver_ref<Impl> d, tls_role role)
+{
+    co_return co_await d->do_handshake(role);
+}
+
+/// Shut down through a driver an operation keeps alive.
+template<class Impl>
+capy::io_task<>
+driver_shutdown(driver_ref<Impl> d)
+{
+    co_return co_await d->do_shutdown();
+}
 
 } // namespace detail
 

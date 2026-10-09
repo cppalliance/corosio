@@ -80,10 +80,10 @@ class native_resolver : public resolver
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return self_.get_impl().resolve(
-                h, ex, host_, service_, flags_, this->token_, &this->ec_,
+                cont, ex, host_, service_, flags_, this->token_, &this->ec_,
                 &this->value_);
         }
     };
@@ -106,10 +106,10 @@ class native_resolver : public resolver
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return self_.get_impl().reverse_resolve(
-                h, ex, ep_, flags_, this->token_, &this->ec_, &this->value_);
+                cont, ex, ep_, flags_, this->token_, &this->ec_, &this->value_);
         }
     };
 

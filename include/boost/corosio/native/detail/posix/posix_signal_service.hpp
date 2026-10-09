@@ -20,6 +20,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/object_pool.hpp>
 #include <boost/corosio/detail/object_ref.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
@@ -414,12 +415,15 @@ signal_op::operator()()
     if (signal_out)
         *signal_out = signal_number;
 
-    // Capture svc before resuming (coro may destroy us)
+    // Copied out before the reference drops: this op is embedded in
+    // the set, which the release may recycle.
     auto* service = svc;
     svc           = nullptr;
+    auto* c       = cont;
+    auto ex       = d;
+    auto k        = std::move(keep);
 
-    cont.h = h;
-    d.post(cont);
+    ex.post(*c);
 
     // Balance the work_started() from start_wait
     if (service)
@@ -429,7 +433,9 @@ signal_op::operator()()
 inline void
 signal_op::destroy()
 {
-    // No-op: signal_op is embedded in posix_signal
+    // Embedded in posix_signal: dropping the queued reference is the
+    // only cleanup, and nothing touches this op afterwards.
+    auto k = std::move(keep);
 }
 
 // posix_signal implementation
@@ -441,13 +447,13 @@ inline posix_signal::posix_signal(posix_signal_service& svc) noexcept
 
 inline std::coroutine_handle<>
 posix_signal::wait(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     std::stop_token token,
     std::error_code* ec,
     int* signal_out)
 {
-    pending_op_.h             = h;
+    pending_op_.cont          = &cont;
     pending_op_.d             = d;
     pending_op_.ec_out        = ec;
     pending_op_.signal_out    = signal_out;
@@ -467,8 +473,7 @@ posix_signal::wait(
             *ec = make_error_code(capy::error::canceled);
         if (signal_out)
             *signal_out = 0;
-        pending_op_.cont.h = h;
-        d.post(pending_op_.cont);
+        d.post(*pending_op_.cont);
         // completion is always posted to scheduler queue, never inline.
         return std::noop_coroutine();
     }
@@ -626,13 +631,12 @@ posix_signal_service::add_signal(
         posix_signal_detail::get_signal_state();
 
     // Ensure the global self-pipe exists and this service's scheduler is
-    // watching its read end, BEFORE taking the registration locks. The
-    // reactor drain path locks the descriptor mutex and then the signal-state
-    // and service mutexes; register_signal_reader locks the descriptor mutex
-    // (via register_descriptor), so it must run holding neither of those or
-    // the lock order would invert (a real deadlock, caught by TSan). call_once
-    // makes the once-per-service registration safe when two signal_sets on
-    // this context race add() from different threads.
+    // watching its read end, BEFORE taking the registration locks:
+    // register_signal_reader takes the descriptor mutex (via
+    // register_descriptor), which no path may take while holding the
+    // signal-state or service mutexes. call_once makes the once-per-service
+    // registration safe when two signal_sets on this context race add()
+    // from different threads.
     {
         std::lock_guard state_lock(state->mutex);
         if (auto ec = posix_signal_detail::open_signal_pipe(state))
@@ -844,8 +848,7 @@ posix_signal_service::cancel_wait(posix_signal& impl)
             *op->ec_out = make_error_code(capy::error::canceled);
         if (op->signal_out)
             *op->signal_out = 0;
-        op->cont.h = op->h;
-        op->d.post(op->cont);
+        op->d.post(*op->cont);
         sched_->work_finished();
     }
 }
@@ -876,8 +879,7 @@ posix_signal_service::cancel_wait_token(posix_signal& impl) noexcept
             *op->ec_out = make_error_code(capy::error::canceled);
         if (op->signal_out)
             *op->signal_out = 0;
-        op->cont.h = op->h;
-        op->d.post(op->cont);
+        op->d.post(*op->cont);
         sched_->work_finished();
     }
 }
@@ -902,8 +904,7 @@ posix_signal_service::start_wait(posix_signal& impl, signal_op* op)
                 *op->ec_out = make_error_code(capy::error::canceled);
             if (op->signal_out)
                 *op->signal_out = 0;
-            op->cont.h = op->h;
-            op->d.post(op->cont);
+            op->d.post(*op->cont);
             return;
         }
 
@@ -916,8 +917,7 @@ posix_signal_service::start_wait(posix_signal& impl, signal_op* op)
                 *op->ec_out = make_error_code(capy::error::canceled);
             if (op->signal_out)
                 *op->signal_out = 0;
-            op->cont.h = op->h;
-            op->d.post(op->cont);
+            op->d.post(*op->cont);
             return;
         }
 
@@ -931,6 +931,8 @@ posix_signal_service::start_wait(posix_signal& impl, signal_op* op)
                 op->signal_number = reg->signal_number;
                 // svc=nullptr: no work_finished needed since we never called work_started
                 op->svc = nullptr;
+                // The caller's wait() holds the handle's reference.
+                op->keep = detail::object_ref(&impl);
                 sched_->post(op);
                 return;
             }
@@ -967,9 +969,17 @@ posix_signal_service::deliver_signal(int signal_number)
 
             if (impl->waiting_)
             {
-                impl->waiting_                  = false;
-                impl->pending_op_.signal_number = signal_number;
-                service->post(&impl->pending_op_);
+                // Reached through the registry, not a held reference.
+                // A set whose count reached zero is being destroyed,
+                // and that destruction completes its wait itself.
+                auto keep = detail::object_ref::try_from(impl);
+                if (keep)
+                {
+                    impl->waiting_                  = false;
+                    impl->pending_op_.signal_number = signal_number;
+                    impl->pending_op_.keep          = std::move(keep);
+                    service->post(&impl->pending_op_);
+                }
             }
             else
             {

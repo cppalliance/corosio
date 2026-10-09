@@ -32,26 +32,39 @@ struct wolfssl_stream::implementation
 
 wolfssl_stream::implementation*
 wolfssl_stream::make_implementation(
-    capy::any_stream& stream, tls_context const& ctx)
+    capy::any_stream stream,
+    detail::tls_owned_transport owned,
+    tls_context const& ctx)
 {
     // Session creation is deferred to handshake time when the role is
     // known (the engine's prepare hook builds it from the role's
     // cached native context).
-    return new implementation(stream, ctx);
+    return new implementation(std::move(stream), owned, ctx);
 }
+
+namespace {
+
+template<class Impl>
+void
+release_driver(Impl* impl) noexcept
+{
+    if (!impl)
+        return;
+    impl->orphan();
+    if (impl->release_ref())
+        delete impl;
+}
+
+} // namespace
 
 wolfssl_stream::~wolfssl_stream()
 {
-    delete impl_;
+    release_driver(impl_);
 }
 
 wolfssl_stream::wolfssl_stream(wolfssl_stream&& other) noexcept
-    : stream_(std::move(other.stream_))
-    , impl_(other.impl_)
+    : impl_(std::exchange(other.impl_, nullptr))
 {
-    other.impl_ = nullptr;
-    if (impl_)
-        impl_->rebind_stream(stream_);
 }
 
 wolfssl_stream&
@@ -59,40 +72,58 @@ wolfssl_stream::operator=(wolfssl_stream&& other) noexcept
 {
     if (this != &other)
     {
-        delete impl_;
-        stream_     = std::move(other.stream_);
-        impl_       = other.impl_;
-        other.impl_ = nullptr;
-        if (impl_)
-            impl_->rebind_stream(stream_);
+        release_driver(impl_);
+        impl_ = std::exchange(other.impl_, nullptr);
     }
     return *this;
+}
+
+capy::any_stream&
+wolfssl_stream::next_layer() noexcept
+{
+    return impl_->stream();
+}
+
+capy::any_stream const&
+wolfssl_stream::next_layer() const noexcept
+{
+    return impl_->stream();
 }
 
 capy::io_task<std::size_t>
 wolfssl_stream::do_read_some(
     capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers)
 {
-    co_return co_await impl_->do_read_some(buffers);
+    return detail::driver_read_some(
+        detail::driver_ref<implementation>(impl_), buffers);
 }
 
 capy::io_task<std::size_t>
 wolfssl_stream::do_write_some(
     capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers)
 {
-    co_return co_await impl_->do_write_some(buffers);
+    return detail::driver_write_some(
+        detail::driver_ref<implementation>(impl_), buffers);
 }
 
 capy::io_task<>
 wolfssl_stream::handshake(tls_role role)
 {
-    co_return co_await impl_->do_handshake(role);
+    return detail::driver_handshake(
+        detail::driver_ref<implementation>(impl_), role);
 }
 
 capy::io_task<>
 wolfssl_stream::shutdown()
 {
-    co_return co_await impl_->do_shutdown();
+    return detail::driver_shutdown(detail::driver_ref<implementation>(impl_));
+}
+
+void
+wolfssl_stream::cancel() noexcept
+{
+    if (impl_)
+        impl_->cancel_transport();
 }
 
 void

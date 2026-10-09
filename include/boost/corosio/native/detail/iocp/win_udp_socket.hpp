@@ -19,6 +19,7 @@
 #include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/udp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/native/detail/iocp/win_overlapped_op.hpp>
@@ -193,7 +194,7 @@ public:
     void reuse() noexcept;
 
     std::coroutine_handle<> send_to(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref d,
         buffer_param buf,
         endpoint dest,
@@ -203,7 +204,7 @@ public:
         std::size_t* bytes) override;
 
     std::coroutine_handle<> recv_from(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref d,
         buffer_param buf,
         endpoint* source,
@@ -213,14 +214,14 @@ public:
         std::size_t* bytes) override;
 
     std::coroutine_handle<> connect(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref d,
         endpoint ep,
         std::stop_token token,
         std::error_code* ec) override;
 
     std::coroutine_handle<> send(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref d,
         buffer_param buf,
         int flags,
@@ -229,7 +230,7 @@ public:
         std::size_t* bytes) override;
 
     std::coroutine_handle<> recv(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref d,
         buffer_param buf,
         int flags,
@@ -238,7 +239,7 @@ public:
         std::size_t* bytes) override;
 
     std::coroutine_handle<> wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref d,
         wait_type w,
         std::stop_token token,

@@ -31,10 +31,13 @@
 #include <system_error>
 
 #include <concepts>
+#include <boost/capy/continuation.hpp>
+
 #include <coroutine>
 #include <cstddef>
 #include <stop_token>
 #include <type_traits>
+#include <utility>
 
 namespace boost::corosio {
 
@@ -81,9 +84,9 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
         wait_type w_;
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
-            return acc_.get().wait(h, ex, w_, token_, &ec_);
+            return acc_.get().wait(cont, ex, w_, token_, &ec_);
         }
     };
 
@@ -97,6 +100,7 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
         tcp_socket& peer_;
         mutable io_object::implementation* peer_impl_ = nullptr;
 
+
         accept_awaitable(tcp_acceptor& acc, tcp_socket& peer) noexcept
             : acc_(acc)
             , peer_(peer)
@@ -104,17 +108,25 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return acc_.get().accept(
-                h, ex, this->token_, &this->ec_, &peer_impl_);
+                cont, ex, this->token_, &this->ec_, &peer_impl_);
         }
 
     public:
+        // A peer accepted for an awaiter that never resumed is closed
+        // here, or nothing would own it.
+        ~accept_awaitable()
+        {
+            if (peer_impl_)
+                discard_peer(acc_, peer_impl_);
+        }
+
         [[nodiscard]] capy::io_result<> await_resume() const noexcept
         {
             if (!this->ec_ && peer_impl_)
-                peer_.h_.reset(peer_impl_);
+                peer_.h_.reset(std::exchange(peer_impl_, nullptr));
             return {this->ec_};
         }
     };
@@ -128,18 +140,27 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
         tcp_acceptor& acc_;
         mutable io_object::implementation* peer_impl_ = nullptr;
 
+
         explicit accept_value_awaitable(tcp_acceptor& acc) noexcept : acc_(acc)
         {
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return acc_.get().accept(
-                h, ex, this->token_, &this->ec_, &peer_impl_);
+                cont, ex, this->token_, &this->ec_, &peer_impl_);
         }
 
     public:
+        // A peer accepted for an awaiter that never resumed is closed
+        // here, or nothing would own it.
+        ~accept_value_awaitable()
+        {
+            if (peer_impl_)
+                discard_peer(acc_, peer_impl_);
+        }
+
         [[nodiscard]] capy::io_result<tcp_socket> await_resume() noexcept
         {
             // The peer is built only on success: error paths must not
@@ -148,7 +169,7 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
                 return {this->ec_, tcp_socket()};
 
             tcp_socket peer(acc_.context());
-            peer.h_.reset(peer_impl_);
+            peer.h_.reset(std::exchange(peer_impl_, nullptr));
             return {this->ec_, std::move(peer)};
         }
     };
@@ -608,7 +629,8 @@ public:
     {
         /** Initiate an asynchronous accept operation.
 
-            @param h Coroutine handle to resume on completion.
+            @param cont Continuation to resume on completion; it lives in
+                the awaiting frame until then.
             @param ex Executor for dispatching the completion.
             @param token Stop token for cancellation.
             @param ec Output error code.
@@ -617,7 +639,7 @@ public:
             @return Coroutine handle to resume immediately.
         */
         virtual std::coroutine_handle<> accept(
-            std::coroutine_handle<> h,
+            capy::continuation& cont,
             capy::executor_ref ex,
             std::stop_token token,
             std::error_code* ec,
@@ -630,7 +652,8 @@ public:
             for an incoming connection), or an error condition is
             reported. No connection is consumed.
 
-            @param h Coroutine handle to resume on completion.
+            @param cont Continuation to resume on completion; it lives in
+                the awaiting frame until then.
             @param ex Executor for dispatching the completion.
             @param w The direction to wait on.
             @param token Stop token for cancellation.
@@ -639,7 +662,7 @@ public:
             @return Coroutine handle to resume immediately.
         */
         virtual std::coroutine_handle<> wait(
-            std::coroutine_handle<> h,
+            capy::continuation& cont,
             capy::executor_ref ex,
             wait_type w,
             std::stop_token token,
@@ -737,6 +760,10 @@ private:
     {
         return *static_cast<implementation*>(h_.get());
     }
+
+    /// Close and release a non-null accepted peer no socket took over.
+    static void
+    discard_peer(tcp_acceptor& acc, io_object::implementation* impl) noexcept;
 };
 
 } // namespace boost::corosio

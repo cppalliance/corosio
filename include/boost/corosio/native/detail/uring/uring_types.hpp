@@ -156,7 +156,7 @@ public:
     // ----------------------------------------------------------------
 
     std::coroutine_handle<> read_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buffers,
         std::stop_token token,
@@ -205,12 +205,11 @@ public:
                     err ? make_err(err) : std::error_code{},
                     /*is_read=*/true, n < 0 ? 0u : static_cast<std::size_t>(n),
                     empty_buf);
-                rd_.cont.h = h;
-                return dispatch_coro(ex, rd_.cont);
+                return dispatch_coro(ex, cont);
             }
             rd_.prepare(
-                h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
-                buffers, token);
+                cont, ex, ec, bytes, fd_, sched_, detail::object_ref(this),
+                &spec_, buffers, token);
             if (stop_now)
                 rd_.cancelled.store(true, std::memory_order_release);
             else
@@ -224,8 +223,8 @@ public:
         }
 
         rd_.prepare(
-            h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_, buffers,
-            token);
+            cont, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
+            buffers, token);
         sched_->work_started();
         if (rd_.cancelled.load(std::memory_order_acquire))
         {
@@ -238,7 +237,7 @@ public:
     }
 
     std::coroutine_handle<> write_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buffers,
         std::stop_token token,
@@ -284,12 +283,11 @@ public:
                     err ? make_err(err) : std::error_code{},
                     /*is_read=*/false, n < 0 ? 0u : static_cast<std::size_t>(n),
                     /*empty_buffer=*/false);
-                wr_.cont.h = h;
-                return dispatch_coro(ex, wr_.cont);
+                return dispatch_coro(ex, cont);
             }
             wr_.prepare(
-                h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
-                buffers, token);
+                cont, ex, ec, bytes, fd_, sched_, detail::object_ref(this),
+                &spec_, buffers, token);
             if (stop_now)
                 wr_.cancelled.store(true, std::memory_order_release);
             else
@@ -303,8 +301,8 @@ public:
         }
 
         wr_.prepare(
-            h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_, buffers,
-            token);
+            cont, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
+            buffers, token);
         sched_->work_started();
         if (wr_.cancelled.load(std::memory_order_acquire))
         {
@@ -321,7 +319,7 @@ public:
     // ----------------------------------------------------------------
 
     std::coroutine_handle<> connect(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         endpoint ep,
         std::stop_token token,
@@ -334,12 +332,11 @@ public:
             {
                 if (ec)
                     *ec = capy::error::canceled;
-                conn_.cont.h = h;
-                return dispatch_coro(ex, conn_.cont);
+                return dispatch_coro(ex, cont);
             }
             conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
             conn_.prepare(
-                h, ex, ec, fd_, sched_, detail::object_ref(this), ep,
+                cont, ex, ec, fd_, sched_, detail::object_ref(this), ep,
                 &remote_endpoint_, &local_endpoint_, token);
             conn_.cancelled.store(true, std::memory_order_release);
             sched_->work_started();
@@ -354,8 +351,8 @@ public:
         // a subsequent IORING_OP_CONNECT would see EALREADY — avoid.
         conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
         conn_.prepare(
-            h, ex, ec, fd_, sched_, detail::object_ref(this), ep, &remote_endpoint_,
-            &local_endpoint_, token);
+            cont, ex, ec, fd_, sched_, detail::object_ref(this), ep,
+            &remote_endpoint_, &local_endpoint_, token);
         sched_->work_started();
         if (conn_.cancelled.load(std::memory_order_acquire))
         {
@@ -368,7 +365,7 @@ public:
     }
 
     std::coroutine_handle<> wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         wait_type w,
         std::stop_token token,
@@ -388,7 +385,8 @@ public:
             break;
         }
         wait_op_.prepare(
-            h, ex, ec, fd_, sched_, detail::object_ref(this), poll_flags, token);
+            cont, ex, ec, fd_, sched_, detail::object_ref(this), poll_flags,
+            token);
         sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
@@ -765,18 +763,18 @@ public:
     }
 
     std::coroutine_handle<> accept(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         std::stop_token token,
         std::error_code* ec,
         io_object::implementation** impl_out) override
     {
-        base_type::dispatch_or_queue(h, ex, token, ec, impl_out);
+        base_type::dispatch_or_queue(cont, ex, token, ec, impl_out);
         return std::noop_coroutine();
     }
 
     std::coroutine_handle<> wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         wait_type w,
         std::stop_token token,
@@ -787,7 +785,7 @@ public:
         if (this->fd_ < 0)
         {
             auto* op   = this->acquire_node();
-            op->h      = h;
+            op->cont   = &cont;
             op->ex     = ex;
             op->ec_out = ec;
             op->err    = EBADF;
@@ -799,7 +797,7 @@ public:
         // readable; read waits complete from the delivery queue.
         if (w == wait_type::read)
         {
-            this->park_read_wait(h, ex, token, ec);
+            this->park_read_wait(cont, ex, token, ec);
             return std::noop_coroutine();
         }
         // Writability carries no meaning for a listening socket;
@@ -807,7 +805,7 @@ public:
         if (w == wait_type::write)
         {
             auto* op   = this->acquire_node();
-            op->h      = h;
+            op->cont   = &cont;
             op->ex     = ex;
             op->ec_out = ec;
             op->err    = ENOTSUP;
@@ -817,7 +815,7 @@ public:
         // Errors are not consumed by the accept machinery, so the
         // error wait still polls the descriptor.
         wait_op_.prepare(
-            h, ex, ec, this->fd_, this->sched_, detail::object_ref(this),
+            cont, ex, ec, this->fd_, this->sched_, detail::object_ref(this),
             POLLPRI | POLLERR | POLLHUP, token);
         this->sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
@@ -1124,7 +1122,7 @@ public:
     // ----------------------------------------------------------------
 
     std::coroutine_handle<> read_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buffers,
         std::stop_token token,
@@ -1173,12 +1171,11 @@ public:
                     err ? make_err(err) : std::error_code{},
                     /*is_read=*/true, n < 0 ? 0u : static_cast<std::size_t>(n),
                     empty_buf);
-                rd_.cont.h = h;
-                return dispatch_coro(ex, rd_.cont);
+                return dispatch_coro(ex, cont);
             }
             rd_.prepare(
-                h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
-                buffers, token);
+                cont, ex, ec, bytes, fd_, sched_, detail::object_ref(this),
+                &spec_, buffers, token);
             if (stop_now)
                 rd_.cancelled.store(true, std::memory_order_release);
             else
@@ -1192,8 +1189,8 @@ public:
         }
 
         rd_.prepare(
-            h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_, buffers,
-            token);
+            cont, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
+            buffers, token);
         sched_->work_started();
         if (rd_.cancelled.load(std::memory_order_acquire))
         {
@@ -1206,7 +1203,7 @@ public:
     }
 
     std::coroutine_handle<> write_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buffers,
         std::stop_token token,
@@ -1252,12 +1249,11 @@ public:
                     err ? make_err(err) : std::error_code{},
                     /*is_read=*/false, n < 0 ? 0u : static_cast<std::size_t>(n),
                     /*empty_buffer=*/false);
-                wr_.cont.h = h;
-                return dispatch_coro(ex, wr_.cont);
+                return dispatch_coro(ex, cont);
             }
             wr_.prepare(
-                h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
-                buffers, token);
+                cont, ex, ec, bytes, fd_, sched_, detail::object_ref(this),
+                &spec_, buffers, token);
             if (stop_now)
                 wr_.cancelled.store(true, std::memory_order_release);
             else
@@ -1271,8 +1267,8 @@ public:
         }
 
         wr_.prepare(
-            h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_, buffers,
-            token);
+            cont, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
+            buffers, token);
         sched_->work_started();
         if (wr_.cancelled.load(std::memory_order_acquire))
         {
@@ -1289,7 +1285,7 @@ public:
     // ----------------------------------------------------------------
 
     std::coroutine_handle<> connect(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         corosio::local_endpoint ep,
         std::stop_token token,
@@ -1302,12 +1298,11 @@ public:
             {
                 if (ec)
                     *ec = capy::error::canceled;
-                conn_.cont.h = h;
-                return dispatch_coro(ex, conn_.cont);
+                return dispatch_coro(ex, cont);
             }
             conn_.addrlen = to_sockaddr(ep, conn_.addr);
             conn_.prepare(
-                h, ex, ec, fd_, sched_, detail::object_ref(this), ep,
+                cont, ex, ec, fd_, sched_, detail::object_ref(this), ep,
                 &remote_endpoint_, &local_endpoint_, token);
             conn_.cancelled.store(true, std::memory_order_release);
             sched_->work_started();
@@ -1322,8 +1317,8 @@ public:
         // a subsequent IORING_OP_CONNECT would see EALREADY — avoid.
         conn_.addrlen = to_sockaddr(ep, conn_.addr);
         conn_.prepare(
-            h, ex, ec, fd_, sched_, detail::object_ref(this), ep, &remote_endpoint_,
-            &local_endpoint_, token);
+            cont, ex, ec, fd_, sched_, detail::object_ref(this), ep,
+            &remote_endpoint_, &local_endpoint_, token);
         sched_->work_started();
         if (conn_.cancelled.load(std::memory_order_acquire))
         {
@@ -1336,7 +1331,7 @@ public:
     }
 
     std::coroutine_handle<> wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         wait_type w,
         std::stop_token token,
@@ -1356,7 +1351,8 @@ public:
             break;
         }
         wait_op_.prepare(
-            h, ex, ec, fd_, sched_, detail::object_ref(this), poll_flags, token);
+            cont, ex, ec, fd_, sched_, detail::object_ref(this), poll_flags,
+            token);
         sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
@@ -1640,18 +1636,18 @@ public:
     }
 
     std::coroutine_handle<> accept(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         std::stop_token token,
         std::error_code* ec,
         io_object::implementation** impl_out) override
     {
-        base_type::dispatch_or_queue(h, ex, token, ec, impl_out);
+        base_type::dispatch_or_queue(cont, ex, token, ec, impl_out);
         return std::noop_coroutine();
     }
 
     std::coroutine_handle<> wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         wait_type w,
         std::stop_token token,
@@ -1662,7 +1658,7 @@ public:
         if (this->fd_ < 0)
         {
             auto* op   = this->acquire_node();
-            op->h      = h;
+            op->cont   = &cont;
             op->ex     = ex;
             op->ec_out = ec;
             op->err    = EBADF;
@@ -1674,7 +1670,7 @@ public:
         // readable; read waits complete from the delivery queue.
         if (w == wait_type::read)
         {
-            this->park_read_wait(h, ex, token, ec);
+            this->park_read_wait(cont, ex, token, ec);
             return std::noop_coroutine();
         }
         // Writability carries no meaning for a listening socket;
@@ -1682,7 +1678,7 @@ public:
         if (w == wait_type::write)
         {
             auto* op   = this->acquire_node();
-            op->h      = h;
+            op->cont   = &cont;
             op->ex     = ex;
             op->ec_out = ec;
             op->err    = ENOTSUP;
@@ -1692,7 +1688,7 @@ public:
         // Errors are not consumed by the accept machinery, so the
         // error wait still polls the descriptor.
         wait_op_.prepare(
-            h, ex, ec, this->fd_, this->sched_, detail::object_ref(this),
+            cont, ex, ec, this->fd_, this->sched_, detail::object_ref(this),
             POLLPRI | POLLERR | POLLHUP, token);
         this->sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
@@ -1991,7 +1987,7 @@ public:
     // ----------------------------------------------------------------
 
     std::coroutine_handle<> send_to(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buf,
         endpoint dest,
@@ -2002,11 +1998,12 @@ public:
     {
         sockaddr_storage addr{};
         socklen_t len = endpoint_to_sockaddr(dest, addr);
-        return submit_send(h, ex, buf, len, addr, flags, token, ec, bytes_out);
+        return submit_send(
+            cont, ex, buf, len, addr, flags, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> recv_from(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buf,
         endpoint* source,
@@ -2016,11 +2013,12 @@ public:
         std::size_t* bytes_out) override
     {
         return submit_recv(
-            h, ex, buf, source != nullptr, source, flags, token, ec, bytes_out);
+            cont, ex, buf, source != nullptr, source, flags, token, ec,
+            bytes_out);
     }
 
     std::coroutine_handle<> send(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buf,
         int flags,
@@ -2029,11 +2027,12 @@ public:
         std::size_t* bytes_out) override
     {
         sockaddr_storage empty{};
-        return submit_send(h, ex, buf, 0, empty, flags, token, ec, bytes_out);
+        return submit_send(
+            cont, ex, buf, 0, empty, flags, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> recv(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buf,
         int flags,
@@ -2042,11 +2041,11 @@ public:
         std::size_t* bytes_out) override
     {
         return submit_recv(
-            h, ex, buf, false, nullptr, flags, token, ec, bytes_out);
+            cont, ex, buf, false, nullptr, flags, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> connect(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         endpoint ep,
         std::stop_token token,
@@ -2059,12 +2058,11 @@ public:
             {
                 if (ec)
                     *ec = capy::error::canceled;
-                conn_.cont.h = h;
-                return dispatch_coro(ex, conn_.cont);
+                return dispatch_coro(ex, cont);
             }
             conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
             conn_.prepare(
-                h, ex, ec, fd_, sched_, detail::object_ref(this), ep,
+                cont, ex, ec, fd_, sched_, detail::object_ref(this), ep,
                 &remote_endpoint_, &local_endpoint_, token);
             conn_.cancelled.store(true, std::memory_order_release);
             sched_->work_started();
@@ -2079,8 +2077,8 @@ public:
         // a prior speculative ::connect would leave EINPROGRESS → EALREADY.
         conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
         conn_.prepare(
-            h, ex, ec, fd_, sched_, detail::object_ref(this), ep, &remote_endpoint_,
-            &local_endpoint_, token);
+            cont, ex, ec, fd_, sched_, detail::object_ref(this), ep,
+            &remote_endpoint_, &local_endpoint_, token);
         sched_->work_started();
         if (conn_.cancelled.load(std::memory_order_acquire))
         {
@@ -2093,7 +2091,7 @@ public:
     }
 
     std::coroutine_handle<> wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         wait_type w,
         std::stop_token token,
@@ -2113,7 +2111,8 @@ public:
             break;
         }
         wait_op_.prepare(
-            h, ex, ec, fd_, sched_, detail::object_ref(this), poll_flags, token);
+            cont, ex, ec, fd_, sched_, detail::object_ref(this), poll_flags,
+            token);
         sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
@@ -2208,7 +2207,7 @@ public:
 
 private:
     std::coroutine_handle<> submit_send(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buffers,
         socklen_t dest_len,
@@ -2264,13 +2263,12 @@ private:
                     err ? make_err(err) : std::error_code{},
                     /*is_read=*/false, n < 0 ? 0u : static_cast<std::size_t>(n),
                     /*empty_buffer=*/false);
-                send_.cont.h = h;
-                return dispatch_coro(ex, send_.cont);
+                return dispatch_coro(ex, cont);
             }
             send_.prepare(
-                h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
-                buffers, dest_len, dest_storage, to_native_msg_flags(flags),
-                token);
+                cont, ex, ec, bytes, fd_, sched_, detail::object_ref(this),
+                &spec_, buffers, dest_len, dest_storage,
+                to_native_msg_flags(flags), token);
             if (stop_now)
                 send_.cancelled.store(true, std::memory_order_release);
             else
@@ -2284,8 +2282,8 @@ private:
         }
 
         send_.prepare(
-            h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_, buffers,
-            dest_len, dest_storage, to_native_msg_flags(flags), token);
+            cont, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
+            buffers, dest_len, dest_storage, to_native_msg_flags(flags), token);
         sched_->work_started();
         if (send_.cancelled.load(std::memory_order_acquire))
         {
@@ -2298,7 +2296,7 @@ private:
     }
 
     std::coroutine_handle<> submit_recv(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buffers,
         bool want_source,
@@ -2358,12 +2356,12 @@ private:
                     /*empty_buffer=*/false);
                 if (n >= 0 && want_source && source_out && !empty_buf)
                     *source_out = sockaddr_to_endpoint(src_storage);
-                recv_.cont.h = h;
-                return dispatch_coro(ex, recv_.cont);
+                return dispatch_coro(ex, cont);
             }
             recv_.prepare(
-                h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
-                buffers, source_out, want_source ? &write_ip_source : nullptr,
+                cont, ex, ec, bytes, fd_, sched_, detail::object_ref(this),
+                &spec_, buffers, source_out,
+                want_source ? &write_ip_source : nullptr,
                 to_native_msg_flags(flags), token);
             if (stop_now)
                 recv_.cancelled.store(true, std::memory_order_release);
@@ -2388,8 +2386,8 @@ private:
         }
 
         recv_.prepare(
-            h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_, buffers,
-            source_out, want_source ? &write_ip_source : nullptr,
+            cont, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
+            buffers, source_out, want_source ? &write_ip_source : nullptr,
             to_native_msg_flags(flags), token);
         sched_->work_started();
         if (recv_.iovec_count == 0 ||
@@ -2632,7 +2630,7 @@ public:
     // ----------------------------------------------------------------
 
     std::coroutine_handle<> send_to(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buf,
         corosio::local_endpoint dest,
@@ -2643,11 +2641,12 @@ public:
     {
         sockaddr_storage addr{};
         socklen_t len = endpoint_to_sockaddr(dest, addr);
-        return submit_send(h, ex, buf, len, addr, flags, token, ec, bytes_out);
+        return submit_send(
+            cont, ex, buf, len, addr, flags, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> recv_from(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buf,
         corosio::local_endpoint* source,
@@ -2657,11 +2656,12 @@ public:
         std::size_t* bytes_out) override
     {
         return submit_recv(
-            h, ex, buf, source != nullptr, source, flags, token, ec, bytes_out);
+            cont, ex, buf, source != nullptr, source, flags, token, ec,
+            bytes_out);
     }
 
     std::coroutine_handle<> send(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buf,
         int flags,
@@ -2670,11 +2670,12 @@ public:
         std::size_t* bytes_out) override
     {
         sockaddr_storage empty{};
-        return submit_send(h, ex, buf, 0, empty, flags, token, ec, bytes_out);
+        return submit_send(
+            cont, ex, buf, 0, empty, flags, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> recv(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buf,
         int flags,
@@ -2683,11 +2684,11 @@ public:
         std::size_t* bytes_out) override
     {
         return submit_recv(
-            h, ex, buf, false, nullptr, flags, token, ec, bytes_out);
+            cont, ex, buf, false, nullptr, flags, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> connect(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         corosio::local_endpoint ep,
         std::stop_token token,
@@ -2700,12 +2701,11 @@ public:
             {
                 if (ec)
                     *ec = capy::error::canceled;
-                conn_.cont.h = h;
-                return dispatch_coro(ex, conn_.cont);
+                return dispatch_coro(ex, cont);
             }
             conn_.addrlen = to_sockaddr(ep, conn_.addr);
             conn_.prepare(
-                h, ex, ec, fd_, sched_, detail::object_ref(this), ep,
+                cont, ex, ec, fd_, sched_, detail::object_ref(this), ep,
                 &remote_endpoint_, &local_endpoint_, token);
             conn_.cancelled.store(true, std::memory_order_release);
             sched_->work_started();
@@ -2720,8 +2720,8 @@ public:
         // a prior speculative ::connect would leave EINPROGRESS → EALREADY.
         conn_.addrlen = to_sockaddr(ep, conn_.addr);
         conn_.prepare(
-            h, ex, ec, fd_, sched_, detail::object_ref(this), ep, &remote_endpoint_,
-            &local_endpoint_, token);
+            cont, ex, ec, fd_, sched_, detail::object_ref(this), ep,
+            &remote_endpoint_, &local_endpoint_, token);
         sched_->work_started();
         if (conn_.cancelled.load(std::memory_order_acquire))
         {
@@ -2734,7 +2734,7 @@ public:
     }
 
     std::coroutine_handle<> wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         wait_type w,
         std::stop_token token,
@@ -2754,7 +2754,8 @@ public:
             break;
         }
         wait_op_.prepare(
-            h, ex, ec, fd_, sched_, detail::object_ref(this), poll_flags, token);
+            cont, ex, ec, fd_, sched_, detail::object_ref(this), poll_flags,
+            token);
         sched_->work_started();
         if (wait_op_.cancelled.load(std::memory_order_acquire))
         {
@@ -2863,7 +2864,7 @@ public:
 
 private:
     std::coroutine_handle<> submit_send(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buffers,
         socklen_t dest_len,
@@ -2919,13 +2920,12 @@ private:
                     err ? make_err(err) : std::error_code{},
                     /*is_read=*/false, n < 0 ? 0u : static_cast<std::size_t>(n),
                     /*empty_buffer=*/false);
-                send_.cont.h = h;
-                return dispatch_coro(ex, send_.cont);
+                return dispatch_coro(ex, cont);
             }
             send_.prepare(
-                h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
-                buffers, dest_len, dest_storage, to_native_msg_flags(flags),
-                token);
+                cont, ex, ec, bytes, fd_, sched_, detail::object_ref(this),
+                &spec_, buffers, dest_len, dest_storage,
+                to_native_msg_flags(flags), token);
             if (stop_now)
                 send_.cancelled.store(true, std::memory_order_release);
             else
@@ -2939,8 +2939,8 @@ private:
         }
 
         send_.prepare(
-            h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_, buffers,
-            dest_len, dest_storage, to_native_msg_flags(flags), token);
+            cont, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
+            buffers, dest_len, dest_storage, to_native_msg_flags(flags), token);
         sched_->work_started();
         if (send_.cancelled.load(std::memory_order_acquire))
         {
@@ -2953,7 +2953,7 @@ private:
     }
 
     std::coroutine_handle<> submit_recv(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buffers,
         bool want_source,
@@ -3014,12 +3014,11 @@ private:
                 if (n >= 0 && want_source && source_out && !empty_buf)
                     *source_out =
                         sockaddr_to_local_endpoint(src_storage, src_namelen);
-                recv_.cont.h = h;
-                return dispatch_coro(ex, recv_.cont);
+                return dispatch_coro(ex, cont);
             }
             recv_.prepare(
-                h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
-                buffers, source_out,
+                cont, ex, ec, bytes, fd_, sched_, detail::object_ref(this),
+                &spec_, buffers, source_out,
                 want_source ? &write_local_source : nullptr,
                 to_native_msg_flags(flags), token);
             if (stop_now)
@@ -3045,8 +3044,8 @@ private:
         }
 
         recv_.prepare(
-            h, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_, buffers,
-            source_out, want_source ? &write_local_source : nullptr,
+            cont, ex, ec, bytes, fd_, sched_, detail::object_ref(this), &spec_,
+            buffers, source_out, want_source ? &write_local_source : nullptr,
             to_native_msg_flags(flags), token);
         sched_->work_started();
         if (recv_.iovec_count == 0 ||

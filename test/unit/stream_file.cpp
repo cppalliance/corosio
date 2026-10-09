@@ -513,6 +513,29 @@ struct stream_file_test
         BOOST_TEST(ec == std::errc::operation_not_supported);
     }
 
+    // Adopting a descriptor is refused in the unsafe tier for the
+    // same reason opening is, and the caller keeps the descriptor.
+    void testAssignSingleThreadedNotSupported()
+    {
+#if BOOST_COROSIO_HAS_URING
+        if constexpr (
+            std::is_same_v<std::remove_const_t<decltype(Backend)>, uring_t>)
+            return;
+#endif
+        temp_file tmp("sf_assign_st_", "data");
+        io_context_options opts;
+        opts.locking = locking_mode::unsafe;
+        io_context ioc(Backend, opts, 1);
+        stream_file f(ioc);
+
+        int const fd = ::open(tmp.path.c_str(), O_RDONLY | O_CLOEXEC);
+        BOOST_TEST(fd >= 0);
+        BOOST_TEST(f.assign(fd) == std::errc::operation_not_supported);
+        BOOST_TEST(!f.is_open());
+        BOOST_TEST(::fcntl(fd, F_GETFD) >= 0);
+        ::close(fd);
+    }
+
     void testOpenUnsafeIoStillSupported()
     {
 #if BOOST_COROSIO_HAS_URING
@@ -1466,6 +1489,7 @@ struct stream_file_test
         testWriteEmptyBuffer();
 #if BOOST_COROSIO_POSIX
         testOpenSingleThreadedNotSupported();
+        testAssignSingleThreadedNotSupported();
         testOpenUnsafeIoStillSupported();
 #endif
         testTruncate();

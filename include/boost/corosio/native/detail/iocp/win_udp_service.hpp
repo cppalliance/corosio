@@ -404,7 +404,7 @@ win_udp_socket::remote_endpoint() const noexcept
 
 inline std::coroutine_handle<>
 win_udp_socket::send_to(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     buffer_param param,
     endpoint dest,
@@ -418,7 +418,7 @@ win_udp_socket::send_to(
 
     auto& op = wr_;
     op.reset();
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = d;
     op.ec_out    = ec;
     op.bytes_out = bytes_out;
@@ -467,7 +467,7 @@ win_udp_socket::send_to(
 
 inline std::coroutine_handle<>
 win_udp_socket::recv_from(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     buffer_param param,
     endpoint* source,
@@ -481,7 +481,7 @@ win_udp_socket::recv_from(
 
     auto& op = rd_;
     op.reset();
-    op.h          = h;
+    op.cont       = &cont;
     op.ex         = d;
     op.ec_out     = ec;
     op.bytes_out  = bytes_out;
@@ -540,7 +540,7 @@ win_udp_socket::recv_from(
 // UDP connect is synchronous on Windows
 inline std::coroutine_handle<>
 win_udp_socket::connect(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     endpoint ep,
     std::stop_token token,
@@ -550,7 +550,7 @@ win_udp_socket::connect(
 
     auto& op = conn_;
     op.reset();
-    op.h               = h;
+    op.cont            = &cont;
     op.ex              = d;
     op.ec_out          = ec;
     op.target_endpoint = ep;
@@ -574,7 +574,7 @@ win_udp_socket::connect(
 
 inline std::coroutine_handle<>
 win_udp_socket::send(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     buffer_param param,
     int flags,
@@ -586,7 +586,7 @@ win_udp_socket::send(
 
     auto& op = send_wr_;
     op.reset();
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = d;
     op.ec_out    = ec;
     op.bytes_out = bytes_out;
@@ -628,7 +628,7 @@ win_udp_socket::send(
 
 inline std::coroutine_handle<>
 win_udp_socket::recv(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     buffer_param param,
     int flags,
@@ -640,7 +640,7 @@ win_udp_socket::recv(
 
     auto& op = recv_rd_;
     op.reset();
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = d;
     op.ec_out    = ec;
     op.bytes_out = bytes_out;
@@ -690,7 +690,7 @@ win_udp_socket::recv(
 
 inline std::coroutine_handle<>
 win_udp_socket::wait(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     wait_type w,
     std::stop_token token,
@@ -700,7 +700,7 @@ win_udp_socket::wait(
 
     auto& op = wt_;
     op.reset();
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = d;
     op.ec_out    = ec;
     op.bytes_out = nullptr;

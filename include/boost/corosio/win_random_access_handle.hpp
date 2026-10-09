@@ -175,7 +175,6 @@ public:
         win_random_access_handle& f_;
         std::uint64_t offset_;
         MutableBufferSequence buffers_;
-        mutable capy::continuation cont_;
 
         read_some_at_awaitable(
             win_random_access_handle& f,
@@ -191,11 +190,10 @@ public:
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
-            cont_.h = h;
             return f_.get().read_some_at(
-                offset_, cont_, ex, buffers_, this->token_, &this->ec_,
+                offset_, cont, ex, buffers_, this->token_, &this->ec_,
                 &this->bytes_);
         }
     };
@@ -213,7 +211,6 @@ public:
         win_random_access_handle& f_;
         std::uint64_t offset_;
         ConstBufferSequence buffers_;
-        mutable capy::continuation cont_;
 
         write_some_at_awaitable(
             win_random_access_handle& f,
@@ -229,11 +226,10 @@ public:
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
-            cont_.h = h;
             return f_.get().write_some_at(
-                offset_, cont_, ex, buffers_, this->token_, &this->ec_,
+                offset_, cont, ex, buffers_, this->token_, &this->ec_,
                 &this->bytes_);
         }
     };

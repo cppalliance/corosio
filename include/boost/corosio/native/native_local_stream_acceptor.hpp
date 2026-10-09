@@ -89,9 +89,9 @@ class native_local_stream_acceptor : public local_stream_acceptor
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
-            return acc_.get_impl().wait(h, ex, w_, this->token_, &this->ec_);
+            return acc_.get_impl().wait(cont, ex, w_, this->token_, &this->ec_);
         }
     };
 
@@ -118,10 +118,10 @@ class native_local_stream_acceptor : public local_stream_acceptor
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return acc_.get_impl().accept(
-                h, ex, this->token_, &this->ec_, &peer_impl_);
+                cont, ex, this->token_, &this->ec_, &peer_impl_);
         }
     };
 
@@ -151,10 +151,10 @@ class native_local_stream_acceptor : public local_stream_acceptor
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return acc_.get_impl().accept(
-                h, ex, this->token_, &this->ec_, &peer_impl_);
+                cont, ex, this->token_, &this->ec_, &peer_impl_);
         }
     };
 

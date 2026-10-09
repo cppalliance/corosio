@@ -236,15 +236,14 @@ struct overlapped_op
                          : std::error_code{},
             is_read, static_cast<std::size_t>(bytes_transferred), empty_buffer);
 
-        cont.h = h;
-        dispatch_coro(ex, cont).resume();
+        dispatch_coro(ex, *cont).resume();
     }
 
-    /** Disarm cancellation and abandon the coroutine handle. */
+    /** Disarm cancellation and abandon the continuation. */
     void cleanup_only()
     {
         stop_cb.reset();
-        h = {};
+        cont = nullptr;
     }
 };
 

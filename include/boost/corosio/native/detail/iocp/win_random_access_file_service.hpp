@@ -17,6 +17,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/random_access_file_service.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/detail/object_pool.hpp>

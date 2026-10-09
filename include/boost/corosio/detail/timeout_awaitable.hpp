@@ -16,7 +16,9 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
+#include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/recycling_memory_resource.hpp>
 #include <boost/capy/io_result.hpp>
 
 #include <chrono>
@@ -186,12 +188,19 @@ struct timeout_awaitable
         else
             timer_->expires_after(dur_);
 
+        // The detached coroutine can outlive this chain and its frame
+        // allocator, so it allocates from the process-wide recycling
+        // resource instead; the chain's allocator is put back for the
+        // inner operation.
+        auto* const rmr  = capy::get_recycling_memory_resource();
+        auto* const prev = capy::get_current_frame_allocator();
+        capy::set_current_frame_allocator(rmr);
         // Launch fire-and-forget timeout (starts suspended)
         auto timeout = make_timeout(*timer_, stop_src_);
-        timeout.h_.promise().set_env_owned(
-            ex, stop_src_.get_token(), env->frame_allocator);
+        timeout.h_.promise().set_env_owned(ex, stop_src_.get_token(), rmr);
         // Runs synchronously until timer.wait() suspends
         timeout.h_.resume();
+        capy::set_current_frame_allocator(prev);
         // timeout goes out of scope; destructor is a no-op,
         // the coroutine self-destroys via suspend_never
 

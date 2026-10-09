@@ -11,6 +11,7 @@
 #include <boost/corosio/delay.hpp>
 
 #include <boost/corosio/timeout.hpp>
+#include <boost/corosio/detail/timer.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
@@ -24,6 +25,7 @@
 #include <ratio>
 #include <stdexcept>
 #include <stop_token>
+#include <tuple>
 #include <thread>
 #include <vector>
 
@@ -109,6 +111,34 @@ static_assert(std::same_as<
 static_assert(std::same_as<
               decltype(delay<stepping_traits>(test_clock::time_point{})),
               clock_delay_awaitable<test_clock, stepping_traits>>);
+
+struct count_on_exit
+{
+    int& c_;
+    ~count_on_exit()
+    {
+        ++c_;
+    }
+};
+
+// Namespace scope: GCC 11 miscompiles a co_await in a static member
+// coroutine of a class template.
+static capy::task<capy::io_result<>>
+parked_child(int& down)
+{
+    count_on_exit g{down};
+    co_return co_await delay(std::chrono::hours(1));
+}
+
+static capy::task<capy::io_result<>>
+queued_child(io_context& ioc, int& down)
+{
+    count_on_exit g{down};
+    detail::timer t(ioc);
+    t.expires_after(std::chrono::nanoseconds(0));
+    auto [ec] = co_await t.wait();
+    co_return capy::io_result<>{ec};
+}
 
 template<auto Backend>
 struct delay_test
@@ -637,6 +667,60 @@ struct delay_test
         BOOST_TEST_PASS();
     }
 
+    // Teardown destroys a frame a parent task is awaiting; the whole
+    // chain must go, each frame once.
+    void testTeardownNestedTaskOnTimer()
+    {
+        int child = 0, parent = 0;
+        {
+            io_context ioc(Backend);
+            capy::run_async(ioc.get_executor())(
+                [](int& child, int& parent) -> capy::task<> {
+                    count_on_exit g{parent};
+                    std::ignore = co_await parked_child(child);
+                }(child, parent));
+            ioc.poll();
+        }
+        BOOST_TEST_EQ(child, 1);
+        BOOST_TEST_EQ(parent, 1);
+    }
+
+    // The same with timeout() owning the awaited task.
+    void testTeardownTimeoutOfTask()
+    {
+        int child = 0, parent = 0;
+        {
+            io_context ioc(Backend);
+            capy::run_async(ioc.get_executor())(
+                [](int& child, int& parent) -> capy::task<> {
+                    count_on_exit g{parent};
+                    std::ignore = co_await timeout(
+                        parked_child(child), std::chrono::hours(2));
+                }(child, parent));
+            ioc.poll();
+        }
+        BOOST_TEST_EQ(child, 1);
+        BOOST_TEST_EQ(parent, 1);
+    }
+
+    // The same when the child's completion is already queued, so the
+    // scheduler's drain destroys it rather than the timer service.
+    void testTeardownQueuedNestedContinuation()
+    {
+        int child = 0, parent = 0;
+        {
+            io_context ioc(Backend);
+            capy::run_async(ioc.get_executor())(
+                [](io_context& ioc, int& child, int& parent) -> capy::task<> {
+                    count_on_exit g{parent};
+                    std::ignore = co_await queued_child(ioc, child);
+                }(ioc, child, parent));
+            std::ignore = ioc.poll_one();
+        }
+        BOOST_TEST_EQ(child, 1);
+        BOOST_TEST_EQ(parent, 1);
+    }
+
     void testShutdownReentrantThreeFrames()
     {
         // Three suspended delay()/timeout() frames each own a timer that
@@ -956,9 +1040,94 @@ struct delay_test
         }
     }
 
+    // Context teardown destroys a frame parked on a timer. Work its
+    // destructors post must still reach the scheduler's drain, which
+    // destroys it, rather than be queued after the drain and lost.
+    struct count_on_destroy
+    {
+        int* n;
+        explicit count_on_destroy(int* p) noexcept : n(p) {}
+        count_on_destroy(count_on_destroy&& o) noexcept
+            : n(std::exchange(o.n, nullptr))
+        {
+        }
+        ~count_on_destroy()
+        {
+            if (n)
+                ++*n;
+        }
+    };
+
+    static capy::task<> never_started(count_on_destroy)
+    {
+        co_return;
+    }
+
+    struct post_on_destroy
+    {
+        io_context& ioc;
+        int* destroyed;
+        ~post_on_destroy()
+        {
+            capy::run_async(ioc.get_executor())(
+                never_started(count_on_destroy(destroyed)));
+        }
+    };
+
+    void testTeardownDrainsWorkPostedByTimerFrames()
+    {
+        int destroyed = 0;
+        {
+            io_context ioc(Backend);
+            capy::run_async(ioc.get_executor())(
+                [](io_context& ioc, int* d) -> capy::task<> {
+                    post_on_destroy guard{ioc, d};
+                    std::ignore =
+                        co_await corosio::delay(std::chrono::hours(1));
+                }(ioc, &destroyed));
+            ioc.poll(); // parks on the timer
+        }
+        BOOST_TEST_EQ(destroyed, 1);
+    }
+
+    // A stop requested on another thread can reach a parked delay while
+    // the context tears its timers down; the two must not both claim
+    // the waiter.
+    void testStopRacingTeardown()
+    {
+        for (int round = 0; round < 200; ++round)
+        {
+            std::vector<std::stop_source> stops(8);
+            std::atomic<bool> go{false};
+            std::thread stopper;
+            {
+                io_context ioc(Backend);
+                for (auto& src : stops)
+                    capy::run_async(ioc.get_executor(), src.get_token())(
+                        []() -> capy::task<> {
+                            std::ignore =
+                                co_await corosio::delay(std::chrono::hours(1));
+                        }());
+                std::ignore = ioc.poll(); // parks every delay
+                stopper     = std::thread([&] {
+                    while (!go.load(std::memory_order_acquire))
+                    {
+                    }
+                    for (auto& src : stops)
+                        src.request_stop();
+                });
+                go.store(true, std::memory_order_release);
+            }
+            stopper.join();
+        }
+        BOOST_TEST_PASS();
+    }
+
     void run()
     {
         testDurationCompletes();
+        testTeardownDrainsWorkPostedByTimerFrames();
+        testStopRacingTeardown();
         testTimePointCompletes();
         testZeroDurationCompletesImmediately();
         testPastTimePointCompletesImmediately();
@@ -982,6 +1151,9 @@ struct delay_test
         testMultiTimerExpiryOrder();
         testAbruptStopWithPendingDelays();
         testShutdownReentrantThreeFrames();
+        testTeardownNestedTaskOnTimer();
+        testTeardownTimeoutOfTask();
+        testTeardownQueuedNestedContinuation();
         testInitiationStopRace();
         testClockDeadlineCompletes();
         testClockPastDeadlineCompletesImmediately();

@@ -29,29 +29,52 @@
     one of these for its lifetime and, in register_signal_reader(), parks the
     drain op as the descriptor's read_op then calls register_descriptor().
 
-    The drain op never completes: on each read-readiness edge, invoke_deferred_io
-    calls perform_io(), which drains the pipe and delivers the pending signals,
-    then reports EAGAIN so the op stays parked and re-fires on the next edge —
-    exactly the path a socket read op takes when the kernel has no more data.
-    Because deliver_signal() runs here, in normal dispatch context (not in the
-    signal handler and not under the reactor poll lock), its mutex locking is
-    safe.
+    On each read-readiness edge the drain op completes without touching the
+    pipe, and invoke_deferred_io runs it once the descriptor lock is
+    released. Only then does it drain the pipe and deliver the signals:
+    delivery posts into every context watching the pipe, and a post made
+    under this descriptor's lock would order it before another context's
+    scheduler lock, the reverse of that scheduler's own order. The op then
+    parks itself again, draining once more if an edge arrived meanwhile.
 */
 
 namespace boost::corosio::detail {
 
 struct reactor_signal_pipe_reader
 {
-    // Parked read op: drains the self-pipe and re-arms via EAGAIN.
     struct drain_op final : reactor_op_base
     {
+        reactor_signal_pipe_reader* reader = nullptr;
+
         void perform_io() noexcept override
         {
-            posix_signal_detail::drain_signal_pipe();
-            // Stay parked: EAGAIN tells invoke_deferred_io to keep this op
-            // installed as read_op and re-run it on the next readiness edge.
-            errn = EAGAIN;
+            errn = 0;
         }
+
+        void operator()() override
+        {
+            auto& desc = reader->desc;
+            for (;;)
+            {
+                posix_signal_detail::drain_signal_pipe();
+                conditionally_enabled_mutex::scoped_lock lock(desc.mutex);
+                // An edge seen while unparked set read_ready instead.
+                if (!desc.read_ready)
+                {
+                    desc.read_op = this;
+                    break;
+                }
+                desc.read_ready = false;
+            }
+            // A select() started while this op was out ran without the
+            // pipe in its read set.
+            desc.scheduler_->notify_reparked();
+            // Nothing counted this op as work; balance the decrement
+            // that follows the inline run of a completed op.
+            desc.scheduler_->compensating_work_started();
+        }
+
+        void destroy() override {}
     };
 
     reactor_descriptor_state desc;
@@ -61,6 +84,7 @@ struct reactor_signal_pipe_reader
     // scheduler::register_descriptor(read_fd, ...).
     reactor_descriptor_state* arm() noexcept
     {
+        op.reader    = this;
         desc.read_op = &op;
         return &desc;
     }

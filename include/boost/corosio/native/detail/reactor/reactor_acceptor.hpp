@@ -212,13 +212,13 @@ public:
     }
 
     std::coroutine_handle<> wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         wait_type w,
         std::stop_token token,
         std::error_code* ec) override
     {
-        return do_wait(h, ex, w, token, ec);
+        return do_wait(cont, ex, w, token, ec);
     }
 
     /** Wait for readiness on the listen socket.
@@ -233,7 +233,7 @@ public:
         listening socket.
     */
     std::coroutine_handle<> do_wait(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         wait_type,
         std::stop_token const&,
@@ -456,7 +456,7 @@ reactor_acceptor<
     ImplBase,
     Endpoint>::
     do_wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         wait_type w,
         std::stop_token const& token,
@@ -470,7 +470,7 @@ reactor_acceptor<
         auto& op = wait_wr_;
         op.reset();
         op.wait_event = reactor_event_write;
-        op.h          = h;
+        op.cont       = &cont;
         op.ex         = ex;
         op.ec_out     = ec;
         op.fd         = this->fd_;
@@ -501,7 +501,7 @@ reactor_acceptor<
     auto& op = *op_ptr;
     op.reset();
     op.wait_event = event;
-    op.h          = h;
+    op.cont       = &cont;
     op.ex         = ex;
     op.ec_out     = ec;
     op.fd         = this->fd_;

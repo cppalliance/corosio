@@ -18,6 +18,8 @@
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
 
+#include <boost/capy/continuation.hpp>
+
 #include <coroutine>
 #include <stop_token>
 #include <system_error>
@@ -49,9 +51,9 @@ class BOOST_COROSIO_DECL io_signal_set : public io_object
         explicit wait_awaitable(io_signal_set& s) noexcept : s_(s) {}
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
-            return s_.get().wait(h, ex, token_, &ec_, &value_);
+            return s_.get().wait(cont, ex, token_, &ec_, &value_);
         }
     };
 
@@ -65,7 +67,8 @@ public:
     {
         /** Initiate an asynchronous wait for a signal.
 
-            @param h Coroutine handle to resume on completion.
+            @param cont Continuation to resume on completion; it lives in
+                the awaiting frame until then.
             @param ex Executor for dispatching the completion.
             @param token Stop token for cancellation.
             @param ec Output error code.
@@ -74,7 +77,7 @@ public:
             @return Coroutine handle to resume immediately.
         */
         virtual std::coroutine_handle<> wait(
-            std::coroutine_handle<> h,
+            capy::continuation& cont,
             capy::executor_ref ex,
             std::stop_token token,
             std::error_code* ec,

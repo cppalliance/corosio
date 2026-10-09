@@ -21,9 +21,11 @@ namespace boost::corosio::detail {
 
 /** Returns a handle for symmetric transfer on I/O completion.
 
-    If the executor is io_context::executor_type, returns `c.h`
-    directly (fast path). Otherwise dispatches through the
-    executor, which returns `c.h` or `noop_coroutine()`.
+    Returns `c.h` when the executor's context is running on the
+    calling thread, so the awaiter resumes by symmetric transfer.
+    Otherwise the executor queues `c` and `noop_coroutine()` is
+    returned. An `io_context` executor is dispatched without type
+    erasure.
 
     Callers in coroutine machinery should return the result
     for symmetric transfer. Callers at the scheduler pump
@@ -38,8 +40,10 @@ namespace boost::corosio::detail {
 inline std::coroutine_handle<>
 dispatch_coro(capy::executor_ref ex, capy::continuation& c)
 {
-    if (ex.target<io_context::executor_type>() != nullptr)
-        return c.h;
+    // A completion from another context must not resume the awaiter
+    // on this thread, so the fast path still asks the executor.
+    if (auto const* io_ex = ex.target<io_context::executor_type>())
+        return io_ex->dispatch(c);
     return ex.dispatch(c);
 }
 

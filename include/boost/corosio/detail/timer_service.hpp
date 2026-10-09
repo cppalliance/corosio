@@ -29,6 +29,7 @@
 #include <cstddef>
 #include <limits>
 #include <mutex>
+#include <thread>
 #include <stop_token>
 #include <utility>
 #include <vector>
@@ -154,6 +155,10 @@ private:
     timer_object_pool pool_;
     callback on_earliest_changed_;
     bool shutting_down_ = false;
+
+    // Cancellers that claimed a waiter and have yet to post it;
+    // shutdown waits them out so the scheduler's drain finds the post.
+    std::size_t cancels_posting_ = 0; // guarded by mutex_
     // Avoids mutex in nearest_expiry() and empty()
     mutable std::atomic<std::int64_t> cached_nearest_ns_{
         (std::numeric_limits<std::int64_t>::max)()};
@@ -313,36 +318,66 @@ timer_service::shutdown()
     // Snapshot impls and detach them from the heap so that
     // coroutine-owned timer destructors (triggered by h.destroy()
     // below) cannot re-enter remove_timer_impl() and mutate the
-    // vector during iteration.
+    // vector during iteration. A stop requested on another thread
+    // reaches cancel_waiter() under the same lock: whichever side
+    // claims a waiter first owns it, and a waiter its canceller
+    // claimed is posted, so the scheduler's drain destroys its frame.
     std::vector<timer::implementation*> impls;
-    impls.reserve(heap_.size());
-    for (auto& entry : heap_)
+    std::vector<waiter_node*> waiters;
     {
-        entry.timer_->heap_index_.store(
-            (std::numeric_limits<std::size_t>::max)(),
-            std::memory_order_relaxed);
-        impls.push_back(entry.timer_);
+        std::lock_guard lock(mutex_);
+        impls.reserve(heap_.size());
+        waiters.reserve(heap_.size());
+        for (auto& entry : heap_)
+        {
+            entry.timer_->heap_index_.store(
+                (std::numeric_limits<std::size_t>::max)(),
+                std::memory_order_relaxed);
+            impls.push_back(entry.timer_);
+            if (auto* w = std::exchange(entry.timer_->waiter_, nullptr))
+            {
+                w->impl_ = nullptr;
+                waiters.push_back(w);
+            }
+        }
+        heap_.clear();
+        cached_nearest_ns_.store(
+            (std::numeric_limits<std::int64_t>::max)(),
+            std::memory_order_release);
     }
-    heap_.clear();
-    cached_nearest_ns_.store(
-        (std::numeric_limits<std::int64_t>::max)(), std::memory_order_release);
+
+    // A stop on another thread may have claimed its waiter before the
+    // pass above and still be posting it; the scheduler drains next,
+    // and must find that post.
+    for (;;)
+    {
+        {
+            std::lock_guard lock(mutex_);
+            if (cancels_posting_ == 0)
+                break;
+        }
+        std::this_thread::yield();
+    }
 
     // Cancel waiting timers. Each waiter called work_started()
     // in implementation::wait(). On IOCP the scheduler shutdown
     // loop exits when outstanding_work_ reaches zero, so we must
     // call work_finished() here to balance it. On other backends
-    // this is harmless.
+    // this is harmless. Resetting the stop callback outside the lock
+    // waits out a canceller already running, which finds the waiter
+    // claimed.
+    for (auto* w : waiters)
+    {
+        w->reset_stop_cb();
+        auto h = std::exchange(w->h_, {});
+        sched_->work_finished();
+        // Destroying the frame also ends the node's storage
+        if (h)
+            h.destroy();
+    }
+
     for (auto* impl : impls)
     {
-        if (auto* w = std::exchange(impl->waiter_, nullptr))
-        {
-            w->reset_stop_cb();
-            auto h = std::exchange(w->h_, {});
-            sched_->work_finished();
-            // Destroying the frame also ends the node's storage
-            if (h)
-                h.destroy();
-        }
         // Unlink from the pool's live_ list before the direct delete
         // below, or ~object_pool()'s unconditional sweep would delete
         // this impl a second time.
@@ -463,7 +498,7 @@ timer_service::insert_waiter(timer::implementation& impl, waiter_node* w)
             impl.waiter_ = nullptr;
             remove_timer_impl(impl);
             impl.might_have_pending_waits_.store(
-                false, std::memory_order_relaxed);
+                false, std::memory_order_release);
             refresh_cached_nearest();
             lost_cancel = true;
             notify      = false; // insertion undone; nearest unchanged
@@ -481,7 +516,10 @@ timer_service::insert_waiter(timer::implementation& impl, waiter_node* w)
 inline void
 timer_service::cancel_timer(timer::implementation& impl)
 {
-    if (!impl.might_have_pending_waits_.load(std::memory_order_relaxed))
+    // Acquire pairs with the drains' release: a caller that skips the
+    // lock may recycle the impl next, so the drain's writes to it must
+    // happen before.
+    if (!impl.might_have_pending_waits_.load(std::memory_order_acquire))
         return;
 
     // No unlocked already-done fast-out here: it would need the
@@ -501,7 +539,7 @@ timer_service::cancel_timer(timer::implementation& impl)
             canceled->impl_ = nullptr;
         // Store false as the final touch of the impl under the lock so
         // a pre-lock false-flag check trusts it unqualified.
-        impl.might_have_pending_waits_.store(false, std::memory_order_relaxed);
+        impl.might_have_pending_waits_.store(false, std::memory_order_release);
         refresh_cached_nearest();
     }
 
@@ -525,12 +563,16 @@ timer_service::cancel_waiter(waiter_node* w)
         w->impl_      = nullptr;
         impl->waiter_ = nullptr;
         remove_timer_impl(*impl);
-        impl->might_have_pending_waits_.store(false, std::memory_order_relaxed);
+        impl->might_have_pending_waits_.store(false, std::memory_order_release);
         refresh_cached_nearest();
+        ++cancels_posting_;
     }
 
     w->ec_ = make_error_code(capy::error::canceled);
     sched_->post(&w->op_);
+
+    std::lock_guard lock(mutex_);
+    --cancels_posting_;
 }
 
 inline std::size_t
@@ -553,7 +595,7 @@ timer_service::process_expired()
                 expired.push_back(w);
             }
             t->might_have_pending_waits_.store(
-                false, std::memory_order_relaxed);
+                false, std::memory_order_release);
         }
 
         refresh_cached_nearest();

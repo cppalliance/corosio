@@ -75,11 +75,19 @@ public:
         std::filesystem::path const& path,
         file_base::flags mode) override
     {
-        // Unavailable in the unsafe tier: the file thread pool completes
-        // cross-thread, which the lockless scheduler cannot accept.
-        if (sched_->scheduler_locking_disabled())
+        if (pool_unavailable())
             return std::make_error_code(std::errc::operation_not_supported);
         return static_cast<posix_stream_file&>(impl).open_file(path, mode);
+    }
+
+    /** Check whether file I/O is unavailable on this context.
+
+        The file thread pool completes cross-thread, which the
+        lockless scheduler of the unsafe tier cannot accept.
+    */
+    bool pool_unavailable() const noexcept
+    {
+        return sched_->scheduler_locking_disabled();
     }
 
     void shutdown() override
@@ -149,7 +157,7 @@ private:
 
 inline std::coroutine_handle<>
 posix_stream_file::read_some(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref ex,
     buffer_param param,
     std::stop_token token,
@@ -165,8 +173,7 @@ posix_stream_file::read_some(
     {
         *ec        = make_error_code(std::errc::bad_file_descriptor);
         *bytes_out = 0;
-        op.cont.h  = h;
-        return dispatch_coro(ex, op.cont);
+        return dispatch_coro(ex, cont);
     }
 
     capy::mutable_buffer bufs[max_buffers];
@@ -176,8 +183,7 @@ posix_stream_file::read_some(
     {
         *ec        = {};
         *bytes_out = 0;
-        op.cont.h  = h;
-        return dispatch_coro(ex, op.cont);
+        return dispatch_coro(ex, cont);
     }
 
     for (int i = 0; i < op.iovec_count; ++i)
@@ -186,7 +192,7 @@ posix_stream_file::read_some(
         op.iovecs[i].iov_len  = bufs[i].size();
     }
 
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = ex;
     op.ec_out    = ec;
     op.bytes_out = bytes_out;
@@ -212,8 +218,7 @@ posix_stream_file::read_some(
         op.ex.on_work_finished();
         *ec        = pec;
         *bytes_out = 0;
-        op.cont.h  = h;
-        return dispatch_coro(ex, op.cont);
+        return dispatch_coro(ex, cont);
     }
     return std::noop_coroutine();
 }
@@ -227,30 +232,45 @@ posix_stream_file::do_read_work(pool_work_item* w) noexcept
 
     if (!op.cancelled.load(std::memory_order_acquire))
     {
-        ssize_t n;
-        do
+        if (!self->gate_.enter(op.fd))
         {
-            n = file_preadv(
-                op.fd, op.iovecs, op.iovec_count,
-                static_cast<file_off_t>(op.offset));
+            // Closed or replaced since this was queued.
+            op.request_cancel();
         }
-        while (n < 0 && errno == EINTR);
-
-        if (n >= 0)
+        else if (op.cancelled.load(std::memory_order_acquire))
         {
-            op.errn              = 0;
-            op.bytes_transferred = static_cast<std::size_t>(n);
-
-            // The file may have been replaced while this ran; its
-            // position belongs to whatever it now holds.
-            std::lock_guard<std::mutex> lock(self->offset_mutex_);
-            if (self->generation_ == op.generation)
-                self->offset_ += static_cast<std::uint64_t>(n);
+            // Closed and reopened onto the same number since the check
+            // above: the gate admits the number, but not this op.
+            self->gate_.leave();
         }
         else
         {
-            op.errn              = errno;
-            op.bytes_transferred = 0;
+            ssize_t n;
+            do
+            {
+                n = file_preadv(
+                    op.fd, op.iovecs, op.iovec_count,
+                    static_cast<file_off_t>(op.offset));
+            }
+            while (n < 0 && errno == EINTR);
+
+            if (n >= 0)
+            {
+                op.errn              = 0;
+                op.bytes_transferred = static_cast<std::size_t>(n);
+
+                // The file may have been replaced while this ran; its
+                // position belongs to whatever it now holds.
+                std::lock_guard<std::mutex> lock(self->offset_mutex_);
+                if (self->generation_ == op.generation)
+                    self->offset_ += static_cast<std::uint64_t>(n);
+            }
+            else
+            {
+                op.errn              = errno;
+                op.bytes_transferred = 0;
+            }
+            self->gate_.leave();
         }
     }
 
@@ -260,7 +280,7 @@ posix_stream_file::do_read_work(pool_work_item* w) noexcept
 
 inline std::coroutine_handle<>
 posix_stream_file::write_some(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref ex,
     buffer_param param,
     std::stop_token token,
@@ -276,8 +296,7 @@ posix_stream_file::write_some(
     {
         *ec        = make_error_code(std::errc::bad_file_descriptor);
         *bytes_out = 0;
-        op.cont.h  = h;
-        return dispatch_coro(ex, op.cont);
+        return dispatch_coro(ex, cont);
     }
 
     capy::mutable_buffer bufs[max_buffers];
@@ -287,8 +306,7 @@ posix_stream_file::write_some(
     {
         *ec        = {};
         *bytes_out = 0;
-        op.cont.h  = h;
-        return dispatch_coro(ex, op.cont);
+        return dispatch_coro(ex, cont);
     }
 
     for (int i = 0; i < op.iovec_count; ++i)
@@ -297,7 +315,7 @@ posix_stream_file::write_some(
         op.iovecs[i].iov_len  = bufs[i].size();
     }
 
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = ex;
     op.ec_out    = ec;
     op.bytes_out = bytes_out;
@@ -323,8 +341,7 @@ posix_stream_file::write_some(
         op.ex.on_work_finished();
         *ec        = pec;
         *bytes_out = 0;
-        op.cont.h  = h;
-        return dispatch_coro(ex, op.cont);
+        return dispatch_coro(ex, cont);
     }
     return std::noop_coroutine();
 }
@@ -338,35 +355,65 @@ posix_stream_file::do_write_work(pool_work_item* w) noexcept
 
     if (!op.cancelled.load(std::memory_order_acquire))
     {
-        ssize_t n;
-        do
+        if (!self->gate_.enter(op.fd))
         {
-            n = file_pwritev(
-                op.fd, op.iovecs, op.iovec_count,
-                static_cast<file_off_t>(op.offset));
+            // Closed or replaced since this was queued.
+            op.request_cancel();
         }
-        while (n < 0 && errno == EINTR);
-
-        if (n >= 0)
+        else if (op.cancelled.load(std::memory_order_acquire))
         {
-            op.errn              = 0;
-            op.bytes_transferred = static_cast<std::size_t>(n);
-
-            // The file may have been replaced while this ran; its
-            // position belongs to whatever it now holds.
-            std::lock_guard<std::mutex> lock(self->offset_mutex_);
-            if (self->generation_ == op.generation)
-                self->offset_ += static_cast<std::uint64_t>(n);
+            // Closed and reopened onto the same number since the check
+            // above: the gate admits the number, but not this op.
+            self->gate_.leave();
         }
         else
         {
-            op.errn              = errno;
-            op.bytes_transferred = 0;
+            ssize_t n;
+            do
+            {
+                n = file_pwritev(
+                    op.fd, op.iovecs, op.iovec_count,
+                    static_cast<file_off_t>(op.offset));
+            }
+            while (n < 0 && errno == EINTR);
+
+            if (n >= 0)
+            {
+                op.errn              = 0;
+                op.bytes_transferred = static_cast<std::size_t>(n);
+
+                // The file may have been replaced while this ran; its
+                // position belongs to whatever it now holds.
+                std::lock_guard<std::mutex> lock(self->offset_mutex_);
+                if (self->generation_ == op.generation)
+                    self->offset_ += static_cast<std::uint64_t>(n);
+            }
+            else
+            {
+                op.errn              = errno;
+                op.bytes_transferred = 0;
+            }
+            self->gate_.leave();
         }
     }
 
     op.object_ref_ = std::move(pw->ref_);
     self->svc_.post(&op);
+}
+
+inline std::error_code
+posix_stream_file::assign(native_handle_type handle) noexcept
+{
+    // The public assign() guarantees the object is closed.
+    if (svc_.pool_unavailable())
+        return std::make_error_code(std::errc::operation_not_supported);
+    if (auto ec = validate_file_fd(handle))
+        return ec;
+
+    fd_     = handle;
+    offset_ = 0;
+    gate_.open(handle);
+    return {};
 }
 
 inline void
