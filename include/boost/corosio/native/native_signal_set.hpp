@@ -69,10 +69,10 @@ class native_signal_set : public signal_set
         }
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
             return self_.get_impl().wait(
-                h, ex, this->token_, &this->ec_, &this->value_);
+                cont, ex, this->token_, &this->ec_, &this->value_);
         }
     };
 

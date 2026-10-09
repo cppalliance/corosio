@@ -27,7 +27,9 @@
 #include <boost/corosio/native/detail/coro_op_complete.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/posix/large_file.hpp>
+#include <boost/corosio/native/detail/posix/posix_fd_gate.hpp>
 #include <boost/corosio/native/detail/validate_fd.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/buffers.hpp>
@@ -160,6 +162,7 @@ public:
     void reuse() noexcept
     {
         BOOST_COROSIO_ASSERT(fd_ == -1);
+        BOOST_COROSIO_ASSERT(gate_.idle());
         BOOST_COROSIO_ASSERT(!read_op_.stop_cb);
         BOOST_COROSIO_ASSERT(!write_op_.stop_cb);
     }
@@ -167,7 +170,7 @@ public:
     // -- io_stream::implementation --
 
     std::coroutine_handle<> read_some(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         buffer_param,
         std::stop_token,
@@ -175,7 +178,7 @@ public:
         std::size_t*) override;
 
     std::coroutine_handle<> write_some(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         buffer_param,
         std::stop_token,
@@ -222,6 +225,8 @@ private:
     // only if this still matches its op's snapshot; the mutex makes the
     // check and the advance one step against a concurrent assign().
     std::mutex offset_mutex_;
+    /// Keeps fd_'s number allocated while a pool worker uses it.
+    posix_fd_gate gate_;
     std::uint64_t generation_ = 0;
 
     file_op read_op_;
@@ -280,6 +285,7 @@ posix_stream_file::open_file(
 
     fd_     = fd;
     offset_ = 0;
+    gate_.open(fd);
 
     // Append mode: position at end-of-file (preadv/pwritev use
     // explicit offsets, so O_APPEND alone is not sufficient).
@@ -289,7 +295,7 @@ posix_stream_file::open_file(
         if (file_fstat(fd, &st) < 0)
         {
             int err = errno;
-            ::close(fd);
+            gate_.close();
             fd_ = -1;
             return make_err(err);
         }
@@ -314,11 +320,8 @@ inline void
 posix_stream_file::close_file() noexcept
 {
     bump_generation();
-    if (fd_ >= 0)
-    {
-        ::close(fd_);
-        fd_ = -1;
-    }
+    gate_.close();
+    fd_ = -1;
 }
 
 inline std::uint64_t
@@ -367,23 +370,15 @@ posix_stream_file::release()
     // A queued op has already copied the fd number; it must not run
     // after the caller closes it and the number is recycled.
     cancel();
+    if (!gate_.release())
+        throw_system_error(
+            std::make_error_code(std::errc::device_or_resource_busy),
+            "stream_file::release");
     bump_generation();
     int fd  = fd_;
     fd_     = -1;
     offset_ = 0;
     return fd;
-}
-
-inline std::error_code
-posix_stream_file::assign(native_handle_type handle) noexcept
-{
-    // The public assign() guarantees the object is closed.
-    if (auto ec = validate_file_fd(handle))
-        return ec;
-
-    fd_     = handle;
-    offset_ = 0;
-    return {};
 }
 
 inline capy::io_result<std::uint64_t>
@@ -442,8 +437,7 @@ posix_stream_file::file_op::operator()()
     // posix_stream_file (which embeds this file_op) alive.
     auto prevent_destroy = std::move(object_ref_);
     ex.on_work_finished();
-    cont.h = h;
-    dispatch_coro(ex, cont).resume();
+    dispatch_coro(ex, *cont).resume();
 }
 
 inline void

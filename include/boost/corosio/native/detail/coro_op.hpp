@@ -77,8 +77,11 @@ struct coro_op : scheduler_op
         }
     };
 
-    std::coroutine_handle<> h;
-    capy::continuation cont;
+    /// The awaiting coroutine's continuation. It lives in the awaitable,
+    /// which stays in the awaiting frame until resumption, so a
+    /// completion posted through an executor never shares this op's
+    /// storage, which is reused by the next operation.
+    capy::continuation* cont = nullptr;
     capy::executor_ref ex;
     std::error_code* ec_out = nullptr;
     std::size_t* bytes_out  = nullptr;

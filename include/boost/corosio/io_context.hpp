@@ -620,7 +620,10 @@ public:
     */
     bool running_in_this_thread() const noexcept
     {
-        return ctx_->sched_->running_in_this_thread();
+        // The innermost scheduler answers the common case without a
+        // virtual call or a frame walk.
+        return detail::running_scheduler.get() == ctx_->sched_ ||
+            ctx_->sched_->running_in_this_thread();
     }
 
     /** Informs the executor that work is beginning.

@@ -280,7 +280,7 @@ public:
     // -- io_stream::implementation --
 
     std::coroutine_handle<> read_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buffers,
         std::stop_token token,
@@ -288,7 +288,7 @@ public:
         std::size_t* bytes) override
     {
         rd_.prepare(
-            h, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_,
+            cont, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_,
             detail::object_ref(this), buffers, token);
         arm_slot(rd_);
         sched_->work_started();
@@ -313,7 +313,7 @@ public:
     }
 
     std::coroutine_handle<> write_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buffers,
         std::stop_token token,
@@ -321,7 +321,7 @@ public:
         std::size_t* bytes) override
     {
         wr_.prepare(
-            h, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_,
+            cont, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_,
             detail::object_ref(this), buffers, token);
         arm_slot(wr_);
         sched_->work_started();
@@ -347,7 +347,7 @@ public:
     // -- posix_stream_descriptor::implementation --
 
     std::coroutine_handle<> wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         wait_type w,
         std::stop_token token,
@@ -374,7 +374,8 @@ public:
         }
 
         op->prepare(
-            h, ex, ec, fd_, sched_, detail::object_ref(this), poll_flags, token);
+            cont, ex, ec, fd_, sched_, detail::object_ref(this), poll_flags,
+            token);
         sched_->work_started();
 
         if (fd_ < 0)

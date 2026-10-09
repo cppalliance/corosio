@@ -193,9 +193,11 @@ inline thread_local_ptr<scheduler_context> context_stack;
 struct thread_context_guard
 {
     scheduler_context frame_;
+    running_scheduler_guard running_;
 
     explicit thread_context_guard(win_scheduler const* ctx) noexcept
         : frame_{ctx, context_stack.get()}
+        , running_(ctx)
     {
         context_stack.set(&frame_);
     }

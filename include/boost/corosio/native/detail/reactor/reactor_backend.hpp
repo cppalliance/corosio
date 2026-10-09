@@ -47,7 +47,7 @@ reactor_acceptor_impl<
     AccImplBase,
     Endpoint>::
     accept(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         std::stop_token token,
         std::error_code* ec,
@@ -55,7 +55,7 @@ reactor_acceptor_impl<
 {
     auto& op = this->acc_;
     op.reset();
-    op.h        = h;
+    op.cont     = &cont;
     op.ex       = ex;
     op.ec_out   = ec;
     op.impl_out = impl_out;
@@ -122,8 +122,7 @@ reactor_acceptor_impl<
             }
             // Completed without parking: nothing left for a stop to cancel.
             op.stop_cb.reset();
-            op.cont.h = h;
-            return dispatch_coro(ex, op.cont);
+            return dispatch_coro(ex, cont);
         }
 
         op.accepted_fd  = accepted;

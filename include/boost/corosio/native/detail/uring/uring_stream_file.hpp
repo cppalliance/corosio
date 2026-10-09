@@ -115,7 +115,7 @@ public:
     // -- io_stream::implementation --
 
     std::coroutine_handle<> read_some(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         buffer_param,
         std::stop_token,
@@ -123,7 +123,7 @@ public:
         std::size_t*) override;
 
     std::coroutine_handle<> write_some(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         buffer_param,
         std::stop_token,
@@ -279,7 +279,7 @@ public:
 
 inline std::coroutine_handle<>
 uring_stream_file::read_some(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref ex,
     buffer_param buffers,
     std::stop_token token,
@@ -287,8 +287,8 @@ uring_stream_file::read_some(
     std::size_t* bytes)
 {
     rd_.prepare(
-        h, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_, detail::object_ref(this),
-        buffers, token);
+        cont, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_,
+        detail::object_ref(this), buffers, token);
     sched_->work_started();
 
     // Closed-object contract outranks the zero-length no-op.
@@ -314,7 +314,7 @@ uring_stream_file::read_some(
 
 inline std::coroutine_handle<>
 uring_stream_file::write_some(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref ex,
     buffer_param buffers,
     std::stop_token token,
@@ -322,8 +322,8 @@ uring_stream_file::write_some(
     std::size_t* bytes)
 {
     wr_.prepare(
-        h, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_, detail::object_ref(this),
-        buffers, token);
+        cont, ex, ec, bytes, fd_, /*file_offset=*/-1, sched_,
+        detail::object_ref(this), buffers, token);
     sched_->work_started();
 
     // Closed-object contract outranks the zero-length no-op.

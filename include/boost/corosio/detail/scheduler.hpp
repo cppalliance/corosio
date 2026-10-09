@@ -14,6 +14,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
+#include <boost/corosio/detail/thread_local_ptr.hpp>
 
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -139,6 +140,41 @@ struct BOOST_COROSIO_DECL scheduler
 
     @throws std::logic_error If the context has no backend installed.
 */
+/** The innermost scheduler running on this thread, or null.
+
+    Each backend's run guard sets it and restores the previous value,
+    so a completion can ask whether its awaiter's context is running
+    here with one compare. Nested runs of other schedulers are still
+    answered by the scheduler's own frame stack.
+*/
+inline thread_local_ptr<scheduler const> running_scheduler;
+
+/** RAII guard marking a scheduler as innermost on this thread.
+
+    Restores the previous innermost scheduler on destruction.
+*/
+class running_scheduler_guard
+{
+    scheduler const* prev_;
+
+public:
+    /// Construct the guard, making @p s the innermost scheduler.
+    explicit running_scheduler_guard(scheduler const* s) noexcept
+        : prev_(running_scheduler.get())
+    {
+        running_scheduler.set(s);
+    }
+
+    /// Destroy the guard, restoring the previous innermost scheduler.
+    ~running_scheduler_guard()
+    {
+        running_scheduler.set(prev_);
+    }
+
+    running_scheduler_guard(running_scheduler_guard const&)            = delete;
+    running_scheduler_guard& operator=(running_scheduler_guard const&) = delete;
+};
+
 inline scheduler&
 get_scheduler(capy::execution_context& ctx)
 {

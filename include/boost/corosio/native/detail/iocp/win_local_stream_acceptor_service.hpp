@@ -17,6 +17,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/local_stream_acceptor_service.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
 #include <boost/corosio/native/detail/iocp/win_dissociate.hpp>
@@ -213,11 +214,10 @@ local_stream_accept_op::do_complete(
             *op->impl_out = nullptr;
     }
 
-    op->cont.h                         = op->h;
     auto saved_ex                      = op->ex;
     auto prevent_premature_destruction = std::move(op->object_ref_);
 
-    dispatch_coro(saved_ex, op->cont).resume();
+    dispatch_coro(saved_ex, *op->cont).resume();
 }
 
 inline void
@@ -306,7 +306,7 @@ win_local_stream_acceptor::cancel() noexcept
 
 inline std::coroutine_handle<>
 win_local_stream_acceptor::wait(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     wait_type w,
     std::stop_token token,
@@ -317,7 +317,7 @@ win_local_stream_acceptor::wait(
 
     auto& op = wt_;
     op.reset();
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = d;
     op.ec_out    = ec;
     op.bytes_out = nullptr;
@@ -368,7 +368,7 @@ win_local_stream_acceptor::close_socket() noexcept
 
 inline std::coroutine_handle<>
 win_local_stream_acceptor::accept(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     std::stop_token token,
     std::error_code* ec,
@@ -385,7 +385,7 @@ win_local_stream_acceptor::accept(
     // whatever stale pointer it finds here.
     op.peer_wrapper    = nullptr;
     op.accepted_socket = INVALID_SOCKET;
-    op.h               = h;
+    op.cont            = &cont;
     op.ex              = d;
     op.ec_out          = ec;
     op.impl_out        = impl_out;

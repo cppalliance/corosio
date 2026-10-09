@@ -18,6 +18,7 @@
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
 #include <boost/corosio/detail/thread_local_ptr.hpp>
+#include <boost/corosio/detail/timer_service.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -35,7 +36,6 @@ namespace boost::corosio::detail {
 
 // Forward declarations
 class reactor_scheduler;
-class timer_service;
 
 /** A deregistered descriptor whose owner must outlive the reactor pass
     that may still hold it.
@@ -219,6 +219,13 @@ public:
         no handler will be executed. Must be called from a scheduler
         thread.
     */
+    /** Note that an op was parked outside the usual registration path.
+
+        A reactor that builds its poll set from parked ops must rebuild
+        it; one the kernel tracks needs nothing.
+    */
+    virtual void notify_reparked() const {}
+
     void compensating_work_started() const noexcept;
 
     /** Post completed operations for deferred invocation.
@@ -385,10 +392,14 @@ struct reactor_thread_context_guard
     /// The context frame managed by this guard.
     reactor_scheduler_context frame_;
 
+    /// Marks the scheduler innermost for the executor's fast check.
+    running_scheduler_guard running_;
+
     /// Construct the guard, pushing a frame for @a sched.
     explicit reactor_thread_context_guard(
         reactor_scheduler const* sched) noexcept
         : frame_(sched, reactor_context_stack.get())
+        , running_(sched)
     {
         reactor_context_stack.set(&frame_);
     }
@@ -778,6 +789,13 @@ reactor_scheduler::settle_retired(lock_type& lock) const
 inline void
 reactor_scheduler::shutdown_drain()
 {
+    // This scheduler's constructor registered the timer service, so
+    // the context shuts it down later; its waiters' frames must be
+    // destroyed before the drain, which then destroys whatever their
+    // destructors post. The context's own call later finds no waiter.
+    if (timer_svc_)
+        timer_svc_->shutdown();
+
     lock_type lock(mutex_);
     settle_retired(lock);
 

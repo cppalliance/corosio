@@ -18,6 +18,7 @@
 
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/wait_type.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
@@ -122,14 +123,14 @@ public:
     win_tcp_service& socket_service() noexcept;
 
     std::coroutine_handle<> accept(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref d,
         std::stop_token token,
         std::error_code* ec,
         io_object::implementation** impl_out) override;
 
     std::coroutine_handle<> wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref d,
         wait_type w,
         std::stop_token token,

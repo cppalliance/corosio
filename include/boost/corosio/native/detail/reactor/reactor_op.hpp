@@ -27,6 +27,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <unistd.h>
 
 namespace boost::corosio::detail {
 
@@ -391,6 +392,17 @@ struct reactor_accept_op : Base
         impl_out     = nullptr;
         peer_storage = {};
         peer_addrlen = 0;
+    }
+
+    /// Destroy without invoking, closing a connection already taken.
+    void destroy() override
+    {
+        if (accepted_fd >= 0)
+        {
+            ::close(accepted_fd);
+            accepted_fd = -1;
+        }
+        Base::destroy();
     }
 
     void perform_io() noexcept override

@@ -18,6 +18,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
 #include <boost/corosio/native/detail/iocp/win_dissociate.hpp>
@@ -213,11 +214,10 @@ accept_op::do_complete(
             *op->impl_out = nullptr;
     }
 
-    op->cont.h                         = op->h;
     auto saved_ex                      = op->ex;
     auto prevent_premature_destruction = std::move(op->object_ref_);
 
-    dispatch_coro(saved_ex, op->cont).resume();
+    dispatch_coro(saved_ex, *op->cont).resume();
 }
 
 // acceptor_wait_op completion handler
@@ -295,7 +295,7 @@ win_tcp_acceptor::set_local_endpoint(endpoint ep) noexcept
 
 inline std::coroutine_handle<>
 win_tcp_acceptor::accept(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     std::stop_token token,
     std::error_code* ec,
@@ -313,7 +313,7 @@ win_tcp_acceptor::accept(
     // whatever stale pointer it finds here.
     op.peer_wrapper    = nullptr;
     op.accepted_socket = INVALID_SOCKET;
-    op.h               = h;
+    op.cont            = &cont;
     op.ex              = d;
     op.ec_out          = ec;
     op.impl_out        = impl_out;
@@ -403,7 +403,7 @@ win_tcp_acceptor::accept(
 
 inline std::coroutine_handle<>
 win_tcp_acceptor::wait(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     wait_type w,
     std::stop_token token,
@@ -414,7 +414,7 @@ win_tcp_acceptor::wait(
 
     auto& op = wt_;
     op.reset();
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = d;
     op.ec_out    = ec;
     op.bytes_out = nullptr;

@@ -63,7 +63,7 @@ struct uring_dgram_send_op : uring_op
         `dest_addr_storage` with the destination address.
     */
     void prepare(
-        std::coroutine_handle<> handle,
+        capy::continuation& awaiting,
         capy::executor_ref executor,
         std::error_code* ec,
         std::size_t* bytes,
@@ -77,7 +77,7 @@ struct uring_dgram_send_op : uring_op
         int flags,
         std::stop_token const& token) noexcept
     {
-        h           = handle;
+        cont        = &awaiting;
         ex          = executor;
         ec_out      = ec;
         bytes_out   = bytes;
@@ -201,7 +201,7 @@ struct uring_dgram_recv_op : uring_op
         otherwise block forever.
     */
     void prepare(
-        std::coroutine_handle<> handle,
+        capy::continuation& awaiting,
         capy::executor_ref executor,
         std::error_code* ec,
         std::size_t* bytes,
@@ -215,7 +215,7 @@ struct uring_dgram_recv_op : uring_op
         int flags,
         std::stop_token const& token) noexcept
     {
-        h           = handle;
+        cont        = &awaiting;
         ex          = executor;
         ec_out      = ec;
         bytes_out   = bytes;

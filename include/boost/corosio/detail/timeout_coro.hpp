@@ -36,10 +36,9 @@
    the MSVC symmetric-transfer workaround) to inject io_env into
    IoAwaitable co_await expressions.
 
-   The detached frame allocates from the awaiting chain's frame
-   allocator and can outlive that chain, extending the allocator's
-   required lifetime until the io_context drains. This is safe with
-   the default recycling resource. */
+   The detached frame can outlive the awaiting chain, so it never
+   allocates from that chain's frame allocator: timeout_awaitable
+   creates it under the process-wide recycling resource. */
 
 namespace boost::corosio::detail {
 

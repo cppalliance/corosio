@@ -21,6 +21,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/object_pool.hpp>
 #include <boost/corosio/detail/object_ref.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/corosio/native/detail/iocp/win_mutex.hpp>
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
@@ -333,8 +334,10 @@ signal_op::do_complete(
     std::uint32_t /*error*/)
 {
     auto* op = static_cast<signal_op*>(base);
+    // Embedded in win_signal: copied out below before the queued
+    // reference can drop, and nothing touches op afterwards.
+    auto keep = std::move(op->keep);
 
-    // Destroy path - no-op: signal_op is embedded in win_signal
     if (!owner)
         return;
 
@@ -345,9 +348,10 @@ signal_op::do_complete(
 
     auto* service = op->svc;
     op->svc       = nullptr;
+    auto* c       = op->cont;
+    auto ex       = op->d;
 
-    op->cont.h = op->h;
-    dispatch_coro(op->d, op->cont).resume();
+    dispatch_coro(ex, *c).resume();
 
     if (service)
         service->work_finished();
@@ -361,13 +365,13 @@ inline win_signal::win_signal(win_signals& svc) noexcept : svc_(svc) {}
 
 inline std::coroutine_handle<>
 win_signal::wait(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     std::stop_token token,
     std::error_code* ec,
     int* signal_out)
 {
-    pending_op_.h             = h;
+    pending_op_.cont          = &cont;
     pending_op_.d             = d;
     pending_op_.ec_out        = ec;
     pending_op_.signal_out    = signal_out;
@@ -388,8 +392,7 @@ win_signal::wait(
             *ec = make_error_code(capy::error::canceled);
         if (signal_out)
             *signal_out = 0;
-        pending_op_.cont.h = h;
-        dispatch_coro(d, pending_op_.cont).resume();
+        dispatch_coro(d, *pending_op_.cont).resume();
         // resumed inline for an io_context executor, not posted to the
         // scheduler queue.
         return std::noop_coroutine();
@@ -693,8 +696,7 @@ win_signals::cancel_wait(win_signal& impl)
             *op->ec_out = make_error_code(capy::error::canceled);
         if (op->signal_out)
             *op->signal_out = 0;
-        op->cont.h = op->h;
-        dispatch_coro(op->d, op->cont).resume();
+        dispatch_coro(op->d, *op->cont).resume();
         sched_.work_finished();
     }
 }
@@ -724,8 +726,7 @@ win_signals::cancel_wait_token(win_signal& impl) noexcept
             *op->ec_out = make_error_code(capy::error::canceled);
         if (op->signal_out)
             *op->signal_out = 0;
-        op->cont.h = op->h;
-        dispatch_coro(op->d, op->cont).resume();
+        dispatch_coro(op->d, *op->cont).resume();
         sched_.work_finished();
     }
 }
@@ -753,7 +754,6 @@ win_signals::start_wait(win_signal& impl, signal_op* op)
                 *op->ec_out = make_error_code(capy::error::canceled);
             if (op->signal_out)
                 *op->signal_out = 0;
-            op->cont.h = op->h;
         }
         else if (impl.token_cancelled_)
         {
@@ -767,7 +767,6 @@ win_signals::start_wait(win_signal& impl, signal_op* op)
                 *op->ec_out = make_error_code(capy::error::canceled);
             if (op->signal_out)
                 *op->signal_out = 0;
-            op->cont.h = op->h;
         }
         else
         {
@@ -780,6 +779,8 @@ win_signals::start_wait(win_signal& impl, signal_op* op)
                     --reg->undelivered;
                     op->signal_number = reg->signal_number;
                     op->svc = nullptr; // No extra work_finished needed
+                    // The caller's wait() holds the handle's reference.
+                    op->keep = detail::object_ref(&impl);
                     // Post for immediate completion - post() handles work tracking
                     post(op);
                     return;
@@ -799,7 +800,7 @@ win_signals::start_wait(win_signal& impl, signal_op* op)
     // Dispatch outside the lock to avoid deadlock if the resumed
     // coroutine re-enters cancel()/add()/remove()
     if (was_cancelled)
-        dispatch_coro(op->d, op->cont).resume();
+        dispatch_coro(op->d, *op->cont).resume();
 }
 
 inline void
@@ -829,10 +830,17 @@ win_signals::deliver_signal(int signal_number)
 
             if (impl->waiting_)
             {
-                // Complete the pending wait
-                impl->waiting_                  = false;
-                impl->pending_op_.signal_number = signal_number;
-                service->post(&impl->pending_op_);
+                // Reached through the registry, not a held reference.
+                // A set whose count reached zero is being destroyed,
+                // and that destruction completes its wait itself.
+                auto keep = detail::object_ref::try_from(impl);
+                if (keep)
+                {
+                    impl->waiting_                  = false;
+                    impl->pending_op_.signal_number = signal_number;
+                    impl->pending_op_.keep          = std::move(keep);
+                    service->post(&impl->pending_op_);
+                }
             }
             else
             {

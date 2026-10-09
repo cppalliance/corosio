@@ -142,6 +142,25 @@ public:
         /// Construct an empty handle.
         handle() = default;
 
+        /** Construct a handle that takes over an existing implementation.
+
+            @pre @p p, if non-null, was constructed by @p svc and is
+                owned by no other handle.
+
+            @param ctx The context @p svc belongs to.
+            @param svc The service that constructed @p p.
+            @param p The implementation to own.
+        */
+        handle(
+            capy::execution_context& ctx,
+            io_service& svc,
+            implementation* p) noexcept
+            : ctx_(&ctx)
+            , svc_(&svc)
+            , impl_(p)
+        {
+        }
+
         /// Construct a handle bound to a context and service.
         handle(capy::execution_context& ctx, io_service& svc)
             : ctx_(&ctx)

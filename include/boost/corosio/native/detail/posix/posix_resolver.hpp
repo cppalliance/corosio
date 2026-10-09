@@ -16,6 +16,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/resolver.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
@@ -245,7 +246,7 @@ public:
     }
 
     std::coroutine_handle<> resolve(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         std::string_view host,
         std::string_view service,
@@ -255,7 +256,7 @@ public:
         std::vector<endpoint>*) override;
 
     std::coroutine_handle<> reverse_resolve(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         endpoint const& ep,
         reverse_flags flags,

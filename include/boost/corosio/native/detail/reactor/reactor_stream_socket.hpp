@@ -18,6 +18,7 @@
 #include <boost/corosio/native/detail/reactor/reactor_basic_socket.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_descriptor_state.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/buffers.hpp>
 
 #include <coroutine>
@@ -118,45 +119,45 @@ public:
     // --- Virtual method overrides (satisfy ImplBase pure virtuals) ---
 
     std::coroutine_handle<> connect(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         Endpoint ep,
         std::stop_token token,
         std::error_code* ec) override
     {
-        return do_connect(h, ex, ep, token, ec);
+        return do_connect(cont, ex, ep, token, ec);
     }
 
     std::coroutine_handle<> read_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param param,
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes_out) override
     {
-        return do_read_some(h, ex, param, token, ec, bytes_out);
+        return do_read_some(cont, ex, param, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> write_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param param,
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes_out) override
     {
-        return do_write_some(h, ex, param, token, ec, bytes_out);
+        return do_write_some(cont, ex, param, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         wait_type w,
         std::stop_token token,
         std::error_code* ec) override
     {
-        return do_wait(h, ex, w, token, ec);
+        return do_wait(cont, ex, w, token, ec);
     }
 
     std::error_code shutdown(corosio::shutdown_type what) noexcept override
@@ -217,7 +218,7 @@ public:
         On EINPROGRESS, registers with the reactor.
     */
     std::coroutine_handle<> do_connect(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         Endpoint const&,
         std::stop_token const&,
@@ -230,7 +231,7 @@ public:
         On EAGAIN, registers with the reactor.
     */
     std::coroutine_handle<> do_read_some(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         buffer_param,
         std::stop_token const&,
@@ -244,7 +245,7 @@ public:
         posts through queue. On EAGAIN, registers with the reactor.
     */
     std::coroutine_handle<> do_write_some(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         buffer_param,
         std::stop_token const&,
@@ -261,7 +262,7 @@ public:
         completes only while a non-blocking write can make progress.
     */
     std::coroutine_handle<> do_wait(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         wait_type,
         std::stop_token const&,
@@ -387,7 +388,7 @@ reactor_stream_socket<
     ImplBase,
     Endpoint>::
     do_connect(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         Endpoint const& ep,
         std::stop_token const& token,
@@ -418,11 +419,10 @@ reactor_stream_socket<
         if (this->svc_.scheduler().try_consume_inline_budget())
         {
             *ec       = err ? make_err(err) : std::error_code{};
-            op.cont.h = h;
-            return dispatch_coro(ex, op.cont);
+            return dispatch_coro(ex, cont);
         }
         op.reset();
-        op.h               = h;
+        op.cont            = &cont;
         op.ex              = ex;
         op.ec_out          = ec;
         op.fd              = this->fd_;
@@ -436,7 +436,7 @@ reactor_stream_socket<
 
     // EINPROGRESS — register with reactor
     op.reset();
-    op.h               = h;
+    op.cont            = &cont;
     op.ex              = ex;
     op.ec_out          = ec;
     op.fd              = this->fd_;
@@ -471,7 +471,7 @@ reactor_stream_socket<
     ImplBase,
     Endpoint>::
     do_read_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param param,
         std::stop_token const& token,
@@ -485,7 +485,7 @@ reactor_stream_socket<
     // touching the kernel or the unregistered descriptor state.
     if (this->fd_ < 0)
     {
-        op.h         = h;
+        op.cont      = &cont;
         op.ex        = ex;
         op.ec_out    = ec;
         op.bytes_out = bytes_out;
@@ -502,7 +502,7 @@ reactor_stream_socket<
     if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
     {
         op.empty_buffer_read = true;
-        op.h                 = h;
+        op.cont              = &cont;
         op.ex                = ex;
         op.ec_out            = ec;
         op.bytes_out         = bytes_out;
@@ -553,10 +553,9 @@ reactor_stream_socket<
             else
                 *ec = {};
             *bytes_out = bytes;
-            op.cont.h  = h;
-            return dispatch_coro(ex, op.cont);
+            return dispatch_coro(ex, cont);
         }
-        op.h         = h;
+        op.cont      = &cont;
         op.ex        = ex;
         op.ec_out    = ec;
         op.bytes_out = bytes_out;
@@ -568,7 +567,7 @@ reactor_stream_socket<
     }
 
     // EAGAIN — register with reactor
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = ex;
     op.ec_out    = ec;
     op.bytes_out = bytes_out;
@@ -603,7 +602,7 @@ reactor_stream_socket<
     ImplBase,
     Endpoint>::
     do_write_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param param,
         std::stop_token const& token,
@@ -617,7 +616,7 @@ reactor_stream_socket<
     // touching the kernel or the unregistered descriptor state.
     if (this->fd_ < 0)
     {
-        op.h         = h;
+        op.cont      = &cont;
         op.ex        = ex;
         op.ec_out    = ec;
         op.bytes_out = bytes_out;
@@ -634,7 +633,7 @@ reactor_stream_socket<
 
     if (op.iovec_count == 0 || (op.iovec_count == 1 && bufs[0].size() == 0))
     {
-        op.h         = h;
+        op.cont      = &cont;
         op.ex        = ex;
         op.ec_out    = ec;
         op.bytes_out = bytes_out;
@@ -674,10 +673,9 @@ reactor_stream_socket<
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            op.cont.h  = h;
-            return dispatch_coro(ex, op.cont);
+            return dispatch_coro(ex, cont);
         }
-        op.h         = h;
+        op.cont      = &cont;
         op.ex        = ex;
         op.ec_out    = ec;
         op.bytes_out = bytes_out;
@@ -689,7 +687,7 @@ reactor_stream_socket<
     }
 
     // EAGAIN — register with reactor
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = ex;
     op.ec_out    = ec;
     op.bytes_out = bytes_out;
@@ -724,7 +722,7 @@ reactor_stream_socket<
     ImplBase,
     Endpoint>::
     do_wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         wait_type w,
         std::stop_token const& token,
@@ -766,12 +764,11 @@ reactor_stream_socket<
         if (this->svc_.scheduler().try_consume_inline_budget())
         {
             *ec       = perr ? make_err(perr) : std::error_code{};
-            op.cont.h = h;
-            return dispatch_coro(ex, op.cont);
+            return dispatch_coro(ex, cont);
         }
         op.reset();
         op.wait_event = event;
-        op.h          = h;
+        op.cont       = &cont;
         op.ex         = ex;
         op.ec_out     = ec;
         op.fd         = this->fd_;
@@ -784,7 +781,7 @@ reactor_stream_socket<
 
     op.reset();
     op.wait_event = event;
-    op.h          = h;
+    op.cont       = &cont;
     op.ex         = ex;
     op.ec_out     = ec;
     op.fd         = this->fd_;

@@ -27,6 +27,7 @@
 #include <boost/corosio/native/detail/reactor/reactor_io_core.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_op.hpp>
 #include <boost/corosio/native/detail/reactor/reactor_op_complete.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/buffers.hpp>
 
 #include <atomic>
@@ -224,35 +225,35 @@ public:
     // --- Virtual method overrides ---
 
     std::coroutine_handle<> read_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param param,
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes_out) override
     {
-        return do_read_some(h, ex, param, token, ec, bytes_out);
+        return do_read_some(cont, ex, param, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> write_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param param,
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes_out) override
     {
-        return do_write_some(h, ex, param, token, ec, bytes_out);
+        return do_write_some(cont, ex, param, token, ec, bytes_out);
     }
 
     std::coroutine_handle<> wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         wait_type w,
         std::stop_token token,
         std::error_code* ec) override
     {
-        return do_wait(h, ex, w, token, ec);
+        return do_wait(cont, ex, w, token, ec);
     }
 
     native_handle_type native_handle() const noexcept override
@@ -337,7 +338,7 @@ private:
     }
 
     std::coroutine_handle<> do_read_some(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         buffer_param,
         std::stop_token const&,
@@ -345,7 +346,7 @@ private:
         std::size_t*);
 
     std::coroutine_handle<> do_write_some(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         buffer_param,
         std::stop_token const&,
@@ -353,7 +354,7 @@ private:
         std::size_t*);
 
     std::coroutine_handle<> do_wait(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         wait_type,
         std::stop_token const&,
@@ -479,7 +480,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::op_to_desc_slot(
 template<class Derived, class Traits, class Service, class Acceptor>
 std::coroutine_handle<>
 reactor_descriptor<Derived, Traits, Service, Acceptor>::do_read_some(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref ex,
     buffer_param param,
     std::stop_token const& token,
@@ -488,7 +489,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_read_some(
 {
     auto& op = rd_;
     op.reset();
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = ex;
     op.ec_out    = ec;
     op.bytes_out = bytes_out;
@@ -569,8 +570,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_read_some(
             else
                 *ec = {};
             *bytes_out = bytes;
-            op.cont.h  = h;
-            return dispatch_coro(ex, op.cont);
+            return dispatch_coro(ex, cont);
         }
         op.start(token, static_cast<Derived*>(this));
         op.object_ref_ = detail::object_ref(this);
@@ -591,7 +591,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_read_some(
 template<class Derived, class Traits, class Service, class Acceptor>
 std::coroutine_handle<>
 reactor_descriptor<Derived, Traits, Service, Acceptor>::do_write_some(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref ex,
     buffer_param param,
     std::stop_token const& token,
@@ -600,7 +600,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_write_some(
 {
     auto& op = wr_;
     op.reset();
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = ex;
     op.ec_out    = ec;
     op.bytes_out = bytes_out;
@@ -663,8 +663,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_write_some(
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
-            op.cont.h  = h;
-            return dispatch_coro(ex, op.cont);
+            return dispatch_coro(ex, cont);
         }
         op.start(token, static_cast<Derived*>(this));
         op.object_ref_ = detail::object_ref(this);
@@ -685,7 +684,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_write_some(
 template<class Derived, class Traits, class Service, class Acceptor>
 std::coroutine_handle<>
 reactor_descriptor<Derived, Traits, Service, Acceptor>::do_wait(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref ex,
     wait_type w,
     std::stop_token const& token,
@@ -727,12 +726,11 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_wait(
         if (svc_.scheduler().try_consume_inline_budget())
         {
             *ec       = perr ? make_err(perr) : std::error_code{};
-            op.cont.h = h;
-            return dispatch_coro(ex, op.cont);
+            return dispatch_coro(ex, cont);
         }
         op.reset();
         op.wait_event = event;
-        op.h          = h;
+        op.cont       = &cont;
         op.ex         = ex;
         op.ec_out     = ec;
         op.fd         = fd_;
@@ -745,7 +743,7 @@ reactor_descriptor<Derived, Traits, Service, Acceptor>::do_wait(
 
     op.reset();
     op.wait_event = event;
-    op.h          = h;
+    op.cont       = &cont;
     op.ex         = ex;
     op.ec_out     = ec;
     op.fd         = fd_;

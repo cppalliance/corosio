@@ -59,25 +59,25 @@ public:
     }
 
     std::coroutine_handle<> read_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buf,
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes) override
     {
-        return internal_.read_some(h, ex, buf, std::move(token), ec, bytes);
+        return internal_.read_some(cont, ex, buf, std::move(token), ec, bytes);
     }
 
     std::coroutine_handle<> write_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buf,
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes) override
     {
-        return internal_.write_some(h, ex, buf, std::move(token), ec, bytes);
+        return internal_.write_some(cont, ex, buf, std::move(token), ec, bytes);
     }
 
     native_handle_type native_handle() const noexcept override

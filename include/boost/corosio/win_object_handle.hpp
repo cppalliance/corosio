@@ -128,15 +128,11 @@ public:
         friend detail::void_op_base<wait_awaitable>;
 
         win_object_handle& o_;
-        // Lives in the awaiting frame until resumption, so a completion
-        // posted through an executor never shares the object's state.
-        mutable capy::continuation cont_;
 
         std::coroutine_handle<>
-        dispatch(std::coroutine_handle<> h, capy::executor_ref ex) const
+        dispatch(capy::continuation& cont, capy::executor_ref ex) const
         {
-            cont_.h = h;
-            return o_.get().wait(cont_, ex, token_, &ec_);
+            return o_.get().wait(cont, ex, token_, &ec_);
         }
     };
 

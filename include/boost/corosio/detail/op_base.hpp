@@ -11,6 +11,7 @@
 #define BOOST_COROSIO_DETAIL_OP_BASE_HPP
 
 #include <boost/capy/error.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -27,7 +28,7 @@ namespace boost::corosio::detail {
    Derived classes must provide:
 
      std::coroutine_handle<> dispatch(
-         std::coroutine_handle<> h,
+         capy::continuation& cont,
          capy::executor_ref ex) const;
 
    which forwards to the backend implementation method, passing
@@ -43,6 +44,9 @@ public:
     std::stop_token token_;
     mutable std::error_code ec_;
     mutable std::size_t bytes_ = 0;
+    // Lives in the awaiting frame until resumption, so a completion
+    // posted through an executor never shares the object's state.
+    mutable capy::continuation cont_;
 
     bool await_ready() const noexcept
     {
@@ -69,7 +73,9 @@ public:
             ec_ = capy::error::canceled;
             return h;
         }
-        return static_cast<Derived const*>(this)->dispatch(h, env->executor);
+        cont_.h = h;
+        return static_cast<Derived const*>(this)->dispatch(
+            cont_, env->executor);
     }
 };
 
@@ -79,7 +85,7 @@ public:
    Derived classes must provide:
 
      std::coroutine_handle<> dispatch(
-         std::coroutine_handle<> h,
+         capy::continuation& cont,
          capy::executor_ref ex) const;
 
    which forwards to the backend implementation method, passing
@@ -95,6 +101,8 @@ public:
     std::stop_token token_;
     mutable std::error_code ec_;
     mutable Value value_{};
+    // See bytes_op_base::cont_.
+    mutable capy::continuation cont_;
 
     bool await_ready() const noexcept
     {
@@ -119,7 +127,9 @@ public:
             ec_ = capy::error::canceled;
             return h;
         }
-        return static_cast<Derived const*>(this)->dispatch(h, env->executor);
+        cont_.h = h;
+        return static_cast<Derived const*>(this)->dispatch(
+            cont_, env->executor);
     }
 };
 
@@ -128,7 +138,7 @@ public:
    Derived classes must provide:
 
      std::coroutine_handle<> dispatch(
-         std::coroutine_handle<> h,
+         capy::continuation& cont,
          capy::executor_ref ex) const;
 
    which forwards to the backend implementation method, passing
@@ -143,6 +153,8 @@ class void_op_base
 public:
     std::stop_token token_;
     mutable std::error_code ec_;
+    // See bytes_op_base::cont_.
+    mutable capy::continuation cont_;
 
     bool await_ready() const noexcept
     {
@@ -167,7 +179,9 @@ public:
             ec_ = capy::error::canceled;
             return h;
         }
-        return static_cast<Derived const*>(this)->dispatch(h, env->executor);
+        cont_.h = h;
+        return static_cast<Derived const*>(this)->dispatch(
+            cont_, env->executor);
     }
 };
 

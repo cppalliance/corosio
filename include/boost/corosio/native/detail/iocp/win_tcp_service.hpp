@@ -18,6 +18,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/object_pool.hpp>
 #include <boost/corosio/detail/object_ref.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/native/detail/iocp/win_dissociate.hpp>
@@ -455,7 +456,7 @@ win_tcp_socket::set_endpoints(endpoint local, endpoint remote) noexcept
 
 inline std::coroutine_handle<>
 win_tcp_socket::connect(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     endpoint ep,
     std::stop_token token,
@@ -466,7 +467,7 @@ win_tcp_socket::connect(
 
     auto& op = conn_;
     op.reset();
-    op.h               = h;
+    op.cont            = &cont;
     op.ex              = d;
     op.ec_out          = ec;
     op.target_endpoint = ep;
@@ -538,7 +539,7 @@ win_tcp_socket::connect(
 
 inline std::coroutine_handle<>
 win_tcp_socket::read_some(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     buffer_param param,
     std::stop_token token,
@@ -551,7 +552,7 @@ win_tcp_socket::read_some(
     auto& op = rd_;
     op.reset();
     op.is_read   = true;
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = d;
     op.ec_out    = ec;
     op.bytes_out = bytes_out;
@@ -613,7 +614,7 @@ win_tcp_socket::read_some(
 
 inline std::coroutine_handle<>
 win_tcp_socket::write_some(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     buffer_param param,
     std::stop_token token,
@@ -625,7 +626,7 @@ win_tcp_socket::write_some(
 
     auto& op = wr_;
     op.reset();
-    op.h         = h;
+    op.cont      = &cont;
     op.ex        = d;
     op.ec_out    = ec;
     op.bytes_out = bytes_out;
@@ -684,7 +685,7 @@ win_tcp_socket::write_some(
 
 inline std::coroutine_handle<>
 win_tcp_socket::wait(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     wait_type w,
     std::stop_token token,
@@ -694,7 +695,7 @@ win_tcp_socket::wait(
 
     auto& op = wt_;
     op.reset();
-    op.h            = h;
+    op.cont         = &cont;
     op.ex           = d;
     op.ec_out       = ec;
     op.bytes_out    = nullptr;

@@ -429,6 +429,33 @@ public:
     preadv_hold& operator=(preadv_hold const&) = delete;
 };
 
+/** Hold the first `pwritev` on any thread, before the real call.
+
+    For a test that must act while a pool worker has committed to a
+    transfer but not yet reached the kernel. The held call proceeds
+    once the hold is released or destroyed.
+
+    @par Preconditions
+    No other `pwritev_hold` is alive. POSIX only.
+*/
+class pwritev_hold
+{
+public:
+    pwritev_hold();
+
+    /// Release the held call, if any.
+    ~pwritev_hold();
+
+    /// Block until a `pwritev` is being held.
+    void wait_held();
+
+    /// Let the held call proceed.
+    void release();
+
+    pwritev_hold(pwritev_hold const&)            = delete;
+    pwritev_hold& operator=(pwritev_hold const&) = delete;
+};
+
 } // namespace boost::corosio::test::fault
 
 #endif

@@ -1909,6 +1909,53 @@ struct udp_socket_test
         BOOST_TEST(!wec);
     }
 
+    // A datagram larger than the receive buffer completes its receive
+    // exactly once, whatever the platform reports about the truncation,
+    // and leaves the next receive to the next datagram.
+    void testReceiveIntoSmallBufferCompletesOnce()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        udp_socket s1(ioc), s2(ioc);
+        BOOST_TEST(!s1.open(family::v4));
+        BOOST_TEST(!s2.open(family::v4));
+        BOOST_TEST(!s1.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!s2.bind(endpoint(ipv4_address::loopback(), 0)));
+
+        int first_done = 0;
+        std::size_t second_n = 0;
+        std::error_code second_ec;
+        char second_buf[8] = {};
+        auto receiver = [&]() -> capy::task<> {
+            char small[8];
+            endpoint from;
+            auto [e1, n1] = co_await s2.recv_from(
+                capy::mutable_buffer(small, sizeof(small)), from);
+            std::ignore = e1;
+            std::ignore = n1;
+            ++first_done;
+            auto [e2, n2] = co_await s2.recv_from(
+                capy::mutable_buffer(second_buf, sizeof(second_buf)), from);
+            second_ec = e2;
+            second_n  = n2;
+        };
+        auto sender = [&]() -> capy::task<> {
+            std::vector<char> big(64, 'x');
+            std::ignore = co_await s1.send_to(
+                capy::const_buffer(big.data(), big.size()),
+                s2.local_endpoint());
+            std::ignore = co_await s1.send_to(
+                capy::const_buffer("ok", 2), s2.local_endpoint());
+        };
+        capy::run_async(ex)(receiver());
+        capy::run_async(ex)(sender());
+        ioc.run();
+        BOOST_TEST_EQ(first_done, 1);
+        BOOST_TEST(!second_ec);
+        BOOST_TEST_EQ(second_n, 2u);
+        BOOST_TEST(std::memcmp(second_buf, "ok", 2) == 0);
+    }
+
     void testOversizedSendReportsError()
     {
         io_context ioc(Backend);
@@ -1988,6 +2035,7 @@ struct udp_socket_test
         testConnectedShutdownSendSucceeds();
         testWaitWriteReady();
         testOversizedSendReportsError();
+        testReceiveIntoSmallBufferCompletesOnce();
         testAssignConnectedFdCachesRemote();
 
         testConstruction();

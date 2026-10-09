@@ -55,7 +55,7 @@ namespace boost::corosio::detail {
     across backends.
 
     Per-op lifecycle:
-    1. Caller sets up an overlapped_op (h, ex, ec_out, cancelled flag).
+    1. Caller sets up an overlapped_op (cont, ex, ec_out, cancelled flag).
     2. Caller calls register_wait(fd, w, op) and returns
        std::noop_coroutine. The op is parked in the reactor's table.
     3. Reactor thread polls. When the fd is ready, the op is removed

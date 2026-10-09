@@ -21,10 +21,14 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/task.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <latch>
+#include <memory_resource>
 #include <stdexcept>
 #include <stop_token>
 #include <system_error>
@@ -36,6 +40,7 @@
 // netinet/in.h and unistd.h support the raw-socket backlog setup in
 // testAcceptPendingConnection; fcntl.h supports the adoption tests.
 #include <fcntl.h>
+#include <poll.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -1951,6 +1956,165 @@ struct tcp_acceptor_test
         close_native_socket(second);
     }
 
+#if BOOST_COROSIO_POSIX
+    // An accept that took a connection, but was queued to its context
+    // rather than run, must close that connection when the context is
+    // torn down without running it.
+    void testQueuedAcceptClosesPeerOnTeardown()
+    {
+        auto client = make_native_socket(AF_INET, SOCK_STREAM);
+        BOOST_TEST(client != invalid_native_socket);
+        // The drained accept abandons its awaiting frame, as every
+        // drained I/O operation does; the arena reclaims it.
+        std::pmr::monotonic_buffer_resource arena;
+        {
+            io_context a(Backend);
+            tcp_acceptor acc(a);
+            BOOST_TEST(!acc.open());
+            acc.set_option(socket_option::reuse_address(true));
+            BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+            BOOST_TEST(!acc.listen());
+            BOOST_TEST(native_connect_loopback(
+                client, acc.local_endpoint().port(), false));
+
+            io_context b(Backend);
+            capy::run_async(b.get_executor(), &arena)(
+                [](tcp_acceptor& acc) -> capy::task<> {
+                    std::ignore = co_await acc.accept();
+                }(acc));
+            std::ignore = b.poll(); // the accept completes into a's queue
+        }
+
+        pollfd pfd{client, POLLIN, 0};
+        BOOST_TEST_EQ(::poll(&pfd, 1, 5000), 1);
+        ::fcntl(client, F_SETFL, ::fcntl(client, F_GETFL) | O_NONBLOCK);
+        char c;
+        BOOST_TEST_EQ(::recv(client, &c, 1, 0), 0);
+        close_native_socket(client);
+    }
+#endif
+
+#if BOOST_COROSIO_POSIX
+    // An accept that completed but whose awaiter is destroyed before it
+    // resumes must not strand the accepted connection: the awaiter's
+    // context queues the completion, and its teardown destroys the
+    // frame without resuming it.
+    void testAcceptedPeerClosedWhenAwaiterDestroyed(bool by_value)
+    {
+        io_context a(Backend);
+        tcp_acceptor acc(a);
+        BOOST_TEST(!acc.open());
+        acc.set_option(socket_option::reuse_address(true));
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!acc.listen());
+        auto const port = acc.local_endpoint().port();
+
+        tcp_socket peer(a);
+        auto client = make_native_socket(AF_INET, SOCK_STREAM);
+        BOOST_TEST(client != invalid_native_socket);
+        {
+            io_context b(Backend);
+            if (by_value)
+                capy::run_async(b.get_executor())(
+                    [](tcp_acceptor& acc) -> capy::task<> {
+                        std::ignore = co_await acc.accept();
+                    }(acc));
+            else
+                capy::run_async(b.get_executor())(
+                    [](tcp_acceptor& acc, tcp_socket& p) -> capy::task<> {
+                        std::ignore = co_await acc.accept(p);
+                    }(acc, peer));
+            std::ignore = b.poll(); // parks the accept on a's acceptor
+
+            BOOST_TEST(native_connect_loopback(client, port, false));
+            a.run(); // completes the accept into b's queue
+        }
+
+        // With the accepted socket closed, the client reads end of file;
+        // a stranded one never becomes readable. Some stacks deliver the
+        // close asynchronously, so readability is awaited, bounded only
+        // to fail rather than hang.
+        pollfd pfd{client, POLLIN, 0};
+        BOOST_TEST_EQ(::poll(&pfd, 1, 5000), 1);
+        ::fcntl(client, F_SETFL, ::fcntl(client, F_GETFL) | O_NONBLOCK);
+        char c;
+        BOOST_TEST_EQ(::recv(client, &c, 1, 0), 0);
+        close_native_socket(client);
+    }
+#endif
+
+    // An accept awaited from a non-io_context executor takes the deferring
+    // branch. The queued continuation must survive the next accept reusing
+    // the op.
+    void testDeferredExecutorCompletion()
+    {
+        io_context ioc(Backend);
+        capy::thread_pool pool(1);
+
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.open());
+        acc.set_option(socket_option::reuse_address(true));
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!acc.listen());
+        endpoint ep(ipv4_address::loopback(), acc.local_endpoint().port());
+
+        std::latch started(1);
+        std::latch hold(1);
+        std::atomic<bool> c1_done{false};
+        std::atomic<bool> c2_done{false};
+        tcp_socket s1(ioc);
+        tcp_socket s2(ioc);
+
+        auto accepter = [](tcp_acceptor& a, tcp_socket& s,
+                           std::atomic<bool>& done) -> capy::task<> {
+            auto [ec] = co_await a.accept(s);
+            done      = !ec;
+        };
+        auto connector = [](tcp_socket& c, endpoint e) -> capy::task<> {
+            std::ignore = co_await c.connect(e);
+        };
+
+        // Awaited on the pool, so the completion takes the deferring path.
+        capy::run_async(pool.get_executor())(accepter(acc, s1, c1_done));
+
+        // Parked behind the first accept on the single worker: once this
+        // runs, that accept has parked and suspended.
+        capy::run_async(pool.get_executor())(
+            [](std::latch& s, std::latch& h) -> capy::task<> {
+                s.count_down();
+                h.wait();
+                co_return;
+            }(started, hold));
+        started.wait();
+
+        // The completion queues the first accept's resume into the
+        // parked pool and consumes the op.
+        tcp_socket client1(ioc);
+        capy::run_async(ioc.get_executor())(connector(client1, ep));
+        ioc.run();
+        ioc.restart();
+
+        // Reuses the op while the pool still holds the first continuation.
+        tcp_socket client2(ioc);
+        capy::run_async(ioc.get_executor())(accepter(acc, s2, c2_done));
+        capy::run_async(ioc.get_executor())(connector(client2, ep));
+        ioc.run();
+        ioc.restart();
+        BOOST_TEST(c2_done.load());
+
+        hold.count_down();
+        std::latch drained(1);
+        capy::run_async(pool.get_executor())(
+            [](std::latch& d) -> capy::task<> {
+                d.count_down();
+                co_return;
+            }(drained));
+        drained.wait();
+
+        BOOST_TEST(c1_done.load());
+        pool.join();
+    }
+
     void run()
     {
         testAssignOnOpenIsAlreadyOpen();
@@ -1962,6 +2126,12 @@ struct tcp_acceptor_test
 
         // Cancellation
         testCancelAccept();
+        testDeferredExecutorCompletion();
+#if BOOST_COROSIO_POSIX
+        testQueuedAcceptClosesPeerOnTeardown();
+        testAcceptedPeerClosedWhenAwaiterDestroyed(false);
+        testAcceptedPeerClosedWhenAwaiterDestroyed(true);
+#endif
         testCloseWhilePendingAccept();
 #if !COROSIO_TEST_HAS_ASAN
         // Abandon parked coroutine frames by design; see context.hpp.

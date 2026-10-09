@@ -31,6 +31,7 @@
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
+#include <boost/capy/continuation.hpp>
 
 #include <coroutine>
 #include <cstring>
@@ -280,9 +281,12 @@ struct uring_descriptor_continue_test
         std::size_t bytes = 0;
 
         detail::uring_descriptor_read_op op;
+        // The continuation an awaitable would own, in the awaiting frame.
+        capy::continuation cont;
+        cont.h = coro.h;
         op.prepare(
-            coro.h, ex, &ec, &bytes, fds[0], /*file_offset=*/-1,
-            &ctx.scheduler(), detail::object_ref(d.get()), mb, std::stop_token{});
+            cont, ex, &ec, &bytes, fds[0], /*file_offset=*/-1, &ctx.scheduler(),
+            detail::object_ref(d.get()), mb, std::stop_token{});
         arm(*d, op);
 
         // Data is already waiting, so the poll this arms fires at once.

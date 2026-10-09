@@ -225,7 +225,7 @@ public:
     }
 
     std::coroutine_handle<> accept(
-        std::coroutine_handle<>,
+        capy::continuation&,
         capy::executor_ref,
         std::stop_token,
         std::error_code*,

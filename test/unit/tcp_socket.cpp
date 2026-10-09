@@ -2011,6 +2011,7 @@ struct tcp_socket_test
         testAssignRejections();
         testAssignFailureKeepsSocket();
         testAssignOverOpenKeepsPending();
+        testCompletionResumesOnAwaitersContext();
         testRelease();
         testReleaseClosedThrows();
         testAssignV6();
@@ -2543,6 +2544,48 @@ struct tcp_socket_test
         BOOST_TEST(!read_ec);
         BOOST_TEST_EQ(read_n, 4u);
         close_native_socket(nfd);
+    }
+
+    // A completion is delivered by the socket's context, but the awaiter
+    // belongs to its own executor: a coroutine running on another
+    // context must resume there, not inline on the completing thread.
+    void testCompletionResumesOnAwaitersContext()
+    {
+        io_context a(Backend);
+        io_context b(Backend);
+        auto [s1, s2] =
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(a);
+        a.restart();
+
+        bool resumed = false;
+        bool on_b    = false;
+        char buf[1];
+        auto reader  = [](tcp_socket& s, char* b, io_context& ctx,
+                         bool& resumed, bool& on_b) -> capy::task<> {
+            auto [ec, n] = co_await s.read_some(capy::mutable_buffer(b, 1));
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(n, 1u);
+            resumed = true;
+            on_b    = ctx.get_executor().running_in_this_thread();
+        };
+        capy::run_async(b.get_executor())(reader(s1, buf, b, resumed, on_b));
+        std::ignore = b.poll(); // parks the read on a's socket
+        BOOST_TEST(!resumed);
+
+        char const c = 'x';
+        capy::run_async(a.get_executor())([](tcp_socket& s, char const* c)
+                                              -> capy::task<> {
+            auto [ec, n] = co_await s.write_some(capy::const_buffer(c, 1));
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(n, 1u);
+        }(s2, &c));
+        a.run();
+        BOOST_TEST(!resumed);
+
+        b.restart();
+        std::ignore = b.poll();
+        BOOST_TEST(resumed);
+        BOOST_TEST(on_b);
     }
 
     // release() hands ownership to the caller only after pending

@@ -21,7 +21,9 @@
 #include <boost/capy/io_task.hpp>
 
 #include <concepts>
+#include <memory>
 #include <system_error>
+#include <tuple>
 
 namespace boost::corosio {
 
@@ -62,10 +64,6 @@ namespace boost::corosio {
 class BOOST_COROSIO_DECL openssl_stream final : public tls_stream
 {
     struct implementation;
-    BOOST_COROSIO_MSVC_WARNING_PUSH
-    BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // capy::any_stream, dll-interface
-    capy::any_stream stream_; // must be first - impl_ holds reference
-    BOOST_COROSIO_MSVC_WARNING_POP
     implementation* impl_;
 
 public:
@@ -83,8 +81,7 @@ public:
     template<capy::Stream S>
         requires(!std::same_as<std::decay_t<S>, openssl_stream>)
     openssl_stream(S stream, tls_context const& ctx)
-        : stream_(std::move(stream))
-        , impl_(make_implementation(stream_, ctx))
+        : impl_(adopt(std::make_unique<S>(std::move(stream)), ctx))
     {
     }
 
@@ -100,19 +97,27 @@ public:
     */
     template<capy::Stream S>
     openssl_stream(S* stream, tls_context const& ctx)
-        : stream_(stream)
-        , impl_(make_implementation(stream_, ctx))
+        : impl_(make_implementation(capy::any_stream(stream), {}, ctx))
     {
     }
 
     /** Destroy the OpenSSL stream.
 
-        Releases the underlying OpenSSL resources. If constructed
-        in owning mode, also destroys the underlying stream.
+        Operations still in flight complete with
+        `capy::error::canceled` without touching this object, and the
+        TLS state they need is released when the last of them
+        finishes. In owning mode the underlying stream is destroyed
+        when the last of those operations finishes. An underlying
+        stream with a `cancel()` member is told to cancel them now. In reference
+        mode, and for an owned stream without `cancel()`, an operation
+        parked on the underlying stream finishes when that stream's
+        operation does.
     */
     ~openssl_stream() override;
 
     /** Move construct from another OpenSSL stream.
+
+        Operations in flight on @p other continue on this stream.
 
         @param other The source stream. After the move,
             @p other may only be destroyed or assigned to.
@@ -120,6 +125,9 @@ public:
     openssl_stream(openssl_stream&& other) noexcept;
 
     /** Move assign from another OpenSSL stream.
+
+        Operations in flight on this stream complete as if it were
+        destroyed; those on @p other continue on this stream.
 
         @param other The source stream. After the move,
             @p other may only be destroyed or assigned to.
@@ -164,6 +172,9 @@ public:
     */
     [[nodiscard]] capy::io_task<> shutdown() override;
 
+    /// Cancel operations pending on the owned underlying stream.
+    void cancel() noexcept override;
+
     /** Reset TLS session state for reuse.
 
         Clears internal buffers and session data so the stream
@@ -188,16 +199,10 @@ public:
     void set_hostname(std::string_view hostname) override;
 
     /// Return the underlying stream.
-    capy::any_stream& next_layer() noexcept override
-    {
-        return stream_;
-    }
+    capy::any_stream& next_layer() noexcept override;
 
     /// Return the underlying stream.
-    capy::any_stream const& next_layer() const noexcept override
-    {
-        return stream_;
-    }
+    capy::any_stream const& next_layer() const noexcept override;
 
     /// Return the TLS backend name ("openssl").
     std::string_view name() const noexcept override;
@@ -217,8 +222,24 @@ protected:
         override;
 
 private:
+    static implementation* make_implementation(
+        capy::any_stream stream,
+        detail::tls_owned_transport owned,
+        tls_context const& ctx);
+
+    // The transport is boxed apart from the any_stream that refers to
+    // it, so it outlives any operation still parked on it after the
+    // stream is destroyed.
+    template<class S>
     static implementation*
-    make_implementation(capy::any_stream& stream, tls_context const& ctx);
+    adopt(std::unique_ptr<S> owned, tls_context const& ctx)
+    {
+        auto* impl = make_implementation(
+            capy::any_stream(owned.get()),
+            detail::make_owned_transport(owned.get()), ctx);
+        std::ignore = owned.release();
+        return impl;
+    }
 };
 
 /** Return the error category for raw OpenSSL errors.

@@ -175,4 +175,18 @@ local_stream_acceptor::local_endpoint() const noexcept
     return get().local_endpoint();
 }
 
+void
+local_stream_acceptor::discard_peer(
+    local_stream_acceptor& acc, io_object::implementation* impl) noexcept
+{
+    // Its own handle closes and releases the peer, as the socket the
+    // awaiter would have received does.
+    handle h(
+        acc.ctx_,
+        detail::use_backend_service<
+            detail::local_stream_service_of,
+            detail::local_stream_service>(acc.ctx_),
+        impl);
+}
+
 } // namespace boost::corosio

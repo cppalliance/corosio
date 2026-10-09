@@ -442,13 +442,13 @@ public:
         readiness is the impl's ready queue plus future deliveries.
     */
     void park_read_wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         std::stop_token const& token,
         std::error_code* ec) noexcept
     {
         auto* w   = acquire_node();
-        w->h      = h;
+        w->cont   = &cont;
         w->ex     = ex;
         w->ec_out = ec;
         w->peek   = true;
@@ -678,14 +678,14 @@ public:
     /// Either case ends with the calling coroutine suspending; the
     /// caller returns `std::noop_coroutine()` unconditionally.
     void dispatch_or_queue(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         std::stop_token const& token,
         std::error_code* ec,
         io_object::implementation** impl_out)
     {
         auto* w     = acquire_node();
-        w->h        = h;
+        w->cont     = &cont;
         w->ex       = ex;
         w->ec_out   = ec;
         w->impl_out = impl_out;

@@ -18,6 +18,7 @@
 #include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/native/detail/iocp/win_overlapped_op.hpp>
@@ -151,14 +152,14 @@ public:
     void reuse() noexcept;
 
     std::coroutine_handle<> connect(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref d,
         corosio::local_endpoint ep,
         std::stop_token token,
         std::error_code* ec) override;
 
     std::coroutine_handle<> read_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref d,
         buffer_param buf,
         std::stop_token token,
@@ -166,7 +167,7 @@ public:
         std::size_t* bytes) override;
 
     std::coroutine_handle<> write_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref d,
         buffer_param buf,
         std::stop_token token,
@@ -174,7 +175,7 @@ public:
         std::size_t* bytes) override;
 
     std::coroutine_handle<> wait(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref d,
         wait_type w,
         std::stop_token token,

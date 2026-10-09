@@ -81,26 +81,20 @@ make_socket_pair(io_context& ctx)
             done_out  = true;
         }(acc, s1, accept_ec, accept_done));
 
+    // A failed connect leaves nothing for the accept to receive.
     capy::run_async(ex)(
-        [](Socket& s, endpoint ep, std::error_code& ec_out,
+        [](Socket& s, Acceptor& a, endpoint ep, std::error_code& ec_out,
            bool& done_out) -> capy::task<> {
             auto [ec] = co_await s.connect(ep);
             ec_out    = ec;
             done_out  = true;
-        }(s2, endpoint(ipv4_address::loopback(), port), connect_ec,
+            if (ec)
+                a.cancel();
+        }(s2, acc, endpoint(ipv4_address::loopback(), port), connect_ec,
                            connect_done));
 
     ctx.run();
     ctx.restart();
-
-    if (!accept_done || accept_ec)
-    {
-        std::fprintf(
-            stderr, "socket_pair: accept failed (done=%d, ec=%s)\n",
-            accept_done, accept_ec.message().c_str());
-        acc.close();
-        throw std::runtime_error("socket_pair accept failed");
-    }
 
     if (!connect_done || connect_ec)
     {
@@ -110,6 +104,15 @@ make_socket_pair(io_context& ctx)
         acc.close();
         s1.close();
         throw std::runtime_error("socket_pair connect failed");
+    }
+
+    if (!accept_done || accept_ec)
+    {
+        std::fprintf(
+            stderr, "socket_pair: accept failed (done=%d, ec=%s)\n",
+            accept_done, accept_ec.message().c_str());
+        acc.close();
+        throw std::runtime_error("socket_pair accept failed");
     }
 
     acc.close();

@@ -18,6 +18,8 @@
 #include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 
+#include <boost/capy/continuation.hpp>
+
 #include <coroutine>
 #include <cstddef>
 #include <stop_token>
@@ -72,7 +74,8 @@ public:
     {
         /** Initiate platform read operation.
 
-            @param h Coroutine handle to resume on completion.
+            @param cont Continuation to resume on completion; it lives in
+                the awaiting frame until then.
             @param ex Executor for dispatching the completion.
             @param buffers Target buffer sequence.
             @param token Stop token for cancellation.
@@ -82,7 +85,7 @@ public:
             @return Coroutine handle to resume immediately.
         */
         virtual std::coroutine_handle<> read_some(
-            std::coroutine_handle<> h,
+            capy::continuation& cont,
             capy::executor_ref ex,
             buffer_param buffers,
             std::stop_token token,
@@ -91,7 +94,8 @@ public:
 
         /** Initiate platform write operation.
 
-            @param h Coroutine handle to resume on completion.
+            @param cont Continuation to resume on completion; it lives in
+                the awaiting frame until then.
             @param ex Executor for dispatching the completion.
             @param buffers Source buffer sequence.
             @param token Stop token for cancellation.
@@ -101,7 +105,7 @@ public:
             @return Coroutine handle to resume immediately.
         */
         virtual std::coroutine_handle<> write_some(
-            std::coroutine_handle<> h,
+            capy::continuation& cont,
             capy::executor_ref ex,
             buffer_param buffers,
             std::stop_token token,
@@ -118,7 +122,8 @@ protected:
 
     /** Dispatch read through implementation vtable.
 
-        @param h Coroutine handle to resume on completion.
+        @param cont Continuation to resume on completion; it lives in
+            the awaiting frame until then.
         @param ex Executor for dispatching the completion.
         @param buffers Target buffer sequence.
         @param token Stop token for cancellation.
@@ -128,19 +133,20 @@ protected:
         @return Coroutine handle to resume immediately.
     */
     std::coroutine_handle<> do_read_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buffers,
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes) override
     {
-        return get().read_some(h, ex, buffers, std::move(token), ec, bytes);
+        return get().read_some(cont, ex, buffers, std::move(token), ec, bytes);
     }
 
     /** Dispatch write through implementation vtable.
 
-        @param h Coroutine handle to resume on completion.
+        @param cont Continuation to resume on completion; it lives in
+            the awaiting frame until then.
         @param ex Executor for dispatching the completion.
         @param buffers Source buffer sequence.
         @param token Stop token for cancellation.
@@ -150,14 +156,14 @@ protected:
         @return Coroutine handle to resume immediately.
     */
     std::coroutine_handle<> do_write_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param buffers,
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes) override
     {
-        return get().write_some(h, ex, buffers, std::move(token), ec, bytes);
+        return get().write_some(cont, ex, buffers, std::move(token), ec, bytes);
     }
 
 private:

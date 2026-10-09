@@ -33,6 +33,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <system_error>
 #include <tuple>
 #include <cstdio>
 #include <cstring>
@@ -659,6 +660,19 @@ struct accept_stress_test
                     continue;
                 }
                 ++connections;
+                // Reset rather than FIN: the client then never reaches
+                // TIME_WAIT, which at this rate would drain the ephemeral
+                // range for every test running alongside. Resetting the
+                // client instead can kill the connection before it is
+                // accepted, which some stacks drop from the queue.
+                try
+                {
+                    peer.set_option(socket_option::linger(true, 0));
+                }
+                catch (std::system_error const&)
+                {
+                    // Already reset by the peer: nothing left to linger.
+                }
                 peer.close();
             }
         };

@@ -17,6 +17,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/file_service.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/detail/object_pool.hpp>
@@ -209,26 +210,26 @@ win_stream_file::reuse() noexcept
 
 inline std::coroutine_handle<>
 win_stream_file::read_some(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     buffer_param buf,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes)
 {
-    return internal_.read_some(h, d, buf, token, ec, bytes);
+    return internal_.read_some(cont, d, buf, token, ec, bytes);
 }
 
 inline std::coroutine_handle<>
 win_stream_file::write_some(
-    std::coroutine_handle<> h,
+    capy::continuation& cont,
     capy::executor_ref d,
     buffer_param buf,
     std::stop_token token,
     std::error_code* ec,
     std::size_t* bytes)
 {
-    return internal_.write_some(h, d, buf, token, ec, bytes);
+    return internal_.write_some(cont, d, buf, token, ec, bytes);
 }
 
 inline native_handle_type

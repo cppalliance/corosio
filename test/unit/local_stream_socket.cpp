@@ -32,6 +32,7 @@
 
 #if BOOST_COROSIO_POSIX
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -126,6 +127,60 @@ struct local_stream_socket_test
 
         acc.close();
     }
+
+#if BOOST_COROSIO_POSIX
+    // An accept that completed but whose awaiter is destroyed before it
+    // resumes must not strand the accepted connection: the awaiter's
+    // context queues the completion, and its teardown destroys the
+    // frame without resuming it.
+    void testAcceptedPeerClosedWhenAwaiterDestroyed(bool by_value)
+    {
+        io_context a(Backend);
+        test::temp_socket_dir tmp;
+        local_stream_acceptor acc(a, local_endpoint(tmp.path()));
+        local_stream_socket peer(a);
+
+        int client = ::socket(AF_UNIX, SOCK_STREAM, 0);
+        BOOST_TEST(client >= 0);
+        {
+            io_context b(Backend);
+            if (by_value)
+                capy::run_async(b.get_executor())(
+                    [](local_stream_acceptor& acc) -> capy::task<> {
+                        std::ignore = co_await acc.accept();
+                    }(acc));
+            else
+                capy::run_async(b.get_executor())(
+                    [](local_stream_acceptor& acc,
+                       local_stream_socket& p) -> capy::task<> {
+                        std::ignore = co_await acc.accept(p);
+                    }(acc, peer));
+            std::ignore = b.poll(); // parks the accept on a's acceptor
+
+            sockaddr_un addr{};
+            addr.sun_family = AF_UNIX;
+            std::strncpy(
+                addr.sun_path, std::string(tmp.path()).c_str(),
+                sizeof(addr.sun_path) - 1);
+            BOOST_TEST(
+                ::connect(
+                    client, reinterpret_cast<sockaddr*>(&addr),
+                    sizeof(addr)) == 0);
+            a.run(); // completes the accept into b's queue
+        }
+
+        // With the accepted socket closed, the client reads end of file;
+        // a stranded one never becomes readable. Some stacks deliver the
+        // close asynchronously, so readability is awaited, bounded only
+        // to fail rather than hang.
+        pollfd pfd{client, POLLIN, 0};
+        BOOST_TEST_EQ(::poll(&pfd, 1, 5000), 1);
+        ::fcntl(client, F_SETFL, ::fcntl(client, F_GETFL) | O_NONBLOCK);
+        char c;
+        BOOST_TEST_EQ(::recv(client, &c, 1, 0), 0);
+        ::close(client);
+    }
+#endif
 
     void testConnectAccept()
     {
@@ -1913,6 +1968,10 @@ struct local_stream_socket_test
 
     void run()
     {
+#if BOOST_COROSIO_POSIX
+        testAcceptedPeerClosedWhenAwaiterDestroyed(false);
+        testAcceptedPeerClosedWhenAwaiterDestroyed(true);
+#endif
         testAssignOnOpenIsAlreadyOpen();
         testAcceptorAssignOnOpenIsAlreadyOpen();
         testAcceptorAssignSelfAndWrongType();

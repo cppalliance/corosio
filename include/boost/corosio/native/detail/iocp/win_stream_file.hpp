@@ -17,6 +17,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/stream_file.hpp>
 #include <boost/corosio/file_base.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/native/detail/iocp/win_overlapped_handle.hpp>
@@ -83,7 +84,7 @@ public:
     void reuse() noexcept;
 
     std::coroutine_handle<> read_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref d,
         buffer_param buf,
         std::stop_token token,
@@ -91,7 +92,7 @@ public:
         std::size_t* bytes) override;
 
     std::coroutine_handle<> write_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref d,
         buffer_param buf,
         std::stop_token token,

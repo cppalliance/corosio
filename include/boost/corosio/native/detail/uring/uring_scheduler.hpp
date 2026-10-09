@@ -627,6 +627,10 @@ uring_scheduler::shutdown()
 {
     stopped_.store(true, std::memory_order_release);
 
+    // See reactor_scheduler::shutdown_drain().
+    if (timer_svc_)
+        timer_svc_->shutdown();
+
     // Cancel every request still in the kernel and wait for each to
     // come back: the services free their impls next, and an op still
     // armed would write into freed memory. One cancel-any covers ops
@@ -931,11 +935,13 @@ inline constexpr int uring_inline_budget_max     = 16;
 struct uring_run_guard
 {
     uring_scheduler_frame frame_;
+    running_scheduler_guard running_;
 
     explicit uring_run_guard(uring_scheduler const* self) noexcept
         : frame_{
               self, tl_running_scheduler_frame_, uring_inline_budget_initial,
               uring_inline_budget_max}
+        , running_(self)
     {
         tl_running_scheduler_frame_ = &frame_;
     }

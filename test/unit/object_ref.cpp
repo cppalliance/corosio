@@ -42,6 +42,22 @@ struct object_ref_test
             release(&impl);
             BOOST_TEST_EQ(hits, 1);
         }
+        // try_from adds a reference to a live impl and refuses a
+        // retiring one
+        {
+            int hits = 0;
+            counted_impl impl(&hits);
+            {
+                auto r = object_ref::try_from(&impl); // 1 -> 2
+                BOOST_TEST_EQ(r.get(), &impl);
+                release(&impl); // 2 -> 1
+                BOOST_TEST_EQ(hits, 0);
+            } // 1 -> 0
+            BOOST_TEST_EQ(hits, 1);
+            auto dead = object_ref::try_from(&impl);
+            BOOST_TEST(!dead);
+            BOOST_TEST_EQ(hits, 1);
+        }
         // reset releases early
         {
             int hits = 0;

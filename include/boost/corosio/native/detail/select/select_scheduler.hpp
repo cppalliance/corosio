@@ -143,6 +143,12 @@ public:
 private:
     void run_task(lock_type& lock, context_type& ctx, long timeout_us) override;
     void interrupt_reactor() const override;
+
+    /// Rebuild the poll set a blocked select() was given.
+    void notify_reparked() const override
+    {
+        interrupt_reactor();
+    }
     long calculate_timeout(long requested_timeout_us) const;
 
     // Watches the global signal self-pipe's read end (armed lazily by

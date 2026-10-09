@@ -264,25 +264,27 @@ public:
     }
 
     std::coroutine_handle<> read_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param param,
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes_out)
     {
-        return start(rd_, true, h, ex, param, std::move(token), ec, bytes_out);
+        return start(
+            rd_, true, cont, ex, param, std::move(token), ec, bytes_out);
     }
 
     std::coroutine_handle<> write_some(
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param param,
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes_out)
     {
-        return start(wr_, false, h, ex, param, std::move(token), ec, bytes_out);
+        return start(
+            wr_, false, cont, ex, param, std::move(token), ec, bytes_out);
     }
 
     void cancel() noexcept
@@ -368,7 +370,7 @@ protected:
     std::coroutine_handle<> start(
         slot_op& op,
         bool is_read,
-        std::coroutine_handle<> h,
+        capy::continuation& cont,
         capy::executor_ref ex,
         buffer_param param,
         std::stop_token token,
@@ -379,7 +381,7 @@ protected:
         op.reset();
         op.owner     = this;
         op.is_read   = is_read;
-        op.h         = h;
+        op.cont      = &cont;
         op.ex        = ex;
         op.ec_out    = ec;
         op.bytes_out = bytes_out;
@@ -476,8 +478,6 @@ protected:
         : handle_io_op
         , intrusive_list<concurrent_op>::node
     {
-        capy::continuation* user_cont = nullptr;
-
         concurrent_op() noexcept : handle_io_op(&do_complete) {}
 
         // The continuation lives in the awaitable, so the op can go first.
@@ -496,7 +496,7 @@ protected:
 
             if (!owner)
             {
-                op->h = {};
+                op->cont = nullptr;
                 self->recycle_op(op);
                 return;
             }
@@ -510,8 +510,7 @@ protected:
                 op->is_read, static_cast<std::size_t>(op->bytes_transferred),
                 op->empty_buffer);
 
-            capy::continuation* c = op->user_cont;
-            c->h                  = op->h;
+            capy::continuation* c = op->cont;
             capy::executor_ref ex = op->ex;
             // Once recycled, a concurrent initiation may refill the op.
             self->recycle_op(op);
@@ -555,8 +554,7 @@ protected:
         op->reset();
         op->owner     = this;
         op->is_read   = is_read;
-        op->user_cont = &cont;
-        op->h         = cont.h;
+        op->cont      = &cont;
         op->ex        = ex;
         op->ec_out    = ec;
         op->bytes_out = bytes_out;

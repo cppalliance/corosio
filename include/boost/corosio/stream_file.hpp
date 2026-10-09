@@ -279,17 +279,19 @@ public:
         `release()` cancels pending operations first. On Windows, the
         object keeps the handle and this throws if one is still in
         flight. It does the same if Windows refuses to detach the
-        handle from the execution context's completion port. Call
+        handle from the execution context's completion port. Where
+        file I/O runs on a thread pool, it throws likewise while a
+        worker thread is already performing an operation. Call
         `release()` again once the cancelled operations have
         completed. Detaching requires Windows 8.1 or later.
 
         @return The native file descriptor or handle.
 
         @throws std::system_error `errc::bad_file_descriptor` if the
-            file is not open. On Windows,
-            `errc::device_or_resource_busy` if an operation is still in
-            flight, or `errc::operation_not_supported` if the handle
-            cannot be detached.
+            file is not open, or `errc::device_or_resource_busy` if an
+            operation is still using the handle, as described above. On
+            Windows, it also throws `errc::operation_not_supported` if
+            the handle cannot be detached.
     */
     native_handle_type release();
 

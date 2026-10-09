@@ -19,6 +19,7 @@
 #include <boost/corosio/native/detail/iocp/win_tcp_acceptor_service.hpp>
 #else
 #include <boost/corosio/detail/tcp_acceptor_service.hpp>
+#include <boost/corosio/detail/tcp_service.hpp>
 #endif
 
 #include <boost/corosio/detail/except.hpp>
@@ -26,6 +27,16 @@
 #include "src/detail/use_backend_service.hpp"
 
 namespace boost::corosio {
+
+namespace {
+
+#if BOOST_COROSIO_HAS_IOCP
+using tcp_peer_service = detail::win_tcp_service;
+#else
+using tcp_peer_service = detail::tcp_service;
+#endif
+
+} // namespace
 
 #if BOOST_COROSIO_HAS_IOCP
 namespace {
@@ -201,6 +212,20 @@ tcp_acceptor::local_endpoint() const noexcept
     if (!is_open())
         return endpoint{};
     return get().local_endpoint();
+}
+
+void
+tcp_acceptor::discard_peer(
+    tcp_acceptor& acc, io_object::implementation* impl) noexcept
+{
+    // Its own handle closes and releases the peer, as the socket the
+    // awaiter would have received does.
+    auto& ctx = acc.context();
+    handle h(
+        ctx,
+        detail::use_backend_service<detail::tcp_service_of, tcp_peer_service>(
+            ctx),
+        impl);
 }
 
 } // namespace boost::corosio
