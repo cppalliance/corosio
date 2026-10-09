@@ -11,15 +11,24 @@
 #include <boost/corosio/tcp_server.hpp>
 
 #include <boost/corosio/io_context.hpp>
+#include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/delay.hpp>
+#include <boost/capy/cond.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
 #include <atomic>
+#include <cstddef>
+#include <memory>
+#include <memory_resource>
 #include <optional>
+#include <stdexcept>
 #include <tuple>
+#include <chrono>
+#include <vector>
+#include <thread>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -71,6 +80,29 @@ public:
     test_server(io_context& ctx) : tcp_server(ctx, ctx.get_executor())
     {
         set_workers(make_test_workers(ctx, 4));
+    }
+};
+
+// Counts the blocks it hands out that are still live.
+struct counting_resource : std::pmr::memory_resource
+{
+    int live = 0;
+
+    void* do_allocate(std::size_t n, std::size_t align) override
+    {
+        ++live;
+        return std::pmr::new_delete_resource()->allocate(n, align);
+    }
+
+    void do_deallocate(void* p, std::size_t n, std::size_t align) override
+    {
+        --live;
+        std::pmr::new_delete_resource()->deallocate(p, n, align);
+    }
+
+    bool do_is_equal(std::pmr::memory_resource const& o) const noexcept override
+    {
+        return this == &o;
     }
 };
 
@@ -929,6 +961,512 @@ struct tcp_server_test
         BOOST_TEST_EQ(run_count.load(), 2);
     }
 
+    // Sends one byte through a fresh connection and waits for the echo.
+    static bool echo_once(io_context& ioc, endpoint ep)
+    {
+        tcp_socket c(ioc);
+        bool ok = false;
+        capy::run_async(ioc.get_executor())(
+            [](tcp_socket& c, endpoint ep, bool& ok) -> capy::task<> {
+                auto [cec] = co_await c.connect(ep);
+                if (cec)
+                    co_return;
+                char out = 'x';
+                auto [wec, wn] =
+                    co_await c.write_some(capy::const_buffer(&out, 1));
+                if (wec)
+                    co_return;
+                char in   = 0;
+                auto [rec, rn] =
+                    co_await c.read_some(capy::mutable_buffer(&in, 1));
+                ok = !rec && rn == 1 && in == 'x';
+            }(c, ep, ok));
+        ioc.restart();
+        // Bounds a hang, not a timing assertion.
+        while (!ok && ioc.run_one_for(std::chrono::seconds(5)) != 0)
+        {
+        }
+        return ok;
+    }
+
+    // Destroying a running server stops it: its accept loops and the
+    // workers they launched finish without touching the destroyed
+    // object, and its listeners close.
+    void testDestroyWhileRunning()
+    {
+        io_context ioc(Backend);
+        endpoint ep;
+        {
+            test_server srv(ioc);
+            BOOST_TEST(!srv.bind(endpoint(ipv4_address::loopback(), 0)));
+            ep = srv.local_endpoint();
+            srv.start();
+            BOOST_TEST(echo_once(ioc, ep));
+        }
+        ioc.restart();
+        ioc.run(); // returns: nothing of the server is left running
+
+        tcp_socket c(ioc);
+        std::error_code cec;
+        capy::run_async(ioc.get_executor())(
+            [](tcp_socket& c, endpoint ep, std::error_code& ec)
+                -> capy::task<> {
+                auto [e] = co_await c.connect(ep);
+                ec       = e;
+            }(c, ep, cec));
+        ioc.restart();
+        ioc.run();
+        BOOST_TEST(!!cec); // the listener is closed
+    }
+
+    // A running server keeps serving after it is moved.
+    void testMoveWhileRunning()
+    {
+        io_context ioc(Backend);
+        test_server src(ioc);
+        BOOST_TEST(!src.bind(endpoint(ipv4_address::loopback(), 0)));
+        auto ep = src.local_endpoint();
+        src.start();
+        BOOST_TEST(echo_once(ioc, ep));
+
+        {
+            test_server dst(std::move(src));
+            BOOST_TEST(echo_once(ioc, ep));
+            BOOST_TEST(echo_once(ioc, ep));
+        }
+        ioc.restart();
+        ioc.run(); // the destroyed server's loops finish
+    }
+
+    // Workers return from several run threads at once.
+    void testConcurrentWorkersOnMultithreadedContext()
+    {
+        io_context ioc(Backend);
+        auto srv = std::make_unique<test_server>(ioc);
+        BOOST_TEST(!srv->bind(endpoint(ipv4_address::loopback(), 0)));
+        auto ep = srv->local_endpoint();
+        srv->start();
+
+        std::vector<std::thread> runners;
+        for (int i = 0; i < 4; ++i)
+            runners.emplace_back([&] { ioc.run(); });
+
+        std::atomic<int> echoed{0};
+        std::vector<std::thread> clients;
+        for (int i = 0; i < 4; ++i)
+            clients.emplace_back([&] {
+                io_context cctx(Backend);
+                for (int k = 0; k < 25; ++k)
+                    if (echo_once(cctx, ep))
+                        ++echoed;
+            });
+        for (auto& t : clients)
+            t.join();
+        BOOST_TEST_EQ(echoed.load(), 100);
+
+        ioc.stop();
+        for (auto& t : runners)
+            t.join();
+        srv.reset();
+        ioc.restart();
+        ioc.run(); // the destroyed server's loops finish
+    }
+
+    // Connects and closes at once, so connections keep arriving. The
+    // close resets: a graceful one would park each connection's port
+    // in TIME_WAIT, and at this rate that drains the ephemeral range
+    // for every test running alongside.
+    static void connect_once(io_context& ioc, endpoint ep)
+    {
+        tcp_socket c(ioc);
+        BOOST_TEST(!c.open());
+        c.set_option(socket_option::linger(true, 0));
+        capy::run_async(ioc.get_executor())(
+            [](tcp_socket& c, endpoint ep) -> capy::task<> {
+                std::ignore = co_await c.connect(ep);
+            }(c, ep));
+        ioc.restart();
+        ioc.run();
+    }
+
+    static std::error_code connect_result(io_context& ioc, endpoint ep)
+    {
+        tcp_socket c(ioc);
+        std::error_code ec;
+        capy::run_async(ioc.get_executor())(
+            [](tcp_socket& c, endpoint ep, std::error_code& ec)
+                -> capy::task<> {
+                auto [e] = co_await c.connect(ep);
+                ec       = e;
+            }(c, ep, ec));
+        ioc.restart();
+        ioc.run();
+        return ec;
+    }
+
+    // A worker that keeps its launcher instead of starting it, so the
+    // test decides when, or whether, the connection runs.
+    class holding_worker : public tcp_server::worker_base
+    {
+        corosio::tcp_socket sock_;
+        std::optional<tcp_server::launcher>* slot_;
+
+    public:
+        holding_worker(
+            io_context& ctx, std::optional<tcp_server::launcher>* s)
+            : sock_(ctx)
+            , slot_(s)
+        {
+        }
+
+        corosio::tcp_socket& socket() override
+        {
+            return sock_;
+        }
+
+        void run(tcp_server::launcher launch) override
+        {
+            slot_->emplace(std::move(launch));
+        }
+    };
+
+    class holding_server : public tcp_server
+    {
+    public:
+        holding_server(
+            io_context& ctx, std::optional<tcp_server::launcher>* s)
+            : tcp_server(ctx, ctx.get_executor())
+        {
+            std::vector<std::unique_ptr<tcp_server::worker_base>> v;
+            v.push_back(std::make_unique<holding_worker>(ctx, s));
+            set_workers(std::move(v));
+        }
+    };
+
+    // An accept loop parked for a worker, because the only worker is
+    // still busy, must not keep the listener open once the server is
+    // destroyed.
+    void testDestroyWithBusyWorkerClosesListener()
+    {
+        io_context ioc(Backend);
+        std::optional<tcp_server::launcher> held;
+
+        auto srv = std::make_unique<holding_server>(ioc, &held);
+        BOOST_TEST(!srv->bind(endpoint(ipv4_address::loopback(), 0)));
+        auto ep = srv->local_endpoint();
+        srv->start();
+
+        io_context cctx;
+        BOOST_TEST(!connect_result(cctx, ep));
+        // Bounds a hang, not a timing assertion.
+        while (!held && ioc.run_one_for(std::chrono::seconds(5)) != 0)
+        {
+        }
+        BOOST_TEST(held.has_value());
+        while (ioc.poll() != 0)
+        {
+        }
+
+        srv.reset();
+        while (ioc.poll() != 0)
+        {
+        }
+
+        BOOST_TEST(!!connect_result(cctx, ep));
+
+        held.reset();
+        ioc.restart();
+        ioc.run();
+    }
+
+    // A connection dispatched before stop() but launched after it
+    // must still see the stop.
+    void testStopReachesLaunchAfterStop()
+    {
+        io_context ioc(Backend);
+        std::optional<tcp_server::launcher> held;
+        holding_server srv(ioc, &held);
+        BOOST_TEST(!srv.bind(endpoint(ipv4_address::loopback(), 0)));
+        auto ep = srv.local_endpoint();
+        srv.start();
+
+        io_context cctx;
+        BOOST_TEST(!connect_result(cctx, ep));
+        // Bounds a hang, not a timing assertion.
+        while (!held && ioc.run_one_for(std::chrono::seconds(5)) != 0)
+        {
+        }
+        BOOST_TEST(held.has_value());
+
+        srv.stop();
+        while (ioc.poll() != 0)
+        {
+        }
+
+        bool done     = false;
+        bool canceled = false;
+        (*held)(
+            ioc.get_executor(),
+            [](bool& d, bool& c) -> capy::task<> {
+                auto [ec] = co_await corosio::delay(std::chrono::hours(1));
+                c         = ec == capy::cond::canceled;
+                d         = true;
+            }(done, canceled));
+        held.reset();
+        ioc.restart();
+        while (!done && ioc.run_one_for(std::chrono::seconds(5)) != 0)
+        {
+        }
+        BOOST_TEST(done);
+        BOOST_TEST(canceled);
+        ioc.run();
+        srv.join();
+    }
+
+    // The connection a launcher starts outlives the chain that invoked
+    // it, so it must not be allocated from that chain's allocator.
+    void testLateLaunchOutlivesInvokingChain()
+    {
+        io_context ioc(Backend);
+        std::optional<tcp_server::launcher> held;
+        holding_server srv(ioc, &held);
+        BOOST_TEST(!srv.bind(endpoint(ipv4_address::loopback(), 0)));
+        auto ep = srv.local_endpoint();
+        srv.start();
+
+        io_context cctx;
+        BOOST_TEST(!connect_result(cctx, ep));
+        // Bounds a hang, not a timing assertion.
+        while (!held && ioc.run_one_for(std::chrono::seconds(5)) != 0)
+        {
+        }
+        BOOST_TEST(held.has_value());
+
+        counting_resource mr;
+        bool done    = false;
+        auto session = []() -> capy::task<> { co_return; }();
+        capy::run_async(ioc.get_executor(), &mr, [&]() { done = true; })(
+            [](tcp_server::launcher& l, capy::task<> t,
+               io_context::executor_type ex) -> capy::task<> {
+                l(ex, std::move(t));
+                co_return;
+            }(*held, std::move(session), ioc.get_executor()));
+        while (!done && ioc.run_one() != 0)
+        {
+        }
+        BOOST_TEST(done);
+        BOOST_TEST_EQ(mr.live, 0);
+
+        held.reset();
+        srv.stop();
+        ioc.run();
+        srv.join();
+    }
+
+    struct overlap_counts
+    {
+        std::atomic<int> in_run{0};
+        std::atomic<int> max_in_run{0};
+        std::atomic<int> runs{0};
+    };
+
+    // Starts its connection on another context, then lingers in run()
+    // until a second run() begins or a bound passes.
+    class lingering_worker : public tcp_server::worker_base
+    {
+        corosio::tcp_socket sock_;
+        io_context& session_ctx_;
+        overlap_counts& counts_;
+
+    public:
+        lingering_worker(
+            io_context& ctx, io_context& session_ctx, overlap_counts& counts)
+            : sock_(ctx)
+            , session_ctx_(session_ctx)
+            , counts_(counts)
+        {
+        }
+
+        corosio::tcp_socket& socket() override
+        {
+            return sock_;
+        }
+
+        void run(tcp_server::launcher launch) override
+        {
+            int const n = ++counts_.in_run;
+            int seen    = counts_.max_in_run.load();
+            while (n > seen &&
+                   !counts_.max_in_run.compare_exchange_weak(seen, n))
+            {
+            }
+            ++counts_.runs;
+            launch(
+                session_ctx_.get_executor(),
+                [](corosio::tcp_socket* s) -> capy::task<> {
+                    s->close();
+                    co_return;
+                }(&sock_));
+            // Bounds the wait, not a timing assertion.
+            auto const until = std::chrono::steady_clock::now() +
+                std::chrono::milliseconds(500);
+            while (counts_.runs.load() < 2 &&
+                   std::chrono::steady_clock::now() < until)
+                std::this_thread::yield();
+            --counts_.in_run;
+        }
+    };
+
+    // A worker is not handed to another connection while its run() is
+    // still executing, even once the connection it launched is done.
+    void testWorkerNotReusedDuringRun()
+    {
+        io_context ioc(Backend);
+        io_context session_ctx(Backend);
+        overlap_counts counts;
+
+        class server : public tcp_server
+        {
+        public:
+            server(io_context& ctx, io_context& sctx, overlap_counts& c)
+                : tcp_server(ctx, ctx.get_executor())
+            {
+                std::vector<std::unique_ptr<tcp_server::worker_base>> v;
+                v.push_back(std::make_unique<lingering_worker>(ctx, sctx, c));
+                set_workers(std::move(v));
+            }
+        };
+
+        server srv(ioc, session_ctx, counts);
+        BOOST_TEST(!srv.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!srv.bind(endpoint(ipv4_address::loopback(), 0)));
+        io_context cctx;
+        BOOST_TEST(!connect_result(cctx, srv.local_endpoint(0)));
+        BOOST_TEST(!connect_result(cctx, srv.local_endpoint(1)));
+
+        auto sex = session_ctx.get_executor();
+        sex.on_work_started();
+        std::thread session_thread([&] { session_ctx.run(); });
+
+        srv.start();
+        std::thread t1([&] { ioc.run(); });
+        std::thread t2([&] { ioc.run(); });
+
+        // Bounds a hang, not a timing assertion.
+        auto const until =
+            std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while ((counts.runs.load() < 2 || counts.in_run.load() != 0) &&
+               std::chrono::steady_clock::now() < until)
+            std::this_thread::yield();
+
+        srv.stop();
+        t1.join();
+        t2.join();
+        srv.join();
+        sex.on_work_finished();
+        session_thread.join();
+
+        BOOST_TEST_EQ(counts.runs.load(), 2);
+        BOOST_TEST_EQ(counts.max_in_run.load(), 1);
+    }
+
+    // An accept loop holds a worker while it waits for a connection,
+    // so replacing the workers then would free one in use.
+    void testSetWorkersWhileAcceptingThrows()
+    {
+        io_context ioc(Backend);
+        test_server srv(ioc);
+        BOOST_TEST(!srv.bind(endpoint(ipv4_address::loopback(), 0)));
+        srv.start();
+        while (ioc.poll() != 0)
+        {
+        }
+
+        BOOST_TEST_THROWS(
+            srv.set_workers(make_test_workers(ioc, 1)), std::logic_error);
+
+        srv.stop();
+        ioc.run();
+        srv.join();
+        srv.set_workers(make_test_workers(ioc, 1));
+    }
+
+    // A launcher kept past join still borrows its worker.
+    void testSetWorkersWithBorrowedWorkerThrows()
+    {
+        io_context ioc(Backend);
+        std::optional<tcp_server::launcher> held;
+        holding_server srv(ioc, &held);
+        BOOST_TEST(!srv.bind(endpoint(ipv4_address::loopback(), 0)));
+        auto ep = srv.local_endpoint();
+        srv.start();
+
+        io_context cctx;
+        BOOST_TEST(!connect_result(cctx, ep));
+        // Bounds a hang, not a timing assertion.
+        while (!held && ioc.run_one_for(std::chrono::seconds(5)) != 0)
+        {
+        }
+        BOOST_TEST(held.has_value());
+
+        srv.stop();
+        ioc.run();
+        srv.join();
+        BOOST_TEST_THROWS(
+            srv.set_workers(make_test_workers(ioc, 1)), std::logic_error);
+
+        held.reset();
+        srv.set_workers(make_test_workers(ioc, 1));
+    }
+
+    // Destroying the server from a thread that is not running its
+    // executor must not race the accept loops still running there.
+    void testDestroyWhileRunnersAccept()
+    {
+        for (int round = 0; round < 20; ++round)
+        {
+            io_context ioc(Backend);
+            auto srv = std::make_unique<test_server>(ioc);
+            BOOST_TEST(!srv->bind(endpoint(ipv4_address::loopback(), 0)));
+            auto ep = srv->local_endpoint();
+            srv->start();
+
+            std::vector<std::thread> runners;
+            for (int i = 0; i < 4; ++i)
+                runners.emplace_back([&] { ioc.run(); });
+
+            std::atomic<bool> quit{false};
+            std::atomic<int> connects{0};
+            std::vector<std::thread> clients;
+            // The default backend for the clients: io_uring maps its
+            // rings with raw syscalls the thread sanitizer cannot see,
+            // so each round's client threads would appear to race the
+            // last round's over reused addresses.
+            for (int i = 0; i < 3; ++i)
+                clients.emplace_back([&] {
+                    io_context cctx;
+                    while (!quit.load())
+                    {
+                        connect_once(cctx, ep);
+                        ++connects;
+                    }
+                });
+            while (connects.load() < 20)
+                std::this_thread::yield();
+
+            srv.reset();
+            quit = true;
+            for (auto& t : clients)
+                t.join();
+            ioc.stop();
+            for (auto& t : runners)
+                t.join();
+            ioc.restart();
+            ioc.run(); // the destroyed server's loops finish
+        }
+        BOOST_TEST_PASS();
+    }
+
     void run()
     {
         testLauncherDropWakesWaitingAccept();
@@ -951,6 +1489,16 @@ struct tcp_server_test
         testLauncherDoubleInvokeThrows();
         testLauncherDtorReturnsWorker();
         testMultipleActiveConnections();
+        testDestroyWhileRunning();
+        testMoveWhileRunning();
+        testConcurrentWorkersOnMultithreadedContext();
+        testDestroyWhileRunnersAccept();
+        testDestroyWithBusyWorkerClosesListener();
+        testStopReachesLaunchAfterStop();
+        testLateLaunchOutlivesInvokingChain();
+        testWorkerNotReusedDuringRun();
+        testSetWorkersWhileAcceptingThrows();
+        testSetWorkersWithBorrowedWorkerThrows();
     }
 };
 
