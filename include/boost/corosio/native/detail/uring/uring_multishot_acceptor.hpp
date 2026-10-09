@@ -34,6 +34,7 @@
 #include <mutex>
 #include <stop_token>
 #include <system_error>
+#include <utility>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -299,13 +300,18 @@ public:
 
     ~uring_multishot_acceptor_base() override
     {
+        uring_multi_accept_op* arming;
         {
             std::lock_guard lk(mutex_);
             closing_ = true;
+            arming   = std::exchange(armed_, nullptr);
         }
         if (fd_ >= 0)
         {
-            sched_->submit_cancel_by_fd(fd_);
+            sched_->flush_after_cancel(fd_, [&]() noexcept {
+                if (arming)
+                    sched_->cancel_op_locked(arming);
+            });
             ::close(fd_);
             fd_ = -1;
         }
@@ -355,21 +361,77 @@ public:
         // Mirror the service close() path, except that the caller now
         // owns the fd.
         if (fd_ >= 0)
-        {
-            drain_waiters_only();
-            sched_->cancel_and_flush(fd_);
-        }
+            flush_listener();
         int fd          = fd_;
         fd_             = -1;
         local_endpoint_ = Endpoint{};
         return fd;
     }
 
+    /// Abort every operation and stop accepting, for service teardown.
+    void abort_all() noexcept
+    {
+        auto* arming = drain_waiters_only();
+        static_cast<Derived*>(this)->cancel_wait_op();
+        if (arming)
+            sched_->cancel_ops({arming});
+    }
+
+    /** Stop accepting and flush every SQE naming the listener.
+
+        Disowns the arming and cancels it with the readiness wait, so
+        the caller may then close or hand off the descriptor.
+
+        @pre The descriptor is open.
+    */
+    void flush_listener() noexcept
+    {
+        auto* arming = drain_waiters_only();
+        static_cast<Derived*>(this)->cancel_wait_op();
+        sched_->flush_after_cancel(fd_, [&]() noexcept {
+            if (arming)
+                sched_->cancel_op_locked(arming);
+        });
+    }
+
+    /** Cancel the pending accepts and waits.
+
+        The arming is left alone: the acceptor keeps listening, and a
+        connection that arrives meanwhile waits for the next accept.
+    */
     void cancel() noexcept override
     {
-        drain_waiters_only();
-        if (fd_ >= 0)
-            sched_->submit_cancel_by_fd(fd_);
+        intrusive_list<accept_node> claimed;
+        {
+            std::lock_guard lk(mutex_);
+            // A waiter the stop callback already claimed belongs to it;
+            // see fail_arm().
+            intrusive_list<accept_node> keep;
+            while (auto* w = waiters_.pop_front())
+            {
+                if (!w->cancelled.exchange(true, std::memory_order_acq_rel))
+                    claimed.push_back(w);
+                else
+                    keep.push_back(w);
+            }
+            while (auto* w = keep.pop_front())
+                waiters_.push_back(w);
+            if (read_wait_ &&
+                !read_wait_->cancelled.exchange(
+                    true, std::memory_order_acq_rel))
+            {
+                claimed.push_back(read_wait_);
+                read_wait_ = nullptr;
+            }
+        }
+        while (auto* w = claimed.pop_front())
+        {
+            // The claim is also the completion status.
+            w->stop_cb.reset();
+            sched_->post(w);
+            sched_->work_finished();
+        }
+        static_cast<Derived*>(this)->cancel_wait_op();
     }
 
     /** Reset state for recycling.
@@ -400,17 +462,21 @@ public:
     /** Disown the arming and drain queued waiters with
         operation_aborted, without submitting a kernel cancel.
 
-        Runs before the caller's cancel-by-fd: an arming admitted after
-        this sees `closing_` and is refused, and one admitted before it
-        is already in the submission queue ahead of the cancel.
+        Runs before the caller cancels the arming it returns: an arming
+        admitted after this sees `closing_` and is refused, and the one
+        admitted before it is already in the submission queue ahead of
+        the cancel.
+
+        @return The disowned arming, or null if none was live.
     */
-    void drain_waiters_only() noexcept
+    uring_multi_accept_op* drain_waiters_only() noexcept
     {
         intrusive_list<accept_node> drained;
+        uring_multi_accept_op* arming;
         {
             std::lock_guard lk(mutex_);
             closing_ = true;
-            armed_   = nullptr;
+            arming   = std::exchange(armed_, nullptr);
             // Drain under the lock — the kernel cancel may not produce
             // a !more CQE before the fd is closed, so we can't rely on
             // on_accept_cqe_impl to surface operation_aborted.
@@ -432,6 +498,7 @@ public:
             sched_->post(w);
             sched_->work_finished();
         }
+        return arming;
     }
 
     /** Park a readiness wait, or complete it if a connection is

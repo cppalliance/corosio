@@ -437,6 +437,59 @@ struct posix_stream_descriptor_test
         ::close(fds[1]);
     }
 
+    // Two descriptors on one open file: cancelling, closing or
+    // releasing one must leave the other's pending read alone.
+    void doSharedFileSpared(int how)
+    {
+        io_context ioc(Backend);
+        int fds[2];
+        make_pipe(fds);
+        posix_stream_descriptor a(ioc);
+        posix_stream_descriptor b(ioc);
+        BOOST_TEST(!a.assign(fds[0]));
+        BOOST_TEST(!b.assign(::dup(fds[0])));
+
+        std::error_code ec;
+        std::size_t n = 0;
+        bool done     = false;
+        char buf[8]{};
+        capy::run_async(ioc.get_executor())(
+            [](posix_stream_descriptor& b, char* p, std::error_code& ec,
+               std::size_t& n, bool& done) -> capy::task<> {
+                auto [rec, rn] =
+                    co_await b.read_some(capy::mutable_buffer(p, 8));
+                ec   = rec;
+                n    = rn;
+                done = true;
+            }(b, buf, ec, n, done));
+        ioc.poll();
+
+        native_handle_type released = -1;
+        if (how == 0)
+            a.cancel();
+        else if (how == 1)
+            a.close();
+        else
+            released = a.release();
+        BOOST_TEST_EQ(::write(fds[1], "x", 1), 1);
+        ioc.restart();
+        ioc.run();
+
+        BOOST_TEST(done);
+        BOOST_TEST(!ec);
+        BOOST_TEST_EQ(n, 1u);
+        if (released >= 0)
+            ::close(released);
+        ::close(fds[1]);
+    }
+
+    void testSharedFileSpared()
+    {
+        doSharedFileSpared(0);
+        doSharedFileSpared(1);
+        doSharedFileSpared(2);
+    }
+
     void testEofOnClosedWriteEnd()
     {
         io_context ioc(Backend);
@@ -1407,6 +1460,7 @@ struct posix_stream_descriptor_test
 
     void run()
     {
+        testSharedFileSpared();
         testConstruction();
         testAssignRejectsRegularFile();
         testAssignRejectsBadFd();

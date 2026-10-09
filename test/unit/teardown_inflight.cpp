@@ -316,7 +316,7 @@ struct uring_teardown_test
         // scoped_sigpipe_block kills the process. After two run_one()
         // calls what is in the ring is a WRITEV parked in the kernel's
         // internal poll, and the SIGPIPE cover for its flush comes from
-        // cancel_and_flush's own scoped_sigpipe_block, so deleting
+        // flush_after_cancel's own scoped_sigpipe_block, so deleting
         // uring_descriptor::close_descriptor()'s guard leaves this
         // passing. What this test pins is the drain coverage named
         // above.

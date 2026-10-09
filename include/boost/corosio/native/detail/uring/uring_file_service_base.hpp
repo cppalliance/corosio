@@ -77,7 +77,7 @@ public:
 
     void destroy(io_object::implementation* p) override
     {
-        // close_file() already does cancel_and_flush(fd_) before ::close.
+        // close_file() closes the fd only once its cancel reached the kernel.
         auto& impl = static_cast<File&>(*p);
         impl.close_file();
         release(&impl);

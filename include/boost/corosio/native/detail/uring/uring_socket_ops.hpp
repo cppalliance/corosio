@@ -428,10 +428,13 @@ uring_link_sqe(
     // expects exactly one F_MORE-less CQE per submitted SQE
     // (multishot ops decrement only on the terminal CQE).
     sched.inflight_inc();
-    // Release pairs with the acquire in uring_op::request_cancel:
-    // a stop_token firing after we release the mutex will see
-    // sqe_set==true and submit a cancel-by-user_data SQE.
-    op->sqe_set.store(true, std::memory_order_release);
+    // Paired with uring_op::on_cancel: of a stop and this link, the
+    // later one sees the other and queues the cancel. A stop that came
+    // after the initiator's own check would otherwise find no SQE to
+    // cancel and leave the op armed.
+    op->sqe_set.store(true, std::memory_order_seq_cst);
+    if (op->cancelled.load(std::memory_order_seq_cst))
+        sched.cancel_op_locked(op);
     // First submitter in a batch wins the CAS and will post
     // submit_sqes_op; others piggyback on the same flush.
     return !sched.submit_op_posted_exchange(true);
@@ -472,14 +475,7 @@ uring_submit_op(uring_scheduler& sched, uring_op* op) noexcept
     {
         typename uring_scheduler::lock_type ring_lock(sched.ring_mutex());
 
-        ::io_uring_sqe* sqe = ::io_uring_get_sqe(sched.ring());
-        if (!sqe)
-        {
-            // SQ ring full — flush to kernel and retry once.
-            ::io_uring_submit(sched.ring());
-            sqe = ::io_uring_get_sqe(sched.ring());
-        }
-
+        ::io_uring_sqe* sqe = sched.acquire_sqe();
         if (!sqe)
         {
             // SQ stayed full after one flush — synchronous failure path.
@@ -521,7 +517,7 @@ enum class uring_guarded_submit
 /** Submit an uncounted op if @p admit allows it.
 
     `admit` runs under the ring mutex before an SQE is taken. A cancel
-    flushed under that mutex (`cancel_and_flush`) therefore either
+    flushed under that mutex (`flush_after_cancel`) therefore either
     runs before the check, which then sees the owner's closing state,
     or follows this op's SQE in the submission queue and cancels it.
 
@@ -551,12 +547,7 @@ uring_try_submit_op_if(
         if (!admit())
             return uring_guarded_submit::refused;
 
-        ::io_uring_sqe* sqe = ::io_uring_get_sqe(sched.ring());
-        if (!sqe)
-        {
-            ::io_uring_submit(sched.ring());
-            sqe = ::io_uring_get_sqe(sched.ring());
-        }
+        ::io_uring_sqe* sqe = sched.acquire_sqe();
         if (!sqe)
         {
             op->res = -EAGAIN;
@@ -662,8 +653,12 @@ struct uring_wait_op : uring_op
         {
             ec = make_err(EBADF);
         }
-        else if (!readiness_wait && (self->res & (POLLERR | POLLHUP)))
+        else if (
+            !readiness_wait && (self->res & (POLLERR | POLLHUP)) &&
+            !self->cancelled.load(std::memory_order_acquire))
         {
+            // Not after a close: the number may name another socket now,
+            // and the probe would read and clear its error.
             int so_err    = 0;
             socklen_t len = sizeof(so_err);
             if (::getsockopt(self->fd, SOL_SOCKET, SO_ERROR, &so_err, &len) < 0)

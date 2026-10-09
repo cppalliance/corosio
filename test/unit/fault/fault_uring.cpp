@@ -90,7 +90,18 @@ apply_sq_fill(io_uring* ring) noexcept
         {
             st.ring       = ring;
             st.saved_tail = ring->sq.sqe_tail;
-            ring->sq.sqe_tail += io_uring_sq_space_left(ring);
+            // The claimed entries hold whatever earlier requests left
+            // there; blank them so nothing reading the queue mistakes
+            // them for queued requests.
+            unsigned const space = io_uring_sq_space_left(ring);
+            for (unsigned i = 0; i != space; ++i)
+            {
+                auto& sqe =
+                    ring->sq.sqes[(st.saved_tail + i) & ring->sq.ring_mask];
+                io_uring_prep_nop(&sqe);
+                sqe.fd = -1;
+            }
+            ring->sq.sqe_tail += space;
             st.filled = true;
             s->fired  = true;
         }

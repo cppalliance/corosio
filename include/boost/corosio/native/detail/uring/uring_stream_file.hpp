@@ -140,7 +140,7 @@ public:
     void cancel() noexcept override
     {
         if (fd_ >= 0)
-            sched_->submit_cancel_by_fd(fd_);
+            sched_->cancel_ops({&rd_, &wr_});
     }
 
     std::uint64_t size() const override
@@ -181,11 +181,10 @@ public:
 
     native_handle_type release() override
     {
-        // Flush the cancel while the fd is still open, so the kernel
-        // resolves it before the caller can close and recycle the
-        // number.
+        // Flush while the fd is still open, so no queued SQE can name
+        // a number the caller closes and recycles.
         if (fd_ >= 0)
-            sched_->cancel_and_flush(fd_);
+            sched_->flush_after_cancel(fd_, {&rd_, &wr_});
         int fd = fd_;
         fd_    = -1;
         return fd;
@@ -270,7 +269,7 @@ public:
             // either kernel entry below; with the reader already gone
             // that raises SIGPIPE.
             scoped_sigpipe_block no_sigpipe;
-            sched_->cancel_and_flush(fd_);
+            sched_->flush_after_cancel(fd_, {&rd_, &wr_});
             ::close(fd_);
             fd_ = -1;
         }

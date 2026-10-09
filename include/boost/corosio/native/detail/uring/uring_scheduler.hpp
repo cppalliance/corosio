@@ -40,10 +40,13 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <tuple>
+#include <initializer_list>
 #include <vector>
 
 #include <errno.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <pthread.h>
 #include <signal.h>
@@ -275,31 +278,76 @@ public:
     */
     void submit_cancel_by_user_data(uring_op* target) noexcept;
 
-    /** Submit `IORING_OP_ASYNC_CANCEL` with `IORING_ASYNC_CANCEL_FD`
-        to cancel every in-flight op on the given fd in one SQE.
+    /** Cancel @p op by its user_data if the kernel may hold it.
 
-        Best-effort: if the SQ is full after one flush attempt the
-        function returns without cancelling.
+        A cancel that cannot be queued yet is deferred, and queued
+        ahead of the next operation's SQE.
 
-        @param fd The file descriptor whose in-flight ops should be
-            cancelled.
+        @pre `ring_mutex()` is held.
+
+        @param op The operation to cancel.
     */
-    void submit_cancel_by_fd(int fd) noexcept;
+    void cancel_op_locked(uring_op* op) noexcept;
 
-    /** Submit `IORING_OP_ASYNC_CANCEL` for `fd` and immediately flush
-        the submission ring to the kernel.
+    /** Cancel each of @p ops the kernel may hold.
 
-        Must be called while `fd` is still open so the kernel can
-        resolve the file from the fd number before it is closed and
-        potentially recycled.
+        Only these operations are cancelled, never another object's
+        operation on the same file.
 
-        Best-effort: if the SQ is full the function still flushes any
-        earlier pending SQEs to the kernel.
-
-        @param fd The file descriptor whose in-flight ops should be
-            cancelled.
+        @param ops The operations to cancel.
     */
-    void cancel_and_flush(int fd) noexcept;
+    void cancel_ops(std::initializer_list<uring_op*> ops) noexcept;
+
+    /** Cancel an object's operations.
+
+        @param cancel Called under the ring mutex; cancels the object's
+            operations with @ref cancel_op_locked.
+    */
+    template<class Cancel>
+    void cancel_ops(Cancel&& cancel) noexcept
+    {
+        lazy_init_ring();
+        interrupt_reactor();
+        lock_type lock(ring_mutex_);
+        cancel();
+    }
+
+    /** Cancel an object's operations and flush every SQE naming `fd`.
+
+        Once this returns no queued SQE refers to `fd` by number, so
+        the caller may close it, or hand it to an owner who may. If the
+        flush fails, this object's SQEs still queued are turned into
+        no-ops and their operations complete as cancelled.
+
+        @param fd The object's descriptor.
+        @param cancel Called under the ring mutex; cancels the object's
+            operations with @ref cancel_op_locked.
+    */
+    template<class Cancel>
+    void flush_after_cancel(int fd, Cancel&& cancel) noexcept;
+
+    /// @copydoc flush_after_cancel
+    void
+    flush_after_cancel(int fd, std::initializer_list<uring_op*> ops) noexcept
+    {
+        flush_after_cancel(fd, [&]() noexcept {
+            for (auto* op : ops)
+                cancel_op_locked(op);
+        });
+    }
+
+    /** Return a submission queue entry for a new operation.
+
+        Deferred cancels are queued first: they name operations by
+        address, and an operation armed later at the same address must
+        not be what they reach. Flushes once if the queue is full.
+
+        @pre `ring_mutex()` is held.
+
+        @return The entry, or null if the queue stays full or a
+            deferred cancel still cannot be queued.
+    */
+    ::io_uring_sqe* acquire_sqe() noexcept;
 
     /** Queue an already-counted op while the caller holds dispatch_mutex_.
 
@@ -405,6 +453,31 @@ private:
     int sq_thread_cpu_               = -1;
 
     int cancel_sentinel_ = 0;
+
+    std::vector<uring_op*> deferred_cancels_; // guarded by ring_mutex_
+    std::atomic<bool> has_deferred_cancels_{false};
+
+    /// io_uring_submit, retried while a signal or a full completion
+    /// queue delays it. @pre ring_mutex_ is held.
+    int submit_retrying() noexcept;
+
+    // Submit as submit_retrying() does, and under SQPOLL also wait for
+    // the kernel thread to take every queued entry: an SQE names its
+    // file by number until it is issued, so the number must stay open
+    // until then.
+    int submit_issued() noexcept;
+
+    /// Queue a cancel of @p op by user_data; return false if the SQ
+    /// stays full. @pre ring_mutex_ is held.
+    bool queue_cancel_locked(uring_op* op) noexcept;
+
+    /// Queue the deferred cancels; return false if one still cannot
+    /// be. @pre ring_mutex_ is held.
+    bool queue_deferred_cancels() noexcept;
+
+    /// Turn every SQE on @p fd the kernel has not taken into a no-op,
+    /// completing its operation as cancelled. @pre ring_mutex_ is held.
+    void neutralize_pending_locked(int fd) noexcept;
 
     // Signal self-pipe integration. The read end is watched via a multishot
     // POLL SQE tagged with &signal_pipe_sentinel_ (distinct from nullptr =
@@ -535,7 +608,7 @@ uring_scheduler::lazy_init_ring_unlocked() const
         // io_uring_submit_and_wait_timeout always sets
         // IORING_ENTER_GETEVENTS when wait_nr > 0, regardless of
         // ts. Our run loop's only kernel-wait call passes wait_nr=1.
-        // Submit-only paths (cancel_and_flush, etc.) leave their
+        // Submit-only paths (flush_after_cancel, etc.) leave their
         // CQEs queued until the leader's next GETEVENTS-bearing
         // wait — benign.
         //
@@ -572,7 +645,17 @@ uring_scheduler::lazy_init_ring_unlocked() const
         }
     }
 
+    // Keeps a batch going past an entry the kernel rejects, so a cancel
+    // queued behind it is still issued. Kernels that predate the flag
+    // refuse it, and the ring is set up without.
+    io_uring_params const base = params;
+    params.flags |= IORING_SETUP_SUBMIT_ALL;
     int rc = ::io_uring_queue_init_params(256, &ring_, &params);
+    if (rc == -EINVAL)
+    {
+        params = base;
+        rc     = ::io_uring_queue_init_params(256, &ring_, &params);
+    }
     if (rc < 0)
         detail::throw_system_error(make_err(-rc), "io_uring_queue_init_params");
 
@@ -644,7 +727,7 @@ uring_scheduler::shutdown()
         io_uring_sqe* sqe = ::io_uring_get_sqe(&ring_);
         if (!sqe)
         {
-            ::io_uring_submit(&ring_);
+            submit_issued();
             sqe = ::io_uring_get_sqe(&ring_);
         }
         if (sqe)
@@ -653,18 +736,7 @@ uring_scheduler::shutdown()
             ::io_uring_sqe_set_data(sqe, &cancel_sentinel_);
             inflight_inc();
         }
-        int submitted = -EINVAL;
-        if (sqe)
-        {
-            do
-            {
-                submitted = ::io_uring_submit(&ring_);
-                if (submitted == -EBUSY)
-                    process_completions();
-            }
-            while (submitted == -EINTR || submitted == -EAGAIN ||
-                   submitted == -EBUSY);
-        }
+        int const submitted = sqe ? submit_retrying() : -EINVAL;
         while (submitted >= 0 &&
                uring_inflight_.load(std::memory_order_acquire) > 0)
         {
@@ -676,6 +748,9 @@ uring_scheduler::shutdown()
                 break;
             process_completions();
         }
+
+        deferred_cancels_.clear();
+        has_deferred_cancels_.store(false, std::memory_order_release);
     }
 
     // Drain posted ops, including the completions reaped above,
@@ -755,12 +830,16 @@ uring_scheduler::interrupt_reactor() const noexcept
     if (!ring_inited_)
         return;
 
-    // Lockless tiers (reactor-I/O locking off): cross-thread post() is
-    // forbidden, so interrupt_reactor is only ever reached from the leader
-    // thread's own coroutines — it is not in kernel wait, nothing to wake.
-    // Under the safe tier (including concurrency_hint == 1) cross-thread
-    // post() is allowed, so the eventfd write below must always fire.
-    if (!reactor_io_locking_)
+    // Only the unsafe tier forbids cross-thread post(); there the caller
+    // is the run thread itself, which is not in a kernel wait. Under
+    // unsafe_io a pool thread (the resolver) may post, and the eventfd
+    // write leaves the single ring submitter untouched.
+    if (scheduler_locking_disabled_)
+        return;
+
+    // Under unsafe_io a single thread runs the ring; when that thread is
+    // the caller it is not in a kernel wait.
+    if (!reactor_io_locking_ && running_scheduler.get() == this)
         return;
 
     // Multi-thread: write the eventfd unconditionally. CAS-coalescing
@@ -1117,6 +1196,8 @@ uring_scheduler::do_one(long timeout_us)
     if (ring_inited_)
     {
         lock_type ring_lock(ring_mutex_);
+        if (has_deferred_cancels_.load(std::memory_order_acquire))
+            queue_deferred_cancels();
         if (uring_inflight_.load(std::memory_order_acquire) != 0 ||
             ::io_uring_sq_ready(&ring_) != 0 ||
             ::io_uring_cq_ready(&ring_) != 0)
@@ -1220,6 +1301,8 @@ uring_scheduler::do_one(long timeout_us)
                     .count();
             if (delta_ns < 0)
                 delta_ns = 0;
+            if (timeout_us > 0 && timeout_us < delta_ns / 1000)
+                delta_ns = static_cast<decltype(delta_ns)>(timeout_us) * 1000;
             ts.tv_sec  = delta_ns / 1'000'000'000;
             ts.tv_nsec = delta_ns % 1'000'000'000;
             ts_ptr     = &ts;
@@ -1259,6 +1342,8 @@ uring_scheduler::do_one(long timeout_us)
         // Phase 1 — submit any pending SQEs to the kernel.
         {
             lock_type ring_lock(ring_mutex_);
+            if (has_deferred_cancels_.load(std::memory_order_acquire))
+                queue_deferred_cancels();
             ::io_uring_submit(&ring_);
         }
 
@@ -1364,6 +1449,9 @@ uring_scheduler::process_completions()
         else
         {
             auto* iop = static_cast<uring_op*>(ud);
+            // Nothing is left for a cancel to reach.
+            if ((cqe->flags & IORING_CQE_F_MORE) == 0)
+                iop->sqe_set.store(false, std::memory_order_release);
             (*iop->cqe_func)(iop, cqe->res, cqe->flags, local_ops);
             // Decrement inflight on the terminal CQE only — multishot
             // ops (acceptor) hold the SQE alive across F_MORE CQEs and
@@ -1417,58 +1505,55 @@ uring_scheduler::submit_cancel_by_user_data(uring_op* target) noexcept
     lazy_init_ring();
     // Wake the leader (if any) so its submit_and_wait_timeout returns
     // and releases ring_mutex_; otherwise we'd block here until the
-    // next CQE arrives organically. Cancellation is best-effort if
-    // the SQ stays full after one flush — the op completes on its
-    // own and reports cancelled via the in-flight `cancelled` flag.
+    // next CQE arrives organically.
     interrupt_reactor();
     lock_type lock(ring_mutex_);
+    cancel_op_locked(target);
+}
+
+inline bool
+uring_scheduler::queue_cancel_locked(uring_op* target) noexcept
+{
     io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
     if (!sqe)
     {
-        io_uring_submit(&ring_);
+        // A flush alone frees no space under SQPOLL until the kernel
+        // thread consumes it.
+        submit_issued();
         sqe = io_uring_get_sqe(&ring_);
     }
     if (!sqe)
-        return;
+        return false;
 
     io_uring_prep_cancel(sqe, target, 0);
     io_uring_sqe_set_data(sqe, &cancel_sentinel_);
     inflight_inc();
+    return true;
 }
 
 inline void
-uring_scheduler::submit_cancel_by_fd(int fd) noexcept
+uring_scheduler::cancel_op_locked(uring_op* op) noexcept
 {
-    lazy_init_ring();
-    interrupt_reactor();
-    lock_type lock(ring_mutex_);
-    io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
-    if (!sqe)
-    {
-        io_uring_submit(&ring_);
-        sqe = io_uring_get_sqe(&ring_);
-    }
-    if (!sqe)
+    if (!op->sqe_set.load(std::memory_order_acquire))
         return;
-
-    io_uring_prep_cancel_fd(sqe, fd, IORING_ASYNC_CANCEL_ALL);
-    io_uring_sqe_set_data(sqe, &cancel_sentinel_);
-    inflight_inc();
+    if (queue_cancel_locked(op))
+        return;
+    deferred_cancels_.push_back(op);
+    has_deferred_cancels_.store(true, std::memory_order_release);
 }
 
 inline void
-uring_op::on_cancel() noexcept
+uring_scheduler::cancel_ops(std::initializer_list<uring_op*> ops) noexcept
 {
-    request_cancel(); // coro_op: records the cancellation (sets the flag)
-    // Skip the cancel SQE if we never linked an SQE to this op — the
-    // bypass path in the caller will see cancelled=true and complete
-    // synchronously without a kernel round-trip.
-    if (sched_ && sqe_set.load(std::memory_order_acquire))
-        sched_->submit_cancel_by_user_data(this);
+    cancel_ops([&]() noexcept {
+        for (auto* op : ops)
+            cancel_op_locked(op);
+    });
 }
 
-inline void
-uring_scheduler::cancel_and_flush(int fd) noexcept
+template<class Cancel>
+void
+uring_scheduler::flush_after_cancel(int fd, Cancel&& cancel) noexcept
 {
     // The flush can execute a queued write on `fd` inline; when the
     // fd is a pipe whose reader has already closed — service
@@ -1479,21 +1564,115 @@ uring_scheduler::cancel_and_flush(int fd) noexcept
     lazy_init_ring();
     interrupt_reactor();
     lock_type lock(ring_mutex_);
-    io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
+    cancel();
+    if (submit_issued() < 0)
+        neutralize_pending_locked(fd);
+}
+
+inline void
+uring_op::on_cancel() noexcept
+{
+    // Paired with uring_link_sqe: with no SQE linked yet, the
+    // initiator either sees the flag and completes without the kernel,
+    // or links and queues the cancel itself.
+    cancelled.store(true, std::memory_order_seq_cst);
+    if (sched_ && sqe_set.load(std::memory_order_seq_cst))
+        sched_->submit_cancel_by_user_data(this);
+}
+
+inline int
+uring_scheduler::submit_retrying() noexcept
+{
+    int r;
+    do
+    {
+        r = ::io_uring_submit(&ring_);
+        if (r == -EBUSY)
+            process_completions();
+    }
+    while (r == -EINTR || r == -EAGAIN || r == -EBUSY);
+    return r;
+}
+
+inline int
+uring_scheduler::submit_issued() noexcept
+{
+    bool const sqpoll = (ring_.flags & IORING_SETUP_SQPOLL) != 0;
+    int r             = submit_retrying();
+    // The kernel can take fewer entries than were flushed, and under
+    // SQPOLL takes them later on its own thread.
+    while (r >= 0 && ::io_uring_sq_ready(&ring_) > 0)
+    {
+        if (sqpoll)
+            std::this_thread::yield();
+        else if (r == 0)
+            return -EBUSY;
+        // Under SQPOLL this also wakes the kernel thread if it went idle.
+        r = submit_retrying();
+    }
+    return r;
+}
+
+inline bool
+uring_scheduler::queue_deferred_cancels() noexcept
+{
+    std::size_t kept = 0;
+    for (auto* op : deferred_cancels_)
+        if (!queue_cancel_locked(op))
+            deferred_cancels_[kept++] = op;
+    deferred_cancels_.resize(kept);
+    has_deferred_cancels_.store(kept != 0, std::memory_order_release);
+    return kept == 0;
+}
+
+inline ::io_uring_sqe*
+uring_scheduler::acquire_sqe() noexcept
+{
+    if (has_deferred_cancels_.load(std::memory_order_relaxed) &&
+        !queue_deferred_cancels())
+        return nullptr;
+    ::io_uring_sqe* sqe = ::io_uring_get_sqe(&ring_);
     if (!sqe)
     {
-        io_uring_submit(&ring_);
-        sqe = io_uring_get_sqe(&ring_);
+        ::io_uring_submit(&ring_);
+        sqe = ::io_uring_get_sqe(&ring_);
     }
-    if (sqe)
+    return sqe;
+}
+
+inline void
+uring_scheduler::neutralize_pending_locked(int fd) noexcept
+{
+    // Without SQPOLL the kernel reads the SQ only inside
+    // io_uring_enter, which runs under ring_mutex_, so everything from
+    // its head on is still ours. The SQPOLL thread reads published
+    // entries on its own; only the unpublished ones are safe to touch.
+    auto& sq          = ring_.sq;
+    bool const sqpoll = (ring_.flags & IORING_SETUP_SQPOLL) != 0;
+    unsigned const from =
+        sqpoll ? sq.sqe_head : __atomic_load_n(sq.khead, __ATOMIC_ACQUIRE);
+
+    ready_queue local_ops;
+    for (unsigned i = from; i != sq.sqe_tail; ++i)
     {
-        io_uring_prep_cancel_fd(sqe, fd, IORING_ASYNC_CANCEL_ALL);
-        io_uring_sqe_set_data(sqe, &cancel_sentinel_);
-        inflight_inc();
+        auto* sqe = &sq.sqes[i & sq.ring_mask];
+        // NOLINTNEXTLINE(performance-no-int-to-ptr) — user_data holds the address io_uring_sqe_set_data stored
+        auto* ud = reinterpret_cast<void*>(sqe->user_data);
+        if (sqe->fd != fd || ud == nullptr || ud == &cancel_sentinel_ ||
+            ud == &signal_pipe_sentinel_)
+            continue;
+        auto* op = static_cast<uring_op*>(ud);
+        ::io_uring_prep_nop(sqe);
+        ::io_uring_sqe_set_data(sqe, &cancel_sentinel_);
+        op->sqe_set.store(false, std::memory_order_release);
+        (*op->cqe_func)(op, -ECANCELED, 0, local_ops);
     }
-    // Flush while fd is still open so the kernel resolves the file
-    // from the fd number before the caller closes and recycles it.
-    io_uring_submit(&ring_);
+    if (!local_ops.empty())
+    {
+        lock_type lock(dispatch_mutex_);
+        completed_ops_.splice(local_ops);
+        cond_.notify_one();
+    }
 }
 
 } // namespace boost::corosio::detail

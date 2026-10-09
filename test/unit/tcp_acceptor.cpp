@@ -282,6 +282,64 @@ struct tcp_acceptor_test
 
     // Cancellation Tests
 
+    // cancel() aborts the pending accept but leaves the acceptor
+    // listening: a later accept must still take the next connection.
+    void testAcceptAfterCancel()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.open());
+        acc.set_option(socket_option::reuse_address(true));
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!acc.listen());
+        endpoint ep(ipv4_address::loopback(), acc.local_endpoint().port());
+
+        tcp_socket s1(ioc);
+        std::error_code ec1;
+        bool done1 = false;
+        capy::run_async(ex)(
+            [](tcp_acceptor& a, tcp_socket& s, std::error_code& ec,
+               bool& done) -> capy::task<> {
+                auto [e] = co_await a.accept(s);
+                ec       = e;
+                done     = true;
+            }(acc, s1, ec1, done1));
+        std::ignore = ioc.poll();
+        acc.cancel();
+        ioc.restart();
+        std::ignore = ioc.run();
+        BOOST_TEST(done1);
+        BOOST_TEST(ec1 == capy::cond::canceled);
+
+        tcp_socket s2(ioc);
+        tcp_socket client(ioc);
+        std::error_code ec2;
+        bool done2 = false;
+        capy::run_async(ex)(
+            [](tcp_acceptor& a, tcp_socket& s, std::error_code& ec,
+               bool& done) -> capy::task<> {
+                auto [e] = co_await a.accept(s);
+                ec       = e;
+                done     = true;
+            }(acc, s2, ec2, done2));
+        capy::run_async(ex)([](tcp_socket& c, endpoint e) -> capy::task<> {
+            std::ignore = co_await c.connect(e);
+        }(client, ep));
+
+        // Bounds a hang, not a timing assertion.
+        ioc.restart();
+        while (!done2 && ioc.run_one_for(std::chrono::seconds(5)) != 0)
+        {
+        }
+        BOOST_TEST(done2);
+        BOOST_TEST(!ec2);
+        acc.close();
+        ioc.restart();
+        std::ignore = ioc.run();
+    }
+
     void testCancelAccept()
     {
         // Tests that cancel() properly cancels a pending accept operation.
@@ -2126,6 +2184,7 @@ struct tcp_acceptor_test
 
         // Cancellation
         testCancelAccept();
+        testAcceptAfterCancel();
         testDeferredExecutorCompletion();
 #if BOOST_COROSIO_POSIX
         testQueuedAcceptClosesPeerOnTeardown();

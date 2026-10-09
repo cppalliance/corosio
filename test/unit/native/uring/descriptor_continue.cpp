@@ -158,8 +158,9 @@ struct uring_descriptor_continue_test
     void testCancelInTheGapStopsTheRearm()
     {
         // cancel() lands while the op is out of the ring, so its
-        // cancel-by-fd SQE finds nothing and the op's own `cancelled`
-        // flag is never set. The epoch is the only thing that sees it.
+        // cancel has nothing there to reach and the op's own
+        // `cancelled` flag is never set. The epoch is the only thing
+        // that sees it.
         uring_descriptor_test_context ctx;
         auto d = ctx.make_descriptor();
 

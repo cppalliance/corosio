@@ -123,33 +123,45 @@ class BOOST_COROSIO_DECL uring_random_access_file final
     std::mutex ops_mutex_;
     intrusive_list<pooled_read_op> free_reads_;
     intrusive_list<pooled_write_op> free_writes_;
+    // In flight, so a cancel can name each one.
+    intrusive_list<pooled_read_op> live_reads_;
+    intrusive_list<pooled_write_op> live_writes_;
 
     /// Pop a recycled op of the given kind, or allocate on the cold
-    /// path; `prepare()` resets every per-use field.
+    /// path, and list it live; `prepare()` resets every per-use field.
     template<class Op>
-    Op* acquire_op(intrusive_list<Op>& free_list)
+    Op* acquire_op(intrusive_list<Op>& free_list, intrusive_list<Op>& live)
     {
-        Op* op;
-        {
-            std::lock_guard<std::mutex> lock(ops_mutex_);
-            op = free_list.pop_front();
-        }
+        std::lock_guard<std::mutex> lock(ops_mutex_);
+        Op* op = free_list.pop_front();
         if (!op)
             op = new Op();
         op->file_ = this;
+        live.push_back(op);
         return op;
     }
 
     void release_op(pooled_read_op* op) noexcept
     {
         std::lock_guard<std::mutex> lock(ops_mutex_);
+        live_reads_.remove(op);
         free_reads_.push_front(op);
     }
 
     void release_op(pooled_write_op* op) noexcept
     {
         std::lock_guard<std::mutex> lock(ops_mutex_);
+        live_writes_.remove(op);
         free_writes_.push_front(op);
+    }
+
+    /// Cancel every live op. @pre `ops_mutex_` and the ring mutex are held.
+    void cancel_live_locked() noexcept
+    {
+        live_reads_.for_each(
+            [this](pooled_read_op* op) { sched_->cancel_op_locked(op); });
+        live_writes_.for_each(
+            [this](pooled_write_op* op) { sched_->cancel_op_locked(op); });
     }
 
 public:
@@ -216,8 +228,10 @@ public:
 
     void cancel() noexcept override
     {
-        if (fd_ >= 0)
-            sched_->submit_cancel_by_fd(fd_);
+        if (fd_ < 0)
+            return;
+        std::lock_guard<std::mutex> lock(ops_mutex_);
+        sched_->cancel_ops([this]() noexcept { cancel_live_locked(); });
     }
 
     std::uint64_t size() const override
@@ -258,11 +272,10 @@ public:
 
     native_handle_type release() override
     {
-        // Flush the cancel while the fd is still open, so the kernel
-        // resolves it before the caller can close and recycle the
-        // number.
+        // Flush while the fd is still open, so no queued SQE can name
+        // a number the caller closes and recycles.
         if (fd_ >= 0)
-            sched_->cancel_and_flush(fd_);
+            flush_live();
         int fd = fd_;
         fd_    = -1;
         return fd;
@@ -321,6 +334,14 @@ public:
         return {};
     }
 
+    /// Cancel the live ops and flush every SQE naming `fd_`.
+    void flush_live() noexcept
+    {
+        std::lock_guard<std::mutex> lock(ops_mutex_);
+        sched_->flush_after_cancel(
+            fd_, [this]() noexcept { cancel_live_locked(); });
+    }
+
     /// Cancel any in-flight ops and close the fd. Idempotent.
     void close_file() noexcept
     {
@@ -330,7 +351,7 @@ public:
             // either kernel entry below; with the reader already gone
             // that raises SIGPIPE.
             scoped_sigpipe_block no_sigpipe;
-            sched_->cancel_and_flush(fd_);
+            flush_live();
             ::close(fd_);
             fd_ = -1;
         }
@@ -347,7 +368,7 @@ uring_random_access_file::read_some_at(
     std::error_code* ec,
     std::size_t* bytes)
 {
-    auto* op = acquire_op(free_reads_);
+    auto* op = acquire_op(free_reads_, live_reads_);
     op->prepare(
         cont, ex, ec, bytes, fd_, static_cast<std::int64_t>(user_offset),
         sched_, detail::object_ref(this), buffers, token);
@@ -385,7 +406,7 @@ uring_random_access_file::write_some_at(
     std::error_code* ec,
     std::size_t* bytes)
 {
-    auto* op = acquire_op(free_writes_);
+    auto* op = acquire_op(free_writes_, live_writes_);
     op->prepare(
         cont, ex, ec, bytes, fd_, static_cast<std::int64_t>(user_offset),
         sched_, detail::object_ref(this), buffers, token);
