@@ -19,6 +19,7 @@
 #include <boost/corosio/detail/local_stream_service.hpp>
 
 #include <boost/corosio/native/detail/iocp/win_dissociate.hpp>
+#include <boost/corosio/native/detail/iocp/win_validate_handle.hpp>
 #include <boost/corosio/native/detail/iocp/win_local_stream_acceptor.hpp>
 #include <boost/corosio/native/detail/iocp/win_local_stream_socket.hpp>
 #include <boost/corosio/native/detail/iocp/win_tcp_acceptor_service.hpp>
@@ -425,11 +426,12 @@ win_local_stream_socket::connect(
         }
     }
 
-    svc_.on_pending(&op);
-
-    // Re-check cancellation after I/O is pending
+    // Must precede on_pending: once it runs another thread may
+    // complete the op and recycle this impl.
     if (op.cancelled.load(std::memory_order_acquire))
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
+
+    svc_.on_pending(&op);
 
     return std::noop_coroutine();
 }
@@ -497,10 +499,12 @@ win_local_stream_socket::read_some(
         }
     }
 
-    svc_.on_pending(&op);
-
+    // Must precede on_pending: once it runs another thread may
+    // complete the op and recycle this impl.
     if (op.cancelled.load(std::memory_order_acquire))
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
+
+    svc_.on_pending(&op);
 
     return std::noop_coroutine();
 }
@@ -564,10 +568,12 @@ win_local_stream_socket::write_some(
         }
     }
 
-    svc_.on_pending(&op);
-
+    // Must precede on_pending: once it runs another thread may
+    // complete the op and recycle this impl.
     if (op.cancelled.load(std::memory_order_acquire))
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
+
+    svc_.on_pending(&op);
 
     return std::noop_coroutine();
 }
@@ -622,10 +628,12 @@ win_local_stream_socket::wait(
             }
         }
 
-        svc_.on_pending(&op);
-
+        // Must precede on_pending: once it runs another thread may
+        // complete the op and recycle this impl.
         if (op.cancelled.load(std::memory_order_acquire))
             ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
+
+        svc_.on_pending(&op);
 
         return std::noop_coroutine();
     }
@@ -844,6 +852,9 @@ win_local_stream_service::assign_socket(
     if (proto_info.iSocketType != SOCK_STREAM)
         return make_err(WSAEPROTOTYPE);
 
+    if (has_skip_on_success(reinterpret_cast<HANDLE>(s)))
+        return std::make_error_code(std::errc::operation_not_supported);
+
     HANDLE result = ::CreateIoCompletionPort(
         reinterpret_cast<HANDLE>(s), static_cast<HANDLE>(iocp_), key_io, 0);
     if (result == nullptr)
@@ -995,6 +1006,9 @@ win_local_stream_service::assign_acceptor_socket(
         return make_err(WSAEAFNOSUPPORT);
     if (proto_info.iSocketType != SOCK_STREAM)
         return make_err(WSAEPROTOTYPE);
+
+    if (has_skip_on_success(reinterpret_cast<HANDLE>(sock)))
+        return std::make_error_code(std::errc::operation_not_supported);
 
     HANDLE result = ::CreateIoCompletionPort(
         reinterpret_cast<HANDLE>(sock), static_cast<HANDLE>(iocp_), key_io, 0);

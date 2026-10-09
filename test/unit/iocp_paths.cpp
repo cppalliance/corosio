@@ -41,11 +41,15 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <stop_token>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #include "context.hpp"
@@ -236,6 +240,92 @@ struct iocp_paths_test
         BOOST_TEST(lacc.assign(lacc.native_handle()) == error::already_open);
     }
 
+    // A socket in skip-on-success mode queues no packet for a
+    // synchronous success, so every adopting type must refuse it and
+    // leave it with the caller.
+    void testAssignRejectsSkipOnSuccessSockets()
+    {
+        io_context ioc(iocp);
+
+        auto skipping = [](int af, int type, int proto) {
+            SOCKET s = ::WSASocketW(
+                af, type, proto, nullptr, 0, WSA_FLAG_OVERLAPPED);
+            BOOST_TEST(s != INVALID_SOCKET);
+            BOOST_TEST(::SetFileCompletionNotificationModes(
+                reinterpret_cast<HANDLE>(s),
+                FILE_SKIP_COMPLETION_PORT_ON_SUCCESS));
+            return s;
+        };
+        auto refused = [](auto& obj, SOCKET s) {
+            BOOST_TEST(
+                obj.assign(static_cast<native_handle_type>(s)) ==
+                std::errc::operation_not_supported);
+            BOOST_TEST(!obj.is_open());
+            BOOST_TEST(::closesocket(s) == 0);
+        };
+
+        tcp_socket t(ioc);
+        refused(t, skipping(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+        tcp_acceptor ta(ioc);
+        refused(ta, skipping(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+        udp_socket u(ioc);
+        refused(u, skipping(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
+        local_stream_socket l(ioc);
+        refused(l, skipping(AF_UNIX, SOCK_STREAM, 0));
+        local_stream_acceptor la(ioc);
+        refused(la, skipping(AF_UNIX, SOCK_STREAM, 0));
+    }
+
+    // A stop that lands while a wait is being registered with the wait
+    // reactor must still end it: the reactor may already have dropped
+    // the cancel as one for an op it never parked.
+    void testStopRacingWaitRegistration()
+    {
+        io_context ioc(iocp, 2);
+        udp_socket u(ioc);
+        BOOST_TEST(!u.open(family::v4));
+        BOOST_TEST(!u.bind(endpoint(ipv4_address::loopback(), 0)));
+
+        std::atomic<bool> quit{false};
+        std::vector<std::thread> runners;
+        for (int i = 0; i < 2; ++i)
+            runners.emplace_back([&] {
+                while (!quit.load())
+                    std::ignore = ioc.run_one_for(std::chrono::milliseconds(5));
+            });
+
+        int lost = 0;
+        for (int i = 0; i < 500; ++i)
+        {
+            std::stop_source ss;
+            std::atomic<bool> done{false};
+            capy::run_async(ioc.get_executor(), ss.get_token())(
+                [](udp_socket& u, std::atomic<bool>& d) -> capy::task<> {
+                    std::ignore = co_await u.wait(wait_type::error);
+                    d = true;
+                }(u, done));
+            ss.request_stop();
+            // Bounded only to fail rather than hang.
+            for (int k = 0; k < 400 && !done.load(); ++k)
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            if (!done.load())
+            {
+                ++lost;
+                // The parked wait still refers to `done`: end it while
+                // this iteration's locals are alive.
+                u.close();
+                for (int k = 0; k < 400 && !done.load(); ++k)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                break;
+            }
+        }
+        BOOST_TEST_EQ(lost, 0);
+        u.close();
+        quit = true;
+        for (auto& t : runners)
+            t.join();
+    }
+
     void testShutdownReceiveVariants()
     {
         io_context ioc(iocp);
@@ -372,6 +462,112 @@ struct iocp_paths_test
         capy::run_async(ioc.get_executor())(waiter());
         ioc.run();
         BOOST_TEST(!ec);
+    }
+
+    // release() cancels each op and then tries to unbind the socket from
+    // the port. Every cancelled op must still report through the port,
+    // or the op pins its object and run() never returns. Windows keeps a
+    // socket with I/O outstanding bound, so such a socket stays on this
+    // context's port.
+    void testReleaseWithKernelOpsInFlight()
+    {
+        io_context ioc(iocp);
+        auto ex       = ioc.get_executor();
+        auto [r1, r2] = test::make_socket_pair(ioc);
+        test::temp_socket_dir tmp;
+        auto [l1, l2] = make_local_pair(ioc, tmp);
+
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.open(family::v4));
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!acc.listen());
+        tcp_socket peer(ioc);
+
+        test::temp_socket_dir ltmp;
+        local_stream_acceptor lacc(ioc);
+        BOOST_TEST(!lacc.open());
+        BOOST_TEST(!lacc.bind(local_endpoint(ltmp.path())));
+        BOOST_TEST(!lacc.listen());
+        local_stream_socket lpeer(ioc);
+
+        // Loopback connects to a closed port retry for seconds on
+        // Windows, so the connect stays in flight.
+        std::uint16_t closed_port = 0;
+        {
+            tcp_acceptor probe(ioc);
+            BOOST_TEST(!probe.open(family::v4));
+            BOOST_TEST(!probe.bind(endpoint(ipv4_address::loopback(), 0)));
+            closed_port = probe.local_endpoint().port();
+        }
+        tcp_socket conn(ioc);
+        BOOST_TEST(!conn.open(family::v4));
+
+        udp_socket u(ioc);
+        BOOST_TEST(!u.open(family::v4));
+        BOOST_TEST(!u.bind(endpoint(ipv4_address::loopback(), 0)));
+
+        std::error_code ec[6];
+        int done = 0;
+        char rbuf[8], lbuf[8], ubuf[8];
+        endpoint from;
+        auto read_r = [&]() -> capy::task<> {
+            auto [e, n] =
+                co_await r1.read_some(capy::mutable_buffer(rbuf, sizeof(rbuf)));
+            std::ignore = n;
+            ec[0]       = e;
+            ++done;
+        };
+        auto accept_t = [&]() -> capy::task<> {
+            auto [e] = co_await acc.accept(peer);
+            ec[1]    = e;
+            ++done;
+        };
+        auto connect_t = [&]() -> capy::task<> {
+            auto [e] = co_await conn.connect(
+                endpoint(ipv4_address::loopback(), closed_port));
+            ec[2] = e;
+            ++done;
+        };
+        auto recv_u = [&]() -> capy::task<> {
+            auto [e, n] = co_await u.recv_from(
+                capy::mutable_buffer(ubuf, sizeof(ubuf)), from);
+            std::ignore = n;
+            ec[3]       = e;
+            ++done;
+        };
+        auto read_l = [&]() -> capy::task<> {
+            auto [e, n] =
+                co_await l1.read_some(capy::mutable_buffer(lbuf, sizeof(lbuf)));
+            std::ignore = n;
+            ec[4]       = e;
+            ++done;
+        };
+        auto accept_l = [&]() -> capy::task<> {
+            auto [e] = co_await lacc.accept(lpeer);
+            ec[5]    = e;
+            ++done;
+        };
+        capy::run_async(ex)(read_r());
+        capy::run_async(ex)(accept_t());
+        capy::run_async(ex)(connect_t());
+        capy::run_async(ex)(recv_u());
+        capy::run_async(ex)(read_l());
+        capy::run_async(ex)(accept_l());
+        std::ignore = ioc.poll();
+        ioc.restart();
+        BOOST_TEST_EQ(done, 0);
+
+        native_handle_type released[] = {
+            r1.release(), acc.release(), conn.release(),
+            u.release(),  l1.release(),  lacc.release()};
+
+        std::ignore = ioc.run_for(std::chrono::seconds(30));
+        BOOST_TEST_EQ(done, 6);
+        for (auto const& e : ec)
+            BOOST_TEST(e == capy::cond::canceled);
+
+        for (auto h : released)
+            ::closesocket(static_cast<SOCKET>(h));
     }
 
 #if !COROSIO_TEST_HAS_ASAN
@@ -511,12 +707,15 @@ struct iocp_paths_test
         testStopCancelsLocalStreamOps();
         testStopCancelsAcceptorWaits();
         testAssignValidation();
+        testAssignRejectsSkipOnSuccessSockets();
+        testStopRacingWaitRegistration();
         testShutdownReceiveVariants();
         testZeroLengthUdpReceive();
         testResolverEmptyInputs();
         testReleasedAcceptorAccessors();
         testTruncateWithoutCreate();
         testStaleWaitCancelsFromDestroyedObjects();
+        testReleaseWithKernelOpsInFlight();
 #if !COROSIO_TEST_HAS_ASAN
         testDestroyWithParkedSocketOps();
         testDestroyWithParkedLocalOps();

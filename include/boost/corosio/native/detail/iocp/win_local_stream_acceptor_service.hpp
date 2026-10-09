@@ -374,6 +374,11 @@ win_local_stream_acceptor::accept(
     std::error_code* ec,
     io_object::implementation** impl_out)
 {
+    // Before anything is armed, so a throw leaves no reference, stop
+    // callback or work count behind.
+    auto& peer_wrapper =
+        static_cast<win_local_stream_socket&>(*svc_.construct());
+
     acc_.object_ref_ = detail::object_ref(this);
 
     auto& op = acc_;
@@ -392,15 +397,6 @@ win_local_stream_acceptor::accept(
     op.start(token);
 
     svc_.work_started();
-
-    // Create a (possibly recycled) peer socket
-    auto* peer_ptr = svc_.construct();
-    if (!peer_ptr)
-    {
-        svc_.on_completion(&op, ERROR_OUTOFMEMORY, 0);
-        return std::noop_coroutine();
-    }
-    auto& peer_wrapper = static_cast<win_local_stream_socket&>(*peer_ptr);
 
     // Always AF_UNIX for local sockets
     SOCKET accepted =
@@ -462,11 +458,12 @@ win_local_stream_acceptor::accept(
         }
     }
 
-    svc_.on_pending(&op);
-
-    // Re-check cancellation after I/O is pending
+    // Must precede on_pending: once it runs another thread may
+    // complete the op and recycle this impl.
     if (op.cancelled.load(std::memory_order_acquire))
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
+
+    svc_.on_pending(&op);
 
     return std::noop_coroutine();
 }

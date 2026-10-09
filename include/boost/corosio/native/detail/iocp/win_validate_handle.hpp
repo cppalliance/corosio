@@ -116,6 +116,30 @@ query_object() noexcept
 
 } // namespace win_nt
 
+/** Check whether a handle is in skip-completion-port-on-success mode.
+
+    Such a handle queues no packet for an operation that succeeds
+    synchronously, so an operation issued through a completion port
+    would never complete. The mode cannot be cleared.
+
+    @param h The handle to inspect. Never read, written or waited on.
+
+    @return `true` if the mode is set. A failed query means it never
+        was.
+*/
+inline bool
+has_skip_on_success(HANDLE h) noexcept
+{
+    auto const query = win_nt::query_information_file();
+    if (!query)
+        return false;
+    win_nt::io_status_block iosb{};
+    ULONG notify = 0;
+    return query(h, &iosb, &notify, sizeof(notify),
+               win_nt::file_io_completion_notification_information) >= 0 &&
+        (notify & win_nt::file_skip_completion_port_on_success);
+}
+
 /** Validate a handle for adoption by an overlapped type.
 
     @param h The handle to inspect. Never read, written or waited on.
@@ -161,13 +185,7 @@ validate_overlapped_handle(HANDLE h, handle_kind kind) noexcept
          win_nt::file_synchronous_io_nonalert))
         return not_supported;
 
-    // A handle already in skip-on-success mode queues no packet for a
-    // synchronous success, so the op would never complete. The mode
-    // cannot be cleared. A failed query means the mode was never set.
-    ULONG notify = 0;
-    if (query(h, &iosb, &notify, sizeof(notify),
-            win_nt::file_io_completion_notification_information) >= 0 &&
-        (notify & win_nt::file_skip_completion_port_on_success))
+    if (has_skip_on_success(h))
         return not_supported;
 
     // A failed query (volumes, some devices) means "not a directory".

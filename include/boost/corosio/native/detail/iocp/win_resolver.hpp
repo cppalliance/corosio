@@ -170,6 +170,9 @@ struct resolve_op : overlapped_op
     /** Completion callback for GetAddrInfoExW. */
     static void CALLBACK completion(DWORD dwError, DWORD bytes, OVERLAPPED* ov);
 
+    /// Cancel the in-flight lookup on a stop request.
+    static void do_cancel_impl(overlapped_op* base) noexcept;
+
     static void do_complete(
         void* owner,
         scheduler_op* base,
@@ -308,6 +311,9 @@ public:
     static void do_reverse_resolve_work(pool_work_item*) noexcept;
 
 private:
+    /// Cancel the in-flight forward lookup, if any.
+    void cancel_lookup() noexcept;
+
     // The cancel handle dies when the completion callback is entered, so
     // cancel() and that callback must not both claim it. Held across the
     // claim only: GetAddrInfoExCancel can wait on the callback.

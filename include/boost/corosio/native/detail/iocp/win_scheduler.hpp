@@ -839,9 +839,17 @@ win_scheduler::shutdown()
         DWORD bytes;
         ULONG_PTR key;
         LPOVERLAPPED overlapped;
-        ::GetQueuedCompletionStatus(iocp_, &bytes, &key, &overlapped, 0);
+        BOOL const dequeued =
+            ::GetQueuedCompletionStatus(iocp_, &bytes, &key, &overlapped, 0);
         if (!overlapped)
-            break;
+        {
+            // A signal such as stop()'s carries no operation, and
+            // packets posted after it still need sweeping; only an
+            // empty port ends the sweep.
+            if (!dequeued)
+                break;
+            continue;
+        }
         if (key == key_posted)
         {
             reinterpret_cast<scheduler_op*>(overlapped)->destroy();

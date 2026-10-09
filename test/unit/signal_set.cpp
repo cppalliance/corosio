@@ -476,6 +476,29 @@ struct signal_set_test
         BOOST_TEST(!second_ec);
     }
 
+    // A cancel() with no wait pending makes the next wait complete at
+    // once inside the backend. Those completions must not nest.
+    void testRepeatedCancelledWaitsDoNotNest()
+    {
+        io_context ioc(Backend);
+        signal_set s(ioc, SIGINT);
+        constexpr int n = 100000;
+        int canceled    = 0;
+        capy::run_async(ioc.get_executor())(
+            [](signal_set& s, int& canceled) -> capy::task<> {
+                for (int i = 0; i < n; ++i)
+                {
+                    s.cancel();
+                    auto [ec, signum] = co_await s.wait();
+                    std::ignore       = signum;
+                    if (ec == capy::cond::canceled)
+                        ++canceled;
+                }
+            }(s, canceled));
+        ioc.run();
+        BOOST_TEST_EQ(canceled, n);
+    }
+
     // With two threads running the context, a signal raised while one
     // is blocked in the reactor must still be delivered after the other
     // re-arms the signal pipe.
@@ -1521,6 +1544,7 @@ struct signal_set_test
     {
         // Construction and move semantics
         testDeliveryWithTwoRunThreads();
+        testRepeatedCancelledWaitsDoNotNest();
         testConstruction();
         testDestroyWithQueuedSignalCompletion();
         testConstructWithOneSignal();

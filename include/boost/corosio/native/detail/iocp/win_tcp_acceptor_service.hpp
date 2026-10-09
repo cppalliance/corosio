@@ -301,6 +301,10 @@ win_tcp_acceptor::accept(
     std::error_code* ec,
     io_object::implementation** impl_out)
 {
+    // Before anything is armed, so a throw leaves no reference, stop
+    // callback or work count behind.
+    auto& peer_wrapper = static_cast<win_tcp_socket&>(*svc_.construct());
+
     // Keep this acceptor alive during I/O
     acc_.object_ref_ = detail::object_ref(this);
 
@@ -320,9 +324,6 @@ win_tcp_acceptor::accept(
     op.start(token);
 
     svc_.work_started();
-
-    // Create a (possibly recycled) peer socket; the service owns it.
-    auto& peer_wrapper = static_cast<win_tcp_socket&>(*svc_.construct());
 
     // Derive AF from the listening socket's cached local endpoint
     int af = native_family(local_endpoint_.address().family());
@@ -389,14 +390,12 @@ win_tcp_acceptor::accept(
         }
     }
 
-    svc_.on_pending(&op);
-
-    // If the stop_token was already cancelled when start() was called,
-    // the CancelIoEx in the canceller fired before AcceptEx was
-    // submitted and had no effect.  Re-issue now that the I/O is
-    // pending so the completion posts with ERROR_OPERATION_ABORTED.
+    // Must precede on_pending: once it runs another thread may
+    // complete the op and recycle this impl.
     if (op.cancelled.load(std::memory_order_acquire))
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
+
+    svc_.on_pending(&op);
 
     return std::noop_coroutine();
 }
