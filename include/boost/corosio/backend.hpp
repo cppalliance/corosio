@@ -21,7 +21,7 @@ class execution_context;
 namespace boost::corosio {
 
 namespace detail {
-struct scheduler;
+class scheduler;
 } // namespace detail
 
 #if BOOST_COROSIO_HAS_EPOLL

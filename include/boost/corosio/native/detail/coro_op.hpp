@@ -14,6 +14,7 @@
 #include <boost/capy/continuation.hpp>
 #include <boost/corosio/detail/object_ref.hpp>
 #include <boost/corosio/detail/scheduler_op.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 
 #include <atomic>
@@ -23,6 +24,7 @@
 #include <optional>
 #include <stop_token>
 #include <system_error>
+#include <utility>
 
 /*
     Shared, non-template op envelope for every native backend — the readiness
@@ -95,8 +97,8 @@ struct coro_op : scheduler_op
     std::optional<std::stop_callback<canceller>> stop_cb;
 
     /// Keeps the owning impl alive while the op is in flight (the kernel
-    /// owns user buffers until completion). Dropped in the handler's resume
-    /// tail (see coro_op_complete.hpp).
+    /// owns user buffers until completion). Released when the op resumes or
+    /// abandons its coroutine (see coro_op_complete.hpp).
     detail::object_ref object_ref_;
 
     /// Default-construct for virtual-dispatch backends (the reactors, which
@@ -119,6 +121,26 @@ struct coro_op : scheduler_op
         stop_cb.reset();
         if (token.stop_possible())
             stop_cb.emplace(token, canceller{this});
+    }
+
+    /** Give up the awaiting coroutine without resuming it.
+
+        Used when the operation is drained at teardown: the operation
+        holds the suspended coroutine, so it abandons it, which unwinds
+        its chain from the chain's owner. The keepalive is held across
+        the call because the unwind may run at once and destroy the
+        object whose impl stores this op; nothing here touches the op
+        afterwards.
+    */
+    void destroy_awaiting() noexcept
+    {
+        stop_cb.reset();
+        auto keep = std::move(object_ref_);
+        if (auto* c = std::exchange(cont, nullptr))
+        {
+            if (c->h)
+                capy::abandon(*c);
+        }
     }
 
     /// Mark this op cancellation-requested. Shared by every backend.

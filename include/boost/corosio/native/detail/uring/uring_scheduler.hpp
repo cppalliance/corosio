@@ -31,6 +31,7 @@
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/posix/posix_signal_service.hpp>
 #include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/ex/abandon.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -213,9 +214,8 @@ public:
     }
 
     /// Increment the io_uring in-flight counter. Callers prep an SQE
-    /// whose CQE will require IORING_ENTER_GETEVENTS to surface under
-    /// DEFER_TASKRUN. Excluded: the wakeup-eventfd multishot SQE, whose
-    /// progress doesn't depend on userspace getevents.
+    /// whose CQE must be reaped. Excluded: the wakeup-eventfd poll,
+    /// which stays armed for the ring's lifetime.
     void inflight_inc() const noexcept
     {
         uring_inflight_.fetch_add(1, std::memory_order_release);
@@ -265,6 +265,14 @@ public:
     /// been signalled and not yet acked.
     void interrupt_reactor() const noexcept;
 
+    /** Wake a thread to run newly queued work.
+
+        Called under `dispatch_mutex_`: the caller may be on another
+        context's thread, and once the lock is released the work can
+        run, finish and let this scheduler be destroyed.
+    */
+    void wake_one_locked() const noexcept;
+
     /** Submit `IORING_OP_ASYNC_CANCEL` targeting an in-flight op by its
         user_data pointer.
 
@@ -307,9 +315,13 @@ public:
     void cancel_ops(Cancel&& cancel) noexcept
     {
         lazy_init_ring();
+        {
+            lock_type lock(ring_mutex_);
+            cancel();
+        }
+        // After queuing: a leader woken first could re-enter its wait
+        // before the cancel SQE exists, leaving it unsubmitted.
         interrupt_reactor();
-        lock_type lock(ring_mutex_);
-        cancel();
     }
 
     /** Cancel an object's operations and flush every SQE naming `fd`.
@@ -360,13 +372,16 @@ public:
     void push_completed_locked(scheduler_op* op) const noexcept
     {
         completed_ops_.push(op);
+        // A run thread finds the op on its next pass; any other caller
+        // must wake one, or it waits for the nearest timer.
+        if (!running_in_this_thread())
+            wake_one_locked();
     }
 
     void configure_threading(threading_config cfg) noexcept override
     {
         scheduler_locking_disabled_ = !cfg.scheduler_locking;
-        // reactor_io_locking off also drives SINGLE_ISSUER/DEFER_TASKRUN and
-        // the eventfd wake elision (see lazy_init_ring_unlocked and
+        // reactor_io_locking off also drives the eventfd wake elision (see
         // interrupt_reactor). one_thread is unused: the leader-follower wake
         // model is not gated on it.
         reactor_io_locking_ = cfg.reactor_io_locking;
@@ -380,10 +395,6 @@ public:
         Must be called before the ring is created — the values are
         cached and read when it is. No-op if `enable` is false (the
         default).
-
-        @note  When combined with single-threaded mode,
-        IORING_SETUP_DEFER_TASKRUN is suppressed — the kernel
-        rejects that combination. SINGLE_ISSUER still applies.
 
         @param enable    Set IORING_SETUP_SQPOLL on ring init.
         @param idle_ms   sq_thread_idle in milliseconds; 0 = kernel
@@ -405,6 +416,9 @@ public:
     }
 
 private:
+    /// Destroy every queued operation without running it.
+    void destroy_queued(lock_type& lock) noexcept;
+
     // ring_ + wakeup_eventfd_ are mutable so lazy_init_ring() (called
     // from const contexts like post()) can populate them on first use.
     mutable struct ::io_uring ring_{};
@@ -434,10 +448,8 @@ private:
     // would cause false sharing and unnecessary cache-line ping-pong.
     // Hold each on its own line.
     alignas(64) mutable std::atomic<std::int64_t> outstanding_work_{0};
-    // Count of io_uring SQEs in flight whose completion requires user-
-    // space to enter the kernel via IORING_ENTER_GETEVENTS for task
-    // work to progress under IORING_SETUP_DEFER_TASKRUN. Excludes the
-    // wakeup-eventfd multishot poll (registered in lazy_init_ring), and
+    // Count of io_uring SQEs in flight whose completion must be reaped.
+    // Excludes the wakeup-eventfd poll (registered in lazy_init_ring), and
     // is updated by uring_submit_op and by process_completions on
     // each non-F_MORE, non-eventfd CQE. Used by do_one to skip the
     // ring pump when there is no io_uring work pending.
@@ -571,6 +583,11 @@ inline uring_scheduler::uring_scheduler(
 
 inline uring_scheduler::~uring_scheduler()
 {
+    // Service destructors run after the drain and may still post.
+    {
+        lock_type lock(dispatch_mutex_);
+        destroy_queued(lock);
+    }
     if (ring_inited_)
     {
         // Ring teardown can still run a doomed pipe write as task
@@ -591,50 +608,17 @@ uring_scheduler::lazy_init_ring() const
 inline void
 uring_scheduler::lazy_init_ring_unlocked() const
 {
+    // No flags bind the ring to one thread, even in the lockless tiers,
+    // so a context may be made, run and destroyed on different threads,
+    // and its teardown can always drain the ring.
     io_uring_params params{};
-    // The unsafe_io and unsafe tiers guarantee a single ring submitter.
-    if (!reactor_io_locking_)
-    {
-        // SINGLE_ISSUER promises the kernel one submitter thread,
-        // letting it skip internal SQ locking. DEFER_TASKRUN tells
-        // it to batch task_work delivery at io_uring_enter(GETEVENTS)
-        // boundaries instead of interrupting the run thread via
-        // TWA_SIGNAL — eliminates cache pollution from mid-flight
-        // task_work and gives a meaningful single-threaded
-        // throughput uplift.
-        //
-        // Plan 3 disabled DEFER_TASKRUN defensively over a misread
-        // of the GETEVENTS contract. Plan 4a re-enabled it: liburing's
-        // io_uring_submit_and_wait_timeout always sets
-        // IORING_ENTER_GETEVENTS when wait_nr > 0, regardless of
-        // ts. Our run loop's only kernel-wait call passes wait_nr=1.
-        // Submit-only paths (flush_after_cancel, etc.) leave their
-        // CQEs queued until the leader's next GETEVENTS-bearing
-        // wait — benign.
-        //
-        // Multi-thread mode never sets these flags: SINGLE_ISSUER
-        // would be unsafe with multiple submitter threads.
-        //
-        // DEFER_TASKRUN is suppressed when SQPOLL is also enabled
-        // — the kernel rejects that combination with -EINVAL. The
-        // SQPOLL polling thread already delivers completions
-        // without TWA_SIGNAL interruption, so DEFER_TASKRUN's
-        // benefit is moot in that mode.
-        params.flags = IORING_SETUP_SINGLE_ISSUER;
-        if (!enable_sqpoll_)
-            params.flags |= IORING_SETUP_DEFER_TASKRUN;
-    }
 
     if (enable_sqpoll_)
     {
         // SQPOLL forks a kernel thread that busy-polls the SQ ring;
-        // submission becomes a userspace-only memory store. Combines
-        // with SINGLE_ISSUER (the kernel accepts that pair) but NOT
-        // with DEFER_TASKRUN (kernel returns -EINVAL); the
-        // reactor-I/O-lockless branch above suppresses DEFER_TASKRUN
-        // when SQPOLL is also set. Idle timeout 0 means kernel
-        // default (1ms); we only forward when explicitly set so
-        // the kernel default is preserved.
+        // submission becomes a userspace-only memory store. Idle
+        // timeout 0 means kernel default (1ms); we only forward when
+        // explicitly set so the kernel default is preserved.
         params.flags |= IORING_SETUP_SQPOLL;
         if (sq_thread_idle_ms_ != 0)
             params.sq_thread_idle = sq_thread_idle_ms_;
@@ -753,18 +737,27 @@ uring_scheduler::shutdown()
         has_deferred_cancels_.store(false, std::memory_order_release);
     }
 
+    wait_cancels_posting();
+
     // Drain posted ops, including the completions reaped above,
     // calling destroy() on each so embedded handles (coroutine frames,
     // error_code outputs) get torn down rather than leaked. Mirrors
     // reactor_scheduler::shutdown_drain.
     lock_type lock(dispatch_mutex_);
+    destroy_queued(lock);
+    cond_.notify_all();
+}
+
+inline void
+uring_scheduler::destroy_queued(lock_type& lock) noexcept
+{
     while (auto e = completed_ops_.pop())
     {
         if (ready_is_continuation(e))
         {
             lock.unlock();
-            if (auto h = ready_as_cont(e)->h)
-                h.destroy();
+            if (auto* c = ready_as_cont(e); c->h)
+                capy::abandon(*c);
             lock.lock();
         }
         else
@@ -774,17 +767,17 @@ uring_scheduler::shutdown()
             lock.lock();
         }
     }
-    cond_.notify_all();
 }
 
 inline void
 uring_scheduler::stop()
 {
+    // All under the lock: releasing the last work on another thread
+    // gets here, and a run thread that sees stopped_ may return and
+    // let this scheduler be destroyed.
+    lock_type lock(dispatch_mutex_);
     stopped_.store(true, std::memory_order_release);
-    {
-        lock_type lock(dispatch_mutex_);
-        cond_.notify_all();
-    }
+    cond_.notify_all();
     // Force-wake unconditionally — bypass interrupt_reactor's CAS
     // coalescing. A dropped wake here leaves the leader blocked
     // forever in submit_and_wait_timeout (no further CQE will
@@ -929,6 +922,8 @@ uring_scheduler::post(std::coroutine_handle<> h) const
 
         void destroy() override
         {
+            // A bare handle carries no owner to unwind from: it is
+            // destroyed directly.
             auto saved = h_;
             delete this;
             if (saved)
@@ -939,16 +934,11 @@ uring_scheduler::post(std::coroutine_handle<> h) const
     auto* op = new post_handler(h);
     lazy_init_ring();
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
-    bool wake_leader;
     {
         lock_type lock(dispatch_mutex_);
         completed_ops_.push(op);
-        wake_leader = task_running_;
-        if (!wake_leader)
-            cond_.notify_one();
+        wake_one_locked();
     }
-    if (wake_leader)
-        interrupt_reactor();
 }
 
 inline void
@@ -956,16 +946,11 @@ uring_scheduler::post(scheduler_op* op) const
 {
     lazy_init_ring();
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
-    bool wake_leader;
     {
         lock_type lock(dispatch_mutex_);
         completed_ops_.push(op);
-        wake_leader = task_running_;
-        if (!wake_leader)
-            cond_.notify_one();
+        wake_one_locked();
     }
-    if (wake_leader)
-        interrupt_reactor();
 }
 
 inline void
@@ -973,15 +958,19 @@ uring_scheduler::post(capy::continuation& c) const
 {
     lazy_init_ring();
     outstanding_work_.fetch_add(1, std::memory_order_relaxed);
-    bool wake_leader;
     {
         lock_type lock(dispatch_mutex_);
         completed_ops_.push(c);
-        wake_leader = task_running_;
-        if (!wake_leader)
-            cond_.notify_one();
+        wake_one_locked();
     }
-    if (wake_leader)
+}
+
+inline void
+uring_scheduler::wake_one_locked() const noexcept
+{
+    if (!task_running_)
+        cond_.notify_one();
+    else
         interrupt_reactor();
 }
 
@@ -1170,22 +1159,28 @@ uring_scheduler::do_one(long timeout_us)
     // threads either dispatch ready ops from completed_ops_ or wait
     // on cond_ until the leader returns from the kernel.
     if (stopped_.load(std::memory_order_acquire))
+    {
+        // stop() sets the flag under the lock and still writes the
+        // eventfd; returning before it unlocks lets the caller destroy
+        // this scheduler under it.
+        lock_type lock(dispatch_mutex_);
         return 0;
+    }
 
     // submit_sqes_op only pumps the ring once per SQE batch. If the user
     // keeps a non-empty completed_ops_ (e.g. timer with 0ns expiry as a
     // yield primitive), the leader-phase kernel pass below never runs
     // and CQEs accumulate in the ring forever — sub_request's read CQE
-    // never gets drained and the bench spins. submit_and_get_events
-    // (not plain submit) is required because IORING_SETUP_DEFER_TASKRUN
-    // gates task work on IORING_ENTER_GETEVENTS.
+    // never gets drained and the bench spins. submit_and_get_events,
+    // not plain submit, so completions the kernel holds pending reach
+    // the CQ ring before it is drained.
     //
     // Gate the kernel pump on there being io_uring-specific work. The
     // check is performed under ring_mutex_ so a concurrent cross-thread
     // submitter cannot prep an SQE that we then race past — both this
     // path and uring_submit_op acquire ring_mutex_ before touching
     // the ring. When all three sources are empty (no io_uring ops in
-    // flight needing DEFER_TASKRUN GETEVENTS, no userspace-pending
+    // flight, no userspace-pending
     // SQEs, no kernel-ready CQEs) a kernel entry would have no work —
     // saves ~8 pp of cycles on the no-I/O microbenchmark
     // (io_context:single_threaded). We deliberately do NOT include
@@ -1348,8 +1343,7 @@ uring_scheduler::do_one(long timeout_us)
         }
 
         // Phase 2 — wait for at least one CQE without holding the
-        // mutex. Multi-thread `io_uring_enter` is permitted without
-        // SINGLE_ISSUER. wait_cqe_timeout only peeks the CQ ring;
+        // mutex. wait_cqe_timeout only peeks the CQ ring;
         // head advancement happens under the mutex in
         // process_completions below.
         ::io_uring_cqe* cqe = nullptr;
@@ -1431,8 +1425,8 @@ uring_scheduler::process_completions()
             // Signal self-pipe readiness. Re-arm the multishot poll if it
             // terminated (F_MORE cleared), then enqueue signal_drain_op_ to
             // drain + deliver in dispatch context. Not counted in
-            // uring_inflight_ (like the wakeup eventfd poll): its progress
-            // does not gate DEFER_TASKRUN GETEVENTS.
+            // uring_inflight_ (like the wakeup eventfd poll): it stays
+            // armed for the ring's lifetime.
             if ((cqe->flags & IORING_CQE_F_MORE) == 0)
                 std::ignore = prep_multishot_poll(
                     signal_pipe_read_fd_, &signal_pipe_sentinel_);
@@ -1503,12 +1497,12 @@ inline void
 uring_scheduler::submit_cancel_by_user_data(uring_op* target) noexcept
 {
     lazy_init_ring();
-    // Wake the leader (if any) so its submit_and_wait_timeout returns
-    // and releases ring_mutex_; otherwise we'd block here until the
-    // next CQE arrives organically.
+    {
+        lock_type lock(ring_mutex_);
+        cancel_op_locked(target);
+    }
+    // After queuing, so the woken leader's submit carries the cancel.
     interrupt_reactor();
-    lock_type lock(ring_mutex_);
-    cancel_op_locked(target);
 }
 
 inline bool

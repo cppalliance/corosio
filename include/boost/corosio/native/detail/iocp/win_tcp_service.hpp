@@ -311,8 +311,7 @@ connect_op::do_complete(
 
     if (!owner)
     {
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 
@@ -352,8 +351,7 @@ read_op::do_complete(
 
     if (!owner)
     {
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 
@@ -374,8 +372,7 @@ write_op::do_complete(
 
     if (!owner)
     {
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 
@@ -396,8 +393,7 @@ wait_op::do_complete(
 
     if (!owner)
     {
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 

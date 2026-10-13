@@ -20,6 +20,7 @@
 #include <boost/corosio/detail/thread_local_ptr.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <system_error>
 
@@ -36,7 +37,7 @@
 
 namespace boost::corosio::detail {
 
-struct scheduler;
+class scheduler;
 
 /*
     Timer Service
@@ -316,12 +317,12 @@ timer_service::shutdown()
     pool_.shutdown([](timer::implementation*) {});
 
     // Snapshot impls and detach them from the heap so that
-    // coroutine-owned timer destructors (triggered by h.destroy()
-    // below) cannot re-enter remove_timer_impl() and mutate the
-    // vector during iteration. A stop requested on another thread
+    // coroutine-owned timer destructors (run by the unwinds the
+    // abandons below start) cannot re-enter remove_timer_impl() and
+    // mutate the vector during iteration. A stop requested on another thread
     // reaches cancel_waiter() under the same lock: whichever side
     // claims a waiter first owns it, and a waiter its canceller
-    // claimed is posted, so the scheduler's drain destroys its frame.
+    // claimed is posted, so the scheduler's drain abandons it.
     std::vector<timer::implementation*> impls;
     std::vector<waiter_node*> waiters;
     {
@@ -360,20 +361,19 @@ timer_service::shutdown()
     }
 
     // Cancel waiting timers. Each waiter called work_started()
-    // in implementation::wait(). On IOCP the scheduler shutdown
-    // loop exits when outstanding_work_ reaches zero, so we must
-    // call work_finished() here to balance it. On other backends
-    // this is harmless. Resetting the stop callback outside the lock
+    // in implementation::wait(); a waiter given up here never
+    // completes, so its work is finished here to keep the count
+    // balanced. Resetting the stop callback outside the lock
     // waits out a canceller already running, which finds the waiter
     // claimed.
     for (auto* w : waiters)
     {
         w->reset_stop_cb();
-        auto h = std::exchange(w->h_, {});
+        auto c = std::exchange(w->cont_, {});
         sched_->work_finished();
-        // Destroying the frame also ends the node's storage
-        if (h)
-            h.destroy();
+        // Unwinding the frame also ends the node's storage
+        if (c.h)
+            capy::abandon(c);
     }
 
     for (auto* impl : impls)

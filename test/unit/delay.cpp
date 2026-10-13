@@ -22,6 +22,7 @@
 #include <coroutine>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <ratio>
 #include <stdexcept>
 #include <stop_token>
@@ -685,6 +686,26 @@ struct delay_test
         BOOST_TEST_EQ(parent, 1);
     }
 
+    // A nested chain parked on a timer, started with an allocator held by
+    // value, is torn down with each frame freed before the trampoline
+    // holding that allocator.
+    void testTeardownNestedChainWithValueAllocator()
+    {
+        int child = 0, parent = 0;
+        {
+            io_context ioc(Backend);
+            capy::run_async(ioc.get_executor(), std::allocator<std::byte>{})(
+                [](int& child, int& parent) -> capy::task<> {
+                    count_on_exit g{parent};
+                    std::ignore = co_await parked_child(child);
+                }(child, parent));
+            std::ignore = ioc.poll();
+            BOOST_TEST_EQ(child, 0);
+        }
+        BOOST_TEST_EQ(child, 1);
+        BOOST_TEST_EQ(parent, 1);
+    }
+
     // The same with timeout() owning the awaited task.
     void testTeardownTimeoutOfTask()
     {
@@ -1154,6 +1175,7 @@ struct delay_test
         testTeardownNestedTaskOnTimer();
         testTeardownTimeoutOfTask();
         testTeardownQueuedNestedContinuation();
+        testTeardownNestedChainWithValueAllocator();
         testInitiationStopRace();
         testClockDeadlineCompletes();
         testClockPastDeadlineCompletesImmediately();

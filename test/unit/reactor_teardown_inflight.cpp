@@ -156,7 +156,7 @@ struct reactor_teardown_test
             io_context ioc(Backend);
             // Made outside the coroutines (it drains the context); each
             // socket moves into a frame so its fd stays open when the
-            // frame is abandoned.
+            // frame is destroyed.
             auto [w1, w2] =
                 test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
             auto [r1, r2] =
@@ -223,11 +223,9 @@ struct reactor_teardown_test
 
     void run()
     {
-#if !COROSIO_TEST_HAS_ASAN
         testDestroyWithParkedDescriptorOps();
         testDestroyWithParkedSocketOps();
         testDestroyDrainsBothEndsOfOnePipe();
-#endif
     }
 };
 

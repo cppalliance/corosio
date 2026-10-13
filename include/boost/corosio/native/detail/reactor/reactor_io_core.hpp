@@ -80,7 +80,10 @@ public:
         {
             std::lock_guard lock(desc_state_.mutex);
             if (*desc_op_ptr == &op)
+            {
                 claimed = std::exchange(*desc_op_ptr, nullptr);
+                svc_.scheduler().cancel_posting_begin();
+            }
             // Not in the slot: request_cancel() above already set
             // op.cancelled, which register_op consults before parking
             // and the completion decode consults on delivery. Latching
@@ -90,8 +93,8 @@ public:
         if (claimed)
         {
             op.object_ref_ = detail::object_ref(self_ptr());
-            svc_.post(&op);
-            svc_.work_finished();
+            svc_.scheduler().post_counted(&op);
+            svc_.scheduler().cancel_posting_end();
         }
     }
 
@@ -135,17 +138,10 @@ protected:
     {
         svc_.work_started();
         if (park_op(op, desc_slot, ready_flag, is_write_direction))
-        {
-            // Select rebuilds its fd_sets from parked ops only, so
-            // parking must wake it. Compiled away for epoll and kqueue.
-            if constexpr (Service::needs_park_notification)
-                svc_.scheduler().notify_reactor();
             return;
-        }
         // Posted after the descriptor lock is released: the scheduler
         // takes its own lock before descriptor locks.
-        svc_.post(&op);
-        svc_.work_finished();
+        svc_.scheduler().post_counted(&op);
     }
 
     /// Cancel every pending operation.
@@ -319,6 +315,12 @@ private:
         }
 
         desc_slot = &op;
+        // Select rebuilds its fd_sets from parked ops only, so parking
+        // must wake it, under the lock: once released, the op can
+        // complete and its context be destroyed. Compiled away for
+        // epoll and kqueue.
+        if constexpr (Service::needs_park_notification)
+            svc_.scheduler().notify_reactor();
         return true;
     }
 
@@ -327,8 +329,7 @@ private:
         for (int i = 0; i < count; ++i)
         {
             claimed[i]->object_ref_ = detail::object_ref(self_ptr());
-            svc_.post(claimed[i]);
-            svc_.work_finished();
+            svc_.scheduler().post_counted(claimed[i]);
         }
     }
 };

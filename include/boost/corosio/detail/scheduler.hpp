@@ -19,9 +19,11 @@
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
+#include <atomic>
 #include <coroutine>
 #include <cstddef>
 #include <system_error>
+#include <thread>
 
 namespace boost::corosio::detail {
 
@@ -39,9 +41,10 @@ class scheduler_op;
 
     @see io_context
 */
-struct BOOST_COROSIO_DECL scheduler
-    : capy::execution_context::service
+class BOOST_COROSIO_DECL scheduler
+    : public capy::execution_context::service
 {
+public:
     using key_type = scheduler;
 
     ~scheduler() override = default;
@@ -134,6 +137,43 @@ struct BOOST_COROSIO_DECL scheduler
 
     /// Apply @ref threading_config.
     virtual void configure_threading(threading_config) noexcept = 0;
+
+    /** Note a canceller that claimed an operation and has yet to post it.
+
+        Called no later than the claim becomes visible: under the lock
+        that makes it, or before a lock-free claim. A service's
+        shutdown then either finds the operation or finds it counted
+        here.
+    */
+    void cancel_posting_begin() noexcept
+    {
+        cancels_posting_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    /// End a @ref cancel_posting_begin once its post is made.
+    void cancel_posting_end() noexcept
+    {
+        cancels_posting_.fetch_sub(1, std::memory_order_release);
+    }
+
+protected:
+    /** Wait out the cancellers counted by @ref cancel_posting_begin.
+
+        Called before the shutdown drain, so it finds their posts; the
+        services that own those operations shut down earlier and missed
+        them.
+    */
+    void wait_cancels_posting() const noexcept
+    {
+        while (cancels_posting_.load(std::memory_order_acquire) != 0)
+            std::this_thread::yield();
+    }
+
+private:
+    BOOST_COROSIO_MSVC_WARNING_PUSH
+    BOOST_COROSIO_MSVC_WARNING_DISABLE(4251)
+    std::atomic<std::size_t> cancels_posting_{0};
+    BOOST_COROSIO_MSVC_WARNING_POP
 };
 
 /** Return the scheduler registered with the context.

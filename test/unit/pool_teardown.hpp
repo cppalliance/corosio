@@ -15,7 +15,9 @@
 #include <boost/capy/ex/execution_context.hpp>
 
 #include <condition_variable>
+#include <list>
 #include <mutex>
+#include <thread>
 
 namespace boost::corosio::test {
 
@@ -68,8 +70,9 @@ public:
 
     Create it last so the newest-first shutdown walk runs it before any
     library service: the blocked worker is let go at the very top of
-    teardown, and the operation queued behind it therefore completes
-    while the context is being destroyed rather than before.
+    teardown, and the operation queued behind it is therefore still
+    pending, on the pool or as a queued completion, while the context
+    is being destroyed.
 */
 class pool_release_gate final : public capy::execution_context::service
 {
@@ -113,6 +116,42 @@ park_pool_worker(io_context& ioc, pool_blocker& blocker)
         return false;
     ioc.use_service<pool_release_gate>().arm(blocker);
     return !pool->post(&blocker);
+}
+
+/** Shut down a context's pool while a blocker still holds its worker.
+
+    Everything queued behind the blocker is then still queued when the
+    pool stops taking work, so the pool disposes of it at shutdown
+    instead of running it. The context itself stays alive.
+
+    @param ioc The context whose pool is shut down.
+    @param blocker The item occupying the pool's only worker.
+*/
+inline void
+shutdown_pool_behind(io_context& ioc, pool_blocker& blocker)
+{
+    struct probe : detail::pool_work_item
+    {
+        static void ignore(detail::pool_work_item*) noexcept {}
+
+        probe() noexcept
+        {
+            func_    = &probe::ignore;
+            destroy_ = &probe::ignore;
+        }
+    };
+
+    auto& pool = ioc.use_service<detail::thread_pool>();
+    std::thread stopper([&pool] { pool.shutdown(); });
+
+    // A refused post is the only sign that shutdown has begun; the
+    // probes accepted before then queue harmlessly behind the rest.
+    std::list<probe> probes;
+    while (!pool.post(&probes.emplace_back()))
+        std::this_thread::yield();
+
+    blocker.release();
+    stopper.join();
 }
 
 } // namespace boost::corosio::test

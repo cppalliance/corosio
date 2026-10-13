@@ -108,11 +108,6 @@ public:
         state_->sched_.work_started();
     }
 
-    void work_finished() noexcept
-    {
-        state_->sched_.work_finished();
-    }
-
 protected:
     // Override in derived to add pre-close logic. No backend currently needs
     // it; the hooks exist so a trait can run fd-level teardown before close.

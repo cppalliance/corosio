@@ -21,6 +21,8 @@
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/fuse.hpp>
 
+#include <stdexcept>
+
 #include "context.hpp"
 #include "test_suite.hpp"
 
@@ -222,6 +224,29 @@ struct mocket_test
         peer.close();
     }
 
+    // The pair's setup runs on the context, so a context stopped
+    // beforehand must not leave it queued after the call returns.
+    void testStoppedContext()
+    {
+        io_context ioc;
+        capy::test::fuse f;
+        ioc.stop();
+
+        bool made = false;
+        try
+        {
+            auto [m, peer] = make_mocket_pair(ioc, f);
+            made = m.is_open() && peer.is_open();
+        }
+        catch (std::runtime_error const&)
+        {
+        }
+        BOOST_TEST(made);
+
+        ioc.restart();
+        ioc.run();
+    }
+
     void run()
     {
         testProvideExpect();
@@ -230,6 +255,7 @@ struct mocket_test
         testPassthrough();
         testExpectShorterThanWrite();
         testPreStoppedTokenShortCircuits();
+        testStoppedContext();
     }
 };
 

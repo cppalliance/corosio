@@ -56,7 +56,7 @@ struct signal_op : scheduler_op
     int signal_number         = 0;
     posix_signal_service* svc = nullptr; // For work_finished callback
 
-    void operator()() override;
+    void operator()() noexcept override;
     void destroy() override;
 };
 

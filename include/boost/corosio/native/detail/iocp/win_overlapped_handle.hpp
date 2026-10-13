@@ -346,8 +346,7 @@ protected:
             op->in_flight.store(false, std::memory_order_release);
             if (!owner)
             {
-                op->cleanup_only();
-                op->object_ref_.reset();
+                op->destroy_awaiting();
                 return;
             }
 
@@ -496,8 +495,10 @@ protected:
 
             if (!owner)
             {
-                op->cont = nullptr;
+                auto* c = std::exchange(op->cont, nullptr);
                 self->recycle_op(op);
+                if (c && c->h)
+                    capy::abandon(*c);
                 return;
             }
 

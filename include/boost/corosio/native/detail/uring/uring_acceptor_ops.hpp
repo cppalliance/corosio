@@ -193,6 +193,10 @@ struct uring_accept_op : uring_op
             // A delivered connection that nobody will adopt.
             if (self->accepted_fd >= 0)
                 ::close(self->accepted_fd);
+            // Outlives dispose(), which may hand the node back to an
+            // acceptor that the unwound frame would otherwise release.
+            auto keep = std::move(self->object_ref_);
+            self->destroy_awaiting();
             self->dispose(self);
             return;
         }

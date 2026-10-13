@@ -10,6 +10,7 @@
 
 #include <boost/corosio/detail/timer.hpp>
 #include <boost/corosio/detail/timer_service.hpp>
+#include <boost/capy/ex/abandon.hpp>
 
 namespace boost::corosio::detail {
 
@@ -146,7 +147,7 @@ waiter_node::completion_op::do_complete(
 }
 
 void
-waiter_node::completion_op::operator()()
+waiter_node::completion_op::operator()() noexcept
 {
     // The node lives in the resuming coroutine's frame: posting the
     // continuation is the last access, since the frame (and node)
@@ -161,6 +162,8 @@ waiter_node::completion_op::operator()()
     w->reset_stop_cb();
     auto d      = w->d_;
     auto& sched = w->svc_->get_scheduler();
+    // A throw terminates: the waiter is already off the heap, so nothing
+    // else could resume or abandon the coroutine.
     d.post(w->cont_);
     sched.work_finished();
 }
@@ -177,15 +180,15 @@ waiter_node::completion_op::destroy()
     // This override also prevents scheduler_op::destroy() from calling
     // do_complete(nullptr, ...). See also: timer_service::shutdown()
     // which drains waiters still in the timer heap (the other path).
-    // Destroying the frame also ends the node's storage, so it is
-    // the last access.
+    // Unwinding the frame also ends the node's storage, so the
+    // abandon is the last access.
     auto* w = waiter_;
     w->reset_stop_cb();
-    auto h      = std::exchange(w->h_, {});
+    auto c      = std::exchange(w->cont_, {});
     auto& sched = w->svc_->get_scheduler();
     sched.work_finished();
-    if (h)
-        h.destroy();
+    if (c.h)
+        capy::abandon(c);
 }
 
 } // namespace boost::corosio::detail

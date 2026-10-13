@@ -31,6 +31,8 @@ namespace boost::corosio::detail {
     for symmetric transfer. Callers at the scheduler pump
     level should call `.resume()` on the result.
 
+    @note A `dispatch` that throws calls `std::terminate`.
+
     @param ex The executor to dispatch through.
     @param c The continuation to dispatch. Must remain at a
              stable address until dequeued by the executor.
@@ -38,8 +40,10 @@ namespace boost::corosio::detail {
     @return A handle for symmetric transfer or `std::noop_coroutine()`.
 */
 inline std::coroutine_handle<>
-dispatch_coro(capy::executor_ref ex, capy::continuation& c)
+dispatch_coro(capy::executor_ref ex, capy::continuation& c) noexcept
 {
+    // An exception from dispatch would leave the completed operation
+    // with nobody to resume or abandon its coroutine.
     // A completion from another context must not resume the awaiter
     // on this thread, so the fast path still asks the executor.
     if (auto const* io_ex = ex.target<io_context::executor_type>())

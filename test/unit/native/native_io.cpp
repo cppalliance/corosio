@@ -14,8 +14,14 @@
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
+#include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
+
+#include <chrono>
+#include <cstddef>
+#include <memory>
+#include <tuple>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -82,8 +88,37 @@ struct native_io_test
         BOOST_TEST(bytes == 5u);
     }
 
+    // A run call leaves the thread's frame allocator as it found it, so
+    // a coroutine created afterwards never uses a resource that died
+    // with the frames it ran.
+    template<class Drive>
+    void checkFrameAllocatorRestored(Drive drive)
+    {
+        native_io_context<Backend> ctx;
+        auto* before = capy::get_current_frame_allocator();
+        auto t       = []() -> capy::task<> { co_return; };
+        capy::run_async(ctx.get_executor(), std::allocator<std::byte>{})(t());
+        drive(ctx);
+        BOOST_TEST(capy::get_current_frame_allocator() == before);
+    }
+
+    void testRunRestoresFrameAllocator()
+    {
+        using ctx_t = native_io_context<Backend>;
+        checkFrameAllocatorRestored([](ctx_t& c) { std::ignore = c.run(); });
+        checkFrameAllocatorRestored(
+            [](ctx_t& c) { std::ignore = c.run_one(); });
+        checkFrameAllocatorRestored([](ctx_t& c) { std::ignore = c.poll(); });
+        checkFrameAllocatorRestored(
+            [](ctx_t& c) { std::ignore = c.poll_one(); });
+        checkFrameAllocatorRestored([](ctx_t& c) {
+            std::ignore = c.run_for(std::chrono::seconds(5));
+        });
+    }
+
     void run()
     {
+        testRunRestoresFrameAllocator();
         testNativeIO();
     }
 };

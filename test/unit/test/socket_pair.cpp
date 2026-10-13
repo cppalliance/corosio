@@ -19,6 +19,8 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include <stdexcept>
+
 #include "context.hpp"
 #include "test_suite.hpp"
 
@@ -77,10 +79,33 @@ struct socket_pair_test
         s2.close();
     }
 
+    // The pair's setup runs on the context, so a context stopped
+    // beforehand must not leave it queued after the call returns.
+    void testStoppedContext()
+    {
+        io_context ioc;
+        ioc.stop();
+
+        bool made = false;
+        try
+        {
+            auto [s1, s2] = make_socket_pair(ioc);
+            made = s1.is_open() && s2.is_open();
+        }
+        catch (std::runtime_error const&)
+        {
+        }
+        BOOST_TEST(made);
+
+        ioc.restart();
+        ioc.run();
+    }
+
     void run()
     {
         testCreate();
         testBidirectional();
+        testStoppedContext();
     }
 };
 

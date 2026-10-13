@@ -239,9 +239,26 @@ threads that ran the loop, and only then destroy the context.
 include::example$snippets/4c_io_context.cpp[tag=teardown,indent=0]
 ----
 
-WARNING: `stop()` abandons pending work rather than draining it. Destroying the
-context after `stop()` while other threads may still post to it is undefined
-behavior — join those threads first.
+WARNING: `stop()` leaves pending work suspended rather than draining it.
+Destroying the context after `stop()` while other threads may still post to it
+is undefined behavior — join those threads first.
+
+Destroying the cpp:io_context[] abandons every coroutine still suspended in its
+operations or queued on it. Each chain is unwound from the top, without
+resuming, on the executor of the coroutine that started it. A chain started on
+this context is unwound while the context is destroyed. A chain started on
+another execution context, for example with `capy::run_async` on that context's
+executor, is unwound there, when that context runs or is destroyed.
+
+So work must not cross contexts at teardown. A coroutine started on one context
+may wait on an operation of another, or its frames may own I/O objects of
+another. No order of destruction is then safe, because its unwind runs after
+one of the two contexts is gone. Stop such work, and run both contexts until it
+ends, before destroying either.
+
+Work posted after the services shut down, for example from a service's
+destructor, is destroyed after every other service. Its destructors must not
+use them.
 
 == Inheritance from execution_context
 

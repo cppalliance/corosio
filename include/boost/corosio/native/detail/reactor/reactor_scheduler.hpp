@@ -13,6 +13,7 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/object_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/ex/abandon.hpp>
 
 #include <boost/corosio/detail/ready_queue.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
@@ -228,6 +229,19 @@ public:
 
     void compensating_work_started() const noexcept;
 
+    /** Post an operation whose work is already counted.
+
+        The posting thread touches nothing of the scheduler after this
+        returns, unlike a @ref post followed by @ref work_finished: once
+        posted, the operation can complete and let its context be
+        destroyed.
+
+        @pre work_started() was called for @p op.
+
+        @param op The operation to post.
+    */
+    void post_counted(scheduler_op* op) const;
+
     /** Post completed operations for deferred invocation.
 
         If called from a thread running this scheduler, operations
@@ -288,6 +302,9 @@ protected:
 
     reactor_scheduler() = default;
 
+    /// Destroy, destroying whatever was posted after the drain.
+    ~reactor_scheduler() override;
+
     /** Drain completed_ops during shutdown.
 
         Pops all operations from the global queue and destroys them,
@@ -296,6 +313,9 @@ protected:
         before performing platform-specific cleanup.
     */
     void shutdown_drain();
+
+    /// Destroy every queued operation without running it.
+    void destroy_queued(lock_type& lock) noexcept;
 
     /// RAII guard that re-inserts the task sentinel after `run_task`.
     struct task_cleanup
@@ -517,6 +537,8 @@ reactor_scheduler::post(std::coroutine_handle<> h) const
 
         void destroy() override
         {
+            // A bare handle carries no owner to unwind from: it is
+            // destroyed directly.
             auto saved = h_;
             delete this;
             saved.destroy();
@@ -717,6 +739,20 @@ reactor_scheduler::compensating_work_started() const noexcept
 }
 
 inline void
+reactor_scheduler::post_counted(scheduler_op* op) const
+{
+    if (auto* ctx = reactor_find_context(this))
+    {
+        ctx->private_queue.push(op);
+        return;
+    }
+
+    lock_type lock(mutex_);
+    completed_ops_.push(op);
+    wake_one_thread_and_unlock(lock);
+}
+
+inline void
 reactor_scheduler::post_deferred_completions(ready_queue& ops) const
 {
     if (ops.empty())
@@ -796,16 +832,31 @@ reactor_scheduler::shutdown_drain()
     if (timer_svc_)
         timer_svc_->shutdown();
 
+    wait_cancels_posting();
+
     lock_type lock(mutex_);
     settle_retired(lock);
+    destroy_queued(lock);
+    signal_all(lock);
+}
 
+inline reactor_scheduler::~reactor_scheduler()
+{
+    // Service destructors run after the drain and may still post.
+    lock_type lock(mutex_);
+    destroy_queued(lock);
+}
+
+inline void
+reactor_scheduler::destroy_queued(lock_type& lock) noexcept
+{
     while (auto e = completed_ops_.pop())
     {
         if (ready_is_continuation(e))
         {
             lock.unlock();
-            if (auto h = ready_as_cont(e)->h)
-                h.destroy();
+            if (auto* c = ready_as_cont(e); c->h)
+                capy::abandon(*c);
             lock.lock();
         }
         else
@@ -818,8 +869,6 @@ reactor_scheduler::shutdown_drain()
             lock.lock();
         }
     }
-
-    signal_all(lock);
 }
 
 inline void
@@ -835,8 +884,11 @@ reactor_scheduler::maybe_unlock_and_signal_one(lock_type& lock) const
     state_ |= signaled_bit;
     if (state_ > signaled_bit)
     {
-        lock.unlock();
+        // Signalled before unlocking: a post from another context's
+        // thread may be the last touch of this scheduler before the
+        // posted work runs, finishes and lets it be destroyed.
         cond_.notify_one();
+        lock.unlock();
         return true;
     }
     return false;
@@ -890,8 +942,9 @@ reactor_scheduler::wake_one_thread_and_unlock(lock_type& lock) const
     if (task_running_.load(std::memory_order_relaxed) && !task_interrupted_)
     {
         task_interrupted_ = true;
-        lock.unlock();
+        // Under the lock, for the same reason as the signal above.
         interrupt_reactor();
+        lock.unlock();
     }
     else
     {

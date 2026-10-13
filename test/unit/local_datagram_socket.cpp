@@ -1026,10 +1026,7 @@ struct local_datagram_socket_test
         testDatagramBoundary();
         testRecvPeek();
         testRecvFromPeek();
-#if !COROSIO_TEST_HAS_ASAN
-        // Abandon parked coroutine frames by design; see context.hpp.
         testDestroyWithQueuedReceive();
-#endif
 #ifdef __linux__
         testAbstractSocket();
 #endif

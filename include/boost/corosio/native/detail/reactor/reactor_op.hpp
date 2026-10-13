@@ -96,7 +96,6 @@ struct reactor_op : reactor_op_base
     /// Destroy without invoking.
     void destroy() override
     {
-        stop_cb.reset();
         reactor_op_base::destroy();
     }
 

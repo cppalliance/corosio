@@ -217,8 +217,7 @@ local_stream_connect_op::do_complete(
 
     if (!owner)
     {
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 
@@ -261,8 +260,7 @@ local_stream_read_op::do_complete(
 
     if (!owner)
     {
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 
@@ -285,8 +283,7 @@ local_stream_write_op::do_complete(
 
     if (!owner)
     {
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 
@@ -309,8 +306,7 @@ local_stream_wait_op::do_complete(
 
     if (!owner)
     {
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 

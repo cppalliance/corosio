@@ -238,13 +238,6 @@ struct overlapped_op
 
         dispatch_coro(ex, *cont).resume();
     }
-
-    /** Disarm cancellation and abandon the continuation. */
-    void cleanup_only()
-    {
-        stop_cb.reset();
-        cont = nullptr;
-    }
 };
 
 /** Cast OVERLAPPED* to overlapped_op*.

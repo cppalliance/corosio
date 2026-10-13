@@ -471,7 +471,6 @@ uring_submit_op(uring_scheduler& sched, uring_op* op) noexcept
 {
     sched.lazy_init_ring();
 
-    bool need_post = false;
     {
         typename uring_scheduler::lock_type ring_lock(sched.ring_mutex());
 
@@ -493,13 +492,12 @@ uring_submit_op(uring_scheduler& sched, uring_op* op) noexcept
             return;
         }
 
-        need_post = uring_link_sqe(sched, op, sqe);
-    }
-
-    if (need_post)
-    {
-        // Flush is deferred to submit_sqes_op; post() owns the wake.
-        sched.post(&sched.submit_op_ref());
+        // Posted under the ring lock: once it is released, the scheduler
+        // can complete this op and, if it belongs to another context,
+        // finish and be destroyed. Flush is deferred to submit_sqes_op;
+        // post() owns the wake.
+        if (uring_link_sqe(sched, op, sqe))
+            sched.post(&sched.submit_op_ref());
     }
 }
 
@@ -541,7 +539,6 @@ uring_try_submit_op_if(
 {
     sched.lazy_init_ring();
 
-    bool need_post = false;
     {
         typename uring_scheduler::lock_type ring_lock(sched.ring_mutex());
         if (!admit())
@@ -553,11 +550,10 @@ uring_try_submit_op_if(
             op->res = -EAGAIN;
             return uring_guarded_submit::sq_full;
         }
-        need_post = uring_link_sqe(sched, op, sqe);
+        // Posted under the ring lock, as in uring_submit_op.
+        if (uring_link_sqe(sched, op, sqe))
+            sched.post(&sched.submit_op_ref());
     }
-
-    if (need_post)
-        sched.post(&sched.submit_op_ref());
     return uring_guarded_submit::submitted;
 }
 

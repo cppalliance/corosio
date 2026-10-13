@@ -177,8 +177,7 @@ send_to_op::do_complete(
 
     if (!owner)
     {
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 
@@ -199,8 +198,7 @@ recv_from_op::do_complete(
 
     if (!owner)
     {
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 
@@ -272,8 +270,7 @@ udp_connect_op::do_complete(
 
     if (!owner)
     {
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 
@@ -306,8 +303,7 @@ udp_send_op::do_complete(
 
     if (!owner)
     {
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 
@@ -326,8 +322,7 @@ udp_recv_op::do_complete(
 
     if (!owner)
     {
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 
@@ -346,8 +341,7 @@ udp_wait_op::do_complete(
 
     if (!owner)
     {
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 

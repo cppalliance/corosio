@@ -58,6 +58,15 @@ struct pool_work_item : intrusive_queue<pool_work_item>::node
 
     /// Completion handler invoked by the worker thread.
     func_type func_ = nullptr;
+
+    /** Teardown for an item the pool shuts down before running.
+
+        An operation that owns a suspended coroutine sets this, so the
+        coroutine is abandoned at shutdown instead of the pool making
+        the blocking call nobody is left to wait for. When null, the
+        item is run by `func_` instead.
+    */
+    func_type destroy_ = nullptr;
 };
 
 /** Shared thread pool for dispatching blocking operations.
@@ -78,13 +87,15 @@ struct pool_work_item : intrusive_queue<pool_work_item>::node
     @par Shutdown
     Sets a shutdown flag, notifies all threads, and joins them.
     In-flight blocking calls complete naturally before the thread
-    exits.
+    exits. Items still queued are not run: each is handed to its
+    `destroy_`, or run by `func_` on the shutting-down thread when it
+    has none.
 
     @note Create this service after the scheduler its work items post
     completions to. Services shut down newest first, so a pool created
     earlier joins its workers only after the scheduler has drained its
     completion queue, and the completion the last worker posts is then
-    neither run nor destroyed.
+    destroyed only when the scheduler is deleted.
 
     @note The type is symbol-visible because services are keyed by type
     identity: with RTTI, hidden behind a shared library boundary, a
@@ -160,7 +171,7 @@ public:
         Safe. Racing first posts start the workers once.
 
         @param w The work item to execute. Must remain valid until
-                 its `func_` has been called.
+                 its `func_` or `destroy_` has been called.
 
         @return An empty code if the item was enqueued;
                 `capy::error::canceled` if the pool has already shut
@@ -185,8 +196,9 @@ public:
 
     /** Shut down the thread pool.
 
-        Signals all threads to exit after draining any
-        remaining queued work, then joins them.
+        Signals all threads to exit once their current item is done,
+        joins them, then disposes of every item still queued without
+        running its blocking work where the item says how.
     */
     void shutdown() override;
 };
@@ -208,13 +220,11 @@ thread_pool::worker_loop(unsigned index)
             cv_.wait(
                 lock, [this] { return shutdown_ || !work_queue_.empty(); });
 
+            // What is still queued is left to shutdown(), which does not
+            // make blocking calls whose results nobody will read.
+            if (shutdown_)
+                return;
             w = work_queue_.pop();
-            if (!w)
-            {
-                if (shutdown_)
-                    return;
-                continue;
-            }
         }
         w->func_(w);
     }
@@ -294,20 +304,29 @@ thread_pool::shutdown()
     }
     threads_.clear();
 
+    intrusive_queue<pool_work_item> leftover;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        while (work_queue_.pop())
-            ;
+        leftover.splice(work_queue_);
+    }
+    // Unlocked: an abandoned coroutine's unwind can reach post()
+    // through the objects its frame owned.
+    while (auto* w = leftover.pop())
+    {
+        if (w->destroy_)
+            w->destroy_(w);
+        else
+            w->func_(w);
     }
 }
 
 /** A reference to the context's shared thread pool, bound on first use.
 
     Services that hand blocking work to the pool hold one of these
-    instead of a reference bound at construction. They are constructed
-    from the scheduler's constructor, where the pool they created would
-    be older than the scheduler and would join too late; binding on
-    first use puts the pool after it instead.
+    instead of a reference bound at construction. A service made before
+    the pool, as one made by the scheduler's constructor would be, would
+    otherwise create the pool itself, older than the scheduler and so
+    joined too late; binding on first use puts the pool after it.
 
     The owning `io_context` creates the pool service during
     construction, so by the time any operation can run the binding only

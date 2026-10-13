@@ -10,8 +10,11 @@
 // Test that header file is self-contained.
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/delay.hpp>
+#include <boost/corosio/tcp_socket.hpp>
+#include <boost/corosio/test/socket_pair.hpp>
 
 #include <boost/capy/ex/async_event.hpp>
+#include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/when_all.hpp>
@@ -19,12 +22,15 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
+#include <memory>
 #include <mutex>
 #include <stop_token>
 #include <sstream>
 #include <thread>
 #include <vector>
 #include <tuple>
+#include <utility>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -425,6 +431,46 @@ struct io_context_test
         std::size_t n = ioc.run();
         BOOST_TEST(n == 1);
         BOOST_TEST(counter == 1);
+    }
+
+    // A lockless context destroyed on another thread than the one that
+    // made and ran it still abandons the coroutines suspended in it.
+    void testUnsafeIoDestroyedOnAnotherThread()
+    {
+        struct counted
+        {
+            int* down_;
+
+            ~counted()
+            {
+                if (down_)
+                    ++*down_;
+            }
+
+            explicit counted(int* d) noexcept : down_(d) {}
+
+            counted(counted&& o) noexcept
+                : down_(std::exchange(o.down_, nullptr))
+            {
+            }
+        };
+
+        int down = 0;
+        io_context_options opts;
+        opts.locking = locking_mode::unsafe_io;
+        auto ioc     = std::make_unique<io_context>(Backend, opts, 1);
+        {
+            auto [a, b] = test::make_socket_pair(*ioc);
+            capy::run_async(ioc->get_executor())(
+                [](tcp_socket s, tcp_socket, counted) -> capy::task<> {
+                    char c;
+                    std::ignore =
+                        co_await s.read_some(capy::mutable_buffer(&c, 1));
+                }(std::move(a), std::move(b), counted(&down)));
+        }
+        std::ignore = ioc->poll(); // the read parks
+        std::thread([&] { ioc.reset(); }).join();
+        BOOST_TEST_EQ(down, 1);
     }
 
     void testGetExecutor()
@@ -1000,16 +1046,45 @@ struct io_context_test
     }
 #endif
 
+    // A run call leaves the thread's frame allocator as it found it, so a
+    // coroutine created afterwards never uses a resource that died with
+    // the frames it ran.
+    template<class Drive>
+    void checkFrameAllocatorRestored(Drive drive)
+    {
+        io_context ioc(Backend);
+        auto* before = capy::get_current_frame_allocator();
+        auto t       = []() -> capy::task<> { co_return; };
+        capy::run_async(ioc.get_executor(), std::allocator<std::byte>{})(t());
+        drive(ioc);
+        BOOST_TEST(capy::get_current_frame_allocator() == before);
+    }
+
+    void testRunRestoresFrameAllocator()
+    {
+        checkFrameAllocatorRestored([](io_context& c) { std::ignore = c.run(); });
+        checkFrameAllocatorRestored(
+            [](io_context& c) { std::ignore = c.run_one(); });
+        checkFrameAllocatorRestored([](io_context& c) { std::ignore = c.poll(); });
+        checkFrameAllocatorRestored(
+            [](io_context& c) { std::ignore = c.poll_one(); });
+        checkFrameAllocatorRestored([](io_context& c) {
+            std::ignore = c.run_for(std::chrono::seconds(5));
+        });
+    }
+
     void run()
     {
 #if BOOST_COROSIO_POSIX
         testZeroThreadPoolSizeThrows();
 #endif
         testConstruction();
+        testRunRestoresFrameAllocator();
         testConstructionWithOptions();
         testConstructionWithThreadPoolSize();
         testConstructionSingleThreaded();
         testConstructionUnsafeIo();
+        testUnsafeIoDestroyedOnAnotherThread();
         testEffectiveConcurrencyHint();
         testGetExecutor();
         testRun();

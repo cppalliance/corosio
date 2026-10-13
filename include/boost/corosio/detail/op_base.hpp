@@ -74,6 +74,7 @@ public:
             return h;
         }
         cont_.h = h;
+        cont_.owner = env->owner;
         return static_cast<Derived const*>(this)->dispatch(
             cont_, env->executor);
     }
@@ -128,6 +129,7 @@ public:
             return h;
         }
         cont_.h = h;
+        cont_.owner = env->owner;
         return static_cast<Derived const*>(this)->dispatch(
             cont_, env->executor);
     }
@@ -180,6 +182,7 @@ public:
             return h;
         }
         cont_.h = h;
+        cont_.owner = env->owner;
         return static_cast<Derived const*>(this)->dispatch(
             cont_, env->executor);
     }

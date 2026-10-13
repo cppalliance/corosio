@@ -648,7 +648,7 @@ struct posix_common_faults
 
     // The signal service's shutdown walks the implementations it still
     // owns, giving back each registration hanging off them. A set held
-    // in an abandoned coroutine frame is the only way to reach that
+    // in a coroutine frame parked in wait() is the only way to reach that
     // walk; the frame dies with the child rather than being reported
     // against the suite.
     void testSignalTeardownWalk()

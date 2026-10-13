@@ -24,6 +24,7 @@
 
 #include <boost/corosio/detail/scheduler_op.hpp>
 #include <boost/capy/continuation.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/corosio/native/detail/iocp/win_completion_key.hpp>
 #include <boost/corosio/native/detail/iocp/win_mutex.hpp>
 
@@ -112,6 +113,14 @@ public:
     void update_timeout();
 
 private:
+    /// Destroy every packet and deferred entry still queued, without
+    /// running them; stops once the port is empty.
+    void sweep_port() noexcept;
+
+    // Posts an allocated copy, which survives the caller and keeps the
+    // owner for teardown.
+    void post_copy(capy::continuation const& c) const;
+
     static void on_timer_changed(void* ctx);
     void post_deferred_completions(op_queue& ops);
     std::size_t do_one(unsigned long timeout_ms);
@@ -124,7 +133,7 @@ private:
     // overlapped-op memory: kernel completions owed after a pending
     // submission, plus successful stored-result posts. Shutdown reaps
     // until this is zero before the services free op storage. The
-    // run-loop counter cannot serve that role: frames abandoned at
+    // run-loop counter cannot serve that role: frames destroyed at
     // teardown never return their work-guard credits.
     mutable long pending_io_ = 0;
     mutable long stopped_;
@@ -219,53 +228,38 @@ struct thread_context_guard
 inline void
 win_scheduler::post(std::coroutine_handle<> h) const
 {
+    post_copy(capy::continuation{h});
+}
+
+inline void
+win_scheduler::post_copy(capy::continuation const& c) const
+{
     struct post_handler final : scheduler_op
     {
-        std::coroutine_handle<> h_;
+        capy::continuation c_;
 
         static void do_complete(
             void* owner, scheduler_op* base, std::uint32_t, std::uint32_t)
         {
             auto* self = static_cast<post_handler*>(base);
+            auto c     = self->c_;
+            delete self;
             if (!owner)
             {
-                // Shutdown path: destroy the coroutine frame synchronously.
-                //
-                // Bounded destruction invariant: the chain triggered by
-                // coro.destroy() is at most two levels deep:
-                //   1. task frame destroyed → ~io_awaitable_promise_base()
-                //      destroys stored continuation (if != noop_coroutine)
-                //   2. continuation (trampoline) destroyed → final_suspend
-                //      returns suspend_never, no further continuation
-                //
-                // If a future refactor adds deeper continuation chains,
-                // this would reintroduce re-entrant stack overflow risk.
-#ifndef NDEBUG
-                static thread_local int destroy_depth = 0;
-                ++destroy_depth;
-                BOOST_COROSIO_ASSERT(destroy_depth <= 2);
-#endif
-                auto coro = self->h_;
-                delete self;
-                coro.destroy();
-#ifndef NDEBUG
-                --destroy_depth;
-#endif
+                capy::abandon(c);
                 return;
             }
-            auto coro = self->h_;
-            delete self;
-            coro.resume();
+            c.h.resume();
         }
 
-        explicit post_handler(std::coroutine_handle<> coro)
+        explicit post_handler(capy::continuation const& c)
             : scheduler_op(&do_complete)
-            , h_(coro)
+            , c_(c)
         {
         }
     };
 
-    auto* ph = new post_handler(h);
+    auto* ph = new post_handler(c);
     ::InterlockedIncrement(&outstanding_work_);
 
     if (!::PostQueuedCompletionStatus(
@@ -300,10 +294,10 @@ win_scheduler::post(capy::continuation& c) const
             iocp_, 0, key_continuation, reinterpret_cast<LPOVERLAPPED>(&c)))
     {
         // completed_ops_ is an op_queue and cannot carry a raw continuation,
-        // so on the rare PQCS failure fall back to the allocating handle
-        // path. Drop the increment first; post(c.h) does its own accounting.
+        // so on the rare PQCS failure fall back to an allocated copy, which
+        // keeps the owner. Drop the increment first; post_copy counts its own.
         ::InterlockedDecrement(&outstanding_work_);
-        post(c.h);
+        post_copy(c);
     }
 }
 
@@ -343,26 +337,24 @@ win_scheduler::on_pending(overlapped_op* op) const
     // skip (uncounted) and the re-post is the dispatching packet. A
     // failed re-post falls back to the deferred queue, which holds the
     // op memory itself — no packet, no count.
+    //
+    // Counted before the packet can be consumed: once it can, a context
+    // whose thread runs it may finish and be destroyed, so this call
+    // touches nothing of the scheduler afterwards.
+    ::InterlockedIncrement(&pending_io_);
     long expected = 0;
     if (op->ready_.compare_exchange_strong(
             expected, 1, std::memory_order_acq_rel, std::memory_order_acquire))
-    {
-        ::InterlockedIncrement(&pending_io_);
-    }
-    else
-    {
-        if (::PostQueuedCompletionStatus(
-                iocp_, 0, key_result_stored, static_cast<LPOVERLAPPED>(op)))
-        {
-            ::InterlockedIncrement(&pending_io_);
-        }
-        else
-        {
-            std::lock_guard<win_mutex> lock(dispatch_mutex_);
-            completed_ops_.push(op);
-            ::InterlockedExchange(&dispatch_required_, 1);
-        }
-    }
+        return;
+    if (::PostQueuedCompletionStatus(
+            iocp_, 0, key_result_stored, static_cast<LPOVERLAPPED>(op)))
+        return;
+    std::lock_guard<win_mutex> lock(dispatch_mutex_);
+    completed_ops_.push(op);
+    ::InterlockedExchange(&dispatch_required_, 1);
+    // Uncounted only once queued, so a shutdown that sees no packet
+    // left finds the op in the queue.
+    ::InterlockedDecrement(&pending_io_);
 }
 
 inline void
@@ -375,17 +367,17 @@ win_scheduler::on_completion(overlapped_op* op, DWORD error, DWORD bytes) const
     op->bytes_transferred = bytes;
     op->ready_.store(1, std::memory_order_release);
 
+    // Counted before the packet can be consumed, as in on_pending.
+    ::InterlockedIncrement(&pending_io_);
     if (::PostQueuedCompletionStatus(
             iocp_, 0, key_result_stored, static_cast<LPOVERLAPPED>(op)))
-    {
-        ::InterlockedIncrement(&pending_io_);
-    }
-    else
-    {
-        std::lock_guard<win_mutex> lock(dispatch_mutex_);
-        completed_ops_.push(op);
-        ::InterlockedExchange(&dispatch_required_, 1);
-    }
+        return;
+    std::lock_guard<win_mutex> lock(dispatch_mutex_);
+    completed_ops_.push(op);
+    ::InterlockedExchange(&dispatch_required_, 1);
+    // Uncounted only once queued, so a shutdown that sees no packet
+    // left finds the op in the queue.
+    ::InterlockedDecrement(&pending_io_);
 }
 
 inline void
@@ -765,8 +757,9 @@ win_scheduler::shutdown()
         timers_->stop();
 
     // Drain timer heap before the work-counting loop. The timer_service
-    // was registered after this scheduler (nested make_service from our
-    // constructor), so execution_context::shutdown() calls us first.
+    // is created from our constructor, so it finishes, and is linked,
+    // first; execution_context::shutdown() runs newest first, so it
+    // calls us first.
     // Asio avoids this by owning timer queues directly inside the
     // scheduler; we bridge the gap by shutting down the timer service
     // early. The subsequent call from execution_context is a no-op.
@@ -777,6 +770,8 @@ win_scheduler::shutdown()
     // owe completion packets. Stop the reactor early so its loop
     // posts them as cancelled and the pending count can reach zero.
     wait_reactor_->stop();
+
+    wait_cancels_posting();
 
     // Reap every packet still owed to the port before the services
     // free the op memory those packets reference. Work-guard credits,
@@ -808,10 +803,10 @@ win_scheduler::shutdown()
             }
             else if (key == key_continuation)
             {
-                // Drain without resuming: destroy the parked frame.
+                // Drain without resuming: abandon the parked coroutine.
                 auto* c = reinterpret_cast<capy::continuation*>(overlapped);
                 if (c->h)
-                    c->h.destroy();
+                    capy::abandon(*c);
             }
             else
             {
@@ -826,6 +821,12 @@ win_scheduler::shutdown()
     // without a pending_io_ count (posted directly against the
     // handle). Destroy them so service teardown does not free state
     // they still reference.
+    sweep_port();
+}
+
+inline void
+win_scheduler::sweep_port() noexcept
+{
     for (;;)
     {
         op_queue ops;
@@ -858,7 +859,7 @@ win_scheduler::shutdown()
         {
             auto* c = reinterpret_cast<capy::continuation*>(overlapped);
             if (c->h)
-                c->h.destroy();
+                capy::abandon(*c);
         }
         else
         {
@@ -873,7 +874,11 @@ inline win_scheduler::~win_scheduler()
     wait_reactor_.reset();
 
     if (iocp_ != nullptr)
+    {
+        // Service destructors run after the drain and may still post.
+        sweep_port();
         ::CloseHandle(iocp_);
+    }
 }
 
 inline win_wait_reactor&

@@ -13,6 +13,7 @@
 #include <boost/corosio/io_context.hpp>
 
 #include <atomic>
+#include <list>
 #include <thread>
 
 #if defined(__linux__)
@@ -89,7 +90,7 @@ struct thread_pool_test
             BOOST_TEST(!pool.post(&items[i]));
         }
 
-        // Shutdown should drain all queued tasks
+        // Items with no destroy function run, by a worker or by shutdown()
         pool.shutdown();
 
         BOOST_TEST(counter.load() == n);
@@ -211,10 +212,95 @@ struct thread_pool_test
             }
         }
 
+        // Shutdown takes no further items off the queue, so every one
+        // has to be running before it is asked.
+        while (arrived.load() < num_threads)
+            std::this_thread::yield();
         pool.shutdown();
 
         // All items completed — proves all 4 threads ran concurrently
         BOOST_TEST(done.load() == static_cast<int>(num_threads));
+    }
+
+    // An item still queued at shutdown is destroyed, never run; one
+    // without a destroy function is run by shutdown() instead.
+    void testShutdownDestroysQueuedWork()
+    {
+        struct gate_work : detail::pool_work_item
+        {
+            std::atomic<bool> running{false};
+            std::atomic<bool> released{false};
+
+            static void execute(detail::pool_work_item* p) noexcept
+            {
+                auto* self = static_cast<gate_work*>(p);
+                self->running.store(true);
+                while (!self->released.load())
+                    std::this_thread::yield();
+            }
+        };
+
+        struct counted_work : detail::pool_work_item
+        {
+            std::atomic<int> ran{0};
+            std::atomic<int> destroyed{0};
+
+            static void execute(detail::pool_work_item* p) noexcept
+            {
+                static_cast<counted_work*>(p)->ran.fetch_add(1);
+            }
+
+            static void discard(detail::pool_work_item* p) noexcept
+            {
+                static_cast<counted_work*>(p)->destroyed.fetch_add(1);
+            }
+        };
+
+        io_context ioc;
+        detail::thread_pool pool(ioc, 1);
+
+        gate_work gate;
+        gate.func_ = &gate_work::execute;
+        counted_work queued;
+        queued.func_    = &counted_work::execute;
+        queued.destroy_ = &counted_work::discard;
+        test_work plain;
+        std::atomic<int> plain_ran{0};
+        plain.counter = &plain_ran;
+        plain.func_   = &test_work::execute;
+
+        BOOST_TEST(!pool.post(&gate));
+        while (!gate.running.load())
+            std::this_thread::yield();
+        BOOST_TEST(!pool.post(&queued));
+        BOOST_TEST(!pool.post(&plain));
+
+        std::thread stopper([&] { pool.shutdown(); });
+
+        // A refused post is the only sign that shutdown has begun; the
+        // probes it accepts before then queue behind the others.
+        std::list<counted_work> probes;
+        for (;;)
+        {
+            auto& probe    = probes.emplace_back();
+            probe.func_    = &counted_work::execute;
+            probe.destroy_ = &counted_work::discard;
+            if (pool.post(&probe))
+                break;
+            std::this_thread::yield();
+        }
+        gate.released.store(true);
+        stopper.join();
+
+        BOOST_TEST_EQ(queued.ran.load(), 0);
+        BOOST_TEST_EQ(queued.destroyed.load(), 1);
+        BOOST_TEST_EQ(plain_ran.load(), 1);
+        probes.pop_back();
+        for (auto& probe : probes)
+        {
+            BOOST_TEST_EQ(probe.ran.load(), 0);
+            BOOST_TEST_EQ(probe.destroyed.load(), 1);
+        }
     }
 
     void testLazyWorkers()
@@ -257,7 +343,8 @@ struct thread_pool_test
 
     // A pool created outside the context's service registry (so the
     // context's shutdown walk never reaches it) must join its worker and
-    // drain queued work from the destructor net when destroyed directly.
+    // dispose of queued work from the destructor net when destroyed
+    // directly.
     void testDestructorShutsDown()
     {
         io_context ioc;
@@ -281,6 +368,7 @@ struct thread_pool_test
         testPostAfterShutdown();
         testZeroThreads();
         testMultipleThreads();
+        testShutdownDestroysQueuedWork();
         testLazyWorkers();
         testDestructorShutsDown();
     }

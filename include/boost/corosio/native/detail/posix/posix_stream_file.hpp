@@ -80,7 +80,7 @@
 
 namespace boost::corosio::detail {
 
-struct scheduler;
+class scheduler;
 class posix_stream_file_service;
 
 /** Stream file implementation for POSIX backends.
@@ -118,6 +118,10 @@ public:
         int errn                      = 0;
         std::size_t bytes_transferred = 0;
 
+        // The op is work on this service's context, which outlives the
+        // file the op is embedded in.
+        posix_stream_file_service* svc = nullptr;
+
         file_op() = default;
 
         void reset() noexcept
@@ -136,6 +140,10 @@ public:
         void operator()() override;
         void destroy() override;
     };
+
+    /// Release the work an op holds on its service's context.
+    static void
+    release_work(posix_stream_file_service& svc) noexcept;
 
     /** Pool work item for thread pool dispatch. */
     struct pool_op : pool_work_item
@@ -238,6 +246,8 @@ private:
 
     static void do_read_work(pool_work_item*) noexcept;
     static void do_write_work(pool_work_item*) noexcept;
+    static void destroy_read_work(pool_work_item*) noexcept;
+    static void destroy_write_work(pool_work_item*) noexcept;
 };
 
 // ---------------------------------------------------------------------------
@@ -436,17 +446,18 @@ posix_stream_file::file_op::operator()()
     // dispatch — this may be the last reference keeping the parent
     // posix_stream_file (which embeds this file_op) alive.
     auto prevent_destroy = std::move(object_ref_);
-    ex.on_work_finished();
+    release_work(*svc);
     dispatch_coro(ex, *cont).resume();
 }
 
 inline void
 posix_stream_file::file_op::destroy()
 {
-    stop_cb.reset();
-    auto local_ex = ex;
-    object_ref_.reset();
-    local_ex.on_work_finished();
+    // Copied first: the abandon may unwind the frame at once, destroying
+    // the file, and with it this op.
+    auto* s = svc;
+    destroy_awaiting();
+    release_work(*s);
 }
 
 } // namespace boost::corosio::detail

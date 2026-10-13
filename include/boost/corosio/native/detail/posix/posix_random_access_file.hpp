@@ -29,6 +29,7 @@
 #include <boost/corosio/native/detail/posix/large_file.hpp>
 #include <boost/corosio/native/detail/posix/posix_fd_gate.hpp>
 #include <boost/corosio/native/detail/validate_fd.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/buffers.hpp>
@@ -43,6 +44,7 @@
 #include <optional>
 #include <stop_token>
 #include <system_error>
+#include <utility>
 
 #include <errno.h>
 #include <fcntl.h>
@@ -65,7 +67,7 @@
 
 namespace boost::corosio::detail {
 
-struct scheduler;
+class scheduler;
 class posix_random_access_file_service;
 
 /** Random-access file implementation for POSIX backends. */
@@ -109,9 +111,23 @@ public:
         void operator()() override;
         void destroy() override;
 
+        /// Recycle an op the pool refused, leaving its coroutine to
+        /// the initiator that answers it.
+        void discard() noexcept;
+
         /// Thread-pool work function: executes preadv/pwritev.
         static void do_work(pool_work_item*) noexcept;
+
+        /// Destroy an op the pool shut down before running.
+        static void destroy_work(pool_work_item*) noexcept;
+
+        /// Return this op to its file's free list.
+        void recycle() noexcept;
     };
+
+    /// Release the work an op holds on its service's context.
+    static void
+    release_work(posix_random_access_file_service& svc) noexcept;
 
     explicit posix_random_access_file(
         posix_random_access_file_service& svc) noexcept;
@@ -356,31 +372,58 @@ posix_random_access_file::raf_op::operator()()
     auto keep = std::move(object_ref_);
     auto* c   = cont;
     auto exec = ex;
+    auto& svc = file_->svc_;
     {
         std::lock_guard<std::mutex> lock(file_->ops_mutex_);
         file_->outstanding_ops_.remove(this);
         file_->free_ops_.push_front(this);
     }
     keep.reset();
-    exec.on_work_finished();
+    release_work(svc);
     dispatch_coro(exec, *c).resume();
 }
 
 // -- raf_op shutdown cleanup --
 
 inline void
+posix_random_access_file::raf_op::recycle() noexcept
+{
+    std::lock_guard<std::mutex> lock(file_->ops_mutex_);
+    file_->outstanding_ops_.remove(this);
+    file_->free_ops_.push_front(this);
+}
+
+inline void
 posix_random_access_file::raf_op::destroy()
 {
     stop_cb.reset();
     auto keep = std::move(object_ref_);
-    auto exec = ex;
-    {
-        std::lock_guard<std::mutex> lock(file_->ops_mutex_);
-        file_->outstanding_ops_.remove(this);
-        file_->free_ops_.push_front(this);
-    }
+    auto& svc = file_->svc_;
+    auto* c   = std::exchange(cont, nullptr);
+    recycle();
+    // The frame may own the file, so it goes while the keepalive
+    // still holds the implementation the op was recycled into.
+    if (c && c->h)
+        capy::abandon(*c);
     keep.reset();
-    exec.on_work_finished();
+    release_work(svc);
+}
+
+inline void
+posix_random_access_file::raf_op::discard() noexcept
+{
+    stop_cb.reset();
+    auto keep = std::move(object_ref_);
+    auto& svc = file_->svc_;
+    recycle();
+    keep.reset();
+    release_work(svc);
+}
+
+inline void
+posix_random_access_file::raf_op::destroy_work(pool_work_item* w) noexcept
+{
+    static_cast<raf_op*>(w)->destroy();
 }
 
 } // namespace boost::corosio::detail
