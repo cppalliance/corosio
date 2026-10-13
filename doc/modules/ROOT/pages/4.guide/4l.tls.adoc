@@ -57,13 +57,21 @@ revocation (`add_crl()` / `add_crl_file()` with
 
 [NOTE]
 ====
-Two implemented features depend on how WolfSSL was built.
-`set_default_verify_paths()` requires `WOLFSSL_SYS_CA_CERTS` to load the
-system store; without it, supply trust anchors explicitly.
-`set_verify_callback()` requires `WOLFSSL_ALWAYS_VERIFY_CB` — without it,
-installing a callback fails the handshake with
+On WolfSSL, some features depend on how the library was built:
+
+* `set_default_verify_paths()` needs `WOLFSSL_SYS_CA_CERTS`
+  (`--enable-sys-ca-certs`, on by default) to load the system store;
+  without it, supply trust anchors explicitly.
+* `set_verify_callback()` needs `WOLFSSL_ALWAYS_VERIFY_CB`, which
+  `--enable-opensslextra` defines.
+* `set_alpn()` needs `HAVE_ALPN` (`--enable-alpn`).
+* CRL checking needs `HAVE_CRL` (`--enable-crl`).
+* Verifying an IP literal passed to `set_hostname()` needs both
+  `OPENSSL_EXTRA` and `WOLFSSL_IP_ALT_NAME`
+  (`--enable-opensslextra --enable-ip-alt-name`).
+
+Except for the system store, a missing feature fails the handshake with
 `std::errc::function_not_supported` rather than failing open (see below).
-Both are enabled by `--enable-opensslextra`.
 ====
 
 The typical flow:
@@ -79,8 +87,10 @@ The cpp:tls_context[] class stores TLS configuration: certificates, keys, trust
 anchors, protocol settings, and verification options. Contexts are shared
 handles—copies share the same underlying state.
 
-IMPORTANT: Don't modify a context after creating streams from it. The
-configuration is captured when the first stream is constructed.
+IMPORTANT: Don't modify a context after creating streams from it. Most
+settings are captured at the first handshake of any stream using it;
+others, such as callbacks, are read later. A change may therefore apply
+partly or not at all.
 
 === Creating a Context
 
@@ -127,7 +137,7 @@ PKCS#12 (`.pfx` or `.p12`) files bundle certificate, key, and chain together:
 include::example$snippets/4l_tls.cpp[tag=pkcs12,indent=0]
 ----
 
-NOTE: The bundle is decoded when the first stream is created; a malformed
+NOTE: The bundle is decoded at the first handshake; a malformed
 bundle or wrong passphrase surfaces as a handshake failure. Intermediate
 certificates in the bundle are loaded and sent during the handshake on
 both backends.
@@ -138,17 +148,22 @@ Configure which Certificate Authorities (CAs) to trust for peer verification.
 
 ==== System Trust Store
 
-Use the operating system's default CA certificates:
+Use the system's default CA certificates:
 
 [source,cpp]
 ----
 include::example$snippets/4l_tls.cpp[tag=system_trust,indent=0]
 ----
 
-On OpenSSL the `SSL_CERT_FILE` and `SSL_CERT_DIR` environment variables are
-honored. The WolfSSL backend requires a build with `WOLFSSL_SYS_CA_CERTS`.
-Without it this call has no effect, and a CA bundle must be supplied
-explicitly via `load_verify_file()` or `add_certificate_authority()`.
+What this loads depends on the backend. OpenSSL reads the CA file and
+directory it was built with, or those named by the `SSL_CERT_FILE` and
+`SSL_CERT_DIR` environment variables. It does not read the macOS Keychain
+or the Windows Certificate Store. WolfSSL reads the platform store:
+`/etc/ssl/certs` and similar on Linux, the trust settings on macOS, and
+the Root and CA stores on Windows. It requires a build with
+`WOLFSSL_SYS_CA_CERTS`. Where the system store is unavailable, this call
+has no effect, and a CA bundle must be supplied explicitly via
+`load_verify_file()` or `add_certificate_authority()`.
 
 ==== Custom CA Certificates
 
@@ -157,11 +172,11 @@ explicitly via `load_verify_file()` or `add_certificate_authority()`.
 include::example$snippets/4l_tls.cpp[tag=custom_cas,indent=0]
 ----
 
-NOTE: With OpenSSL, `load_verify_file()` registers only the *first*
-certificate from a multi-cert bundle (WolfSSL handles multi-cert files);
-add others with repeated `add_certificate_authority()` calls. For
-`add_verify_path()`, OpenSSL requires the hashed-filename layout produced
-by `openssl rehash`, while WolfSSL loads every file in the directory.
+NOTE: Every valid certificate in a bundle is trusted. If one fails to
+load, OpenSSL fails the handshake, while WolfSSL skips that certificate
+and fails the handshake only when none load. For `add_verify_path()`, OpenSSL requires the
+hashed-filename layout produced by `openssl rehash`, while WolfSSL loads
+every file in the directory.
 
 === Protocol Configuration
 
@@ -245,9 +260,18 @@ This does two things:
    to present (important for virtual hosting)
 2. Verifies the server certificate matches this hostname
 
+The hostname is checked only when the verify mode is `peer` or
+`require_peer`. Under the default `none`, a certificate for a different
+host is accepted.
+
 An IP literal (IPv4 or IPv6) is verified against the certificate's
 iPAddress entries instead of its DNS names. No SNI is sent, because RFC
 6066 excludes literals.
+
+NOTE: On WolfSSL, verifying an IP literal requires a build with both
+`OPENSSL_EXTRA` and `WOLFSSL_IP_ALT_NAME`. Without them, setting an IP
+literal fails the handshake with `std::errc::function_not_supported`
+under every verify mode, including `none`.
 
 ==== Verification Depth
 
@@ -305,8 +329,9 @@ revoked is rejected. Under `hard_fail`, an undeterminable status is also
 rejected. `disabled` (the default) skips revocation entirely.
 
 NOTE: On WolfSSL, CRL checking requires a `HAVE_CRL` build. Without it,
-supplying a CRL or a non-disabled policy fails the handshake with
+a revocation policy other than `disabled` fails the handshake with
 `std::errc::function_not_supported` rather than skip the check silently.
+A CRL supplied while the policy stays `disabled` is ignored.
 
 == TLS Streams
 
@@ -442,18 +467,9 @@ include::example$snippets/4l_tls.cpp[tag=stream_overloads,indent=0]
 
 Complete example connecting to an HTTPS server:
 
-[WARNING]
-====
-This example uses `set_default_verify_paths()`, which does *not* currently
-load any trust anchors, so it verifies nothing against a real public server.
-To verify the server today, replace that call with an explicit CA bundle,
-for example:
-
-[source,cpp]
-----
-include::example$snippets/4l_tls.cpp[tag=ca_bundle,indent=0]
-----
-====
+NOTE: On WolfSSL builds without `WOLFSSL_SYS_CA_CERTS`,
+`set_default_verify_paths()` cannot load the system store; supply the
+server's CA explicitly with `load_verify_file()` instead.
 
 [source,cpp]
 ----

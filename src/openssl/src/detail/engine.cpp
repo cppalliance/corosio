@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -548,24 +549,31 @@ public:
             // silently: the store would verify against fewer anchors than
             // requested and reject a legitimate peer as untrusted. Fail
             // closed instead, tolerating only a duplicate the store already
-            // holds.
+            // holds. An entry may hold a bundle; it ends cleanly only when
+            // no further PEM block follows at least one certificate.
             BIO* bio = BIO_new_mem_buf(ca.data(), static_cast<int>(ca.size()));
             if (!bio)
             {
                 setup_failed_ = true;
                 continue;
             }
-            X509* cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
-            if (cert)
+            for (bool added = false;; added = true)
             {
+                X509* cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
+                if (!cert)
+                {
+                    unsigned long const err = ERR_peek_last_error();
+                    if (!added || ERR_GET_LIB(err) != ERR_LIB_PEM ||
+                        ERR_GET_REASON(err) != PEM_R_NO_START_LINE)
+                        setup_failed_ = true;
+                    break;
+                }
                 if (X509_STORE_add_cert(store, cert) != 1 &&
                     ERR_GET_REASON(ERR_peek_last_error()) !=
                         X509_R_CERT_ALREADY_IN_HASH_TABLE)
                     setup_failed_ = true;
                 X509_free(cert);
             }
-            else
-                setup_failed_ = true;
             ERR_clear_error();
             BIO_free(bio);
         }

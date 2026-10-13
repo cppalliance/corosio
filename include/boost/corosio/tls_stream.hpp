@@ -264,9 +264,10 @@ public:
 
         Configures the hostname sent in the TLS Server Name
         Indication extension and matched against the peer
-        certificate during verification. The value takes effect
-        at the next `handshake()`; an established session is not
-        affected. It persists across `reset()`, so a stream reused
+        certificate during verification. Matching happens only when
+        the context's verify mode is not `tls_verify_mode::none`.
+        The value takes effect at the next `handshake()`; an
+        established session is not affected. It persists across `reset()`, so a stream reused
         to reach a different host must set the new name before
         handshaking again.
 

@@ -27,7 +27,7 @@ include::example$snippets/3d_tls_context.cpp[tag=assume]
 == Introduction
 
 The cpp:tls_context[] class is a portable abstraction for TLS configuration that
-works across multiple TLS backends (WolfSSL, OpenSSL, mbedTLS, etc.). It
+works across the TLS backends (OpenSSL and WolfSSL). It
 handles:
 
 * Loading certificates and private keys
@@ -41,12 +41,20 @@ for establishing secure connections.
 
 [NOTE]
 ====
-Two implemented features depend on how WolfSSL was built.
-`set_default_verify_paths()` needs `WOLFSSL_SYS_CA_CERTS` to load the system
-store. `set_verify_callback()` needs `WOLFSSL_ALWAYS_VERIFY_CB`; without it,
-installing a callback fails the handshake with
-`std::errc::function_not_supported` rather than failing open. Both are
-enabled by `--enable-opensslextra`.
+On WolfSSL, some features depend on how the library was built:
+
+* `set_default_verify_paths()` needs `WOLFSSL_SYS_CA_CERTS`
+  (`--enable-sys-ca-certs`, on by default) to load the system store.
+* `set_verify_callback()` needs `WOLFSSL_ALWAYS_VERIFY_CB`, which
+  `--enable-opensslextra` defines.
+* `set_alpn()` needs `HAVE_ALPN` (`--enable-alpn`).
+* CRL checking needs `HAVE_CRL` (`--enable-crl`).
+* Verifying an IP literal passed to `tls_stream::set_hostname()` needs
+  both `OPENSSL_EXTRA` and `WOLFSSL_IP_ALT_NAME`
+  (`--enable-opensslextra --enable-ip-alt-name`).
+
+Except for the system store, a missing feature fails the handshake with
+`std::errc::function_not_supported` rather than failing open.
 ====
 
 == Construction
@@ -55,10 +63,11 @@ A cpp:tls_context[] is a shared handle to an opaque implementation. Copies share
 the same underlying state, making it easy to pass contexts by value and share
 them across multiple TLS streams.
 
-IMPORTANT: Don't modify a context after creating a stream from it. The
-configuration is captured when the first stream is constructed, so later
-changes reach neither existing nor new streams. If you need a different
-configuration, create a separate context.
+IMPORTANT: Don't modify a context after creating a stream from it. Most
+settings are captured at the first handshake of any stream using it;
+others, such as callbacks, are read later. A change may therefore apply
+partly or not at all. If you need a different configuration, create a
+separate context.
 
 [source,cpp]
 ----
@@ -111,7 +120,7 @@ into a single password-protected file:
 include::example$snippets/3d_tls_context.cpp[tag=pkcs12_file,indent=0]
 ----
 
-NOTE: The bundle is decoded when the first stream is created; a wrong
+NOTE: The bundle is decoded at the first handshake; a wrong
 passphrase or malformed bundle surfaces as a handshake failure.
 Intermediate certificates in the bundle are loaded and sent during the
 handshake on both backends.
@@ -154,16 +163,20 @@ For HTTPS clients connecting to public servers, use the system's CA store:
 include::example$snippets/3d_tls_context.cpp[tag=system_trust,indent=0]
 ----
 
-This uses the operating system's trusted certificates:
+What "system store" means depends on the backend:
 
-* Linux: `/etc/ssl/certs` or distribution-specific paths
-* macOS: System Keychain
-* Windows: Windows Certificate Store
-
-On OpenSSL the `SSL_CERT_FILE` and `SSL_CERT_DIR` environment variables are
-honored. On WolfSSL this requires a build with `WOLFSSL_SYS_CA_CERTS`;
-without it, supply trust anchors explicitly with `load_verify_file()` or
-`add_certificate_authority()` (below).
+* OpenSSL: the CA file and directory OpenSSL was built with, under its
+  `OPENSSLDIR` (typically `/etc/ssl` on Linux). The `SSL_CERT_FILE` and
+  `SSL_CERT_DIR` environment variables override them. OpenSSL does not
+  read the macOS Keychain or the Windows Certificate Store. On those
+  platforms, supply trust anchors with `load_verify_file()` unless that
+  OpenSSL installation ships its own CA bundle.
+* WolfSSL: on Linux it reads the first readable CA directory among
+  `/etc/ssl/certs` and the `/etc/pki` locations. On macOS it reads the
+  user, admin, and system trust settings. On Windows it reads the Root and
+  CA stores. This requires a build with `WOLFSSL_SYS_CA_CERTS`. Without it, supply
+  trust anchors explicitly with `load_verify_file()` or
+  `add_certificate_authority()` (below).
 
 === Custom CA Bundle
 
@@ -173,10 +186,6 @@ For internal PKI or testing, load a custom CA bundle:
 ----
 include::example$snippets/3d_tls_context.cpp[tag=ca_bundle,indent=0]
 ----
-
-NOTE: With OpenSSL, `load_verify_file()` registers only the *first*
-certificate from a multi-cert bundle (WolfSSL handles multi-cert files);
-add the rest with repeated `add_certificate_authority()` calls.
 
 === CA Directory
 
@@ -209,9 +218,6 @@ You can combine multiple trust sources:
 ----
 include::example$snippets/3d_tls_context.cpp[tag=combine_trust,indent=0]
 ----
-
-NOTE: The `set_default_verify_paths()` call above contributes nothing in
-this release. Only the explicitly added CA is actually trusted.
 
 == Protocol Configuration
 
@@ -300,6 +306,10 @@ This enables:
   present (required for virtual hosting)
 * **Hostname matching**: Validates the certificate matches the expected host
 
+Hostname matching applies only when the verify mode is `peer` or
+`require_peer`. Under the default `none`, a certificate for a different
+host is accepted.
+
 === Chain Depth
 
 Limit how many intermediate certificates are allowed:
@@ -369,8 +379,9 @@ include::example$snippets/3d_tls_context.cpp[tag=crl_load,indent=0]
 CRLs must be refreshed periodically as they expire.
 
 NOTE: On WolfSSL, CRL checking requires a `HAVE_CRL` build; without it,
-supplying a CRL or a non-disabled policy fails the handshake with
-`std::errc::function_not_supported`.
+a revocation policy other than `disabled` fails the handshake with
+`std::errc::function_not_supported`. A CRL supplied while the policy
+stays `disabled` is ignored.
 
 === Bootstrap vs. Hardened Connections
 
@@ -483,12 +494,12 @@ to detect errors:
 include::example$snippets/3d_tls_context.cpp[tag=error_handling,indent=0]
 ----
 
-Common errors include:
-
-* File not found or permission denied
-* Invalid certificate or key format
-* Key doesn't match certificate
-* Wrong passphrase for encrypted key or PKCS#12
+The setters only record configuration, so few of them can fail. Those
+that read a file report one that cannot be opened, and `set_alpn()`
+rejects a malformed protocol name. Content is decoded when the native
+context is first built. An invalid certificate or key format, a key that
+doesn't match its certificate, or a wrong passphrase therefore surfaces
+as a handshake failure.
 
 == Next Steps
 
