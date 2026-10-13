@@ -557,6 +557,9 @@ public:
     supports provide/expect buffers for test instrumentation.
     The socket is the "peer" end with no test instrumentation.
 
+    Runs `ctx` until the connection is made, restarting it first if
+    it was stopped, and leaves it restarted.
+
     Optional `max_read_size` and `max_write_size` parameters limit the
     number of bytes transferred per I/O operation on the mocket,
     simulating chunked network delivery for testing purposes.
@@ -632,24 +635,29 @@ make_mocket_pair(
         }(peer, acc, endpoint(ipv4_address::loopback(), port), connect_ec,
                            connect_done));
 
-    ctx.run();
-    ctx.restart();
+    // Both coroutines write to locals here, so they must finish before
+    // this returns or throws, even on a context something stopped.
+    while (!accept_done || !connect_done)
+    {
+        ctx.run();
+        ctx.restart();
+    }
 
-    if (!connect_done || connect_ec)
+    if (connect_ec)
     {
         std::fprintf(
-            stderr, "make_mocket_pair: connect failed (done=%d, ec=%s)\n",
-            connect_done, connect_ec.message().c_str());
+            stderr, "make_mocket_pair: connect failed: %s\n",
+            connect_ec.message().c_str());
         acc.close();
         accepted_socket.close();
         throw std::runtime_error("mocket connect failed");
     }
 
-    if (!accept_done || accept_ec)
+    if (accept_ec)
     {
         std::fprintf(
-            stderr, "make_mocket_pair: accept failed (done=%d, ec=%s)\n",
-            accept_done, accept_ec.message().c_str());
+            stderr, "make_mocket_pair: accept failed: %s\n",
+            accept_ec.message().c_str());
         acc.close();
         throw std::runtime_error("mocket accept failed");
     }

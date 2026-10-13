@@ -178,9 +178,6 @@ struct uring_teardown_test
         BOOST_TEST(!!wec);
     }
 
-#if !COROSIO_TEST_HAS_ASAN
-    // These abandon parked coroutine frames by design; see context.hpp.
-
     void testDestroyWithPendingSocketWrite()
     {
         bool resumed = false;
@@ -188,7 +185,7 @@ struct uring_teardown_test
             io_context ioc(uring);
             // The pair is made outside the coroutine (it drains the
             // context internally); the socket moves into the frame so
-            // its fd stays open when the frame is abandoned.
+            // its fd stays open when the frame is destroyed.
             auto [s1, s2] =
                 test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
             fill_fd(static_cast<int>(s1.native_handle()));
@@ -527,14 +524,12 @@ struct uring_teardown_test
         }
         BOOST_TEST(!resumed);
     }
-#endif // !COROSIO_TEST_HAS_ASAN
 
     void run()
     {
         testAcceptorWaitAfterClose();
         testAcceptorWaitStopRequested();
         testAcceptorCloseWithParkedWait();
-#if !COROSIO_TEST_HAS_ASAN
         testDestroyWithPendingSocketWrite();
         testDestroyWithPendingDatagramSend();
         testDestroyWithPendingDescriptorOps();
@@ -545,7 +540,6 @@ struct uring_teardown_test
         testDestroyWithQueuedDescriptorOps();
         testDestroyWithQueuedRandomAccessOps();
         testDestroyWithParkedLocalAccept();
-#endif
     }
 };
 

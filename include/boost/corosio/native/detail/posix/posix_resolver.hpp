@@ -98,7 +98,7 @@
 
 namespace boost::corosio::detail {
 
-struct scheduler;
+class scheduler;
 
 namespace posix_resolver_detail {
 
@@ -171,6 +171,9 @@ public:
         /// Where the endpoints are handed back.
         std::vector<endpoint>* out = nullptr;
 
+        /// The service whose context counts this op as work.
+        posix_resolver_service* svc = nullptr;
+
         // Input parameters (owned copies for thread safety)
         std::string host;
         std::string service;
@@ -193,6 +196,9 @@ public:
     {
         /// Where the name is handed back.
         endpoint_name* result_out = nullptr;
+
+        /// The service whose context counts this op as work.
+        posix_resolver_service* svc = nullptr;
 
         // Input parameters
         endpoint ep;
@@ -280,6 +286,12 @@ public:
 
     /// Execute blocking `getnameinfo()` on a pool thread.
     static void do_reverse_resolve_work(pool_work_item*) noexcept;
+
+    /// Destroy a forward resolution the pool shut down before running.
+    static void destroy_resolve_work(pool_work_item*) noexcept;
+
+    /// Destroy a reverse resolution the pool shut down before running.
+    static void destroy_reverse_resolve_work(pool_work_item*) noexcept;
 
 private:
     posix_resolver_service& svc_;

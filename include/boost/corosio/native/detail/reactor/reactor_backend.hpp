@@ -155,21 +155,20 @@ reactor_acceptor_impl<
             }
 
             if (io_done || op.cancelled.load(std::memory_order_acquire))
+            {
                 post_now = true;
+            }
             else
+            {
                 this->desc_state_.read_op = &op;
+                // Select watches reads only for parked ops; see
+                // park_op.
+                if constexpr (Traits::needs_park_notification)
+                    this->svc_.scheduler().notify_reactor();
+            }
         }
         if (post_now)
-        {
-            this->svc_.post(&op);
-            this->svc_.work_finished();
-        }
-        else
-        {
-            // Select watches reads only for parked ops; see register_op.
-            if constexpr (Traits::needs_park_notification)
-                this->svc_.scheduler().notify_reactor();
-        }
+            this->svc_.scheduler().post_counted(&op);
         return std::noop_coroutine();
     }
 

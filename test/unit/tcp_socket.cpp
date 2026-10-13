@@ -30,15 +30,20 @@
 #include <boost/capy/task.hpp>
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <stop_token>
 #include <stdexcept>
 #include <system_error>
+#include <thread>
 #include <tuple>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 #if BOOST_COROSIO_POSIX
 #include <unistd.h> // getpid()
@@ -2012,16 +2017,15 @@ struct tcp_socket_test
         testAssignFailureKeepsSocket();
         testAssignOverOpenKeepsPending();
         testCompletionResumesOnAwaitersContext();
+        testCrossContextCompletionOutlivesItsTarget();
+        testReadStopRacingTeardown();
         testRelease();
         testReleaseClosedThrows();
         testAssignV6();
 
-#if !COROSIO_TEST_HAS_ASAN
-        // Abandon parked coroutine frames by design; see context.hpp.
         testDestroyWithQueuedWrite();
         testDestroyWithQueuedConnect();
         testDestroyWithQueuedWait();
-#endif
     }
 
     void testConnectV6()
@@ -2586,6 +2590,92 @@ struct tcp_socket_test
         std::ignore = b.poll();
         BOOST_TEST(resumed);
         BOOST_TEST(on_b);
+    }
+
+    // A stop requested on another thread can claim a parked read while
+    // the context tears its sockets down; the drain must still find the
+    // read the stop posts.
+    void testReadStopRacingTeardown()
+    {
+        for (int round = 0; round < 25; ++round)
+        {
+            std::vector<std::stop_source> stops(8);
+            std::atomic<bool> go{false};
+            std::thread stopper;
+            {
+                io_context ioc(Backend);
+                // Paired first: each pairing runs the context, which a
+                // parked read would keep from returning.
+                std::vector<std::pair<tcp_socket, tcp_socket>> pairs;
+                for (std::size_t i = 0; i < stops.size(); ++i)
+                {
+                    pairs.push_back(test::make_socket_pair<
+                        tcp_socket, tcp_acceptor, false>(ioc));
+                    ioc.restart();
+                }
+                for (std::size_t i = 0; i < stops.size(); ++i)
+                    capy::run_async(ioc.get_executor(), stops[i].get_token())(
+                        [](tcp_socket s, tcp_socket) -> capy::task<> {
+                            char c;
+                            std::ignore = co_await s.read_some(
+                                capy::mutable_buffer(&c, 1));
+                        }(std::move(pairs[i].first),
+                          std::move(pairs[i].second)));
+                std::ignore = ioc.poll(); // parks every read
+                stopper     = std::thread([&] {
+                    while (!go.load(std::memory_order_acquire))
+                    {
+                    }
+                    for (auto& src : stops)
+                        src.request_stop();
+                });
+                go.store(true, std::memory_order_release);
+            }
+            stopper.join();
+        }
+        BOOST_TEST_PASS();
+    }
+
+    // An operation of a long-lived context completes into a short-lived
+    // one, which finishes the chain and is destroyed at once: the
+    // completing thread must be done with the short-lived context's
+    // scheduler before that can happen.
+    void testCrossContextCompletionOutlivesItsTarget()
+    {
+        io_context a(Backend);
+        std::vector<std::pair<tcp_socket, tcp_socket>> pairs;
+        for (int i = 0; i < 100; ++i)
+        {
+            pairs.push_back(
+                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(a));
+            a.restart();
+        }
+        auto aex = a.get_executor();
+        aex.on_work_started();
+        std::thread ta([&] { a.run(); });
+
+        char const c = 'x';
+        for (auto& [s1, s2] : pairs)
+        {
+            auto b = std::make_unique<io_context>(Backend, 2);
+            char buf[1];
+            capy::run_async(b->get_executor())(
+                [](tcp_socket& s, char* p) -> capy::task<> {
+                    std::ignore =
+                        co_await s.read_some(capy::mutable_buffer(p, 1));
+                }(s1, buf));
+            std::thread b2([&] { b->run(); });
+            capy::run_async(aex)(
+                [](tcp_socket& s, char const* p) -> capy::task<> {
+                    std::ignore =
+                        co_await s.write_some(capy::const_buffer(p, 1));
+                }(s2, &c));
+            b->run();
+            b2.join();
+            b.reset();
+        }
+        aex.on_work_finished();
+        ta.join();
     }
 
     // release() hands ownership to the caller only after pending

@@ -49,11 +49,11 @@ struct reactor_op_base : coro_op
     /// Perform the I/O syscall (implemented by concrete op types).
     virtual void perform_io() noexcept = 0;
 
-    /// Destroy without invoking — drop the keepalive held in
-    /// coro_op's `object_ref_`.
+    /// Destroy without invoking: the drained op abandons the coroutine
+    /// it holds.
     void destroy() override
     {
-        object_ref_.reset();
+        destroy_awaiting();
     }
 };
 

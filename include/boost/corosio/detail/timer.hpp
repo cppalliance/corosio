@@ -380,7 +380,7 @@ private:
     awaitable on the suspended coroutine's frame — never allocated.
     Once published by `implementation::wait()` the node may be
     completed from any thread; every completion path finishes
-    touching the node before resuming or destroying the coroutine,
+    touching the node before resuming or abandoning the coroutine,
     because either act may end the node's storage.
 
     The node owns no resources: the stop token is borrowed from the
@@ -407,7 +407,7 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE waiter_node
 
         completion_op() noexcept : scheduler_op(&do_complete) {}
 
-        BOOST_COROSIO_DECL void operator()() override;
+        BOOST_COROSIO_DECL void operator()() noexcept override;
         BOOST_COROSIO_DECL void destroy() override;
     };
 
@@ -426,9 +426,6 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE waiter_node
 
     /// The timer service that completes this waiter.
     timer_service* svc_ = nullptr;
-
-    /// The suspended coroutine, destroyed by the shutdown drains.
-    std::coroutine_handle<> h_;
 
     /// The continuation posted to resume the coroutine.
     capy::continuation cont_;
@@ -490,9 +487,9 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE waiter_node
     */
     void bind(std::coroutine_handle<> h, capy::io_env const& env) noexcept
     {
-        h_      = h;
-        cont_.h = h;
-        d_      = env.executor;
+        cont_.h     = h;
+        cont_.owner = env.owner;
+        d_          = env.executor;
         token_  = &env.stop_token;
     }
 

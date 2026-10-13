@@ -113,18 +113,19 @@ decode_io_result(
     @param self  The completing op.
     @return True if this was a shutdown drain — the caller must `return`
             immediately without decoding or resuming. On that path the
-            object_ref_ keepalive is dropped here (which may destroy the impl,
-            and with it the op storage).
+            awaiting coroutine is abandoned (see `coro_op::destroy_awaiting`)
+            and the object_ref_ keepalive dropped, which may destroy the impl
+            and with it the op storage.
 */
 inline bool
 coro_drain_if_shutdown(void* owner, coro_op* self) noexcept
 {
-    self->stop_cb.reset();
     if (owner == nullptr)
     {
-        auto suicide = std::move(self->object_ref_);
+        self->destroy_awaiting();
         return true;
     }
+    self->stop_cb.reset();
     return false;
 }
 

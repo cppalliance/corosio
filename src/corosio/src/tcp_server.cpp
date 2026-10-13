@@ -115,11 +115,15 @@ tcp_server::do_accept(state_ref st, tcp_acceptor& acc)
         auto* w = co_await pop_awaitable{*st};
         if (!w)
             break;
+        // Not dropped if this frame is destroyed while accepting: that
+        // happens only when the listener's context is torn down, which
+        // the server cannot outlive.
         w->holds_.store(1, std::memory_order_relaxed);
         auto [ec] = co_await acc.accept(w->socket());
         if (ec)
         {
-            co_await push_awaitable{*st, *w};
+            co_await hop_awaitable{*st};
+            st->drop_hold(*w);
             continue;
         }
         w->holds_.fetch_add(1, std::memory_order_relaxed);

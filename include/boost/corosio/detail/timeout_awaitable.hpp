@@ -90,15 +90,17 @@ struct timeout_awaitable
     using time_point   = std::chrono::steady_clock::time_point;
     using stop_cb_type = std::stop_callback<stop_forwarder>;
 
+    // Declared before inner_: a task destroyed while lent reads the
+    // environment it was given.
+    std::stop_source stop_src_;
+    std::stop_token parent_token_;
+    capy::io_env inner_env_;
     A inner_;
     std::optional<timer> timer_;
     time_point deadline_;
     std::chrono::nanoseconds dur_{};
-    bool has_deadline_ = true;
-    std::stop_source stop_src_;
-    std::stop_token parent_token_;
-    capy::io_env inner_env_;
     alignas(stop_cb_type) unsigned char cb_buf_[sizeof(stop_cb_type)];
+    bool has_deadline_ = true;
     bool cb_active_ = false;
 
     /// Construct without a timer, deadline given as an absolute time.
@@ -124,12 +126,12 @@ struct timeout_awaitable
     // Only moved before await_suspend, when cb_active_ is false
     timeout_awaitable(timeout_awaitable&& o) noexcept(
         std::is_nothrow_move_constructible_v<A>)
-        : inner_(std::move(o.inner_))
+        : stop_src_(std::move(o.stop_src_))
+        , inner_(std::move(o.inner_))
         , timer_(std::move(o.timer_))
         , deadline_(o.deadline_)
         , dur_(o.dur_)
         , has_deadline_(o.has_deadline_)
-        , stop_src_(std::move(o.stop_src_))
     {
     }
 
@@ -210,7 +212,8 @@ struct timeout_awaitable
 
         // Start the inner op with our interposed stop_token
         inner_env_ = {
-            env->executor, stop_src_.get_token(), env->frame_allocator};
+            env->executor, stop_src_.get_token(), env->frame_allocator,
+            env->owner};
         return inner_.await_suspend(h, &inner_env_);
     }
 

@@ -59,8 +59,6 @@
 #endif
 
 // io_uring - Linux 6.0+ proactor (requires liburing 2.5+ at build time).
-// Single-threaded mode additionally requires Linux 6.1+ for
-// IORING_SETUP_DEFER_TASKRUN; multi-threaded mode runs on 6.0.
 #if defined(__linux__) && BOOST_COROSIO_HAVE_LIBURING
 #define BOOST_COROSIO_HAS_URING 1
 #else

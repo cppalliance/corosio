@@ -28,6 +28,7 @@
 #include <stop_token>
 #include <thread>
 #include <tuple>
+#include <vector>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -633,6 +634,39 @@ struct signal_set_test
         BOOST_TEST(got == SIGINT);
     }
 
+    // A stop requested on another thread can claim a parked wait while
+    // the context tears its signal sets down; the drain must still find
+    // the wait the stop posts.
+    void testStopRacingTeardown()
+    {
+        for (int round = 0; round < 200; ++round)
+        {
+            std::vector<std::stop_source> stops(8);
+            std::atomic<bool> go{false};
+            std::thread stopper;
+            {
+                io_context ioc(Backend);
+                for (auto& src : stops)
+                    capy::run_async(ioc.get_executor(), src.get_token())(
+                        [](io_context& ioc) -> capy::task<> {
+                            signal_set s(ioc, SIGINT);
+                            std::ignore = co_await s.wait();
+                        }(ioc));
+                std::ignore = ioc.poll(); // parks every wait
+                stopper     = std::thread([&] {
+                    while (!go.load(std::memory_order_acquire))
+                    {
+                    }
+                    for (auto& src : stops)
+                        src.request_stop();
+                });
+                go.store(true, std::memory_order_release);
+            }
+            stopper.join();
+        }
+        BOOST_TEST_PASS();
+    }
+
     void testDestroyWithArmedStopToken()
     {
         // Review Focus 3: destroying the set while a callback is armed
@@ -752,7 +786,7 @@ struct signal_set_test
         BOOST_TEST_PASS();
     }
 
-    // A wait still parked when its context is torn down is abandoned,
+    // A wait still parked when its context is torn down is destroyed,
     // not resumed, even when a frame destroyed during the teardown owns
     // the set and its destructor cancels the wait. Only IOCP can fail
     // this: it resumes a cancelled wait inline, where POSIX posts it to a
@@ -779,10 +813,10 @@ struct signal_set_test
     }
 
     // The process signal table outlives every io_context, so a set still
-    // registered when its context shuts down -- which an abandoned frame
-    // is the only way to arrange -- has to hand the registration back
-    // there: a stale entry keeps the signal installed with the old flags
-    // and refuses the next add() of it.
+    // registered when its context shuts down -- which a frame parked in
+    // wait() is the only way to arrange -- has to hand the registration
+    // back there: a stale entry keeps the signal installed with the old
+    // flags and refuses the next add() of it.
     void testShutdownReleasesRegistration()
     {
 #if BOOST_COROSIO_POSIX
@@ -1583,6 +1617,7 @@ struct signal_set_test
         testNormalDeliveryWithLiveToken();
         testDestroyWithArmedStopToken();
         testConcurrentStopRequestRace();
+        testStopRacingTeardown();
         testShutdownWithPendingSignalSet();
 
         // Multiple signal set tests
@@ -1633,12 +1668,9 @@ struct signal_set_test
         testFlagsNotSupportedOnWindows();
 #endif
 
-#if !COROSIO_TEST_HAS_ASAN
-        // Abandon parked coroutine frames by design; see context.hpp.
         testShutdownReleasesRegistration();
         testTeardownDoesNotResumeParkedWait();
         testShutdownKeepsOtherContextRegistered();
-#endif
     }
 };
 

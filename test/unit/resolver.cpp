@@ -1226,9 +1226,9 @@ struct resolver_test
     // drains, or the completion the worker posts on its way out is
     // neither run nor destroyed and the operation's keepalive leaks.
     //
-    // The task is started by hand and owned by the test, so the frame
-    // the library abandons at teardown is destroyed here rather than
-    // leaked: what LeakSanitizer sees left over is the defect alone.
+    // Teardown abandons the task wherever the work then sits, on the
+    // pool queue or the scheduler's, and the task is unwound without
+    // resuming.
     //
     // Forward resolution reaches the pool on POSIX only; IOCP resolves
     // through GetAddrInfoExW and the completion port.
@@ -1236,9 +1236,6 @@ struct resolver_test
     {
         bool resumed = false;
         test::pool_blocker blocker;
-        std::optional<io_context::executor_type> ex;
-        std::optional<capy::io_env> env;
-        std::optional<capy::task<>> parked;
         {
             io_context ioc;
             BOOST_TEST(test::park_pool_worker(ioc, blocker));
@@ -1253,10 +1250,8 @@ struct resolver_test
                 resumed = true;
             };
 
-            ex.emplace(ioc.get_executor());
-            env.emplace(capy::io_env{*ex, std::stop_token{}, nullptr});
-            parked.emplace(query());
-            parked->await_suspend(std::noop_coroutine(), &*env).resume();
+            capy::run_async(ioc.get_executor())(query());
+            std::ignore = ioc.poll_one();
         }
         BOOST_TEST(!resumed);
     }
@@ -1268,9 +1263,6 @@ struct resolver_test
     {
         bool resumed = false;
         test::pool_blocker blocker;
-        std::optional<io_context::executor_type> ex;
-        std::optional<capy::io_env> env;
-        std::optional<capy::task<>> parked;
         {
             io_context ioc;
             BOOST_TEST(test::park_pool_worker(ioc, blocker));
@@ -1285,10 +1277,8 @@ struct resolver_test
                 resumed = true;
             };
 
-            ex.emplace(ioc.get_executor());
-            env.emplace(capy::io_env{*ex, std::stop_token{}, nullptr});
-            parked.emplace(query());
-            parked->await_suspend(std::noop_coroutine(), &*env).resume();
+            capy::run_async(ioc.get_executor())(query());
+            std::ignore = ioc.poll_one();
         }
         BOOST_TEST(!resumed);
     }
@@ -1304,10 +1294,9 @@ struct resolver_test
     // file synchronously, so GetAddrInfoExW posts the op inline and it is
     // reliably queued when the resolver is freed.
     //
-    // The task is started by hand and owned by the test, so the frame the
-    // library abandons at teardown is destroyed here rather than leaked:
-    // what a sanitizer reports is the defect alone. The bug is observable
-    // only under ASan; without a sanitizer the freed read is silent.
+    // Teardown abandons the task, which is unwound without resuming.
+    // The bug is observable only under ASan; without a
+    // sanitizer the freed read is silent.
     //
     // Contrast the reverse path, which holds the keepalive on
     // reverse_op_.object_ref_ across the queued completion
@@ -1316,9 +1305,6 @@ struct resolver_test
     void testDestroyWithForwardResolveQueued()
     {
         bool resumed = false;
-        std::optional<io_context::executor_type> ex;
-        std::optional<capy::io_env> env;
-        std::optional<capy::task<>> parked;
         {
             io_context ioc;
             resolver r(ioc);
@@ -1327,10 +1313,8 @@ struct resolver_test
                 resumed     = true;
             };
 
-            ex.emplace(ioc.get_executor());
-            env.emplace(capy::io_env{*ex, std::stop_token{}, nullptr});
-            parked.emplace(query());
-            parked->await_suspend(std::noop_coroutine(), &*env).resume();
+            capy::run_async(ioc.get_executor())(query());
+            std::ignore = ioc.poll_one();
         }
         BOOST_TEST(!resumed);
     }
@@ -1346,9 +1330,6 @@ struct resolver_test
     {
         for (int i = 0; i < 4; ++i)
         {
-            std::optional<io_context::executor_type> ex;
-            std::optional<capy::io_env> env;
-            std::optional<capy::task<>> parked;
 
             std::string host = "corosio-no-such-host-" + std::to_string(i) +
                 "-" +
@@ -1363,10 +1344,8 @@ struct resolver_test
                     std::ignore = co_await r.resolve(host, "80");
                 };
 
-                ex.emplace(ioc.get_executor());
-                env.emplace(capy::io_env{*ex, std::stop_token{}, nullptr});
-                parked.emplace(query());
-                parked->await_suspend(std::noop_coroutine(), &*env).resume();
+                capy::run_async(ioc.get_executor())(query());
+                std::ignore = ioc.poll_one();
             }
         }
         BOOST_TEST_PASS();
@@ -1487,10 +1466,7 @@ struct resolver_test
         testDestroyWithForwardResolvePending();
 #endif
 
-#if !COROSIO_TEST_HAS_ASAN
-        // Abandon parked coroutine frames by design; see context.hpp.
         testDestroyWithLiveResolver();
-#endif
     }
 };
 

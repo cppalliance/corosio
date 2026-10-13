@@ -873,6 +873,7 @@ public:
             {
                 waiters_.remove(w);
             }
+            sched_->cancel_posting_begin();
         }
         // `cancelled` is already true (the claim that routed here);
         // that is also the completion status, so post as-is. The node's
@@ -882,6 +883,7 @@ public:
         // wait-or-self case.
         sched_->post(w);
         sched_->work_finished(); // balance the work_started() from accept()
+        sched_->cancel_posting_end();
     }
 
 private:

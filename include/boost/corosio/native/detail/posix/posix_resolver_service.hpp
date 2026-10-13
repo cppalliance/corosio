@@ -89,6 +89,18 @@ public:
         return sched_->scheduler_locking_disabled();
     }
 
+    /// Count an operation as work on this service's context.
+    void work_started() noexcept
+    {
+        sched_->work_started();
+    }
+
+    /// Release a count taken by @ref work_started.
+    void work_finished() noexcept
+    {
+        sched_->work_finished();
+    }
+
 private:
     scheduler* sched_;
     thread_pool_ref pool_;
@@ -272,18 +284,18 @@ posix_resolver::resolve_op::operator()()
     // Hold the keepalive across the dispatch: it may be the last
     // reference to the implementation this op is embedded in.
     auto prevent_destroy = std::move(object_ref_);
-    ex.on_work_finished();
+    svc->work_finished();
     dispatch_coro(ex, *cont).resume();
 }
 
 inline void
 posix_resolver::resolve_op::destroy()
 {
-    stop_cb.reset();
-    auto local_ex = ex;
-    // May destroy the implementation, and with it this op.
-    object_ref_.reset();
-    local_ex.on_work_finished();
+    // Copied first: the abandon may unwind the frame at once, destroying
+    // the resolver, and with it this op.
+    auto* s = svc;
+    destroy_awaiting();
+    s->work_finished();
 }
 
 // posix_resolver::reverse_resolve_op implementation
@@ -328,18 +340,18 @@ posix_resolver::reverse_resolve_op::operator()()
     // Hold the keepalive across the dispatch: it may be the last
     // reference to the implementation this op is embedded in.
     auto prevent_destroy = std::move(object_ref_);
-    ex.on_work_finished();
+    svc->work_finished();
     dispatch_coro(ex, *cont).resume();
 }
 
 inline void
 posix_resolver::reverse_resolve_op::destroy()
 {
-    stop_cb.reset();
-    auto local_ex = ex;
-    // May destroy the implementation, and with it this op.
-    object_ref_.reset();
-    local_ex.on_work_finished();
+    // Copied first: the abandon may unwind the frame at once, destroying
+    // the resolver, and with it this op.
+    auto* s = svc;
+    destroy_awaiting();
+    s->work_finished();
 }
 
 // posix_resolver implementation
@@ -372,13 +384,15 @@ posix_resolver::resolve(
     op.flags   = flags;
     op.start(token);
 
-    // Keep io_context alive while resolution is pending
-    op.ex.on_work_started();
+    // Keep this context alive while resolution is pending
+    op.svc = &svc_;
+    svc_.work_started();
 
     // Prevent impl destruction while work is in flight
     resolve_pool_op_.resolver_ = this;
     resolve_pool_op_.ref_      = detail::object_ref(this);
     resolve_pool_op_.func_     = &posix_resolver::do_resolve_work;
+    resolve_pool_op_.destroy_  = &posix_resolver::destroy_resolve_work;
     if (auto pec = svc_.pool().post(&resolve_pool_op_))
     {
         // The pool is shutting down, or the system refused it a thread.
@@ -387,7 +401,7 @@ posix_resolver::resolve(
         // completion the scheduler has to carry back.
         resolve_pool_op_.ref_.reset();
         op.stop_cb.reset();
-        op.ex.on_work_finished();
+        svc_.work_finished();
         *ec       = pec;
         return dispatch_coro(ex, cont);
     }
@@ -420,13 +434,15 @@ posix_resolver::reverse_resolve(
     op.flags      = flags;
     op.start(token);
 
-    // Keep io_context alive while resolution is pending
-    op.ex.on_work_started();
+    // Keep this context alive while resolution is pending
+    op.svc = &svc_;
+    svc_.work_started();
 
     // Prevent impl destruction while work is in flight
     reverse_pool_op_.resolver_ = this;
     reverse_pool_op_.ref_      = detail::object_ref(this);
     reverse_pool_op_.func_     = &posix_resolver::do_reverse_resolve_work;
+    reverse_pool_op_.destroy_  = &posix_resolver::destroy_reverse_resolve_work;
     if (auto pec = svc_.pool().post(&reverse_pool_op_))
     {
         // The pool is shutting down, or the system refused it a thread.
@@ -435,7 +451,7 @@ posix_resolver::reverse_resolve(
         // completion the scheduler has to carry back.
         reverse_pool_op_.ref_.reset();
         op.stop_cb.reset();
-        op.ex.on_work_finished();
+        svc_.work_finished();
         *ec       = pec;
         return dispatch_coro(ex, cont);
     }
@@ -539,6 +555,24 @@ posix_resolver::do_reverse_resolve_work(pool_work_item* w) noexcept
     // outlive that wait. Nothing may touch *self after the post.
     self->reverse_op_.object_ref_ = std::move(pw->ref_);
     self->svc_.post(&self->reverse_op_);
+}
+
+inline void
+posix_resolver::destroy_resolve_work(pool_work_item* w) noexcept
+{
+    auto* pw              = static_cast<pool_op*>(w);
+    auto* self            = pw->resolver_;
+    self->op_.object_ref_ = std::move(pw->ref_);
+    self->op_.destroy();
+}
+
+inline void
+posix_resolver::destroy_reverse_resolve_work(pool_work_item* w) noexcept
+{
+    auto* pw                      = static_cast<pool_op*>(w);
+    auto* self                    = pw->resolver_;
+    self->reverse_op_.object_ref_ = std::move(pw->ref_);
+    self->reverse_op_.destroy();
 }
 
 // posix_resolver_service implementation

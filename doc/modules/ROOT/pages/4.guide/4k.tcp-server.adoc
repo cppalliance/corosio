@@ -97,7 +97,8 @@ include::example$snippets/4k_tcp_server.cpp[tag=launcher_run,indent=0]
 
 The launcher:
 
-1. Starts your coroutine on the specified executor
+1. Starts your coroutine on the specified executor, counting it as work there
+   until it ends
 2. Tracks the worker as in-use
 3. Returns the worker to the pool when the coroutine completes
 
@@ -118,6 +119,17 @@ I/O context's executor:
 ----
 include::example$snippets/4k_tcp_server.cpp[tag=launch_call,indent=0]
 ----
+
+A coroutine started on another context's executor keeps that context's `run()`
+going until the connection ends. Such a connection crosses contexts. Its
+worker's socket, and the server state it returns the worker to, belong to the
+server's context, so that context must outlive the connection. The
+connection's own context may be destroyed first, but only while the connection
+is not waiting on an operation of the server's context. A read on the worker's
+socket is such an operation. Destroying that context then abandons the
+connection and returns its worker.
+Otherwise, stop the server and run both contexts until their `run()` returns,
+then destroy them.
 
 == Binding and Starting
 

@@ -203,23 +203,24 @@ posix_random_access_file::read_some_at(
     op->object_ref_ = detail::object_ref(this);
     op->start(token);
 
-    op->ex.on_work_started();
+    svc_.work_started();
 
     {
         std::lock_guard<std::mutex> lock(ops_mutex_);
         outstanding_ops_.push_back(op);
     }
 
-    static_cast<pool_work_item*>(op)->func_ = &raf_op::do_work;
+    static_cast<pool_work_item*>(op)->func_    = &raf_op::do_work;
+    static_cast<pool_work_item*>(op)->destroy_ = &raf_op::destroy_work;
     if (auto pec = svc_.pool().post(static_cast<pool_work_item*>(op)))
     {
         // The pool is shutting down, or the system refused it a thread.
         // Nothing of this read went cross-thread, so it answers here
         // like the closed-descriptor and zero-length exits above rather
         // than through a completion the scheduler has to carry back.
-        // destroy() is the discard the op never reaching the queue
-        // needs: it unlinks, unwinds the work count and recycles.
-        op->destroy();
+        // The op never reached the queue: it unlinks, unwinds the
+        // work count and recycles, and the coroutine resumes below.
+        op->discard();
         *ec        = pec;
         *bytes_out = 0;
         return cont.h;
@@ -275,23 +276,24 @@ posix_random_access_file::write_some_at(
     op->object_ref_ = detail::object_ref(this);
     op->start(token);
 
-    op->ex.on_work_started();
+    svc_.work_started();
 
     {
         std::lock_guard<std::mutex> lock(ops_mutex_);
         outstanding_ops_.push_back(op);
     }
 
-    static_cast<pool_work_item*>(op)->func_ = &raf_op::do_work;
+    static_cast<pool_work_item*>(op)->func_    = &raf_op::do_work;
+    static_cast<pool_work_item*>(op)->destroy_ = &raf_op::destroy_work;
     if (auto pec = svc_.pool().post(static_cast<pool_work_item*>(op)))
     {
         // The pool is shutting down, or the system refused it a thread.
         // Nothing of this write went cross-thread, so it answers here
         // like the closed-descriptor and zero-length exits above rather
         // than through a completion the scheduler has to carry back.
-        // destroy() is the discard the op never reaching the queue
-        // needs: it unlinks, unwinds the work count and recycles.
-        op->destroy();
+        // The op never reached the queue: it unlinks, unwinds the
+        // work count and recycles, and the coroutine resumes below.
+        op->discard();
         *ec        = pec;
         *bytes_out = 0;
         return cont.h;
@@ -391,6 +393,13 @@ inline void
 posix_random_access_file::retire() noexcept
 {
     svc_.object_pool_.recycle(this);
+}
+
+inline void
+posix_random_access_file::release_work(
+    posix_random_access_file_service& svc) noexcept
+{
+    svc.work_finished();
 }
 
 } // namespace boost::corosio::detail

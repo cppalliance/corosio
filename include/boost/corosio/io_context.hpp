@@ -17,6 +17,7 @@
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/ex/frame_allocator.hpp>
 
 #include <chrono>
 #include <coroutine>
@@ -56,7 +57,8 @@ enum class locking_mode
         @par Restrictions
         - Only one thread may call `run()` (or any run variant).
         - Posting work from another thread is undefined behavior.
-        - DNS resolution returns `operation_not_supported`.
+        - DNS resolution returns `operation_not_supported`, except on
+          IOCP, whose resolver does not use the thread pool.
         - POSIX file I/O returns `operation_not_supported`.
         - `win_object_handle::assign()` returns `operation_not_supported`.
         - Signal sets should not be shared across contexts. */
@@ -212,7 +214,9 @@ effective_concurrency_hint(
         outstanding work remains. Finally join the threads that ran the
         loop. Only then destroy the context. Work started with
         `capy::run` / `capy::run_async` is work-tracked, so a normal
-        `run()` completion already waits for it.
+        `run()` completion already waits for it. Destroying the context
+        abandons every coroutine still suspended in it (see
+        @ref ~io_context).
 
     @par Exception Safety
     A context that constructs is usable. The infrastructure its backend
@@ -220,6 +224,10 @@ effective_concurrency_hint(
     — is created during construction. A system that refuses it therefore
     throws from the constructor rather than from the first operation.
     The failed construction leaves nothing open.
+
+    An operation that completes resumes its coroutine through the
+    executor the coroutine awaited it on. If that executor's `post` or
+    `dispatch` throws, `std::terminate` is called.
 
     @par Thread Safety
     Distinct objects: Safe.@n
@@ -252,6 +260,25 @@ class BOOST_COROSIO_DECL io_context : public capy::execution_context
 
 protected:
     detail::scheduler* sched_;
+
+    // Resuming a chain installs its frame allocator on the running
+    // thread; a run call puts back what it found, so a coroutine created
+    // afterwards never reaches a resource that died with those frames.
+    struct frame_allocator_restore
+    {
+        std::pmr::memory_resource* saved =
+            capy::get_current_frame_allocator();
+
+        frame_allocator_restore() = default;
+        frame_allocator_restore(frame_allocator_restore const&) = delete;
+        frame_allocator_restore&
+        operator=(frame_allocator_restore const&) = delete;
+
+        ~frame_allocator_restore()
+        {
+            capy::set_current_frame_allocator(saved);
+        }
+    };
 
 public:
     /** Dispatches and posts work to this context; see the
@@ -361,7 +388,29 @@ public:
         apply_options_post_(opts, eff);
     }
 
-    /// Destroy the context; stops the loop and destroys every service.
+    /** Destroy the context, its services and the coroutines it holds.
+
+        The destructor stops the loop and destroys every service. Each
+        coroutine suspended in an operation of this context, or posted to
+        it and not yet resumed, is abandoned. Its chain is unwound from
+        the top, on the executor of the chain's owner (see
+        `capy::abandon`). The precondition below makes that executor this
+        context's, so the unwind runs during this destruction.
+
+        @pre No thread is executing a run variant.
+
+        @pre No work crosses into another execution context. A chain
+            held here must be owned on this context. No frame of a chain
+            owned elsewhere may own I/O objects of this context, or wait
+            on a primitive that a chain held here owns. Such a chain's
+            unwind would run on the other context after this one is gone,
+            whatever the order of destruction. Stop such work and run both
+            contexts until it ends before destroying either.
+
+        @note Work posted after the services have shut down, for example
+            from a service's destructor, is abandoned while the services
+            are being destroyed. Its destructors must not use them.
+    */
     ~io_context();
 
     /// Copy construction is disabled; the context owns its services.
@@ -421,6 +470,7 @@ public:
     */
     std::size_t run()
     {
+        frame_allocator_restore restore;
         return sched_->run();
     }
 
@@ -437,6 +487,7 @@ public:
     */
     std::size_t run_one()
     {
+        frame_allocator_restore restore;
         return sched_->run_one();
     }
 
@@ -519,6 +570,7 @@ public:
     std::size_t
     run_one_until(std::chrono::time_point<Clock, Duration> const& abs_time)
     {
+        frame_allocator_restore restore;
         typename Clock::time_point now = Clock::now();
         for (;;)
         {
@@ -557,6 +609,7 @@ public:
     */
     std::size_t poll()
     {
+        frame_allocator_restore restore;
         return sched_->poll();
     }
 
@@ -573,6 +626,7 @@ public:
     */
     std::size_t poll_one()
     {
+        frame_allocator_restore restore;
         return sched_->poll_one();
     }
 };
@@ -689,11 +743,18 @@ public:
         via the `post(capy::continuation&)` overload to avoid the
         allocation.
 
+        A handle still queued when the context is torn down is
+        destroyed alone, since it carries no owner to unwind its chain
+        from. Post a coroutine that another frame awaits through the
+        `post(capy::continuation&)` overload, with its owner set.
+
         @param h The coroutine handle to post.
 
         @pre The associated context must outlive this call. Posting
             concurrently with, or after, the context's destruction is
             undefined behavior.
+
+        @pre Nothing awaits `h`.
     */
     void post(std::coroutine_handle<> h) const
     {

@@ -19,8 +19,10 @@
 #include <boost/corosio/native/detail/uring/uring_socket_ops.hpp>
 #include <boost/corosio/native/detail/coro_op_complete.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
+#include <boost/capy/ex/abandon.hpp>
 
 #include <cstdint>
+#include <utility>
 #include <sys/uio.h>
 
 namespace boost::corosio::detail {
@@ -166,7 +168,11 @@ struct uring_random_access_read_op : uring_file_read_op_base
 
         if (owner == nullptr)
         {
+            auto keep = std::move(self->object_ref_);
+            auto* c   = std::exchange(self->cont, nullptr);
             delete self;
+            if (c && c->h)
+                capy::abandon(*c);
             return;
         }
 
@@ -306,7 +312,11 @@ struct uring_random_access_write_op : uring_file_write_op_base
 
         if (owner == nullptr)
         {
+            auto keep = std::move(self->object_ref_);
+            auto* c   = std::exchange(self->cont, nullptr);
             delete self;
+            if (c && c->h)
+                capy::abandon(*c);
             return;
         }
 

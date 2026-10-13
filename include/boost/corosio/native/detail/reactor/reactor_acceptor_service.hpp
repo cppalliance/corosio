@@ -108,11 +108,6 @@ public:
         state_->sched_.work_started();
     }
 
-    void work_finished() noexcept
-    {
-        state_->sched_.work_finished();
-    }
-
     StreamService* stream_service() const noexcept
     {
         return stream_svc_;

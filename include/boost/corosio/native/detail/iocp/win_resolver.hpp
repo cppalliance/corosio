@@ -121,7 +121,7 @@ extern "C"
     2. GetAddrInfoExW() is called with our completion callback
     3. If it returns WSA_IO_PENDING, completion comes later via callback
     4. If it returns immediately (0 or error), we post completion manually
-    5. completion() callback stores error, calls work_finished(), posts op
+    5. completion() callback stores error, posts op
     6. op_() resumes the coroutine with results or error
 
     Reverse Resolution (GetNameInfoW)
@@ -142,8 +142,8 @@ extern "C"
     Work Tracking
     -------------
     work_started() is called before async operations to keep io_context alive.
-    work_finished() is called when the operation completes (in callback for
-    forward resolution, in worker thread for reverse resolution).
+    work_finished() is called when the posted operation completes or is
+    drained at shutdown.
 */
 
 namespace boost::corosio::detail {
@@ -309,6 +309,9 @@ public:
 
     /// Execute blocking `GetNameInfoW()` on a pool thread.
     static void do_reverse_resolve_work(pool_work_item*) noexcept;
+
+    /// Destroy a reverse resolution the pool shut down before running.
+    static void destroy_reverse_resolve_work(pool_work_item*) noexcept;
 
 private:
     /// Cancel the in-flight forward lookup, if any.

@@ -570,9 +570,6 @@ struct iocp_paths_test
             ::closesocket(static_cast<SOCKET>(h));
     }
 
-#if !COROSIO_TEST_HAS_ASAN
-    // These abandon parked coroutine frames by design; see context.hpp.
-
     void testDestroyWithParkedSocketOps()
     {
         int resumed = 0;
@@ -700,7 +697,6 @@ struct iocp_paths_test
         }
         BOOST_TEST_EQ(resumed, 0);
     }
-#endif // !COROSIO_TEST_HAS_ASAN
 
     void run()
     {
@@ -716,11 +712,9 @@ struct iocp_paths_test
         testTruncateWithoutCreate();
         testStaleWaitCancelsFromDestroyedObjects();
         testReleaseWithKernelOpsInFlight();
-#if !COROSIO_TEST_HAS_ASAN
         testDestroyWithParkedSocketOps();
         testDestroyWithParkedLocalOps();
         testDestroyWithParkedTcpStreamOps();
-#endif
     }
 };
 

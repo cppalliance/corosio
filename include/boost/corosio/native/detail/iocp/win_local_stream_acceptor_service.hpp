@@ -142,8 +142,7 @@ local_stream_accept_op::do_complete(
             op->peer_wrapper = nullptr;
         }
 
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 
@@ -231,8 +230,7 @@ local_stream_acceptor_wait_op::do_complete(
 
     if (!owner)
     {
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 

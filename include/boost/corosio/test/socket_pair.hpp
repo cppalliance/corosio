@@ -30,6 +30,9 @@ namespace boost::corosio::test {
     Creates two sockets connected via loopback TCP sockets.
     Data written to one socket can be read from the other.
 
+    Runs `ctx` until the connection is made, restarting it first if
+    it was stopped, and leaves it restarted.
+
     @tparam Socket The socket type (default `tcp_socket`).
     @tparam Acceptor The acceptor type (default `tcp_acceptor`).
     @tparam Linger Whether to enable `SO_LINGER` with a zero timeout
@@ -93,24 +96,29 @@ make_socket_pair(io_context& ctx)
         }(s2, acc, endpoint(ipv4_address::loopback(), port), connect_ec,
                            connect_done));
 
-    ctx.run();
-    ctx.restart();
+    // Both coroutines write to locals here, so they must finish before
+    // this returns or throws, even on a context something stopped.
+    while (!accept_done || !connect_done)
+    {
+        ctx.run();
+        ctx.restart();
+    }
 
-    if (!connect_done || connect_ec)
+    if (connect_ec)
     {
         std::fprintf(
-            stderr, "socket_pair: connect failed (done=%d, ec=%s)\n",
-            connect_done, connect_ec.message().c_str());
+            stderr, "socket_pair: connect failed: %s\n",
+            connect_ec.message().c_str());
         acc.close();
         s1.close();
         throw std::runtime_error("socket_pair connect failed");
     }
 
-    if (!accept_done || accept_ec)
+    if (accept_ec)
     {
         std::fprintf(
-            stderr, "socket_pair: accept failed (done=%d, ec=%s)\n",
-            accept_done, accept_ec.message().c_str());
+            stderr, "socket_pair: accept failed: %s\n",
+            accept_ec.message().c_str());
         acc.close();
         throw std::runtime_error("socket_pair accept failed");
     }

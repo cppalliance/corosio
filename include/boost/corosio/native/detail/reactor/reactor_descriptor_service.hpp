@@ -121,11 +121,6 @@ public:
         state_->sched_.work_started();
     }
 
-    void work_finished() noexcept
-    {
-        state_->sched_.work_finished();
-    }
-
 protected:
     std::unique_ptr<state_type> state_;
 

@@ -132,6 +132,7 @@ public:
     */
     std::size_t run()
     {
+        frame_allocator_restore restore;
         return sched().run();
     }
 
@@ -141,6 +142,7 @@ public:
     */
     std::size_t run_one()
     {
+        frame_allocator_restore restore;
         return sched().run_one();
     }
 
@@ -195,6 +197,7 @@ public:
     std::size_t
     run_one_until(std::chrono::time_point<Clock, Duration> const& abs_time)
     {
+        frame_allocator_restore restore;
         typename Clock::time_point now = Clock::now();
         for (;;)
         {
@@ -226,6 +229,7 @@ public:
     */
     std::size_t poll()
     {
+        frame_allocator_restore restore;
         return sched().poll();
     }
 
@@ -235,6 +239,7 @@ public:
     */
     std::size_t poll_one()
     {
+        frame_allocator_restore restore;
         return sched().poll_one();
     }
 };

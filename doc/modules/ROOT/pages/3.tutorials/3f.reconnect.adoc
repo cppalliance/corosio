@@ -125,8 +125,8 @@ Contrast with calling `stop()` directly:
 
 1. `run()` exits immediately.
 2. The coroutine remains suspended: it never sees an error.
-3. `~io_context` calls `h.destroy()` on the coroutine frame, bypassing its
-   error-handling logic.
+3. `~io_context` abandons the coroutine: its frames are unwound from the top,
+   bypassing its error-handling logic.
 
 Both paths are safe (no leaks or crashes), but only the stop token path
 executes the coroutine's own cleanup code.
@@ -144,7 +144,7 @@ executes the coroutine's own cleanup code.
 | Pause and resume the event loop
 
 | `~io_context`
-| No: frames destroyed via `h.destroy()`
+| No: frames destroyed without resuming
 | Final cleanup (after `stop()` or natural exit)
 |===
 

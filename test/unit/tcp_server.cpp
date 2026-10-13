@@ -14,13 +14,17 @@
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/delay.hpp>
+#include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
 #include <atomic>
 #include <cstddef>
+#include <deque>
+#include <initializer_list>
 #include <memory>
 #include <memory_resource>
 #include <optional>
@@ -807,7 +811,7 @@ struct tcp_server_test
     {
         // With one worker handling two sequential connections, the
         // second accept loop iteration must wait for the worker to
-        // return (exercises pop_awaitable suspend / push_awaitable wake).
+        // return (exercises pop_awaitable suspend / worker return wake).
         io_context ioc(Backend);
 
         class one_worker_server : public tcp_server
@@ -1317,12 +1321,370 @@ struct tcp_server_test
         }
     };
 
+    // Reads one byte from its socket on another context.
+    class reading_worker : public tcp_server::worker_base
+    {
+        corosio::tcp_socket sock_;
+        io_context& session_ctx_;
+        bool& launched_;
+
+    public:
+        reading_worker(io_context& ctx, io_context& session_ctx, bool& l)
+            : sock_(ctx)
+            , session_ctx_(session_ctx)
+            , launched_(l)
+        {
+        }
+
+        corosio::tcp_socket& socket() override
+        {
+            return sock_;
+        }
+
+        void run(tcp_server::launcher launch) override
+        {
+            launched_ = true;
+            launch(
+                session_ctx_.get_executor(),
+                [](corosio::tcp_socket& s) -> capy::task<> {
+                    char c;
+                    std::ignore =
+                        co_await s.read_some(capy::mutable_buffer(&c, 1));
+                }(sock_));
+        }
+    };
+
+    // A connection is work on the context it runs on, so that context
+    // does not run out of work while the connection waits elsewhere.
+    void testSessionHoldsWorkOnItsContext()
+    {
+        io_context session_ctx(Backend);
+        io_context ioc(Backend);
+        bool launched = false;
+
+        class server : public tcp_server
+        {
+        public:
+            server(io_context& ctx, io_context& sctx, bool& l)
+                : tcp_server(ctx, ctx.get_executor())
+            {
+                std::vector<std::unique_ptr<tcp_server::worker_base>> v;
+                v.push_back(std::make_unique<reading_worker>(ctx, sctx, l));
+                set_workers(std::move(v));
+            }
+        };
+
+        server srv(ioc, session_ctx, launched);
+        BOOST_TEST(!srv.bind(endpoint(ipv4_address::loopback(), 0)));
+        srv.start();
+        tcp_socket client(ioc);
+        capy::run_async(ioc.get_executor())(
+            [](tcp_socket& c, endpoint ep) -> capy::task<> {
+                std::ignore = co_await c.connect(ep);
+            }(client, srv.local_endpoint()));
+        // Bounds a hang, not a timing assertion.
+        while (!launched && ioc.run_one_for(std::chrono::seconds(5)) != 0)
+        {
+        }
+        BOOST_TEST(launched);
+
+        std::ignore = session_ctx.poll();
+        BOOST_TEST(!session_ctx.stopped());
+
+        // The connection ends, and with it the work.
+        client.close();
+        while (!session_ctx.stopped() &&
+               ioc.run_one_for(std::chrono::seconds(5)) != 0)
+        {
+            std::ignore = session_ctx.poll();
+        }
+        BOOST_TEST(session_ctx.stopped());
+
+        srv.stop();
+        std::ignore = ioc.run();
+        srv.join();
+    }
+
+    // A finished connection's hop back to the server's executor, left
+    // queued when that context is destroyed, is torn down there, never
+    // sent to the session's context, which may already be gone.
+    void testQueuedHopTornDownOnServerContext()
+    {
+        auto session_ctx = std::make_unique<io_context>(Backend);
+        auto ioc         = std::make_unique<io_context>(Backend);
+        bool launched    = false;
+
+        class server : public tcp_server
+        {
+        public:
+            server(io_context& ctx, io_context& sctx, bool& l)
+                : tcp_server(ctx, ctx.get_executor())
+            {
+                std::vector<std::unique_ptr<tcp_server::worker_base>> v;
+                v.push_back(std::make_unique<reading_worker>(ctx, sctx, l));
+                set_workers(std::move(v));
+            }
+        };
+
+        {
+            server srv(*ioc, *session_ctx, launched);
+            BOOST_TEST(!srv.bind(endpoint(ipv4_address::loopback(), 0)));
+            srv.start();
+            tcp_socket client(*ioc);
+            capy::run_async(ioc->get_executor())(
+                [](tcp_socket& c, endpoint ep) -> capy::task<> {
+                    std::ignore = co_await c.connect(ep);
+                }(client, srv.local_endpoint()));
+            // Bounds a hang, not a timing assertion.
+            while (!launched && ioc->run_one_for(std::chrono::seconds(5)) != 0)
+            {
+            }
+            BOOST_TEST(launched);
+            std::ignore = session_ctx->poll();
+
+            client.close();
+            while (!session_ctx->stopped() &&
+                   ioc->run_one_for(std::chrono::seconds(5)) != 0)
+            {
+                std::ignore = session_ctx->poll();
+            }
+            BOOST_TEST(session_ctx->stopped());
+            srv.stop();
+        }
+        session_ctx.reset();
+        ioc.reset();
+    }
+
+    // Holds what is posted or dispatched to it until the test runs it
+    // or gives it up, as a context's queue does.
+    struct held_executor
+    {
+        io_context* ctx_;
+        std::deque<capy::continuation>* q_;
+
+        bool operator==(held_executor const& o) const noexcept
+        {
+            return q_ == o.q_;
+        }
+
+        io_context& context() const noexcept
+        {
+            return *ctx_;
+        }
+
+        void on_work_started() const noexcept {}
+        void on_work_finished() const noexcept {}
+
+        std::coroutine_handle<> dispatch(capy::continuation& c) const
+        {
+            q_->push_back(c);
+            return std::noop_coroutine();
+        }
+
+        void post(capy::continuation& c) const
+        {
+            q_->push_back(c);
+        }
+    };
+
+    // Counts work; refuses every post.
+    struct refusing_executor
+    {
+        io_context* ctx_;
+        int* work_;
+
+        bool operator==(refusing_executor const& o) const noexcept
+        {
+            return work_ == o.work_;
+        }
+
+        io_context& context() const noexcept
+        {
+            return *ctx_;
+        }
+
+        void on_work_started() const noexcept
+        {
+            ++*work_;
+        }
+
+        void on_work_finished() const noexcept
+        {
+            --*work_;
+        }
+
+        std::coroutine_handle<> dispatch(capy::continuation&) const
+        {
+            throw std::runtime_error("dispatch");
+        }
+
+        void post(capy::continuation&) const
+        {
+            throw std::runtime_error("post");
+        }
+    };
+
+    struct destroy_count
+    {
+        int* n;
+
+        explicit destroy_count(int& c) noexcept
+            : n(&c)
+        {
+        }
+
+        destroy_count(destroy_count&& o) noexcept
+            : n(std::exchange(o.n, nullptr))
+        {
+        }
+
+        ~destroy_count()
+        {
+            if (n)
+                ++*n;
+        }
+    };
+
+    // A launch whose post throws hands the exception to the worker and
+    // gives back what it took: the task, its work, and the worker.
+    void testLaunchPostThrows()
+    {
+        io_context ioc(Backend);
+        int work = 0, runs = 0, caught = 0, down = 0;
+
+        class refused_worker : public tcp_server::worker_base
+        {
+            corosio::tcp_socket sock_;
+            io_context& ctx_;
+            int& work_;
+            int& runs_;
+            int& caught_;
+            int& down_;
+
+        public:
+            refused_worker(
+                io_context& ctx, int& work, int& runs, int& caught, int& down)
+                : sock_(ctx)
+                , ctx_(ctx)
+                , work_(work)
+                , runs_(runs)
+                , caught_(caught)
+                , down_(down)
+            {
+            }
+
+            corosio::tcp_socket& socket() override
+            {
+                return sock_;
+            }
+
+            void run(tcp_server::launcher launch) override
+            {
+                ++runs_;
+                sock_.close();
+                try
+                {
+                    launch(
+                        refusing_executor{&ctx_, &work_},
+                        [](destroy_count) -> capy::task<> { co_return; }(
+                            destroy_count(down_)));
+                }
+                catch (std::runtime_error const&)
+                {
+                    ++caught_;
+                }
+            }
+        };
+
+        class server : public tcp_server
+        {
+        public:
+            server(io_context& ctx, int& w, int& r, int& c, int& d)
+                : tcp_server(ctx, ctx.get_executor())
+            {
+                std::vector<std::unique_ptr<tcp_server::worker_base>> v;
+                v.push_back(std::make_unique<refused_worker>(ctx, w, r, c, d));
+                set_workers(std::move(v));
+            }
+        };
+
+        server srv(ioc, work, runs, caught, down);
+        BOOST_TEST(!srv.bind(endpoint(ipv4_address::loopback(), 0)));
+        srv.start();
+        tcp_socket c1(ioc), c2(ioc);
+        auto connect = [](tcp_socket& c, endpoint ep) -> capy::task<> {
+            std::ignore = co_await c.connect(ep);
+        };
+        capy::run_async(ioc.get_executor())(connect(c1, srv.local_endpoint()));
+        capy::run_async(ioc.get_executor())(connect(c2, srv.local_endpoint()));
+        // Bounds a hang, not a timing assertion.
+        while (runs < 2 && ioc.run_one_for(std::chrono::seconds(5)) != 0)
+        {
+        }
+        BOOST_TEST_EQ(runs, 2);
+        BOOST_TEST_EQ(caught, 2);
+        BOOST_TEST_EQ(down, 2);
+        BOOST_TEST_EQ(work, 0);
+        srv.stop();
+        std::ignore = ioc.run();
+        srv.join();
+    }
+
+    // An accept loop's hop back to the server's executor, given up while
+    // queued there, unwinds the loop from the coroutine awaiting it
+    // rather than destroying the loop's frame under that coroutine.
+    void testQueuedAcceptLoopHopGivenUp()
+    {
+        io_context ioc(Backend);
+        std::deque<capy::continuation> q;
+        bool launched = false;
+
+        class server : public tcp_server
+        {
+        public:
+            server(io_context& ctx, held_executor ex, bool& l)
+                : tcp_server(ctx, ex)
+            {
+                std::vector<std::unique_ptr<tcp_server::worker_base>> v;
+                v.push_back(std::make_unique<reading_worker>(ctx, ctx, l));
+                set_workers(std::move(v));
+            }
+        };
+
+        auto run_queued = [&q](std::size_t n)
+        {
+            while (n-- != 0 && !q.empty())
+            {
+                auto c = q.front();
+                q.pop_front();
+                c.h.resume();
+            }
+        };
+
+        {
+            server srv(ioc, held_executor{&ioc, &q}, launched);
+            BOOST_TEST(!srv.bind(endpoint(ipv4_address::loopback(), 0)));
+            srv.start();
+            run_queued(q.size()); // the loop parks its accept
+            srv.stop();
+            std::ignore = ioc.poll(); // the canceled accept is queued
+            run_queued(q.size()); // the loop hops back, and stays queued
+            while (!q.empty())
+            {
+                auto c = q.front();
+                q.pop_front();
+                capy::abandon(c);
+            }
+        }
+        BOOST_TEST(!launched);
+    }
+
     // A worker is not handed to another connection while its run() is
     // still executing, even once the connection it launched is done.
     void testWorkerNotReusedDuringRun()
     {
-        io_context ioc(Backend);
         io_context session_ctx(Backend);
+        io_context ioc(Backend);
         overlap_counts counts;
 
         class server : public tcp_server
@@ -1368,6 +1730,331 @@ struct tcp_server_test
 
         BOOST_TEST_EQ(counts.runs.load(), 2);
         BOOST_TEST_EQ(counts.max_in_run.load(), 1);
+    }
+
+    struct destroy_count_t
+    {
+        int* n;
+        explicit destroy_count_t(int& c) : n(&c) {}
+        destroy_count_t(destroy_count_t&& o) noexcept
+            : n(std::exchange(o.n, nullptr))
+        {
+        }
+        ~destroy_count_t()
+        {
+            if (n)
+                ++*n;
+        }
+    };
+
+    // Connects a socket the caller keeps open.
+    static void connect_kept(io_context& ioc, tcp_socket& c, endpoint ep)
+    {
+        std::error_code ec;
+        capy::run_async(ioc.get_executor())(
+            [](tcp_socket& c, endpoint ep,
+               std::error_code& ec) -> capy::task<> {
+                auto [e] = co_await c.connect(ep);
+                ec       = e;
+            }(c, ep, ec));
+        ioc.restart();
+        ioc.run();
+        BOOST_TEST(!ec);
+    }
+
+    // Its first connection reads forever on a socket pair of another
+    // context, which owns nothing else of the server; later
+    // connections are declined.
+    class session_worker : public tcp_server::worker_base
+    {
+        corosio::tcp_socket sock_;
+        io_context& session_ctx_;
+        int& runs_;
+        int& down_;
+
+    public:
+        session_worker(io_context& ctx, io_context& sctx, int& runs, int& down)
+            : sock_(ctx)
+            , session_ctx_(sctx)
+            , runs_(runs)
+            , down_(down)
+        {
+        }
+
+        corosio::tcp_socket& socket() override
+        {
+            return sock_;
+        }
+
+        void run(tcp_server::launcher launch) override
+        {
+            sock_.close();
+            if (runs_++ != 0)
+                return;
+            auto [a, b] = test::make_socket_pair(session_ctx_);
+            launch(
+                session_ctx_.get_executor(),
+                [](tcp_socket s, tcp_socket, destroy_count_t) -> capy::task<> {
+                    char c;
+                    std::ignore =
+                        co_await s.read_some(capy::mutable_buffer(&c, 1));
+                }(std::move(a), std::move(b), destroy_count_t(down_)));
+        }
+    };
+
+    class session_server : public tcp_server
+    {
+    public:
+        session_server(io_context& ctx, io_context& sctx, int& runs, int& down)
+            : tcp_server(ctx, ctx.get_executor())
+        {
+            std::vector<std::unique_ptr<tcp_server::worker_base>> v;
+            v.push_back(
+                std::make_unique<session_worker>(ctx, sctx, runs, down));
+            set_workers(std::move(v));
+        }
+    };
+
+    // Tearing down the context a connection runs on returns its worker,
+    // so an accept loop waiting for one gets it.
+    void testSessionTeardownWakesWaitingAccept()
+    {
+        int runs = 0, down = 0;
+        io_context ioc(Backend);
+        std::optional<io_context> session_ctx(std::in_place, Backend);
+        session_server srv(ioc, *session_ctx, runs, down);
+        BOOST_TEST(!srv.bind(endpoint(ipv4_address::loopback(), 0)));
+        auto ep = srv.local_endpoint();
+        srv.start();
+
+        io_context cctx;
+        tcp_socket c1(cctx), c2(cctx);
+        connect_kept(cctx, c1, ep);
+        // Bounds a hang, not a timing assertion.
+        while (runs < 1 && ioc.run_one_for(std::chrono::seconds(5)) != 0)
+        {
+        }
+        BOOST_TEST_EQ(runs, 1);
+        std::ignore = session_ctx->poll();
+        connect_kept(cctx, c2, ep);
+        while (ioc.poll() != 0)
+        {
+        }
+        BOOST_TEST_EQ(runs, 1); // the accept loop waits for the worker
+
+        session_ctx.reset();
+        BOOST_TEST_EQ(down, 1);
+
+        ioc.restart();
+        while (runs < 2 && ioc.run_one_for(std::chrono::seconds(5)) != 0)
+        {
+        }
+        BOOST_TEST_EQ(runs, 2);
+
+        srv.stop();
+        ioc.restart();
+        ioc.run();
+        srv.join();
+    }
+
+    // A connection whose context is torn down, before it starts or
+    // while it reads, returns its worker, and the server outlives
+    // that context.
+    void testSessionTeardownReturnsWorker()
+    {
+        for (bool started : {false, true})
+        {
+            int runs = 0, down = 0;
+            io_context ioc(Backend);
+            std::optional<io_context> session_ctx(std::in_place, Backend);
+            {
+                session_server srv(ioc, *session_ctx, runs, down);
+                BOOST_TEST(!srv.bind(endpoint(ipv4_address::loopback(), 0)));
+                auto ep = srv.local_endpoint();
+                srv.start();
+
+                io_context cctx;
+                tcp_socket c(cctx);
+                connect_kept(cctx, c, ep);
+                // Bounds a hang, not a timing assertion.
+                while (runs < 1 &&
+                       ioc.run_one_for(std::chrono::seconds(5)) != 0)
+                {
+                }
+                BOOST_TEST_EQ(runs, 1);
+                if (started)
+                    std::ignore = session_ctx->poll();
+                BOOST_TEST_EQ(down, 0);
+
+                session_ctx.reset();
+                BOOST_TEST_EQ(down, 1);
+
+                srv.stop();
+                ioc.restart();
+                ioc.run();
+                srv.join();
+                // No worker is still lent.
+                BOOST_TEST_NO_THROW(srv.set_workers(make_test_workers(ioc, 1)));
+            }
+            BOOST_TEST_EQ(down, 1);
+        }
+    }
+
+    // Destroying a connection that never started destroys its task
+    // before returning the worker, so nothing the task's parameters
+    // release can race the worker's next connection.
+    void testUnstartedLaunchKeepsWorkerUntilTaskDestroyed()
+    {
+        io_context ioc(Backend);
+        std::optional<io_context> session_ctx(std::in_place, Backend);
+        std::optional<tcp_server::launcher> held;
+        holding_server srv(ioc, &held);
+        BOOST_TEST(!srv.bind(endpoint(ipv4_address::loopback(), 0)));
+        auto ep = srv.local_endpoint();
+        srv.start();
+
+        io_context cctx;
+        BOOST_TEST(!connect_result(cctx, ep));
+        // Bounds a hang, not a timing assertion.
+        while (!held && ioc.run_one_for(std::chrono::seconds(5)) != 0)
+        {
+        }
+        BOOST_TEST(held.has_value());
+
+        struct lent_probe
+        {
+            holding_server* srv;
+            io_context* ioc;
+            bool* checked;
+            lent_probe(holding_server& s, io_context& c, bool& b)
+                : srv(&s)
+                , ioc(&c)
+                , checked(&b)
+            {
+            }
+            lent_probe(lent_probe&& o) noexcept
+                : srv(std::exchange(o.srv, nullptr))
+                , ioc(o.ioc)
+                , checked(o.checked)
+            {
+            }
+            ~lent_probe()
+            {
+                if (!srv)
+                    return;
+                *checked = true;
+                BOOST_TEST_THROWS(
+                    srv->set_workers(make_test_workers(*ioc, 1)),
+                    std::logic_error);
+            }
+        };
+
+        bool checked = false;
+        (*held)(session_ctx->get_executor(), [](lent_probe) -> capy::task<> {
+            co_return;
+        }(lent_probe(srv, ioc, checked)));
+        held.reset();
+        // With no accept loop left to take it, a returned worker goes
+        // back to the pool, where set_workers would release it.
+        srv.stop();
+        ioc.restart();
+        ioc.run();
+        srv.join();
+
+        session_ctx.reset();
+        BOOST_TEST(checked);
+    }
+
+    // A server owned by a coroutine the context's teardown destroys,
+    // with its accept loop waiting for the only worker, which is busy
+    // in a read: every frame goes with the context.
+    void testTeardownWithAcceptWaitingForWorker()
+    {
+        int run_down = 0, owner_down = 0;
+        io_context cctx;
+        tcp_socket c1(cctx), c2(cctx);
+        {
+            io_context ioc(Backend);
+            endpoint ep;
+            int runs = 0;
+
+            class reading_worker : public tcp_server::worker_base
+            {
+                corosio::tcp_socket sock_;
+                io_context& ctx_;
+                int& runs_;
+                int& down_;
+
+            public:
+                reading_worker(io_context& ctx, int& runs, int& down)
+                    : sock_(ctx)
+                    , ctx_(ctx)
+                    , runs_(runs)
+                    , down_(down)
+                {
+                }
+
+                corosio::tcp_socket& socket() override
+                {
+                    return sock_;
+                }
+
+                void run(tcp_server::launcher launch) override
+                {
+                    ++runs_;
+                    launch(
+                        ctx_.get_executor(),
+                        [](tcp_socket& s, destroy_count_t) -> capy::task<> {
+                            char c;
+                            std::ignore = co_await s.read_some(
+                                capy::mutable_buffer(&c, 1));
+                        }(sock_, destroy_count_t(down_)));
+                }
+            };
+
+            class reading_server : public tcp_server
+            {
+            public:
+                reading_server(io_context& ctx, int& runs, int& down)
+                    : tcp_server(ctx, ctx.get_executor())
+                {
+                    std::vector<std::unique_ptr<tcp_server::worker_base>> v;
+                    v.push_back(
+                        std::make_unique<reading_worker>(ctx, runs, down));
+                    set_workers(std::move(v));
+                }
+            };
+
+            capy::run_async(ioc.get_executor())(
+                [](io_context& ioc, endpoint& ep, int& runs, int& run_down,
+                   destroy_count_t) -> capy::task<> {
+                    reading_server srv(ioc, runs, run_down);
+                    BOOST_TEST(
+                        !srv.bind(endpoint(ipv4_address::loopback(), 0)));
+                    ep = srv.local_endpoint();
+                    srv.start();
+                    std::ignore =
+                        co_await corosio::delay(std::chrono::hours(1));
+                }(ioc, ep, runs, run_down, destroy_count_t(owner_down)));
+            std::ignore = ioc.poll();
+            BOOST_TEST_NE(ep.port(), 0);
+
+            connect_kept(cctx, c1, ep);
+            // Bounds a hang, not a timing assertion.
+            while (runs < 1 && ioc.run_one_for(std::chrono::seconds(5)) != 0)
+            {
+            }
+            BOOST_TEST_EQ(runs, 1);
+            connect_kept(cctx, c2, ep);
+            while (ioc.poll() != 0)
+            {
+            }
+            BOOST_TEST_EQ(runs, 1);
+            BOOST_TEST_EQ(run_down, 0);
+            BOOST_TEST_EQ(owner_down, 0);
+        }
+        BOOST_TEST_EQ(run_down, 1);
+        BOOST_TEST_EQ(owner_down, 1);
     }
 
     // An accept loop holds a worker while it waits for a connection,
@@ -1496,7 +2183,15 @@ struct tcp_server_test
         testDestroyWithBusyWorkerClosesListener();
         testStopReachesLaunchAfterStop();
         testLateLaunchOutlivesInvokingChain();
+        testQueuedHopTornDownOnServerContext();
+        testQueuedAcceptLoopHopGivenUp();
+        testLaunchPostThrows();
         testWorkerNotReusedDuringRun();
+        testSessionHoldsWorkOnItsContext();
+        testSessionTeardownWakesWaitingAccept();
+        testSessionTeardownReturnsWorker();
+        testTeardownWithAcceptWaitingForWorker();
+        testUnstartedLaunchKeepsWorkerUntilTaskDestroyed();
         testSetWorkersWhileAcceptingThrows();
         testSetWorkersWithBorrowedWorkerThrows();
     }

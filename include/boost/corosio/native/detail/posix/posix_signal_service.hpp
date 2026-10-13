@@ -21,13 +21,16 @@
 #include <boost/corosio/detail/object_pool.hpp>
 #include <boost/corosio/detail/object_ref.hpp>
 #include <boost/capy/continuation.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/corosio/detail/scheduler.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/capy/error.hpp>
 
+#include <coroutine>
 #include <mutex>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include <errno.h>
@@ -196,7 +199,7 @@ public:
 
     std::error_code clear_signals(posix_signal& impl);
 
-    void cancel_wait(posix_signal& impl);
+    void cancel_wait(posix_signal& impl) noexcept;
     void start_wait(posix_signal& impl, signal_op* op);
 
     /** Cancel an in-flight wait on behalf of a stop token.
@@ -408,7 +411,7 @@ drain_signal_pipe()
 // signal_op implementation
 
 inline void
-signal_op::operator()()
+signal_op::operator()() noexcept
 {
     if (ec_out)
         *ec_out = {};
@@ -423,6 +426,8 @@ signal_op::operator()()
     auto ex       = d;
     auto k        = std::move(keep);
 
+    // A throw terminates: the wait is no longer parked, so nothing else
+    // could resume or abandon the coroutine.
     ex.post(*c);
 
     // Balance the work_started() from start_wait
@@ -433,9 +438,12 @@ signal_op::operator()()
 inline void
 signal_op::destroy()
 {
-    // Embedded in posix_signal: dropping the queued reference is the
-    // only cleanup, and nothing touches this op afterwards.
-    auto k = std::move(keep);
+    // Embedded in posix_signal: the queued reference keeps it alive
+    // while the awaiting coroutine, which may own the set, is destroyed.
+    auto* c = std::exchange(cont, nullptr);
+    auto k  = std::move(keep);
+    if (c && c->h)
+        capy::abandon(*c);
 }
 
 // posix_signal implementation
@@ -543,6 +551,7 @@ posix_signal_service::shutdown()
     // ~posix_signal destroys an armed stop_cb_ whose ~stop_callback
     // waits on a token_canceller that takes mutex_.
     std::vector<posix_signal*> doomed;
+    std::vector<capy::continuation> parked;
 
     {
         posix_signal_detail::signal_state* state =
@@ -558,9 +567,16 @@ posix_signal_service::shutdown()
             });
         for (auto* impl : doomed)
         {
-            // A parked wait is abandoned like every other op at
-            // teardown; a later destroy() must not resume it mid-drain.
-            impl->waiting_ = false;
+            // The parked wait's coroutine is destroyed once the locks
+            // drop: destroying it can destroy the set, which takes them.
+            if (std::exchange(impl->waiting_, false))
+            {
+                if (auto* c = std::exchange(impl->pending_op_.cont, nullptr))
+                {
+                    if (c->h)
+                        parked.push_back(*c);
+                }
+            }
 
             while (auto* reg = impl->signals_)
             {
@@ -598,6 +614,9 @@ posix_signal_service::shutdown()
         for (int i = 0; i < max_signal_number; ++i)
             registrations_[i] = nullptr;
     }
+
+    for (auto& c : parked)
+        capy::abandon(c);
 
     for (auto* impl : doomed)
         release(impl);
@@ -826,7 +845,7 @@ posix_signal_service::clear_signals(posix_signal& impl)
 }
 
 inline void
-posix_signal_service::cancel_wait(posix_signal& impl)
+posix_signal_service::cancel_wait(posix_signal& impl) noexcept
 {
     bool was_waiting = false;
     signal_op* op    = nullptr;
@@ -839,6 +858,7 @@ posix_signal_service::cancel_wait(posix_signal& impl)
             was_waiting   = true;
             impl.waiting_ = false;
             op            = &impl.pending_op_;
+            sched_->cancel_posting_begin();
         }
     }
 
@@ -850,6 +870,7 @@ posix_signal_service::cancel_wait(posix_signal& impl)
             *op->signal_out = 0;
         op->d.post(*op->cont);
         sched_->work_finished();
+        sched_->cancel_posting_end();
     }
 }
 
@@ -870,6 +891,7 @@ posix_signal_service::cancel_wait_token(posix_signal& impl) noexcept
             was_waiting   = true;
             impl.waiting_ = false;
             op            = &impl.pending_op_;
+            sched_->cancel_posting_begin();
         }
     }
 
@@ -881,6 +903,7 @@ posix_signal_service::cancel_wait_token(posix_signal& impl) noexcept
             *op->signal_out = 0;
         op->d.post(*op->cont);
         sched_->work_finished();
+        sched_->cancel_posting_end();
     }
 }
 

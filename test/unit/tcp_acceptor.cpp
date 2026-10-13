@@ -32,7 +32,9 @@
 #include <stdexcept>
 #include <stop_token>
 #include <system_error>
+#include <thread>
 #include <tuple>
+#include <vector>
 
 #ifndef _WIN32
 // For the SO_REUSEPORT guard around testReusePort. The corosio public
@@ -152,9 +154,8 @@ native_connect_loopback(native_handle_type h, std::uint16_t port, bool v6)
 }
 
 // Write one byte without the io_context, so the peer's completion is
-// already waiting when the next run starts. Unused when the tests that
-// abandon parked frames are compiled out.
-[[maybe_unused]] bool
+// already waiting when the next run starts.
+bool
 native_send_byte(native_handle_type h)
 {
     char const b = 'x';
@@ -487,7 +488,7 @@ struct tcp_acceptor_test
     }
 
     // Destroy the io_context with a read still parked on a connected
-    // socket; service shutdown must drain the abandoned operation
+    // socket; service shutdown must drain the parked operation
     // without resuming it.
     void testDestroyWithParkedRead()
     {
@@ -2022,11 +2023,13 @@ struct tcp_acceptor_test
     {
         auto client = make_native_socket(AF_INET, SOCK_STREAM);
         BOOST_TEST(client != invalid_native_socket);
-        // The drained accept abandons its awaiting frame, as every
-        // drained I/O operation does; the arena reclaims it.
-        std::pmr::monotonic_buffer_resource arena;
+        bool resumed = false;
         {
-            io_context a(Backend);
+            // No inline completion: the accept that takes the
+            // connection is queued instead of resuming its awaiter.
+            io_context_options opts;
+            opts.inline_budget_max = 0;
+            io_context a(Backend, opts);
             tcp_acceptor acc(a);
             BOOST_TEST(!acc.open());
             acc.set_option(socket_option::reuse_address(true));
@@ -2034,14 +2037,21 @@ struct tcp_acceptor_test
             BOOST_TEST(!acc.listen());
             BOOST_TEST(native_connect_loopback(
                 client, acc.local_endpoint().port(), false));
+            // A connect can return before the connection reaches the
+            // listen queue, so the accept would park instead of taking it.
+            // Bounds a hang, not a timing assertion.
+            pollfd lpfd{
+                static_cast<int>(acc.native_handle()), POLLIN, 0};
+            BOOST_TEST_EQ(::poll(&lpfd, 1, 5000), 1);
 
-            io_context b(Backend);
-            capy::run_async(b.get_executor(), &arena)(
-                [](tcp_acceptor& acc) -> capy::task<> {
+            capy::run_async(a.get_executor())(
+                [](tcp_acceptor& acc, bool& r) -> capy::task<> {
                     std::ignore = co_await acc.accept();
-                }(acc));
-            std::ignore = b.poll(); // the accept completes into a's queue
+                    r = true;
+                }(acc, resumed));
+            BOOST_TEST_EQ(a.poll_one(), 1u); // starts the accept
         }
+        BOOST_TEST(!resumed);
 
         pollfd pfd{client, POLLIN, 0};
         BOOST_TEST_EQ(::poll(&pfd, 1, 5000), 1);
@@ -2173,6 +2183,44 @@ struct tcp_acceptor_test
         pool.join();
     }
 
+    // A stop requested on another thread can claim a parked accept
+    // while the context tears its acceptors down; the drain must still
+    // find the accept the stop posts.
+    void testAcceptStopRacingTeardown()
+    {
+        for (int round = 0; round < 50; ++round)
+        {
+            std::vector<std::stop_source> stops(8);
+            std::atomic<bool> go{false};
+            std::thread stopper;
+            {
+                io_context ioc(Backend);
+                for (auto& src : stops)
+                    capy::run_async(ioc.get_executor(), src.get_token())(
+                        [](io_context& ioc) -> capy::task<> {
+                            tcp_acceptor acc(ioc);
+                            std::ignore = acc.open();
+                            std::ignore = acc.bind(
+                                endpoint(ipv4_address::loopback(), 0));
+                            std::ignore = acc.listen();
+                            tcp_socket peer(ioc);
+                            std::ignore = co_await acc.accept(peer);
+                        }(ioc));
+                std::ignore = ioc.poll(); // parks every accept
+                stopper     = std::thread([&] {
+                    while (!go.load(std::memory_order_acquire))
+                    {
+                    }
+                    for (auto& src : stops)
+                        src.request_stop();
+                });
+                go.store(true, std::memory_order_release);
+            }
+            stopper.join();
+        }
+        BOOST_TEST_PASS();
+    }
+
     void run()
     {
         testAssignOnOpenIsAlreadyOpen();
@@ -2185,6 +2233,7 @@ struct tcp_acceptor_test
         // Cancellation
         testCancelAccept();
         testAcceptAfterCancel();
+        testAcceptStopRacingTeardown();
         testDeferredExecutorCompletion();
 #if BOOST_COROSIO_POSIX
         testQueuedAcceptClosesPeerOnTeardown();
@@ -2192,15 +2241,12 @@ struct tcp_acceptor_test
         testAcceptedPeerClosedWhenAwaiterDestroyed(true);
 #endif
         testCloseWhilePendingAccept();
-#if !COROSIO_TEST_HAS_ASAN
-        // Abandon parked coroutine frames by design; see context.hpp.
         testDestroyWithParkedAccept();
         testDestroyWithParkedRead();
         testInlineAcceptUnderStopTokenRecycles();
         testDestroyListeningAcceptorKeepsOtherOps();
         testDestroyWithQueuedAccept();
         testDestroyWithQueuedAcceptorWait();
-#endif
 
         // IPv6
         testListenV6();

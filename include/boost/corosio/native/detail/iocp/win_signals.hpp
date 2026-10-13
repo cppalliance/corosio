@@ -22,6 +22,7 @@
 #include <boost/corosio/detail/object_pool.hpp>
 #include <boost/corosio/detail/object_ref.hpp>
 #include <boost/capy/continuation.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/corosio/native/detail/iocp/win_mutex.hpp>
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>
@@ -29,8 +30,10 @@
 #include <boost/capy/error.hpp>
 
 #include <csignal>
+#include <coroutine>
 #include <mutex>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include <signal.h>
@@ -225,7 +228,7 @@ public:
 
         @param impl The signal implementation to cancel.
     */
-    void cancel_wait(win_signal& impl);
+    void cancel_wait(win_signal& impl) noexcept;
 
     /** Cancel an in-flight wait on behalf of a stop token.
 
@@ -339,7 +342,14 @@ signal_op::do_complete(
     auto keep = std::move(op->keep);
 
     if (!owner)
+    {
+        // The held reference outlives the destroy: the coroutine may
+        // own the set this op is embedded in.
+        auto* dc = std::exchange(op->cont, nullptr);
+        if (dc && dc->h)
+            capy::abandon(*dc);
         return;
+    }
 
     if (op->ec_out)
         *op->ec_out = {};
@@ -462,6 +472,7 @@ win_signals::shutdown()
     // ~win_signal destroys an armed stop_cb_ whose ~stop_callback
     // waits on a token_canceller that takes mutex_.
     std::vector<win_signal*> doomed;
+    std::vector<capy::continuation> parked;
 
     {
         signal_detail::signal_state* state = signal_detail::get_signal_state();
@@ -476,9 +487,16 @@ win_signals::shutdown()
             });
         for (auto* impl : doomed)
         {
-            // A parked wait is abandoned like every other op at
-            // teardown; a later destroy() must not resume it mid-drain.
-            impl->waiting_ = false;
+            // The parked wait's coroutine is abandoned once the locks
+            // drop: its unwind can destroy the set, which takes them.
+            if (std::exchange(impl->waiting_, false))
+            {
+                if (auto* c = std::exchange(impl->pending_op_.cont, nullptr))
+                {
+                    if (c->h)
+                        parked.push_back(*c);
+                }
+            }
 
             while (auto* reg = impl->signals_)
             {
@@ -508,6 +526,9 @@ win_signals::shutdown()
         for (int i = 0; i < max_signal_number; ++i)
             registrations_[i] = nullptr;
     }
+
+    for (auto& c : parked)
+        capy::abandon(c);
 
     for (auto* impl : doomed)
         release(impl);
@@ -674,7 +695,7 @@ win_signals::clear_signals(win_signal& impl)
 }
 
 inline void
-win_signals::cancel_wait(win_signal& impl)
+win_signals::cancel_wait(win_signal& impl) noexcept
 {
     bool was_waiting = false;
     signal_op* op    = nullptr;
@@ -687,6 +708,7 @@ win_signals::cancel_wait(win_signal& impl)
             was_waiting   = true;
             impl.waiting_ = false;
             op            = &impl.pending_op_;
+            sched_.cancel_posting_begin();
         }
     }
 
@@ -698,6 +720,7 @@ win_signals::cancel_wait(win_signal& impl)
             *op->signal_out = 0;
         op->d.post(*op->cont);
         sched_.work_finished();
+        sched_.cancel_posting_end();
     }
 }
 
@@ -717,6 +740,7 @@ win_signals::cancel_wait_token(win_signal& impl) noexcept
             was_waiting   = true;
             impl.waiting_ = false;
             op            = &impl.pending_op_;
+            sched_.cancel_posting_begin();
         }
     }
 
@@ -728,6 +752,7 @@ win_signals::cancel_wait_token(win_signal& impl) noexcept
             *op->signal_out = 0;
         op->d.post(*op->cont);
         sched_.work_finished();
+        sched_.cancel_posting_end();
     }
 }
 

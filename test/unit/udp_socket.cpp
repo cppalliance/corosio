@@ -2092,10 +2092,7 @@ struct udp_socket_test
         testReleaseClosedThrows();
         testAssignV6();
 
-#if !COROSIO_TEST_HAS_ASAN
-        // Abandon parked coroutine frames by design; see context.hpp.
         testDestroyWithQueuedDatagrams();
-#endif
     }
 };
 

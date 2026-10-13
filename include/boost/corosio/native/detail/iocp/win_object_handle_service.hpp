@@ -241,7 +241,7 @@ private:
             if (!owner)
             {
                 self->set_idle();
-                op->cleanup_only();
+                op->destroy_awaiting();
                 return;
             }
 
@@ -306,12 +306,16 @@ private:
         }
         ::WaitForThreadpoolWaitCallbacks(tp_wait_, FALSE);
 
+        // Counted from before the claim: a claimed op is invisible to the
+        // scheduler's shutdown until on_completion queues it.
+        sched_.cancel_posting_begin();
         std::uint64_t cur = state_.load(std::memory_order_acquire);
         if ((cur & phase_mask) == phase_armed && claim(cur))
         {
             op_.request_cancel();
             sched_.on_completion(&op_, ERROR_OPERATION_ABORTED, 0);
         }
+        sched_.cancel_posting_end();
     }
 
     win_scheduler& sched_;

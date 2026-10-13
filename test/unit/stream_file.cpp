@@ -1191,9 +1191,9 @@ struct stream_file_test
     // the completion the worker posts on its way out is neither run nor
     // destroyed and the operation's keepalive leaks.
     //
-    // The task is started by hand and owned by the test, so the frame
-    // the library abandons at teardown is destroyed here rather than
-    // leaked: what LeakSanitizer sees left over is the defect alone.
+    // Teardown abandons the task wherever the work then sits, on the
+    // pool queue or the scheduler's, and the task is unwound without
+    // resuming.
     void testDestroyWithPoolWorkQueued()
     {
 #if BOOST_COROSIO_HAS_URING
@@ -1206,9 +1206,6 @@ struct stream_file_test
         auto const path = tmp.path;
         bool resumed    = false;
         test::pool_blocker blocker;
-        std::optional<io_context::executor_type> ex;
-        std::optional<capy::io_env> env;
-        std::optional<capy::task<>> parked;
         {
             io_context ioc(Backend);
             BOOST_TEST(test::park_pool_worker(ioc, blocker));
@@ -1222,10 +1219,8 @@ struct stream_file_test
                 resumed = true;
             };
 
-            ex.emplace(ioc.get_executor());
-            env.emplace(capy::io_env{*ex, std::stop_token{}, nullptr});
-            parked.emplace(reader());
-            parked->await_suspend(std::noop_coroutine(), &*env).resume();
+            capy::run_async(ioc.get_executor())(reader());
+            std::ignore = ioc.poll_one();
         }
         BOOST_TEST(!resumed);
     }
@@ -1269,17 +1264,11 @@ struct stream_file_test
             result_bytes = n;
             resumed      = true;
         };
-
-        std::optional<io_context::executor_type> ex;
-        std::optional<capy::io_env> env;
-        std::optional<capy::task<>> parked;
-        ex.emplace(ioc.get_executor());
-        env.emplace(capy::io_env{*ex, std::stop_token{}, nullptr});
-        parked.emplace(reader());
-        // Synchronously runs the coroutine up to its first suspension,
+        capy::run_async(ioc.get_executor())(reader());
+        // Runs the coroutine up to its first suspension,
         // which posts the read to the pool -- queued behind the parked
         // worker, not yet executed.
-        parked->await_suspend(std::noop_coroutine(), &*env).resume();
+        std::ignore = ioc.poll_one();
 
         int fd2 = ::open(tmp2.path.c_str(), O_RDONLY);
         BOOST_TEST(fd2 >= 0);
@@ -1329,15 +1318,9 @@ struct stream_file_test
             result_ec    = ec;
             resumed      = true;
         };
-
-        std::optional<io_context::executor_type> ex;
-        std::optional<capy::io_env> env;
-        std::optional<capy::task<>> parked;
-        ex.emplace(ioc.get_executor());
-        env.emplace(capy::io_env{*ex, std::stop_token{}, nullptr});
-        parked.emplace(writer());
+        capy::run_async(ioc.get_executor())(writer());
         // Queues the write behind the parked worker.
-        parked->await_suspend(std::noop_coroutine(), &*env).resume();
+        std::ignore = ioc.poll_one();
 
         // Recycle the released number onto the other file.
         int raw = static_cast<int>(f.release());
@@ -1522,10 +1505,7 @@ struct stream_file_test
 #endif
         testReassignDuringInFlightReadKeepsNewOffset();
 
-#if !COROSIO_TEST_HAS_ASAN
-        // Abandon parked coroutine frames by design; see context.hpp.
         testDestroyWithLiveFile();
-#endif
     }
 
     // Cancellation

@@ -144,8 +144,7 @@ accept_op::do_complete(
             op->peer_wrapper = nullptr;
         }
 
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 
@@ -233,8 +232,7 @@ acceptor_wait_op::do_complete(
 
     if (!owner)
     {
-        op->cleanup_only();
-        op->object_ref_.reset();
+        op->destroy_awaiting();
         return;
     }
 

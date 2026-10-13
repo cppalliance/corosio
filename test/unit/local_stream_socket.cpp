@@ -1333,7 +1333,7 @@ struct local_stream_socket_test
     }
 
     // Destroy the io_context with a read still parked on a connected
-    // pair; the socket service's shutdown must drain the abandoned
+    // pair; the socket service's shutdown must drain the parked
     // operation without resuming it.
     void testDestroyWithParkedRead()
     {
@@ -2077,15 +2077,12 @@ struct local_stream_socket_test
         testAcceptPendingConnection();
 #endif
         testAcceptWithoutListen();
-#if !COROSIO_TEST_HAS_ASAN
-        // Abandon parked coroutine frames by design; see context.hpp.
         testDestroyWithParkedAccept();
         testDestroyWithParkedRead();
         testDestroyWithQueuedRead();
         testDestroyWithQueuedConnect();
         testDestroyWithQueuedWait();
         testDestroyWithQueuedWrite();
-#endif
         testAcceptorOnClosedNoOp();
         testAcceptorBindClosedThrows();
         testAcceptorListenClosedThrows();
