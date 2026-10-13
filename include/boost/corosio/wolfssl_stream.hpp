@@ -266,9 +266,9 @@ BOOST_COROSIO_DECL bool wolfssl_supports_alpn() noexcept;
 /** Report whether this WolfSSL build can check certificate revocation.
 
     CRL checking requires a WolfSSL built with `HAVE_CRL`. On a build
-    without it, supplying a CRL or a revocation policy fails the handshake
-    with `std::errc::function_not_supported` rather than silently skipping
-    revocation.
+    without it, a revocation policy other than `disabled` fails the
+    handshake with `std::errc::function_not_supported` rather than
+    silently skipping revocation.
 
     @return `true` if revocation checking is supported by this build.
 

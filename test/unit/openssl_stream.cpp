@@ -475,6 +475,7 @@ struct openssl_stream_test
         test::testShutdownCancel(make_stream);
         test::testSocketErrorPropagation(make_stream);
         test::testCertificateValidation(make_stream);
+        test::testCaBundle(make_stream);
         test::testSni(make_stream);
         test::testSniCallback(make_stream);
         test::testHostnamePersistence(make_stream);

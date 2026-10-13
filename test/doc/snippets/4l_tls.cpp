@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -518,9 +519,7 @@ struct tls_test
         ctx.add_certificate_authority(ca_pem);
 
         // CA file (may contain multiple certs)
-        // tag::ca_bundle[]
         ctx.load_verify_file("/etc/ssl/certs/ca-certificates.crt");
-        // end::ca_bundle[]
 
         // Directory of hashed CA files
         ctx.add_verify_path("/etc/ssl/certs");
@@ -530,13 +529,15 @@ struct tls_test
 
     void testProtocolVersions()
     {
-        corosio::tls_context ctx;
         // tag::protocol_versions[]
         // Require TLS 1.3 minimum
-        ctx.set_min_protocol_version(corosio::tls_version::tls_1_3);
+        corosio::tls_context modern;
+        modern.set_min_protocol_version(corosio::tls_version::tls_1_3);
 
-        // Cap at TLS 1.2 (unusual, but possible)
-        ctx.set_max_protocol_version(corosio::tls_version::tls_1_2);
+        // Pin TLS 1.2 for a legacy peer (unusual, but possible)
+        corosio::tls_context legacy;
+        legacy.set_min_protocol_version(corosio::tls_version::tls_1_2);
+        legacy.set_max_protocol_version(corosio::tls_version::tls_1_2);
         // end::protocol_versions[]
         BOOST_TEST(true);
     }
