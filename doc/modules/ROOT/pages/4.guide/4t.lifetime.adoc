@@ -1,0 +1,133 @@
+//
+// Copyright (c) 2026 Steve Gerbino
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+= Lifetime and Teardown
+:page-mode: explanation
+
+Corosio's coroutines follow Capy's lifetime rules:
+
+* Take by value whatever a task reads after it may be stored.
+* Pass a lambda coroutine what it needs as parameters, not captures.
+* Never destroy the handle of a coroutine that another coroutine is awaiting.
+
+The _Lifetime and Ownership_ page of the Capy documentation covers those rules
+and how a suspended coroutine is owned.
+
+This page covers what Corosio adds: how long I/O objects, buffers and contexts
+must live, and how to stop work. It also says what destroying a context does to
+the coroutines still suspended in it.
+
+== I/O Objects
+
+Closing or destroying an I/O object cancels its pending operations. Each
+completes with `capy::error::canceled`, and its coroutine resumes and returns
+through its own code. Test for it portably with `ec == capy::cond::canceled`.
+
+An I/O object belongs to the context it was created on. Destroy it before that
+context: its destructor closes it through a service the context owns. Objects
+held in a coroutine frame are destroyed with the frame, including when the
+context's teardown unwinds the frame. Use an object only from coroutines
+running on its context's executor; see
+xref:4.guide/4b.concurrent-programming.adoc#_cross_executor_access[Cross-Executor Access].
+
+== Buffers
+
+An operation reads or writes the memory its buffers describe until it
+completes, and it completes after it is canceled, not when. The storage must
+outlive the operation, which it does when the operation is awaited from the
+frame that owns the storage. See
+xref:4.guide/4n.buffers.adoc#_lifetime[Buffer Sequences].
+
+== Stopping Work
+
+To end work, request a stop on the token it was started with. Pending
+operations complete with `capy::error::canceled`, the coroutines return
+through their own code, and `run()` returns once no work remains:
+
+[source,cpp]
+----
+include::example$snippets/3f_reconnect.cpp[tag=stop_token_shutdown,indent=0]
+----
+
+cpp:io_context::stop[] does not do this. It stops the event loop and leaves
+suspended coroutines where they are, so that cpp:io_context::restart[] can
+continue them. See
+xref:3.tutorials/3f.reconnect.adoc#_graceful_shutdown_with_stop_tokens[Graceful Shutdown with Stop Tokens].
+
+== Destroying a Context
+
+Destroying a cpp:io_context[] abandons every coroutine still suspended in its
+operations or queued on it. Nothing abandoned is resumed. Each chain is
+destroyed from the top, on the executor of the coroutine that started it. Its
+frames run their destructors: sockets close, guards release, memory is freed.
+No code after a suspension point runs and no result is delivered.
+
+Teardown is a backstop for work that was not stopped, not a way to stop it.
+The order that keeps every destructor safe is:
+
+. Request a stop on the work, and stop submitting new work.
+. Let every `run()` return, and join the threads that called it.
+. Destroy the I/O objects the application holds.
+. Destroy the context.
+
+[source,cpp]
+----
+include::example$snippets/4c_io_context.cpp[tag=teardown,indent=0]
+----
+
+== Work Across Contexts
+
+A chain is unwound on the executor of the coroutine that started it. Take a
+chain started on one context that waits on an operation of another, or whose
+frames own I/O objects of another. No order of destruction is safe for it:
+whichever context goes first, the unwind runs after one of the two is gone.
+Stop such work, and run both contexts until it ends, before destroying either.
+See
+xref:4.guide/4c.io-context.adoc#_lifetime_and_teardown[Lifetime and Teardown]
+and, for connections a cpp:tcp_server[] runs on other contexts,
+xref:4.guide/4k.tcp-server.adoc[TCP Server].
+
+== When an Executor Throws
+
+An operation that completes resumes its coroutine through the executor the
+coroutine awaited it on. If that executor's `post` or `dispatch` throws,
+`std::terminate` is called: the operation has already finished, and nothing
+else could resume the coroutine or unwind it.
+
+== Checklist for Operation Authors
+
+Code that suspends a coroutine and resumes it later, such as a custom
+operation, awaitable, service or type-erased wrapper, takes part in teardown.
+Check each of these:
+
+. *Carry the owner.* The `capy::continuation` handed to whatever resumes the
+  coroutine carries the chain's owner from the environment:
+  `continuation{h, nullptr, env->owner}`. Without it, abandoning the
+  continuation destroys one frame and leaves the frames above it suspended.
+. *Give up, never destroy.* A holder that is shutting down, and so can no
+  longer resume a continuation, passes it to `capy::abandon`. It never calls
+  `destroy()` on the handle.
+. *One owner of a continuation.* Each continuation is resumed, abandoned, or
+  still held by the caller after a `post` that threw. Never two of these, and
+  never none.
+. *The environment outlives the work it is lent to.* An inner task or
+  awaitable may use an `io_env`, stop source or stop token held in another
+  member. Declare that member first, so it is destroyed after the work.
+. *End an operation before what it references.* A wrapper that caches an inner
+  operation ends it before destroying or replacing the object the operation
+  uses, in its destructor and in move assignment.
+. *Handle a stop that already happened.* When the stop token is already
+  stopped as the operation suspends, it completes at once with
+  `capy::error::canceled` rather than registering a callback that never fires.
+. *Resume through the executor.* A stop callback, or a completion running on
+  another thread, posts the continuation to its executor instead of resuming
+  it inline.
+. *Do not leave work referring to a returned frame.* A function that starts
+  coroutines referring to its locals does not return, or throw, until they
+  have finished.
