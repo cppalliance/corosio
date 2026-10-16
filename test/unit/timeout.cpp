@@ -19,7 +19,7 @@
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/io/any_read_stream.hpp>
 #include <boost/capy/io/any_write_stream.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/read_stream.hpp>
 #include <boost/capy/test/write_stream.hpp>
@@ -44,7 +44,7 @@
 
 namespace boost::corosio {
 
-// Immediately-resuming awaitable yielding io_result<int>, used to
+// Immediately-resuming awaitable yielding `results<int>`, used to
 // verify payload preservation through timeout()'s pass-through path.
 struct payload_awaitable
 {
@@ -57,11 +57,11 @@ struct payload_awaitable
         return false;
     }
     std::coroutine_handle<>
-    await_suspend(std::coroutine_handle<> h, capy::io_env const*)
+    await_suspend(std::coroutine_handle<> h, capy::await_context const*)
     {
         return h;
     }
-    capy::io_result<int> await_resume() noexcept
+    capy::results<int> await_resume() noexcept
     {
         return {std::error_code(), value_};
     }
@@ -72,11 +72,11 @@ struct payload_awaitable
 // cond::canceled. Used to confirm that timeout()'s deadline-win path
 // discards the inner payload rather than merely rewriting `ec` in
 // place.
-inline capy::task<capy::io_result<int>>
+inline capy::task<capy::results<int>>
 stop_only_payload()
 {
     auto [ec] = co_await delay(std::chrono::seconds(10));
-    co_return capy::io_result<int>{ec, 99};
+    co_return capy::results<int>{ec, 99};
 }
 
 // Counts the blocks it hands out that are still live.
@@ -188,11 +188,11 @@ struct timeout_test
                 return false;
             }
             std::coroutine_handle<>
-            await_suspend(std::coroutine_handle<> h, capy::io_env const*)
+            await_suspend(std::coroutine_handle<> h, capy::await_context const*)
             {
                 return h;
             }
-            capy::io_result<> await_resume() noexcept
+            capy::results<> await_resume() noexcept
             {
                 return {make_error_code(std::errc::connection_refused)};
             }
@@ -221,11 +221,11 @@ struct timeout_test
                 return false;
             }
             std::coroutine_handle<>
-            await_suspend(std::coroutine_handle<> h, capy::io_env const*)
+            await_suspend(std::coroutine_handle<> h, capy::await_context const*)
             {
                 return h;
             }
-            capy::io_result<> await_resume()
+            capy::results<> await_resume()
             {
                 throw std::runtime_error("boom");
             }
@@ -302,12 +302,12 @@ struct timeout_test
                 return true;
             }
             std::coroutine_handle<>
-            await_suspend(std::coroutine_handle<> h, capy::io_env const*)
+            await_suspend(std::coroutine_handle<> h, capy::await_context const*)
             {
                 *suspended_ = true;
                 return h;
             }
-            capy::io_result<int> await_resume() noexcept
+            capy::results<int> await_resume() noexcept
             {
                 return {std::error_code(), value_};
             }
@@ -341,11 +341,11 @@ struct timeout_test
                 return true;
             }
             std::coroutine_handle<>
-            await_suspend(std::coroutine_handle<> h, capy::io_env const*)
+            await_suspend(std::coroutine_handle<> h, capy::await_context const*)
             {
                 return h;
             }
-            capy::io_result<> await_resume() noexcept
+            capy::results<> await_resume() noexcept
             {
                 return {make_error_code(capy::error::canceled)};
             }
@@ -634,7 +634,7 @@ struct timeout_test
         capy::thread_pool pool(1);
         auto ex = pool.get_executor();
         auto ta = timeout(payload_awaitable(0), std::chrono::milliseconds(1));
-        capy::io_env env{ex, {}, {}};
+        capy::await_context env{ex, {}, {}};
         BOOST_TEST_THROWS(
             ta.await_suspend(std::noop_coroutine(), &env), std::logic_error);
     }

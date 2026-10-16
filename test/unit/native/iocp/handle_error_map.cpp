@@ -23,7 +23,7 @@ struct win_handle_error_map_test
 {
     void testReadEndOfDataBecomesZero()
     {
-        // Zero with zero bytes decodes as eof in decode_io_result.
+        // Zero with zero bytes decodes as eof in decode_results.
         BOOST_TEST_EQ(normalize_handle_error(ERROR_HANDLE_EOF, true), 0u);
         BOOST_TEST_EQ(normalize_handle_error(ERROR_BROKEN_PIPE, true), 0u);
     }

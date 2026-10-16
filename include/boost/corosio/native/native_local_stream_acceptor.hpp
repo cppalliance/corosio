@@ -110,7 +110,7 @@ class native_local_stream_acceptor : public local_stream_acceptor
         {
         }
 
-        [[nodiscard]] capy::io_result<> await_resume() const noexcept
+        [[nodiscard]] capy::results<> await_resume() const noexcept
         {
             if (!this->ec_)
                 acc_.reset_peer_impl(peer_, peer_impl_);
@@ -137,7 +137,7 @@ class native_local_stream_acceptor : public local_stream_acceptor
         {
         }
 
-        [[nodiscard]] capy::io_result<native_local_stream_socket<Backend>>
+        [[nodiscard]] capy::results<native_local_stream_socket<Backend>>
         await_resume() const noexcept
         {
             if (this->ec_ || !peer_impl_)
@@ -203,7 +203,7 @@ public:
 
         @param peer The socket to receive the accepted connection.
 
-        @return An awaitable yielding `io_result<>`.
+        @return An awaitable yielding `results<>`.
 
         A closed acceptor reports `errc::bad_file_descriptor`.
 
@@ -226,7 +226,7 @@ public:
         is also devirtualized.
 
         @return An awaitable yielding
-            `io_result<native_local_stream_socket<Backend>>`.
+            `results<native_local_stream_socket<Backend>>`.
 
         A closed acceptor reports `errc::bad_file_descriptor`.
 
@@ -253,7 +253,7 @@ public:
 
         @param w The wait direction (typically `wait_type::read`).
 
-        @return An awaitable yielding `io_result<>`.
+        @return An awaitable yielding `results<>`.
     */
     [[nodiscard]] auto wait(wait_type w)
     {

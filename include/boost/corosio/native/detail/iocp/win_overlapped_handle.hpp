@@ -57,7 +57,7 @@
 
 namespace boost::corosio::detail {
 
-/** Map a handle completion code to what decode_io_result expects.
+/** Map a handle completion code to what decode_results expects.
 
     On reads, end of data (`ERROR_HANDLE_EOF`, `ERROR_BROKEN_PIPE`
     once a pipe's writer is gone, or `ERROR_PIPE_NOT_CONNECTED` after
@@ -503,7 +503,7 @@ protected:
             }
 
             DWORD const err = normalize_handle_error(op->dwError, op->is_read);
-            decode_io_result(
+            decode_results(
                 op->ec_out, op->bytes_out,
                 op->cancelled.load(std::memory_order_acquire),
                 err != 0 ? iocp_make_err(err, /*accept_path=*/false)

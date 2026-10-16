@@ -89,7 +89,7 @@ The `connect()` operation initiates a TCP connection:
 include::example$snippets/4d_sockets.cpp[tag=connect,indent=0]
 ----
 
-This returns an `io_result<>` that you can unpack with structured bindings.
+This returns a `results<>` that you can unpack with structured bindings.
 
 === Connection Errors
 

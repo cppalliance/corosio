@@ -355,7 +355,7 @@ public:
 
         @param ep The remote endpoint to connect to.
 
-        @return An awaitable yielding `io_result<>`.
+        @return An awaitable yielding `results<>`.
 
         If the socket needs to be opened and the open fails, the
         awaitable completes immediately with that error.
@@ -431,7 +431,7 @@ public:
 
         @param w The wait direction (read, write, or error).
 
-        @return An awaitable yielding `io_result<>`.
+        @return An awaitable yielding `results<>`.
     */
     [[nodiscard]] auto wait(wait_type w)
     {

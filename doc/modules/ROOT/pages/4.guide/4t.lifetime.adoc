@@ -117,7 +117,7 @@ Check each of these:
   still held by the caller after a `post` that threw. Never two of these, and
   never none.
 . *The environment outlives the work it is lent to.* An inner task or
-  awaitable may use an `io_env`, stop source or stop token held in another
+  awaitable may use an `await_context`, stop source or stop token held in another
   member. Declare that member first, so it is destroyed after the work.
 . *End an operation before what it references.* A wrapper that caches an inner
   operation ends it before destroying or replacing the object the operation

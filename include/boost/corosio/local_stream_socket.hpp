@@ -17,7 +17,7 @@
 #include <boost/corosio/detail/native_handle.hpp>
 #include <boost/corosio/detail/op_base.hpp>
 #include <boost/corosio/io/io_stream.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/corosio/error.hpp>
 #include <boost/corosio/local_endpoint.hpp>
@@ -25,7 +25,7 @@
 #include <boost/corosio/wait_type.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 
 #include <system_error>
@@ -357,7 +357,7 @@ public:
 
         @param ep The local endpoint (path) to connect to.
 
-        @return An awaitable that completes with io_result<>.
+        @return An awaitable that completes with `results<>`.
 
         If the socket needs to be opened and the open fails, the
         awaitable completes immediately with that error.
@@ -378,7 +378,7 @@ public:
 
         @param w The wait direction (read, write, or error).
 
-        @return An awaitable that completes with `io_result<>`.
+        @return An awaitable that completes with `results<>`.
 
         A closed socket completes with `errc::bad_file_descriptor`.
 

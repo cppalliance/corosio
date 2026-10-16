@@ -166,7 +166,7 @@ public:
         @param host The host name or address string.
         @param service The service name or port string.
 
-        @return An awaitable yielding `io_result<std::vector<endpoint>>`.
+        @return An awaitable yielding `results<std::vector<endpoint>>`.
     */
     [[nodiscard]] auto resolve(std::string_view host, std::string_view service)
     {
@@ -183,7 +183,7 @@ public:
         @param flags Flags controlling resolution behavior.
 
         @return An awaitable yielding
-            `io_result<std::vector<endpoint>>`.
+            `results<std::vector<endpoint>>`.
     */
     [[nodiscard]] auto resolve(
         std::string_view host, std::string_view service, resolve_flags flags)
@@ -202,7 +202,7 @@ public:
         @param ep The endpoint to resolve.
 
         @return An awaitable yielding
-            `io_result<endpoint_name>`.
+            `results<endpoint_name>`.
     */
     [[nodiscard]] auto resolve(endpoint const& ep)
     {
@@ -217,7 +217,7 @@ public:
         @param flags Flags controlling resolution behavior.
 
         @return An awaitable yielding
-            `io_result<endpoint_name>`.
+            `results<endpoint_name>`.
     */
     [[nodiscard]] auto resolve(endpoint const& ep, reverse_flags flags)
     {

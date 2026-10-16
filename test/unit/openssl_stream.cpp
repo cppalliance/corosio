@@ -265,7 +265,7 @@ struct openssl_stream_test
         std::error_code inject_ec_{};
 
         template<class MutableBufferSequence>
-        capy::io_task<std::size_t> read_some(MutableBufferSequence buffers)
+        capy::task<capy::results<std::size_t>> read_some(MutableBufferSequence buffers)
         {
             if (eof_reads_)
                 co_return {std::error_code{}, 0};
@@ -273,7 +273,7 @@ struct openssl_stream_test
         }
 
         template<class ConstBufferSequence>
-        capy::io_task<std::size_t> write_some(ConstBufferSequence buffers)
+        capy::task<capy::results<std::size_t>> write_some(ConstBufferSequence buffers)
         {
             if (fail_writes_)
                 co_return {inject_ec_, 0};

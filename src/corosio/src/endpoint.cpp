@@ -154,7 +154,7 @@ parse_endpoint_impl(std::string_view s, endpoint& ep) noexcept
     }
 }
 
-capy::io_result<endpoint>
+capy::results<endpoint>
 make_endpoint(std::string_view s) noexcept
 {
     endpoint ep;

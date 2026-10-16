@@ -20,12 +20,12 @@
 #include <boost/corosio/error.hpp>
 #include <boost/corosio/wait_type.hpp>
 #include <boost/corosio/io/io_object.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 
 #include <system_error>
@@ -123,7 +123,7 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
                 discard_peer(acc_, peer_impl_);
         }
 
-        [[nodiscard]] capy::io_result<> await_resume() const noexcept
+        [[nodiscard]] capy::results<> await_resume() const noexcept
         {
             if (!this->ec_ && peer_impl_)
                 peer_.h_.reset(std::exchange(peer_impl_, nullptr));
@@ -161,7 +161,7 @@ class BOOST_COROSIO_DECL tcp_acceptor : public io_object
                 discard_peer(acc_, peer_impl_);
         }
 
-        [[nodiscard]] capy::io_result<tcp_socket> await_resume() noexcept
+        [[nodiscard]] capy::results<tcp_socket> await_resume() noexcept
         {
             // The peer is built only on success: error paths must not
             // touch acc_.context(), which a moved-from acceptor lacks.
@@ -379,7 +379,7 @@ public:
         @param peer The socket to receive the accepted connection. Any
             existing connection on this socket is closed.
 
-        @return An awaitable that completes with `io_result<>`.
+        @return An awaitable that completes with `results<>`.
             Returns success on successful accept, or an error code on
             failure including:
             - `operation_canceled`: Cancelled via stop_token or cancel().
@@ -419,7 +419,7 @@ public:
         triggered, the operation completes immediately with
         `errc::operation_canceled`.
 
-        @return An awaitable that completes with `io_result<tcp_socket>`.
+        @return An awaitable that completes with `results<tcp_socket>`.
             On success the payload is the connected peer socket; on failure
             (including cancellation) the error code is set and the payload
             socket is unconnected. Errors include:
@@ -461,7 +461,7 @@ public:
 
         @param w The wait direction.
 
-        @return An awaitable that completes with `io_result<>`.
+        @return An awaitable that completes with `results<>`.
 
         A closed acceptor completes with `errc::bad_file_descriptor`.
 

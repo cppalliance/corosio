@@ -16,8 +16,8 @@
 #include <boost/corosio/detail/timer.hpp>
 #include <boost/corosio/wait_traits.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/results.hpp>
 
 #include <chrono>
 #include <concepts>
@@ -158,7 +158,7 @@ public:
             the wait was published to the timer service.
     */
     std::coroutine_handle<>
-    await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+    await_suspend(std::coroutine_handle<> h, capy::await_context const* env)
     {
         if (env->stop_token.stop_requested())
         {
@@ -184,7 +184,7 @@ public:
     }
 
     /// Return empty on expiry, `error::canceled` if stop won.
-    [[nodiscard]] capy::io_result<> await_resume() noexcept
+    [[nodiscard]] capy::results<> await_resume() noexcept
     {
         if (canceled_)
             return {capy::error::canceled};
@@ -294,7 +294,7 @@ public:
             the wait was published to the timer service.
     */
     std::coroutine_handle<>
-    await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+    await_suspend(std::coroutine_handle<> h, capy::await_context const* env)
     {
         if (env->stop_token.stop_requested())
         {
@@ -320,7 +320,7 @@ public:
     }
 
     /// Return empty on deadline, `error::canceled` if stop won.
-    [[nodiscard]] capy::io_result<> await_resume() noexcept
+    [[nodiscard]] capy::results<> await_resume() noexcept
     {
         if (canceled_)
             return {capy::error::canceled};
@@ -332,7 +332,7 @@ public:
 
 /** Suspend the current coroutine for a duration.
 
-    Returns an IoAwaitable that completes at or after the
+    Returns a ContextAwaitable that completes at or after the
     specified duration, or earlier if the environment's stop
     token is activated. Zero or negative durations complete
     synchronously.
@@ -342,7 +342,7 @@ public:
 
     @param dur The duration to wait.
 
-    @return A @ref delay_awaitable yielding `io_result<>`.
+    @return A @ref delay_awaitable yielding `results<>`.
 */
 template<typename Rep, typename Period>
 [[nodiscard]] delay_awaitable
@@ -353,13 +353,13 @@ delay(std::chrono::duration<Rep, Period> dur) noexcept
 
 /** Suspend the current coroutine until a time point.
 
-    Returns an IoAwaitable that completes at or after `tp`, or
+    Returns a ContextAwaitable that completes at or after `tp`, or
     earlier if the environment's stop token is activated. Time
     points already reached complete synchronously.
 
     @param tp The steady-clock time point to wait until.
 
-    @return A @ref delay_awaitable yielding `io_result<>`.
+    @return A @ref delay_awaitable yielding `results<>`.
 */
 [[nodiscard]] inline delay_awaitable
 delay(std::chrono::steady_clock::time_point tp) noexcept
@@ -369,7 +369,7 @@ delay(std::chrono::steady_clock::time_point tp) noexcept
 
 /** Suspend the current coroutine until a time point on `Clock`.
 
-    Returns an IoAwaitable that completes at or after the first
+    Returns a ContextAwaitable that completes at or after the first
     observation of `Clock::now() >= tp`, or earlier if the
     environment's stop token is activated. The wait is one or more
     bounded steady-clock waits, re-reading `Clock::now()` after
@@ -395,7 +395,7 @@ delay(std::chrono::steady_clock::time_point tp) noexcept
 
     @param tp The time point to wait until.
 
-    @return A @ref clock_delay_awaitable yielding `io_result<>`.
+    @return A @ref clock_delay_awaitable yielding `results<>`.
 */
 template<class Traits = void, class Clock, class Duration>
     requires(!std::same_as<Clock, std::chrono::steady_clock>) &&

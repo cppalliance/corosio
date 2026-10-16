@@ -19,7 +19,7 @@
 #include <boost/corosio/io/io_stream.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 
 #include <concepts>
 #include <cstdint>
@@ -125,7 +125,7 @@ public:
             @param origin The reference point for the seek.
             @return The error code and new absolute position.
         */
-        virtual capy::io_result<std::uint64_t>
+        virtual capy::results<std::uint64_t>
         seek(std::int64_t offset, file_base::seek_basis origin) noexcept = 0;
     };
 
@@ -346,7 +346,7 @@ public:
 
         @return The error code and new absolute position.
     */
-    [[nodiscard]] capy::io_result<std::uint64_t> seek(
+    [[nodiscard]] capy::results<std::uint64_t> seek(
         std::int64_t offset,
         file_base::seek_basis origin = file_base::seek_set) noexcept;
 

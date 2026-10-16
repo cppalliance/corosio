@@ -383,16 +383,16 @@ struct error_handling_test
 {
     void testResultShapes()
     {
-        using capy::io_result;
+        using capy::results;
         // tag::result_shapes[]
         // Void result (connect, handshake)
-        io_result<> r1; // Contains: ec
+        results<> r1; // Contains: ec
 
         // Single value (read_some, write_some)
-        io_result<std::size_t> r2; // Contains: ec, n (bytes transferred)
+        results<std::size_t> r2; // Contains: ec, n (bytes transferred)
 
         // Typed result (resolve)
-        io_result<std::vector<corosio::endpoint>> r3; // Contains: ec, results
+        results<std::vector<corosio::endpoint>> r3; // Contains: ec, results
         // end::result_shapes[]
         BOOST_TEST(!std::get<0>(r1));
         BOOST_TEST(!std::get<0>(r2));

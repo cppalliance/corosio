@@ -50,7 +50,7 @@ complete_io_op(Op& op)
     // returns false for a zero-length read), so empty_buffer stays false
     // here and the shared EOF test reduces to the reactor's original
     // `is_read && bytes == 0`.
-    decode_io_result(
+    decode_results(
         op.ec_out, op.bytes_out, op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
         op.is_read_operation(), op.bytes_transferred, /*empty_buffer=*/false);
@@ -86,7 +86,7 @@ complete_wait_op(Op& op)
     }
 
     // Wait reports only success/cancel/error — no bytes, no EOF.
-    decode_io_result(
+    decode_results(
         op.ec_out, /*bytes_out=*/nullptr,
         op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
@@ -127,7 +127,7 @@ complete_connect_op(Op& op)
         op.socket_impl_->set_endpoints(local_ep, op.target_endpoint);
     }
 
-    decode_io_result(
+    decode_results(
         op.ec_out, /*bytes_out=*/nullptr,
         op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
@@ -221,7 +221,7 @@ complete_accept_op(Op& op)
     bool success =
         (op.errn == 0 && !op.cancelled.load(std::memory_order_acquire));
 
-    decode_io_result(
+    decode_results(
         op.ec_out, /*bytes_out=*/nullptr,
         op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
@@ -266,7 +266,7 @@ complete_datagram_op(Op& op)
     op.socket_impl_->desc_state_.scheduler_->reset_inline_budget();
 
     // No EOF: a zero-length datagram is valid (success with 0 bytes).
-    decode_io_result(
+    decode_results(
         op.ec_out, op.bytes_out, op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
         /*is_read=*/false, op.bytes_transferred, /*empty_buffer=*/false);
@@ -293,7 +293,7 @@ complete_datagram_op(Op& op, Endpoint* source_out)
     op.socket_impl_->desc_state_.scheduler_->reset_inline_budget();
 
     // No EOF: a zero-length datagram is valid (success with 0 bytes).
-    decode_io_result(
+    decode_results(
         op.ec_out, op.bytes_out, op.cancelled.load(std::memory_order_acquire),
         op.errn != 0 ? make_err(op.errn) : std::error_code{},
         /*is_read=*/false, op.bytes_transferred, /*empty_buffer=*/false);

@@ -80,7 +80,7 @@ namespace boost::corosio::detail {
                          which suppresses the otherwise-spurious EOF.
 */
 inline void
-decode_io_result(
+decode_results(
     std::error_code* ec_out,
     std::size_t* bytes_out,
     bool cancelled,

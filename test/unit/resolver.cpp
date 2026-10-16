@@ -20,7 +20,7 @@
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/cond.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -774,9 +774,9 @@ struct resolver_test
         BOOST_TEST_EQ(resolve_count, 3);
     }
 
-    // io_result tests
+    // `results` tests
 
-    void testIoResultSuccess()
+    void testResultsSuccess()
     {
         io_context ioc;
         resolver r(ioc);
@@ -796,7 +796,7 @@ struct resolver_test
         BOOST_TEST(result_ok);
     }
 
-    void testIoResultError()
+    void testResultsError()
     {
         io_context ioc;
         resolver r(ioc);
@@ -819,7 +819,7 @@ struct resolver_test
         BOOST_TEST(result_ec);
     }
 
-    void testIoResultStructuredBinding()
+    void testResultsStructuredBinding()
     {
         io_context ioc;
         resolver r(ioc);
@@ -1432,10 +1432,10 @@ struct resolver_test
         // Sequential resolves
         testSequentialResolves();
 
-        // io_result
-        testIoResultSuccess();
-        testIoResultError();
-        testIoResultStructuredBinding();
+        // `results`
+        testResultsSuccess();
+        testResultsError();
+        testResultsStructuredBinding();
 
         // resolve_flags
         testResolveFlagsOperators();

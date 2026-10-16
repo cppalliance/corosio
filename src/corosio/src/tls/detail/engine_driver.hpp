@@ -19,7 +19,7 @@
 #include <boost/capy/detail/buffer_array.hpp>
 #include <boost/capy/ex/async_mutex.hpp>
 #include <boost/capy/io/any_stream.hpp>
-#include <boost/capy/io_task.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/write.hpp>
 
@@ -561,7 +561,7 @@ public:
         used_             = false;
     }
 
-    capy::io_task<std::size_t> do_read_some(
+    capy::task<capy::results<std::size_t>> do_read_some(
         capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers)
     {
         if (auto ec = take_pending_flush_ec())
@@ -652,7 +652,7 @@ public:
         co_return {std::error_code{}, total_read};
     }
 
-    capy::io_task<std::size_t> do_write_some(
+    capy::task<capy::results<std::size_t>> do_write_some(
         capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers)
     {
         if (auto ec = take_pending_flush_ec())
@@ -747,7 +747,7 @@ public:
         co_return {std::error_code{}, total_written};
     }
 
-    capy::io_task<> do_handshake(tls_role role)
+    capy::task<capy::results<>> do_handshake(tls_role role)
     {
         // Refuse the handshake while the engine's configuration is
         // unusable, before consuming any per-connection state.
@@ -822,7 +822,7 @@ public:
         }
     }
 
-    capy::io_task<> do_shutdown()
+    capy::task<capy::results<>> do_shutdown()
     {
         if (auto ec = take_pending_flush_ec())
             co_return {ec};
@@ -925,7 +925,7 @@ public:
 
 /// Read through a driver an operation keeps alive.
 template<class Impl>
-capy::io_task<std::size_t>
+capy::task<capy::results<std::size_t>>
 driver_read_some(
     driver_ref<Impl> d,
     capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers)
@@ -935,7 +935,7 @@ driver_read_some(
 
 /// Write through a driver an operation keeps alive.
 template<class Impl>
-capy::io_task<std::size_t>
+capy::task<capy::results<std::size_t>>
 driver_write_some(
     driver_ref<Impl> d,
     capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers)
@@ -945,7 +945,7 @@ driver_write_some(
 
 /// Handshake through a driver an operation keeps alive.
 template<class Impl>
-capy::io_task<>
+capy::task<capy::results<>>
 driver_handshake(driver_ref<Impl> d, tls_role role)
 {
     co_return co_await d->do_handshake(role);
@@ -953,7 +953,7 @@ driver_handshake(driver_ref<Impl> d, tls_role role)
 
 /// Shut down through a driver an operation keeps alive.
 template<class Impl>
-capy::io_task<>
+capy::task<capy::results<>>
 driver_shutdown(driver_ref<Impl> d)
 {
     co_return co_await d->do_shutdown();

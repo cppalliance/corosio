@@ -133,7 +133,7 @@ stream_file::assign(native_handle_type handle) noexcept
     return get().assign(handle);
 }
 
-capy::io_result<std::uint64_t>
+capy::results<std::uint64_t>
 stream_file::seek(std::int64_t offset, file_base::seek_basis origin) noexcept
 {
     if (!is_open())

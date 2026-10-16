@@ -319,11 +319,11 @@ post_coro(io_context::executor_type& ex, std::coroutine_handle<> h)
     ex.post(h);
 }
 
-inline capy::task<capy::io_result<>>
+inline capy::task<capy::results<>>
 set_event_task(capy::async_event& evt)
 {
     evt.set();
-    co_return capy::io_result<>{std::error_code{}};
+    co_return capy::results<>{std::error_code{}};
 }
 
 inline capy::task<void>

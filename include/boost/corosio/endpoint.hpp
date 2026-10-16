@@ -15,7 +15,7 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/ip_address.hpp>
 
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 
 #include <compare>
 #include <cstdint>
@@ -213,7 +213,7 @@ endpoint_format detect_endpoint_format(std::string_view s) noexcept;
     @return The error code, empty on success, and the parsed
         endpoint — default-constructed on failure.
 */
-[[nodiscard]] BOOST_COROSIO_DECL capy::io_result<endpoint>
+[[nodiscard]] BOOST_COROSIO_DECL capy::results<endpoint>
 make_endpoint(std::string_view s) noexcept;
 
 inline endpoint::endpoint(std::string_view s)

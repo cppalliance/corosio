@@ -124,21 +124,21 @@ struct count_on_exit
 
 // Namespace scope: GCC 11 miscompiles a co_await in a static member
 // coroutine of a class template.
-static capy::task<capy::io_result<>>
+static capy::task<capy::results<>>
 parked_child(int& down)
 {
     count_on_exit g{down};
     co_return co_await delay(std::chrono::hours(1));
 }
 
-static capy::task<capy::io_result<>>
+static capy::task<capy::results<>>
 queued_child(io_context& ioc, int& down)
 {
     count_on_exit g{down};
     detail::timer t(ioc);
     t.expires_after(std::chrono::nanoseconds(0));
     auto [ec] = co_await t.wait();
-    co_return capy::io_result<>{ec};
+    co_return capy::results<>{ec};
 }
 
 template<auto Backend>
@@ -354,7 +354,7 @@ struct delay_test
         capy::thread_pool pool(1);
         auto ex = pool.get_executor();
         delay_awaitable da(std::chrono::milliseconds(1));
-        capy::io_env env{ex, {}, {}};
+        capy::await_context env{ex, {}, {}};
         BOOST_TEST_THROWS(
             da.await_suspend(std::noop_coroutine(), &env), std::logic_error);
     }

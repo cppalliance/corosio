@@ -13,7 +13,7 @@
 # `launch`/`spawn`-bearing identifier in the library and the pages is either
 # snake_case (`launch_one`, `launch_all`, `spawn_work`, `co_spawn`,
 # `launch_policies`, the snippet tag `4b_launching`) or a `launcher` compound
-# (`when_any_io_launcher`, `launchable`, `relaunch`, `launchers`). `_` is a word
+# (`when_any_results_launcher`, `launchable`, `relaunch`, `launchers`). `_` is a word
 # character, so the `\b` after the stem already excludes the snake_case forms,
 # and the inflection list below is deliberately limited to VERB endings so it
 # cannot reach `launcher`. On top of that, `.vale.ini`'s `TokenIgnores` blanks

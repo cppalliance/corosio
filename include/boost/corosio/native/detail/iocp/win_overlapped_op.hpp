@@ -230,7 +230,7 @@ struct overlapped_op
     {
         stop_cb.reset();
 
-        decode_io_result(
+        decode_results(
             ec_out, bytes_out, cancelled.load(std::memory_order_acquire),
             dwError != 0 ? iocp_make_err(dwError, /*accept_path=*/false)
                          : std::error_code{},

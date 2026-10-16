@@ -298,4 +298,4 @@ cost in the kernel, so a server can run several receivers in parallel.
   protocol-level background
 * xref:4.guide/4d.sockets.adoc[Sockets] — generic socket options and lifetime rules
 * xref:4.guide/4f.endpoints.adoc[Endpoints] — IP address and port construction
-* xref:4.guide/4m.error-handling.adoc[Error Handling] — the `io_result` pattern
+* xref:4.guide/4m.error-handling.adoc[Error Handling] — the `results` pattern

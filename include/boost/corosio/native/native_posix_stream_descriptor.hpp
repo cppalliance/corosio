@@ -236,7 +236,7 @@ public:
 
         @param w The direction to wait on.
 
-        @return An awaitable yielding `io_result<>`.
+        @return An awaitable yielding `results<>`.
     */
     [[nodiscard]] auto wait(wait_type w)
     {

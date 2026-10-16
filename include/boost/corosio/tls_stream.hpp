@@ -16,7 +16,8 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/detail/buffer_array.hpp>
 #include <boost/capy/io/any_stream.hpp>
-#include <boost/capy/io_task.hpp>
+#include <boost/capy/results.hpp>
+#include <boost/capy/task.hpp>
 
 #include <cstddef>
 #include <string_view>
@@ -196,7 +197,7 @@ public:
 
         @return An awaitable yielding `(error_code)`.
     */
-    [[nodiscard]] virtual capy::io_task<> handshake(tls_role role) = 0;
+    [[nodiscard]] virtual capy::task<capy::results<>> handshake(tls_role role) = 0;
 
     /** Asynchronously perform a graceful TLS shutdown.
 
@@ -216,7 +217,7 @@ public:
 
         @return An awaitable yielding `(error_code)`.
     */
-    [[nodiscard]] virtual capy::io_task<> shutdown() = 0;
+    [[nodiscard]] virtual capy::task<capy::results<>> shutdown() = 0;
 
     /** Cancel operations pending on the owned underlying stream.
 
@@ -351,7 +352,7 @@ protected:
 
         @return An awaitable yielding `(error_code,std::size_t)`.
     */
-    virtual capy::io_task<std::size_t> do_read_some(
+    virtual capy::task<capy::results<std::size_t>> do_read_some(
         capy::detail::mutable_buffer_array<capy::detail::max_iovec_>
             buffers) = 0;
 
@@ -364,7 +365,7 @@ protected:
 
         @return An awaitable yielding `(error_code,std::size_t)`.
     */
-    virtual capy::io_task<std::size_t> do_write_some(
+    virtual capy::task<capy::results<std::size_t>> do_write_some(
         capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers) = 0;
 };
 

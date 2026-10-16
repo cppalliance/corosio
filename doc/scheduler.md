@@ -9,7 +9,7 @@ Asio and Corosio take fundamentally different approaches to coroutine management
 | Aspect | Asio | Corosio |
 |--------|------|---------|
 | Symmetric transfer | Simulated via `pump()` loop | Native language mechanism |
-| Type system | Closed (`asio::awaitable` only) | Open (`IoAwaitable` concept) |
+| Type system | Closed (`asio::awaitable` only) | Open (`ContextAwaitable` concept) |
 | `await_suspend` return | `void` | `coroutine_handle` |
 | I/O initiation timing | `after_suspend_fn_` callback | TBD |
 
@@ -62,7 +62,7 @@ Corosio's `task<T>` returns `coroutine_handle` from `await_suspend`, enabling co
 
 ```cpp
 // task<T>::await_suspend - returns coroutine_handle
-std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const* env)
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, await_context const* env)
 {
     h_.promise().set_continuation(cont, env->executor);
     h_.promise().set_environment(env);
@@ -104,14 +104,14 @@ This creates a closed type system where only `asio::awaitable<T>` coroutines can
 
 ### Corosio's Open System
 
-Corosio uses the `IoAwaitable` concept, allowing any conforming type to participate:
+Corosio uses the `ContextAwaitable` concept, allowing any conforming type to participate:
 
 ```cpp
 template<class Awaitable>
 auto transform_awaitable(Awaitable&& a)
 {
     using A = std::decay_t<Awaitable>;
-    if constexpr (IoAwaitable<A>)
+    if constexpr (ContextAwaitable<A>)
     {
         return transform_awaiter<Awaitable>{
             std::forward<Awaitable>(a), this};
@@ -123,10 +123,10 @@ auto transform_awaitable(Awaitable&& a)
 The `await_suspend` signature accepts the execution environment:
 
 ```cpp
-std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const* env)
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, await_context const* env)
 ```
 
-This design allows third-party awaitable types to integrate with Corosio's I/O system by satisfying the `IoAwaitable` concept.
+This design allows third-party awaitable types to integrate with Corosio's I/O system by satisfying the `ContextAwaitable` concept.
 
 ## I/O Initiation Timing
 

@@ -74,13 +74,13 @@ namespace synopsis {
 // tag::read_signature[]
 auto
 read(capy::ReadStream auto& stream, capy::MutableBufferSequence auto buffers)
-    -> capy::io_task<std::size_t>;
+    -> capy::task<capy::results<std::size_t>>;
 // end::read_signature[]
 
 // tag::write_signature[]
 auto
 write(capy::WriteStream auto& stream, capy::ConstBufferSequence auto buffers)
-    -> capy::io_task<std::size_t>;
+    -> capy::task<capy::results<std::size_t>>;
 // end::write_signature[]
 
 // tag::slice_interface[]

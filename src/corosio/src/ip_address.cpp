@@ -32,7 +32,7 @@ operator<<(std::ostream& os, ip_address const& addr)
     return addr.is_v4() ? os << addr.v4_ : os << addr.v6_;
 }
 
-capy::io_result<ip_address>
+capy::results<ip_address>
 make_ip_address(std::string_view s) noexcept
 {
     if (auto [ec, v4] = make_ipv4_address(s); !ec)

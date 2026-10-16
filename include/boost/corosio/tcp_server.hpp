@@ -19,7 +19,7 @@
 #include <boost/corosio/endpoint.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/concept/execution_context.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/ex/any_executor.hpp>
 #include <boost/capy/detail/abandonable.hpp>
@@ -27,7 +27,7 @@
 #include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/frame_alloc_mixin.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/recycling_memory_resource.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/work_guard.hpp>
@@ -306,7 +306,7 @@ private:
             // Owns the connection's chain: abandoning it resumes, or has
             // the executor destroy, this frame to unwind the task.
             capy::chain_owner owner_;
-            capy::io_env env_;
+            capy::await_context env_;
             /// Embedded post node: the start posts this instead of the
             /// bare handle, which would heap-allocate a wrapper op.
             capy::continuation cont_;
@@ -356,15 +356,15 @@ private:
                 // LCOV_EXCL_STOP
             }
 
-            // Inject io_env for IoAwaitable
-            template<capy::IoAwaitable Awaitable>
+            // Inject await_context for ContextAwaitable
+            template<capy::ContextAwaitable Awaitable>
             auto await_transform(Awaitable&& a)
             {
                 using AwaitableT = std::decay_t<Awaitable>;
                 struct adapter
                 {
                     AwaitableT aw;
-                    capy::io_env const* env;
+                    capy::await_context const* env;
 
                     bool await_ready()
                     {
@@ -503,7 +503,7 @@ private:
 
         std::coroutine_handle<>
         await_suspend(
-            std::coroutine_handle<> h, capy::io_env const* env) noexcept
+            std::coroutine_handle<> h, capy::await_context const* env) noexcept
         {
             cont_.h = h;
             // A root has no owner: the launcher's would unwind it on the
@@ -531,7 +531,7 @@ private:
         }
 
         bool
-        await_suspend(std::coroutine_handle<> h, capy::io_env const* env) noexcept
+        await_suspend(std::coroutine_handle<> h, capy::await_context const* env) noexcept
         {
             std::lock_guard<std::mutex> lock(st_.mutex);
             if (st_.stopping)

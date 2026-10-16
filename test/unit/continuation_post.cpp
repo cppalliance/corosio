@@ -10,7 +10,7 @@
 #include <boost/corosio/io_context.hpp>
 
 #include <boost/capy/continuation.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -39,7 +39,7 @@ struct bare_post_awaitable
     }
 
     void
-    await_suspend(std::coroutine_handle<> h, capy::io_env const* env) noexcept
+    await_suspend(std::coroutine_handle<> h, capy::await_context const* env) noexcept
     {
         cont->h = h;
         env->executor.post(*cont);

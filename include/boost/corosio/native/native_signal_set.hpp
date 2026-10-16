@@ -130,7 +130,7 @@ public:
         Calls the backend implementation directly, bypassing virtual
         dispatch. Otherwise identical to @ref signal_set::wait.
 
-        @return An awaitable yielding `io_result<int>`.
+        @return An awaitable yielding `results<int>`.
 
         This signal set must outlive the returned awaitable.
     */

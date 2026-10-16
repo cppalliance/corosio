@@ -138,7 +138,7 @@ struct uring_dgram_send_op : uring_op
             self->sched_->reset_inline_budget();
 
         // Datagram send: no EOF (a 0-byte send is success).
-        decode_io_result(
+        decode_results(
             self->ec_out, self->bytes_out,
             self->cancelled.load(std::memory_order_acquire),
             self->res < 0 ? make_err(-self->res) : std::error_code{},
@@ -293,7 +293,7 @@ struct uring_dgram_recv_op : uring_op
 
         // Datagram recv: a 0-byte datagram is success, not EOF — is_read
         // stays false so the shared decode never maps it to end_of_file.
-        decode_io_result(
+        decode_results(
             self->ec_out, self->bytes_out,
             self->cancelled.load(std::memory_order_acquire),
             self->res < 0 ? make_err(-self->res) : std::error_code{},

@@ -360,7 +360,7 @@ posix_random_access_file::raf_op::operator()()
 
     // Empty buffers never reach the pool (diverted at initiation), so
     // empty_buffer stays false and a 0-byte read is a genuine EOF.
-    decode_io_result(
+    decode_results(
         ec_out, bytes_out, cancelled.load(std::memory_order_acquire),
         errn != 0 ? make_err(errn) : std::error_code{}, is_read,
         bytes_transferred, /*empty_buffer=*/false);

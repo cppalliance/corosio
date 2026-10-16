@@ -26,9 +26,9 @@
 // BOTH Doxygen doc-comment forms are extracted: `/** ... */` blocks and runs of
 // consecutive `///` lines. A run of `///` lines is ONE doc comment attached to
 // the declaration that follows it, which is how Doxygen and MrDocs read it, and
-// MrDocs really does publish that prose — `io_result.hpp:49`'s
+// MrDocs really does publish that prose — `results.hpp:49`'s
 // `/// The error code from the operation.` renders on both
-// `reference/boost/corosio/io_result.html` and `reference/boost/corosio/io_result/ec.html`.
+// `reference/boost/corosio/results.html` and `reference/boost/corosio/results/ec.html`.
 // Until 2026-08 only the `/** */` form was extracted, so 86 published doc lines
 // across 25 headers were invisible to every Vale rule and to the C2 checker,
 // including the four the Phase-4 exit promoted to merge-blocking gates. It was

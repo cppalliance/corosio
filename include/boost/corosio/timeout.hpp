@@ -13,7 +13,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/timeout_awaitable.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 
 #include <chrono>
 #include <type_traits>
@@ -21,12 +21,12 @@
 
 namespace boost::corosio {
 
-/** Race an io_result-returning awaitable against a deadline.
+/** Race a `results`-returning awaitable against a deadline.
 
     Starts the awaitable with an interposed stop token and arms a
     timer. If the awaitable finishes first, its result is returned
     as-is (success, error, or exception). If the deadline passes
-    first, the awaitable is cancelled and an `io_result` whose
+    first, the awaitable is cancelled and a `results` whose
     `ec` compares equal to `capy::cond::timeout` (with a
     default-initialized payload) is produced.
 
@@ -52,13 +52,13 @@ namespace boost::corosio {
     @param dur The maximum duration to wait, measured from
         suspension.
 
-    @return An awaitable yielding `io_result` matching the inner
+    @return An awaitable yielding `results` matching the inner
         awaitable's result type.
 
     @see delay
 */
-template<capy::IoAwaitable A, typename Rep, typename Period>
-    requires detail::is_io_result_v<
+template<capy::ContextAwaitable A, typename Rep, typename Period>
+    requires detail::is_results_v<
                  std::remove_cvref_t<capy::awaitable_result_t<A>>> &&
     std::is_default_constructible_v<
                  std::remove_cvref_t<capy::awaitable_result_t<A>>>
@@ -76,7 +76,7 @@ timeout(A a, std::chrono::duration<Rep, Period> dur)
     return detail::timeout_awaitable<A>(std::move(a), ns);
 }
 
-/** Race an io_result-returning awaitable against an absolute deadline.
+/** Race a `results`-returning awaitable against an absolute deadline.
 
     Behaves as the duration overload with the deadline fixed at
     `tp` instead of measured from suspension.
@@ -85,13 +85,13 @@ timeout(A a, std::chrono::duration<Rep, Period> dur)
     @param tp The steady-clock time point at which the awaitable
         is cancelled.
 
-    @return An awaitable yielding `io_result` matching the inner
+    @return An awaitable yielding `results` matching the inner
         awaitable's result type.
 
     @see delay
 */
-template<capy::IoAwaitable A>
-    requires detail::is_io_result_v<
+template<capy::ContextAwaitable A>
+    requires detail::is_results_v<
                  std::remove_cvref_t<capy::awaitable_result_t<A>>> &&
     std::is_default_constructible_v<
                  std::remove_cvref_t<capy::awaitable_result_t<A>>>

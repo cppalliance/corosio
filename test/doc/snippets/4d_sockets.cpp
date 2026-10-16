@@ -55,7 +55,7 @@ namespace capy    = boost::capy;
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/run_async.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/read.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/write.hpp>
@@ -180,7 +180,7 @@ template<class Socket, std::ranges::input_range Range>
     requires std::convertible_to<
         std::ranges::range_reference_t<Range>,
         typename Socket::endpoint_type>
-capy::task<capy::io_result<typename Socket::endpoint_type>>
+capy::task<capy::results<typename Socket::endpoint_type>>
 connect(Socket& s, Range endpoints);
 // end::connect_signature[]
 

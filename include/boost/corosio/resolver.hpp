@@ -16,10 +16,10 @@
 #include <boost/corosio/detail/op_base.hpp>
 #include <boost/corosio/endpoint.hpp>
 #include <boost/corosio/io/io_object.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 
 #include <system_error>
@@ -258,7 +258,7 @@ class BOOST_COROSIO_DECL resolver : public io_object
     public:
         // Shadows the base: the endpoint result is reshaped into
         // the honest address list
-        [[nodiscard]] capy::io_result<std::vector<ip_address>>
+        [[nodiscard]] capy::results<std::vector<ip_address>>
         await_resume() const
         {
             std::vector<ip_address> addrs;
@@ -395,7 +395,7 @@ public:
             port number.
 
         @return An awaitable that completes with
-            `io_result<std::vector<endpoint>>`.
+            `results<std::vector<endpoint>>`.
 
         @par Example
         @par !example forward_resolve
@@ -419,7 +419,7 @@ public:
         @param host The host name or numeric address string.
 
         @return An awaitable that completes with
-            `io_result<std::vector<ip_address>>`.
+            `results<std::vector<ip_address>>`.
 
         @par Example
         @par !example host_only_resolve
@@ -435,7 +435,7 @@ public:
         @param flags Resolution behavior flags.
 
         @return An awaitable that completes with
-            `io_result<std::vector<ip_address>>`.
+            `results<std::vector<ip_address>>`.
     */
     [[nodiscard]] auto resolve(std::string_view host, resolve_flags flags)
     {
@@ -455,7 +455,7 @@ public:
         @param flags Flags controlling resolution behavior.
 
         @return An awaitable that completes with
-            `io_result<std::vector<endpoint>>`.
+            `results<std::vector<endpoint>>`.
     */
     [[nodiscard]] auto resolve(
         std::string_view host, std::string_view service, resolve_flags flags)
@@ -473,7 +473,7 @@ public:
         @param ep The endpoint to resolve.
 
         @return An awaitable that completes with
-            `io_result<endpoint_name>`.
+            `results<endpoint_name>`.
 
         @par Example
         @par !example reverse_resolve
@@ -495,7 +495,7 @@ public:
         @param flags Flags controlling resolution behavior. See reverse_flags.
 
         @return An awaitable that completes with
-            `io_result<endpoint_name>`.
+            `results<endpoint_name>`.
     */
     [[nodiscard]] auto resolve(endpoint const& ep, reverse_flags flags)
     {

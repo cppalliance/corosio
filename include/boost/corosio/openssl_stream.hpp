@@ -18,7 +18,8 @@
 #include <boost/capy/detail/buffer_array.hpp>
 #include <boost/capy/concept/stream.hpp>
 #include <boost/capy/io/any_stream.hpp>
-#include <boost/capy/io_task.hpp>
+#include <boost/capy/results.hpp>
+#include <boost/capy/task.hpp>
 
 #include <concepts>
 #include <memory>
@@ -149,7 +150,7 @@ public:
 
         @return An awaitable yielding `(error_code)`.
     */
-    [[nodiscard]] capy::io_task<> handshake(tls_role role) override;
+    [[nodiscard]] capy::task<capy::results<>> handshake(tls_role role) override;
 
     /** Asynchronously shut down the TLS session.
 
@@ -170,7 +171,7 @@ public:
 
         @return An awaitable yielding `(error_code)`.
     */
-    [[nodiscard]] capy::io_task<> shutdown() override;
+    [[nodiscard]] capy::task<capy::results<>> shutdown() override;
 
     /// Cancel operations pending on the owned underlying stream.
     void cancel() noexcept override;
@@ -212,12 +213,12 @@ public:
 
 protected:
     /// @copydoc tls_stream::do_read_some
-    capy::io_task<std::size_t> do_read_some(
+    capy::task<capy::results<std::size_t>> do_read_some(
         capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers)
         override;
 
     /// @copydoc tls_stream::do_write_some
-    capy::io_task<std::size_t> do_write_some(
+    capy::task<capy::results<std::size_t>> do_write_some(
         capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers)
         override;
 

@@ -12,9 +12,9 @@
 
 #include <boost/capy/error.hpp>
 #include <boost/capy/continuation.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 
 #include <coroutine>
 #include <cstddef>
@@ -23,7 +23,7 @@
 
 namespace boost::corosio::detail {
 
-/* CRTP base for awaitables that return io_result<std::size_t>.
+/* CRTP base for awaitables that return results<std::size_t>.
 
    Derived classes must provide:
 
@@ -55,12 +55,12 @@ public:
         return static_cast<bool>(ec_);
     }
 
-    [[nodiscard]] capy::io_result<std::size_t> await_resume() const noexcept
+    [[nodiscard]] capy::results<std::size_t> await_resume() const noexcept
     {
         return {ec_, bytes_};
     }
 
-    auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+    auto await_suspend(std::coroutine_handle<> h, capy::await_context const* env)
         -> std::coroutine_handle<>
     {
         token_ = env->stop_token;
@@ -80,7 +80,7 @@ public:
     }
 };
 
-/* CRTP base for awaitables that return io_result<Value> for a
+/* CRTP base for awaitables that return results<Value> for a
    moved-out result object (e.g. the resolver's result lists).
 
    Derived classes must provide:
@@ -112,12 +112,12 @@ public:
         return static_cast<bool>(ec_);
     }
 
-    [[nodiscard]] capy::io_result<Value> await_resume() const noexcept
+    [[nodiscard]] capy::results<Value> await_resume() const noexcept
     {
         return {ec_, std::move(value_)};
     }
 
-    auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+    auto await_suspend(std::coroutine_handle<> h, capy::await_context const* env)
         -> std::coroutine_handle<>
     {
         token_ = env->stop_token;
@@ -135,7 +135,7 @@ public:
     }
 };
 
-/* CRTP base for awaitables that return io_result<>.
+/* CRTP base for awaitables that return results<>.
 
    Derived classes must provide:
 
@@ -165,12 +165,12 @@ public:
         return static_cast<bool>(ec_);
     }
 
-    [[nodiscard]] capy::io_result<> await_resume() const noexcept
+    [[nodiscard]] capy::results<> await_resume() const noexcept
     {
         return {ec_};
     }
 
-    auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+    auto await_suspend(std::coroutine_handle<> h, capy::await_context const* env)
         -> std::coroutine_handle<>
     {
         token_ = env->stop_token;

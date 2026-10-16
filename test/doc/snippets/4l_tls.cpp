@@ -146,8 +146,8 @@ public:
     template<capy::ConstBufferSequence B>
     auto write_some(B const& buffers); // Encrypt and write
 
-    virtual capy::io_task<> handshake(tls_role role) = 0;
-    virtual capy::io_task<> shutdown()               = 0;
+    virtual capy::task<capy::results<>> handshake(tls_role role) = 0;
+    virtual capy::task<capy::results<>> shutdown()               = 0;
 
     virtual capy::any_stream& next_layer() noexcept = 0; // Underlying stream
 };

@@ -347,7 +347,7 @@ public:
 
         @param w The direction to wait on.
 
-        @return An awaitable yielding `capy::io_result<>`. Yields
+        @return An awaitable yielding `capy::results<>`. Yields
             `errc::bad_file_descriptor` when not open.
 
         @par Example
