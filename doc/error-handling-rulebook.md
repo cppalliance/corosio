@@ -44,10 +44,10 @@ by classifying its failures:
 | Situation | Shape |
 |---|---|
 | Sync, no payload | `[[nodiscard]] std::error_code f(...) noexcept` |
-| Sync, with payload | `[[nodiscard]] capy::io_result<T> f(...) noexcept` |
-| Async | the awaitable completes with `io_result<...>` — initiators never throw |
+| Sync, with payload | `[[nodiscard]] capy::results<T> f(...) noexcept` |
+| Async | the awaitable completes with `results<...>` — initiators never throw |
 
-`io_result<T>` is `std::tuple<std::error_code, T...>`, so results
+`results<T>` is `std::tuple<std::error_code, T...>`, so results
 destructure; the sync and async surfaces share one idiom:
 
 ```cpp
@@ -58,7 +58,7 @@ auto [ec2, ep] = make_endpoint("10.0.0.1:80");    // factory
 ```
 
 The payload always rides in the return — the `make_*` factories
-return `io_result<T>` with a default-constructed payload on failure.
+return `results<T>` with a default-constructed payload on failure.
 Every awaitable-returning initiator is `[[nodiscard]]`: a discarded
 awaitable is a silent no-op that also drops any pre-set completion.
 
@@ -99,7 +99,7 @@ they own, race-free, before the call?**
 
 Corollary: an operation with no realistic failure on a valid open
 object (`size()`, `release()`, `available()`) stays on the throwing
-channel — an `io_result` return would tax every correct call site to
+channel — a `results` return would tax every correct call site to
 carry a bit that is always "you have a bug".
 
 ## 4. The Closed-Object Condition

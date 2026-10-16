@@ -153,7 +153,7 @@ win_stream_file_internal::sync_all() noexcept
     return {};
 }
 
-inline capy::io_result<std::uint64_t>
+inline capy::results<std::uint64_t>
 win_stream_file_internal::seek(
     std::int64_t offset, file_base::seek_basis origin) noexcept
 {
@@ -280,7 +280,7 @@ win_stream_file::assign(native_handle_type handle) noexcept
     return internal_.assign(handle, handle_kind::stream_file);
 }
 
-inline capy::io_result<std::uint64_t>
+inline capy::results<std::uint64_t>
 win_stream_file::seek(
     std::int64_t offset, file_base::seek_basis origin) noexcept
 {

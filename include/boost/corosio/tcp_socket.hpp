@@ -19,7 +19,7 @@
 #include <boost/corosio/detail/native_handle.hpp>
 #include <boost/corosio/detail/op_base.hpp>
 #include <boost/corosio/io/io_stream.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/corosio/error.hpp>
 #include <boost/corosio/endpoint.hpp>
@@ -27,7 +27,7 @@
 #include <boost/corosio/wait_type.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 
 #include <system_error>
@@ -381,7 +381,7 @@ public:
 
         @param ep The remote endpoint to connect to.
 
-        @return An awaitable that completes with `io_result<>`.
+        @return An awaitable that completes with `results<>`.
             Returns success (default `error_code`) on successful connection,
             or an error code on failure including:
             - `connection_refused`: No server listening at endpoint
@@ -421,7 +421,7 @@ public:
 
         @param w The wait direction (read, write, or error).
 
-        @return An awaitable that completes with `io_result<>`.
+        @return An awaitable that completes with `results<>`.
             On success, the wait consumes no bytes from the
             stream; a subsequent `read_some` (for read waits)
             returns the available data.

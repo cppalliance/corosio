@@ -13,7 +13,7 @@
 
 #include <boost/corosio/detail/config.hpp>
 
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 
 #include <string>
 
@@ -38,7 +38,7 @@ namespace boost::corosio {
     @return The error code, empty on success, and the hostname as a
         UTF-8 string — empty on failure.
 */
-[[nodiscard]] BOOST_COROSIO_DECL capy::io_result<std::string> host_name();
+[[nodiscard]] BOOST_COROSIO_DECL capy::results<std::string> host_name();
 
 } // namespace boost::corosio
 

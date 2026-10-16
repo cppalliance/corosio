@@ -16,11 +16,11 @@
 #include <boost/corosio/detail/scheduler_op.hpp>
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/capy/continuation.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -318,7 +318,7 @@ public:
 
         This timer must outlive the returned awaitable.
 
-        @return An awaitable that completes with `io_result<>`.
+        @return An awaitable that completes with `results<>`.
     */
     // Defined below wait_awaitable, which needs timer complete.
     wait_awaitable wait();
@@ -384,7 +384,7 @@ private:
     because either act may end the node's storage.
 
     The node owns no resources: the stop token is borrowed from the
-    awaiting chain's `io_env` (which outlives the suspension) and
+    awaiting chain's `await_context` (which outlives the suspension) and
     the stop callback is managed manually in `cb_buf_`, destroyed on
     every completion path before the frame can die.
 */
@@ -433,7 +433,7 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE waiter_node
     /// The executor the continuation is posted through.
     capy::executor_ref d_;
 
-    // Borrowed from the awaiting chain's io_env, which outlives the
+    // Borrowed from the awaiting chain's await_context, which outlives the
     // suspension; the node holds no owning state.
     /// The stop token observed for cancellation.
     std::stop_token const* token_ = nullptr;
@@ -485,7 +485,7 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE waiter_node
         @param env The awaiting chain's environment; must outlive
             the suspension.
     */
-    void bind(std::coroutine_handle<> h, capy::io_env const& env) noexcept
+    void bind(std::coroutine_handle<> h, capy::await_context const& env) noexcept
     {
         cont_.h     = h;
         cont_.owner = env.owner;
@@ -543,12 +543,12 @@ struct wait_awaitable
     // Cancellation surfaces through w_.ec_: the stop_token path in
     // wait() completes the waiter with error::canceled written to
     // it, so there is no separate token to consult here.
-    [[nodiscard]] capy::io_result<> await_resume() const noexcept
+    [[nodiscard]] capy::results<> await_resume() const noexcept
     {
         return {w_.ec_};
     }
 
-    auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+    auto await_suspend(std::coroutine_handle<> h, capy::await_context const* env)
         -> std::coroutine_handle<>
     {
         auto& impl = t_.get();

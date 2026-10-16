@@ -264,7 +264,7 @@ public:
 
         @param ep The remote endpoint to connect to.
 
-        @return An awaitable yielding `io_result<>`.
+        @return An awaitable yielding `results<>`.
 
         This socket must outlive the returned awaitable.
     */
@@ -283,7 +283,7 @@ public:
 
         @param w The wait direction (read, write, or error).
 
-        @return An awaitable yielding `io_result<>`.
+        @return An awaitable yielding `results<>`.
     */
     [[nodiscard]] auto wait(wait_type w)
     {

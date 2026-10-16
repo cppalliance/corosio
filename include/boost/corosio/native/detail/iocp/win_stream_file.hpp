@@ -50,7 +50,7 @@ public:
     std::error_code resize(std::uint64_t new_size) noexcept;
     std::error_code sync_data() noexcept;
     std::error_code sync_all() noexcept;
-    capy::io_result<std::uint64_t>
+    capy::results<std::uint64_t>
     seek(std::int64_t offset, file_base::seek_basis origin) noexcept;
 
 private:
@@ -107,7 +107,7 @@ public:
     std::error_code sync_all() noexcept override;
     native_handle_type release() override;
     std::error_code assign(native_handle_type handle) noexcept override;
-    capy::io_result<std::uint64_t>
+    capy::results<std::uint64_t>
     seek(std::int64_t offset, file_base::seek_basis origin) noexcept override;
 
     win_stream_file_internal* get_internal() noexcept;

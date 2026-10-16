@@ -533,7 +533,7 @@ parse_zone(std::string_view s, std::uint32_t& out) noexcept
 
 } // namespace
 
-capy::io_result<ipv6_address>
+capy::results<ipv6_address>
 make_ipv6_address(std::string_view s) noexcept
 {
     std::uint32_t scope_id = 0;

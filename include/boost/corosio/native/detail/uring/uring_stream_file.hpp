@@ -200,7 +200,7 @@ public:
         return {};
     }
 
-    capy::io_result<std::uint64_t>
+    capy::results<std::uint64_t>
     seek(std::int64_t offset, file_base::seek_basis origin) noexcept override
     {
         int whence = SEEK_SET;

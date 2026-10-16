@@ -102,7 +102,7 @@ class native_tcp_acceptor : public tcp_acceptor
         {
         }
 
-        [[nodiscard]] capy::io_result<> await_resume() const noexcept
+        [[nodiscard]] capy::results<> await_resume() const noexcept
         {
             if (!this->ec_)
                 acc_.reset_peer_impl(peer_, peer_impl_);
@@ -130,7 +130,7 @@ class native_tcp_acceptor : public tcp_acceptor
         {
         }
 
-        [[nodiscard]] capy::io_result<tcp_socket> await_resume() noexcept
+        [[nodiscard]] capy::results<tcp_socket> await_resume() noexcept
         {
             if (!this->ec_ && peer_impl_)
                 acc_.reset_peer_impl(peer_, peer_impl_);
@@ -204,7 +204,7 @@ public:
 
         @param peer The socket to receive the accepted connection.
 
-        @return An awaitable yielding `io_result<>`.
+        @return An awaitable yielding `results<>`.
 
         A closed acceptor reports `errc::bad_file_descriptor`.
 
@@ -224,7 +224,7 @@ public:
         Calls the backend implementation directly, bypassing virtual
         dispatch. Otherwise identical to @ref tcp_acceptor::accept().
 
-        @return An awaitable yielding `io_result<tcp_socket>`.
+        @return An awaitable yielding `results<tcp_socket>`.
 
         A closed acceptor reports `errc::bad_file_descriptor`.
 
@@ -251,7 +251,7 @@ public:
 
         @param w The wait direction (typically `wait_type::read`).
 
-        @return An awaitable yielding `io_result<>`.
+        @return An awaitable yielding `results<>`.
     */
     [[nodiscard]] auto wait(wait_type w)
     {

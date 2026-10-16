@@ -13,7 +13,7 @@
 #include <boost/corosio/detail/config.hpp>
 
 #include <boost/capy/cond.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 
 #include <concepts>
@@ -38,7 +38,7 @@
   the resolver uses for "no results" in posix_resolver_service.
 
   The operation is a plain coroutine; cancellation is propagated to the
-  inner per-endpoint connect via the affine awaitable protocol on io_env.
+  inner per-endpoint connect via the affine awaitable protocol on await_context.
 */
 
 namespace boost::corosio {
@@ -71,7 +71,7 @@ template<class Socket, std::ranges::input_range Range, class ConnectCondition>
                  ConnectCondition&,
                  std::error_code const&,
                  typename Socket::endpoint_type const&>
-capy::task<capy::io_result<typename Socket::endpoint_type>>
+capy::task<capy::results<typename Socket::endpoint_type>>
 connect(Socket& s, Range endpoints, ConnectCondition cond);
 
 template<class Socket, std::input_iterator Iter, class ConnectCondition>
@@ -82,7 +82,7 @@ template<class Socket, std::input_iterator Iter, class ConnectCondition>
                  ConnectCondition&,
                  std::error_code const&,
                  typename Socket::endpoint_type const&>
-capy::task<capy::io_result<Iter>>
+capy::task<capy::results<Iter>>
 connect(Socket& s, Iter begin, Iter end, ConnectCondition cond);
 
 /** Asynchronously connect a socket by trying each endpoint in a range.
@@ -110,7 +110,7 @@ connect(Socket& s, Iter begin, Iter end, ConnectCondition cond);
         (`connect(s, begin, end)`) to avoid the copy.
 
     @return An awaitable completing with
-        `capy::io_result<typename Socket::endpoint_type>`:
+        `capy::results<typename Socket::endpoint_type>`:
         - on success: default `error_code` and the connected endpoint;
         - on failure of all attempts: the error from the last attempt
           and a default-constructed endpoint;
@@ -136,7 +136,7 @@ template<class Socket, std::ranges::input_range Range>
     requires std::convertible_to<
         std::ranges::range_reference_t<Range>,
         typename Socket::endpoint_type>
-capy::task<capy::io_result<typename Socket::endpoint_type>>
+capy::task<capy::results<typename Socket::endpoint_type>>
 connect(Socket& s, Range endpoints)
 {
     detail::default_connect_condition cond;
@@ -173,7 +173,7 @@ template<class Socket, std::ranges::input_range Range, class ConnectCondition>
                  ConnectCondition&,
                  std::error_code const&,
                  typename Socket::endpoint_type const&>
-capy::task<capy::io_result<typename Socket::endpoint_type>>
+capy::task<capy::results<typename Socket::endpoint_type>>
 connect(Socket& s, Range endpoints, ConnectCondition cond)
 {
     using endpoint_type = typename Socket::endpoint_type;
@@ -221,7 +221,7 @@ connect(Socket& s, Range endpoints, ConnectCondition cond)
     @param begin The first candidate.
     @param end One past the last candidate.
 
-    @return An awaitable completing with `capy::io_result<Iter>`:
+    @return An awaitable completing with `capy::results<Iter>`:
         - on success: default `error_code` and the iterator of the
           successful endpoint;
         - on failure of all attempts: the error from the last attempt
@@ -236,7 +236,7 @@ template<class Socket, std::input_iterator Iter>
     requires std::convertible_to<
         std::iter_reference_t<Iter>,
         typename Socket::endpoint_type>
-capy::task<capy::io_result<Iter>>
+capy::task<capy::results<Iter>>
 connect(Socket& s, Iter begin, Iter end)
 {
     return corosio::connect(
@@ -273,7 +273,7 @@ template<class Socket, std::input_iterator Iter, class ConnectCondition>
                  ConnectCondition&,
                  std::error_code const&,
                  typename Socket::endpoint_type const&>
-capy::task<capy::io_result<Iter>>
+capy::task<capy::results<Iter>>
 connect(Socket& s, Iter begin, Iter end, ConnectCondition cond)
 {
     using endpoint_type = typename Socket::endpoint_type;

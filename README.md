@@ -5,7 +5,7 @@
 
 # Boost.Corosio
 
-Boost.Corosio is a coroutine-only I/O library for C++20 that provides asynchronous networking primitives with automatic executor affinity propagation. Every operation returns an awaitable that integrates with the _IoAwaitable_ protocol, ensuring your coroutines resume on the correct executor without manual dispatch.
+Boost.Corosio is a coroutine-only I/O library for C++20 that provides asynchronous networking primitives with automatic executor affinity propagation. Every operation returns an awaitable that integrates with the _ContextAwaitable_ protocol, ensuring your coroutines resume on the correct executor without manual dispatch.
 
 ## Quick Start
 

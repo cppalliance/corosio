@@ -17,7 +17,7 @@ asynchronous networking primitives with automatic executor affinity propagation.
 
 Corosio provides asynchronous I/O operations designed from the ground up for
 C++20 coroutines. Every operation returns an awaitable that integrates with
-the _IoAwaitable_ protocol, ensuring your coroutines resume on the correct
+the _ContextAwaitable_ protocol, ensuring your coroutines resume on the correct
 executor without manual dispatch.
 
 * cpp:io_context[] — Event loop for processing asynchronous operations
@@ -54,7 +54,7 @@ callback-based interfaces.
 parameters, not through thread-local storage. When an I/O operation completes,
 it resumes your coroutine through the executor you provided.
 
-**Structured bindings.** Results use `io_result<T>` which supports structured
+**Structured bindings.** Results use `results<T>` which supports structured
 bindings: `auto [ec, n] = co_await s.read_some(buf)`. See
 xref:4.guide/4m.error-handling.adoc[Error Handling] for how to handle the
 error code.

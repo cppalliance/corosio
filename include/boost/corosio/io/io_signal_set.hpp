@@ -13,10 +13,10 @@
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/op_base.hpp>
 #include <boost/corosio/io/io_object.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 
 #include <boost/capy/continuation.hpp>
 
@@ -117,7 +117,7 @@ public:
             inline, on the thread that called `request_stop()`. On POSIX
             it always resumes on a thread running the execution context.
 
-        @return An awaitable that completes with `io_result<int>`.
+        @return An awaitable that completes with `results<int>`.
             Returns the signal number when a signal is delivered,
             or an error code on failure.
     */

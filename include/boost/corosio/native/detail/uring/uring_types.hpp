@@ -200,7 +200,7 @@ public:
         {
             if (sched_->try_consume_inline_budget())
             {
-                decode_io_result(
+                decode_results(
                     ec, bytes, stop_now,
                     err ? make_err(err) : std::error_code{},
                     /*is_read=*/true, n < 0 ? 0u : static_cast<std::size_t>(n),
@@ -278,7 +278,7 @@ public:
         {
             if (sched_->try_consume_inline_budget())
             {
-                decode_io_result(
+                decode_results(
                     ec, bytes, stop_now,
                     err ? make_err(err) : std::error_code{},
                     /*is_read=*/false, n < 0 ? 0u : static_cast<std::size_t>(n),
@@ -1171,7 +1171,7 @@ public:
         {
             if (sched_->try_consume_inline_budget())
             {
-                decode_io_result(
+                decode_results(
                     ec, bytes, stop_now,
                     err ? make_err(err) : std::error_code{},
                     /*is_read=*/true, n < 0 ? 0u : static_cast<std::size_t>(n),
@@ -1249,7 +1249,7 @@ public:
         {
             if (sched_->try_consume_inline_budget())
             {
-                decode_io_result(
+                decode_results(
                     ec, bytes, stop_now,
                     err ? make_err(err) : std::error_code{},
                     /*is_read=*/false, n < 0 ? 0u : static_cast<std::size_t>(n),
@@ -2277,7 +2277,7 @@ private:
         {
             if (sched_->try_consume_inline_budget())
             {
-                decode_io_result(
+                decode_results(
                     ec, bytes, stop_now,
                     err ? make_err(err) : std::error_code{},
                     /*is_read=*/false, n < 0 ? 0u : static_cast<std::size_t>(n),
@@ -2368,7 +2368,7 @@ private:
         {
             if (sched_->try_consume_inline_budget())
             {
-                decode_io_result(
+                decode_results(
                     ec, bytes, stop_now,
                     err ? make_err(err) : std::error_code{},
                     /*is_read=*/false, n < 0 ? 0u : static_cast<std::size_t>(n),
@@ -2938,7 +2938,7 @@ private:
         {
             if (sched_->try_consume_inline_budget())
             {
-                decode_io_result(
+                decode_results(
                     ec, bytes, stop_now,
                     err ? make_err(err) : std::error_code{},
                     /*is_read=*/false, n < 0 ? 0u : static_cast<std::size_t>(n),
@@ -3029,7 +3029,7 @@ private:
         {
             if (sched_->try_consume_inline_budget())
             {
-                decode_io_result(
+                decode_results(
                     ec, bytes, stop_now,
                     err ? make_err(err) : std::error_code{},
                     /*is_read=*/false, n < 0 ? 0u : static_cast<std::size_t>(n),

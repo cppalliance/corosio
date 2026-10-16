@@ -32,7 +32,7 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/task.hpp>
@@ -192,7 +192,7 @@ struct mt_reactor_test
             done.store(true);
         };
         // Runs the waiter on this thread up to the parked wait.
-        capy::io_env env{ex, std::stop_token{}, nullptr};
+        capy::await_context env{ex, std::stop_token{}, nullptr};
         std::optional<capy::task<>> parked;
         parked.emplace(waiter());
         parked->await_suspend(std::noop_coroutine(), &env).resume();

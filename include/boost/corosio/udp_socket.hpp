@@ -18,7 +18,7 @@
 #include <boost/corosio/detail/native_handle.hpp>
 #include <boost/corosio/detail/op_base.hpp>
 #include <boost/corosio/io/io_object.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/corosio/error.hpp>
 #include <boost/corosio/endpoint.hpp>
@@ -27,7 +27,7 @@
 #include <boost/corosio/wait_type.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 
 #include <system_error>
@@ -699,7 +699,7 @@ public:
         @param flags Message flags (e.g. message_flags::do_not_route).
 
         @return An awaitable that completes with
-            `io_result<std::size_t>`.
+            `results<std::size_t>`.
 
         A closed socket reports `errc::bad_file_descriptor`.
     */
@@ -728,7 +728,7 @@ public:
         @param flags Message flags (e.g. message_flags::peek).
 
         @return An awaitable that completes with
-            `io_result<std::size_t>`.
+            `results<std::size_t>`.
 
         A closed socket reports `errc::bad_file_descriptor`.
     */
@@ -756,7 +756,7 @@ public:
 
         @param ep The remote endpoint to connect to.
 
-        @return An awaitable that completes with `io_result<>`.
+        @return An awaitable that completes with `results<>`.
 
         If the socket needs to be opened and the open fails, the
         awaitable completes immediately with that error.
@@ -779,7 +779,7 @@ public:
 
         @param w The wait direction (read, write, or error).
 
-        @return An awaitable that completes with `io_result<>`.
+        @return An awaitable that completes with `results<>`.
 
         A closed socket completes with `errc::bad_file_descriptor`.
 
@@ -796,7 +796,7 @@ public:
         @param flags Message flags.
 
         @return An awaitable that completes with
-            `io_result<std::size_t>`.
+            `results<std::size_t>`.
 
         A closed socket reports `errc::bad_file_descriptor`.
     */
@@ -822,7 +822,7 @@ public:
         @param flags Message flags (e.g. message_flags::peek).
 
         @return An awaitable that completes with
-            `io_result<std::size_t>`.
+            `results<std::size_t>`.
 
         A closed socket reports `errc::bad_file_descriptor`.
     */

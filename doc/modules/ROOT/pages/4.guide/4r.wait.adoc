@@ -117,7 +117,7 @@ include::example$snippets/4r_wait.cpp[tag=wait_cancel,indent=0]
 
 cpp:timeout[] composes with `wait()` the
 same way it does with the other socket operations, since `wait()`
-yields an `io_result` like any other awaitable:
+yields a `results` like any other awaitable:
 
 [source,cpp]
 ----

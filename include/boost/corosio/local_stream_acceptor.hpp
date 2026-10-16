@@ -17,12 +17,12 @@
 #include <boost/corosio/error.hpp>
 #include <boost/corosio/wait_type.hpp>
 #include <boost/corosio/io/io_object.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/local_stream_socket.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 
 #include <system_error>
@@ -126,7 +126,7 @@ class BOOST_COROSIO_DECL local_stream_acceptor : public io_object
                 discard_peer(acc_, peer_impl_);
         }
 
-        [[nodiscard]] capy::io_result<local_stream_socket>
+        [[nodiscard]] capy::results<local_stream_socket>
         await_resume() const noexcept
         {
             if (this->ec_ || !peer_impl_)
@@ -172,7 +172,7 @@ class BOOST_COROSIO_DECL local_stream_acceptor : public io_object
                 discard_peer(acc_, peer_impl_);
         }
 
-        [[nodiscard]] capy::io_result<> await_resume() const noexcept
+        [[nodiscard]] capy::results<> await_resume() const noexcept
         {
             if (!this->ec_ && peer_impl_)
                 peer_.h_.reset(std::exchange(peer_impl_, nullptr));
@@ -356,7 +356,7 @@ public:
         On cancellation, yields `capy::cond::canceled` and
         @p peer is not modified.
 
-        @return An awaitable that completes with io_result<>.
+        @return An awaitable that completes with `results<>`.
 
         A closed acceptor reports `errc::bad_file_descriptor`.
     */
@@ -384,7 +384,7 @@ public:
 
         @param w The wait direction.
 
-        @return An awaitable that completes with `io_result<>`.
+        @return An awaitable that completes with `results<>`.
 
         A closed acceptor completes with `errc::bad_file_descriptor`.
 
@@ -409,7 +409,7 @@ public:
         a default-constructed socket.
 
         @return An awaitable that completes with
-            io_result<`local_stream_socket`>.
+            results<`local_stream_socket`>.
 
         A closed acceptor reports `errc::bad_file_descriptor`.
         On failure the returned socket is default-constructed and

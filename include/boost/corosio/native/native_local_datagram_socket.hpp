@@ -415,7 +415,7 @@ public:
 
         @param w The wait direction (read, write, or error).
 
-        @return An awaitable yielding `io_result<>`.
+        @return An awaitable yielding `results<>`.
     */
     [[nodiscard]] auto wait(wait_type w)
     {

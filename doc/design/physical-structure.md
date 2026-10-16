@@ -129,7 +129,7 @@ private:
 
         auto await_suspend(
             std::coroutine_handle<> h,
-            capy::io_env const* env ) -> std::coroutine_handle<>
+            capy::await_context const* env ) -> std::coroutine_handle<>
         {
             // Virtual dispatch through implementation - type-erased
             return self_.get().read_some( h, env->executor,
@@ -229,7 +229,7 @@ private:
 
         auto await_suspend(
             std::coroutine_handle<> h,
-            capy::io_env const* env ) -> std::coroutine_handle<>
+            capy::await_context const* env ) -> std::coroutine_handle<>
         {
             // Virtual dispatch through concrete implementation
             return self_.get().connect( h, env->executor,
@@ -375,7 +375,7 @@ private:
 
         auto await_suspend(
             std::coroutine_handle<> h,
-            capy::io_env const* env ) -> std::coroutine_handle<>
+            capy::await_context const* env ) -> std::coroutine_handle<>
         {
             // Direct call to backend impl - no vtable, inlinable
             return self_.get_impl().read_some( h, env->executor,

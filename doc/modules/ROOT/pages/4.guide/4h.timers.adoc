@@ -107,13 +107,13 @@ Whichever finishes first decides the outcome:
 include::example$snippets/4h_timers.cpp[tag=timeout_read,indent=0]
 ----
 
-If the inner operation wins, its `io_result` is returned unchanged,
+If the inner operation wins, its `results` is returned unchanged,
 error or success, payload and all. If the deadline wins, the inner
 operation is cancelled and `timeout()` produces its own result. `ec` is
 `capy::cond::timeout`, and any payload such as a byte count is
 default-initialized. It is not whatever the cancelled operation happened
 to leave behind. Because the deadline-win path default-initializes
-that payload, the inner operation's `io_result` payload type must be
+that payload, the inner operation's `results` payload type must be
 default constructible.
 
 `timeout()` also accepts an absolute deadline:
@@ -157,7 +157,7 @@ requested delay would be worse than a hard failure.
 
 == Composing with Other Operations
 
-Because `timeout()` takes any awaitable that yields an `io_result`,
+Because `timeout()` takes any awaitable that yields a `results`,
 it composes with anything Corosio returns, not just socket reads. A
 connect-with-retry loop pairs `timeout()` for the per-attempt deadline
 with `delay()` for the pause between attempts:

@@ -17,9 +17,9 @@
 #include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/recycling_memory_resource.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 
 #include <chrono>
 #include <coroutine>
@@ -30,7 +30,7 @@
 #include <type_traits>
 #include <utility>
 
-/* Races an inner IoAwaitable against a timer via a shared
+/* Races an inner ContextAwaitable against a timer via a shared
    stop_source. await_suspend arms the timer by launching a
    fire-and-forget timeout_coro, then starts the inner op with
    an interposed stop_token. Whichever completes first signals
@@ -50,19 +50,19 @@
 
 namespace boost::corosio::detail {
 
-// Local stand-in for capy::detail's io_result trait: corosio must not
+// Local stand-in for capy::detail's `results` trait: corosio must not
 // reach into capy::detail, but the result-mapping switch in
-// await_resume needs to distinguish io_result from other return types.
+// await_resume needs to distinguish `results` from other return types.
 template<typename T>
-struct is_io_result : std::false_type
+struct is_results : std::false_type
 {};
 
 template<typename... Ts>
-struct is_io_result<capy::io_result<Ts...>> : std::true_type
+struct is_results<capy::results<Ts...>> : std::true_type
 {};
 
 template<typename T>
-inline constexpr bool is_io_result_v = is_io_result<T>::value;
+inline constexpr bool is_results_v = is_results<T>::value;
 
 /** Awaitable adapter that cancels an inner operation after a deadline.
 
@@ -71,9 +71,9 @@ inline constexpr bool is_io_result_v = is_io_result<T>::value;
     Parent cancellation is forwarded via stop_callback.
 
     The timer is constructed internally in `await_suspend` from the
-    execution context in `io_env`.
+    execution context in `await_context`.
 
-    @tparam A The inner IoAwaitable type (decayed).
+    @tparam A The inner ContextAwaitable type (decayed).
 */
 template<typename A>
 struct timeout_awaitable
@@ -94,7 +94,7 @@ struct timeout_awaitable
     // environment it was given.
     std::stop_source stop_src_;
     std::stop_token parent_token_;
-    capy::io_env inner_env_;
+    capy::await_context inner_env_;
     A inner_;
     std::optional<timer> timer_;
     time_point deadline_;
@@ -149,7 +149,7 @@ struct timeout_awaitable
         return inner_.await_ready();
     }
 
-    auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+    auto await_suspend(std::coroutine_handle<> h, capy::await_context const* env)
     {
         parent_token_ = env->stop_token;
 
@@ -164,7 +164,7 @@ struct timeout_awaitable
         // clear precondition diagnostic. This terminates by design
         // (a usage error) rather than dropping the requested timeout.
         // The detached timeout coroutine must own its executor by
-        // value (see timeout_coro::set_env_owned); io_env carries
+        // value (see timeout_coro::set_env_owned); await_context carries
         // only a non-owning executor_ref. Recover the concrete
         // executor from the context rather than the executor_ref:
         // wrapped executors (a strand over the io_context) satisfy

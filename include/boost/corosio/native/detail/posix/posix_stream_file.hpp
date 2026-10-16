@@ -212,7 +212,7 @@ public:
     std::error_code sync_all() noexcept override;
     native_handle_type release() override;
     std::error_code assign(native_handle_type handle) noexcept override;
-    capy::io_result<std::uint64_t>
+    capy::results<std::uint64_t>
     seek(std::int64_t offset, file_base::seek_basis origin) noexcept override;
 
     // -- Internal --
@@ -391,7 +391,7 @@ posix_stream_file::release()
     return fd;
 }
 
-inline capy::io_result<std::uint64_t>
+inline capy::results<std::uint64_t>
 posix_stream_file::seek(
     std::int64_t offset, file_base::seek_basis origin) noexcept
 {
@@ -437,7 +437,7 @@ posix_stream_file::file_op::operator()()
 
     // Empty buffers never reach the pool (diverted at initiation), so
     // empty_buffer stays false and a 0-byte read is a genuine EOF.
-    decode_io_result(
+    decode_results(
         ec_out, bytes_out, cancelled.load(std::memory_order_acquire),
         errn != 0 ? make_err(errn) : std::error_code{}, is_read,
         bytes_transferred, /*empty_buffer=*/false);

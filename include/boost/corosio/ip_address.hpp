@@ -17,7 +17,7 @@
 #include <boost/corosio/ipv4_address.hpp>
 #include <boost/corosio/ipv6_address.hpp>
 
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 
 #include <compare>
 #include <iosfwd>
@@ -326,7 +326,7 @@ public:
     @return The error code, empty on success, and the parsed
         address — default-constructed on failure.
 */
-[[nodiscard]] BOOST_COROSIO_DECL capy::io_result<ip_address>
+[[nodiscard]] BOOST_COROSIO_DECL capy::results<ip_address>
 make_ip_address(std::string_view s) noexcept;
 
 inline ip_address::ip_address(std::string_view s)

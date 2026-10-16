@@ -143,7 +143,7 @@ namespace boost::corosio {
             stream->async_write_some_impl(bufs, h);
         }
 
-        io_result await_resume() { return stream->get_result(); }
+        results await_resume() { return stream->get_result(); }
     };
 
     // Virtual implementation - unrolls immediately

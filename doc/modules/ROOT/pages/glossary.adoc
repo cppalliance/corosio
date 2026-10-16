@@ -19,7 +19,7 @@ An I/O object that listens for and accepts incoming connections. See
 cpp:tcp_acceptor[] and xref:4.guide/4e.tcp-acceptor.adoc[Acceptors Guide].
 
 Affine Awaitable:: An awaitable type that implements the affine protocol.
-It receives an `io_env const*` in `await_suspend`, carrying the executor,
+It receives an `await_context const*` in `await_suspend`, carrying the executor,
 stop token, and frame allocator, to ensure correct executor affinity.
 
 Affinity::
@@ -135,7 +135,7 @@ I/O Stream::
 An I/O object that supports reading and writing data. Base class is
 `corosio::io_stream`.
 
-io_result::
+results::
 The result type for Corosio operations, containing an error code and optional
 values. Supports structured bindings.
 

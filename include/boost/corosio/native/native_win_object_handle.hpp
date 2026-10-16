@@ -131,7 +131,7 @@ public:
         Calls the backend implementation directly, bypassing virtual
         dispatch. Otherwise identical to @ref win_object_handle::wait.
 
-        @return An awaitable yielding `io_result<>`.
+        @return An awaitable yielding `results<>`.
     */
     [[nodiscard]] auto wait()
     {

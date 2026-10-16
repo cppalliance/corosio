@@ -22,7 +22,7 @@
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/strand.hpp>
 #include <boost/capy/ex/thread_pool.hpp>

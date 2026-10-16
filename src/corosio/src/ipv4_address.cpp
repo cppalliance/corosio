@@ -208,7 +208,7 @@ parse_ipv4_impl(std::string_view s, ipv4_address& addr) noexcept
     return {};
 }
 
-capy::io_result<ipv4_address>
+capy::results<ipv4_address>
 make_ipv4_address(std::string_view s) noexcept
 {
     ipv4_address addr;

@@ -26,7 +26,7 @@ namespace boost::corosio {
 
 #if BOOST_COROSIO_POSIX
 
-capy::io_result<std::string>
+capy::results<std::string>
 host_name()
 {
     // 256 exceeds POSIX's _POSIX_HOST_NAME_MAX floor of 255 and
@@ -44,7 +44,7 @@ host_name()
 
 #elif BOOST_COROSIO_HAS_IOCP
 
-capy::io_result<std::string>
+capy::results<std::string>
 host_name()
 {
     // Size query: returns ERROR_MORE_DATA and writes the required

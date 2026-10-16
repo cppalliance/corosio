@@ -15,7 +15,7 @@
 #include <boost/corosio/delay.hpp>
 
 #include <boost/capy/cond.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -1122,9 +1122,9 @@ struct signal_set_test
         BOOST_TEST_EQ(delivered, 40);
     }
 
-    // io_result tests
+    // `results` tests
 
-    void testIoResultSuccess()
+    void testResultsSuccess()
     {
         io_context ioc(Backend);
         signal_set s(ioc, SIGINT);
@@ -1144,7 +1144,7 @@ struct signal_set_test
         BOOST_TEST(result_ok);
     }
 
-    void testIoResultCanceled()
+    void testResultsCanceled()
     {
         io_context ioc(Backend);
         signal_set s(ioc, SIGINT);
@@ -1172,7 +1172,7 @@ struct signal_set_test
         BOOST_TEST(result_ec == capy::cond::canceled);
     }
 
-    void testIoResultStructuredBinding()
+    void testResultsStructuredBinding()
     {
         io_context ioc(Backend);
         signal_set s(ioc, SIGINT);
@@ -1554,7 +1554,7 @@ struct signal_set_test
             std::ignore = co_await set.wait();
             ++count;
         };
-        capy::io_env env{ex, std::stop_token{}, nullptr};
+        capy::await_context env{ex, std::stop_token{}, nullptr};
         std::optional<capy::task<>> parked;
         parked.emplace(waiter(s2, resumed2));
         parked->await_suspend(std::noop_coroutine(), &env).resume();
@@ -1640,10 +1640,10 @@ struct signal_set_test
         testManySequentialSignalCycles();
         testInterleavedQueuedAndWaitedSignals();
 
-        // io_result tests
-        testIoResultSuccess();
-        testIoResultCanceled();
-        testIoResultStructuredBinding();
+        // `results` tests
+        testResultsSuccess();
+        testResultsCanceled();
+        testResultsStructuredBinding();
 
         // Signal flags tests (cross-platform)
         testFlagsBitwiseOperations();

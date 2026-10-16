@@ -105,7 +105,7 @@
 # --- C++ terms used adjectivally or nominally in running prose ------------------
 #
 # Language keywords belong here, and several already did (const, nullptr, nothrow,
-# enum, bool). The line against bare identifiers below is about SYMBOLS: `io_result`
+# enum, bool). The line against bare identifiers below is about SYMBOLS: `results`
 # has a generated reference page, so leaving it unlinked in prose is a real missed
 # `cpp:` link (style guide B1). A keyword has no page and nothing to link to, so B1
 # offers no remedy and the alert can never be actioned -- it is noise, not a signal.
@@ -252,7 +252,7 @@
 # reference page ever appears for one, delete its line here and link it instead.
 (?i)mockets?
 (?i)socket_pair
-(?i)io_result
+(?i)results
 (?i)const_buffer
 (?i)mutable_buffer
 (?i)buffer_slice

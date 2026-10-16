@@ -91,7 +91,7 @@ openssl_stream::next_layer() const noexcept
     return impl_->stream();
 }
 
-capy::io_task<std::size_t>
+capy::task<capy::results<std::size_t>>
 openssl_stream::do_read_some(
     capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers)
 {
@@ -99,7 +99,7 @@ openssl_stream::do_read_some(
         detail::driver_ref<implementation>(impl_), buffers);
 }
 
-capy::io_task<std::size_t>
+capy::task<capy::results<std::size_t>>
 openssl_stream::do_write_some(
     capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers)
 {
@@ -107,14 +107,14 @@ openssl_stream::do_write_some(
         detail::driver_ref<implementation>(impl_), buffers);
 }
 
-capy::io_task<>
+capy::task<capy::results<>>
 openssl_stream::handshake(tls_role role)
 {
     return detail::driver_handshake(
         detail::driver_ref<implementation>(impl_), role);
 }
 
-capy::io_task<>
+capy::task<capy::results<>>
 openssl_stream::shutdown()
 {
     return detail::driver_shutdown(detail::driver_ref<implementation>(impl_));

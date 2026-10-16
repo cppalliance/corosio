@@ -19,9 +19,9 @@
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/fuse.hpp>
 
@@ -378,7 +378,7 @@ public:
     read_some_awaitable& operator=(read_some_awaitable const&) = delete;
     read_some_awaitable& operator=(read_some_awaitable&&)      = delete;
 
-    // All decisions wait for await_suspend, where the io_env (and thus
+    // All decisions wait for await_suspend, where the await_context (and thus
     // the stop token) is available — a pre-stopped token must
     // short-circuit before any staged data is consumed.
     bool await_ready() const noexcept
@@ -386,7 +386,7 @@ public:
         return false;
     }
 
-    auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+    auto await_suspend(std::coroutine_handle<> h, capy::await_context const* env)
         -> std::coroutine_handle<>
     {
         if (env->stop_token.stop_requested())
@@ -428,7 +428,7 @@ public:
         return underlying_.await_suspend(h, env);
     }
 
-    [[nodiscard]] capy::io_result<std::size_t> await_resume()
+    [[nodiscard]] capy::results<std::size_t> await_resume()
     {
         if (sync_)
             return {ec_, n_};
@@ -486,7 +486,7 @@ public:
     write_some_awaitable& operator=(write_some_awaitable const&) = delete;
     write_some_awaitable& operator=(write_some_awaitable&&)      = delete;
 
-    // All decisions wait for await_suspend, where the io_env (and thus
+    // All decisions wait for await_suspend, where the await_context (and thus
     // the stop token) is available — a pre-stopped token must
     // short-circuit before any of the expect script is consumed.
     bool await_ready() const noexcept
@@ -494,7 +494,7 @@ public:
         return false;
     }
 
-    auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+    auto await_suspend(std::coroutine_handle<> h, capy::await_context const* env)
         -> std::coroutine_handle<>
     {
         if (env->stop_token.stop_requested())
@@ -540,7 +540,7 @@ public:
         return underlying_.await_suspend(h, env);
     }
 
-    [[nodiscard]] capy::io_result<std::size_t> await_resume()
+    [[nodiscard]] capy::results<std::size_t> await_resume()
     {
         if (sync_)
             return {ec_, n_};

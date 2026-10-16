@@ -89,7 +89,7 @@ copy_to_iovec(
 inline void
 uring_set_result(uring_op* self, bool is_read, bool empty_buf) noexcept
 {
-    decode_io_result(
+    decode_results(
         self->ec_out, self->bytes_out,
         self->cancelled.load(std::memory_order_acquire),
         self->res < 0 ? make_err(-self->res) : std::error_code{}, is_read,
@@ -673,7 +673,7 @@ struct uring_wait_op : uring_op
         }
 
         // Wait reports only success/cancel/error — no bytes, no EOF.
-        decode_io_result(
+        decode_results(
             self->ec_out, /*bytes_out=*/nullptr,
             self->cancelled.load(std::memory_order_acquire), ec,
             /*is_read=*/false, /*bytes=*/0, /*empty_buffer=*/false);

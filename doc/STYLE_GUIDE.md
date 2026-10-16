@@ -164,7 +164,7 @@ as vocabulary is added — extend it rather than letting synonyms drift.)*
 | callback passed to `run_async` | **completion handler** | handler (bare), callback |
 | a `task<T>` value | **task** | coroutine (the language feature), coro |
 | the C++20 language feature | **coroutine** | coro, async function |
-| awaitable satisfying `IoAwaitable` | **I/O awaitable** | awaitable (bare, when the concept is meant) |
+| awaitable satisfying `ContextAwaitable` | **I/O awaitable** | awaitable (bare, when the concept is meant) |
 | object that listens for inbound connections | **acceptor** | listener, server socket, listening socket |
 | an address plus a port | **endpoint** | address (when the port is included), socket address |
 | the machine at the other end of a connection | **peer** | remote, other side, partner |

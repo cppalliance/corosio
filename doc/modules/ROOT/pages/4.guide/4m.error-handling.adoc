@@ -11,7 +11,7 @@
 = Error Handling
 :page-mode: how-to
 
-Corosio reports I/O errors through the `io_result` type, which carries an
+Corosio reports I/O errors through the `results` type, which carries an
 error code alongside any values produced by the operation.
 
 [#one-channel]
@@ -20,9 +20,9 @@ error code alongside any values produced by the operation.
 Every fallible operation reports through exactly one channel:
 
 * *Expected runtime conditions return the error.* Synchronous
-  operations return `std::error_code` (or `io_result<T>` when a
+  operations return `std::error_code` (or `results<T>` when a
   payload rides along — `seek()`, the `make_*` factories), and
-  asynchronous operations complete with `io_result<...>`. Every
+  asynchronous operations complete with `results<...>`. Every
   error-returning function is `+[[nodiscard]]+`.
 * *Misuse of a documented precondition throws* `std::system_error` —
   for example `release()`, `set_option()`, or `get_option()` on a
@@ -104,9 +104,9 @@ include::example$snippets/4m_error_handling.cpp[tag=assume]
 ----
 ====
 
-== The io_result Type
+== The `results` Type
 
-`io_result<Ts...>` is an alias for `std::tuple<std::error_code, Ts...>`:
+`results<Ts...>` is an alias for `std::tuple<std::error_code, Ts...>`:
 the error code always comes first, followed by any values the operation
 produced. Because it is a `std::tuple`, results interoperate with the
 whole tuple API — structured bindings, `std::tie`, `std::get`,
@@ -145,7 +145,7 @@ value for you.
 
 == Throwing on Error
 
-`io_result` never throws on its own. To turn an error into an exception,
+`results` never throws on its own. To turn an error into an exception,
 test `ec` and throw explicitly:
 
 [source,cpp]

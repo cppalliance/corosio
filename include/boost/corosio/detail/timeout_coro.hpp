@@ -11,10 +11,10 @@
 #define BOOST_COROSIO_DETAIL_TIMEOUT_CORO_HPP
 
 #include <boost/corosio/io_context.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
-#include <boost/capy/ex/io_awaitable_promise_base.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/context_awaitable_promise_base.hpp>
+#include <boost/capy/ex/await_context.hpp>
 
 #include <coroutine>
 #include <memory_resource>
@@ -24,7 +24,7 @@
 
 /* Self-destroying coroutine that awaits a timer and signals a
    stop_source on expiry. Created suspended (initial_suspend =
-   suspend_always); the caller sets an owned io_env copy then
+   suspend_always); the caller sets an owned await_context copy then
    resumes, which runs synchronously until the timer wait suspends.
    At final_suspend, suspend_never destroys the frame — the
    timeout_coro destructor is intentionally a no-op since the
@@ -33,8 +33,8 @@
    completion_op::destroy().
 
    The promise reuses task<>'s transform_awaiter pattern (including
-   the MSVC symmetric-transfer workaround) to inject io_env into
-   IoAwaitable co_await expressions.
+   the MSVC symmetric-transfer workaround) to inject await_context into
+   ContextAwaitable co_await expressions.
 
    The detached frame can outlive the awaiting chain, so it never
    allocates from that chain's frame allocator: timeout_awaitable
@@ -52,10 +52,10 @@ namespace boost::corosio::detail {
 */
 struct timeout_coro
 {
-    struct promise_type : capy::io_awaitable_promise_base<promise_type>
+    struct promise_type : capy::context_awaitable_promise_base<promise_type>
     {
         io_context::executor_type owned_ex_;
-        capy::io_env env_storage_;
+        capy::await_context env_storage_;
 
         /** Store an owned copy of the environment.
 
@@ -132,14 +132,14 @@ struct timeout_coro
         auto transform_awaitable(Awaitable&& a)
         {
             using A = std::decay_t<Awaitable>;
-            if constexpr (capy::IoAwaitable<A>)
+            if constexpr (capy::ContextAwaitable<A>)
             {
                 return transform_awaiter<Awaitable>{
                     std::forward<Awaitable>(a), this};
             }
             else
             {
-                static_assert(sizeof(A) == 0, "requires IoAwaitable");
+                static_assert(sizeof(A) == 0, "requires ContextAwaitable");
             }
         }
     };

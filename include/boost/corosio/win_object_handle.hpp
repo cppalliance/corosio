@@ -20,10 +20,10 @@
 #include <boost/corosio/detail/op_base.hpp>
 #include <boost/corosio/io/io_object.hpp>
 #include <boost/capy/continuation.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 
 #include <concepts>
@@ -284,7 +284,7 @@ public:
         shared object is unsafe. There is no timeout parameter;
         compose with @ref timeout or a stop token.
 
-        @return An awaitable yielding `capy::io_result<>`. Yields
+        @return An awaitable yielding `capy::results<>`. Yields
             `errc::bad_file_descriptor` when not open and a code
             comparing equal to `capy::cond::canceled` when cancelled
             before the kernel satisfied the wait.

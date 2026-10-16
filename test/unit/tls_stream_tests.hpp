@@ -19,7 +19,7 @@
 #include <boost/corosio/tls_stream.hpp>
 #include <boost/corosio/test/mocket.hpp>
 #include <boost/capy/ex/async_event.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/io/any_stream.hpp>
 #include <boost/capy/ex/strand.hpp>
@@ -1688,7 +1688,7 @@ testUnawaitedReadOutlivesContext(StreamFactory make_stream)
 {
     auto client_ctx = make_client_context();
     char buf[16];
-    std::optional<capy::io_task<std::size_t>> op;
+    std::optional<capy::task<capy::results<std::size_t>>> op;
     {
         io_context ioc;
         auto [m1, m2]  = corosio::test::make_mocket_pair(ioc);
@@ -1714,7 +1714,7 @@ testUnawaitedReadOutlivesUnwoundOwner(StreamFactory make_stream)
     auto server_ctx = make_server_context();
     char buf[16];
     char spare[16];
-    std::optional<capy::io_task<std::size_t>> op;
+    std::optional<capy::task<capy::results<std::size_t>>> op;
     {
         io_context ioc;
         auto [m1, m2]  = corosio::test::make_mocket_pair(ioc);
@@ -1725,7 +1725,7 @@ testUnawaitedReadOutlivesUnwoundOwner(StreamFactory make_stream)
         ioc.restart();
 
         auto owner = [](std::unique_ptr<stream_t> s,
-                        std::optional<capy::io_task<std::size_t>>& o,
+                        std::optional<capy::task<capy::results<std::size_t>>>& o,
                         char* b, char* sp) -> capy::task<> {
             o.emplace(s->read_some(capy::mutable_buffer(sp, 16)));
             std::ignore = co_await s->read_some(capy::mutable_buffer(b, 16));
@@ -1859,7 +1859,7 @@ struct posted_resume
         return false;
     }
 
-    void await_suspend(std::coroutine_handle<> h, capy::io_env const* env)
+    void await_suspend(std::coroutine_handle<> h, capy::await_context const* env)
     {
         c.h = h;
         env->executor.post(c);
@@ -1878,13 +1878,13 @@ struct partial_write_transport
     int* armed_writes;
 
     template<class Buffers>
-    capy::io_task<std::size_t> read_some(Buffers buffers)
+    capy::task<capy::results<std::size_t>> read_some(Buffers buffers)
     {
         co_return co_await m.read_some(buffers);
     }
 
     template<class Buffers>
-    capy::io_task<std::size_t> write_some(Buffers buffers)
+    capy::task<capy::results<std::size_t>> write_some(Buffers buffers)
     {
         if (*armed)
         {
@@ -2659,7 +2659,7 @@ testFullDuplex(StreamFactory make_stream)
     bool failsafe_hit = false;
     std::stop_source failsafe_stop;
 
-    auto server_reader = [&]() -> capy::io_task<> {
+    auto server_reader = [&]() -> capy::task<capy::results<>> {
         char buf[4096];
         for (;;)
         {
@@ -2669,7 +2669,7 @@ testFullDuplex(StreamFactory make_stream)
                 co_return {ec};
         }
     };
-    auto server_writer = [&]() -> capy::io_task<> {
+    auto server_writer = [&]() -> capy::task<capy::results<>> {
         auto [ec, n] = co_await capy::write(
             server, capy::const_buffer(reply.data(), reply.size()));
         BOOST_TEST(!ec);
@@ -2783,7 +2783,7 @@ testFullDuplexBulk(StreamFactory make_stream)
         std::size_t sent = 0, received = 0;
         bool order_ok = true;
 
-        auto sender = [&]() -> capy::io_task<> {
+        auto sender = [&]() -> capy::task<capy::results<>> {
             while (sent < total)
             {
                 auto [ec, n] = co_await capy::write(
@@ -2794,7 +2794,7 @@ testFullDuplexBulk(StreamFactory make_stream)
             }
             co_return {std::error_code{}};
         };
-        auto receiver = [&]() -> capy::io_task<> {
+        auto receiver = [&]() -> capy::task<capy::results<>> {
             char buf[chunk_size];
             while (received < total)
             {
@@ -2895,14 +2895,14 @@ testRecordBoundaryTransfer(StreamFactory make_stream)
         std::string const payload(size, fill);
         std::string got;
 
-        auto sender = [&]() -> capy::io_task<> {
+        auto sender = [&]() -> capy::task<capy::results<>> {
             auto [ec, n] = co_await capy::write(
                 from, capy::const_buffer(payload.data(), payload.size()));
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, size);
             co_return {ec};
         };
-        auto receiver = [&]() -> capy::io_task<> {
+        auto receiver = [&]() -> capy::task<capy::results<>> {
             char buf[8192];
             while (got.size() < size)
             {
@@ -2997,14 +2997,14 @@ testShutdownOverRead(StreamFactory make_stream)
 
     // The server parks a read, then shuts down while it is parked. The
     // reader must complete with eof (peer close_notify), not hang.
-    auto server_reader = [&]() -> capy::io_task<> {
+    auto server_reader = [&]() -> capy::task<capy::results<>> {
         char buf[256];
         auto [ec, n] =
             co_await server.read_some(capy::mutable_buffer(buf, sizeof(buf)));
         reader_eof = (ec == capy::cond::eof);
         co_return {ec};
     };
-    auto server_shutdown = [&]() -> capy::io_task<> {
+    auto server_shutdown = [&]() -> capy::task<capy::results<>> {
         auto [ec]   = co_await server.shutdown();
         local_sd_ok = !ec;
         co_return {ec};
@@ -3075,7 +3075,7 @@ struct gated_stream
     capy::async_event* write_gate_ = nullptr;
 
     template<class MutableBufferSequence>
-    capy::io_task<std::size_t> read_some(MutableBufferSequence buffers)
+    capy::task<capy::results<std::size_t>> read_some(MutableBufferSequence buffers)
     {
         auto [ec, n] = co_await m_->read_some(buffers);
         // Withheld regardless of outcome: an errored completion must
@@ -3087,7 +3087,7 @@ struct gated_stream
     }
 
     template<class ConstBufferSequence>
-    capy::io_task<std::size_t> write_some(ConstBufferSequence buffers)
+    capy::task<capy::results<std::size_t>> write_some(ConstBufferSequence buffers)
     {
         if (write_gate_)
         {
@@ -3150,7 +3150,7 @@ testShutdownSimultaneousClose(StreamFactory make_stream)
     gs.read_gate_  = &read_gate;
     gs.write_gate_ = &write_gate;
 
-    auto client_reader = [&]() -> capy::io_task<> {
+    auto client_reader = [&]() -> capy::task<capy::results<>> {
         char buf[256];
         auto [ec, n] =
             co_await client.read_some(capy::mutable_buffer(buf, sizeof(buf)));
@@ -3160,7 +3160,7 @@ testShutdownSimultaneousClose(StreamFactory make_stream)
         // when_all stop-request the gated shutdown sibling.
         co_return {};
     };
-    auto client_shutdown = [&]() -> capy::io_task<> {
+    auto client_shutdown = [&]() -> capy::task<capy::results<>> {
         auto [ec]   = co_await client.shutdown();
         local_sd_ok = !ec;
         co_return {ec};
@@ -3328,7 +3328,7 @@ struct partial_error_stream
     std::error_code inject_ec_{};
 
     template<class MutableBufferSequence>
-    capy::io_task<std::size_t> read_some(MutableBufferSequence buffers)
+    capy::task<capy::results<std::size_t>> read_some(MutableBufferSequence buffers)
     {
         auto [ec, n] = co_await m_->read_some(buffers);
         // Only override a clean result: this stream exists to prove
@@ -3339,7 +3339,7 @@ struct partial_error_stream
     }
 
     template<class ConstBufferSequence>
-    capy::io_task<std::size_t> write_some(ConstBufferSequence buffers)
+    capy::task<capy::results<std::size_t>> write_some(ConstBufferSequence buffers)
     {
         co_return co_await m_->write_some(buffers);
     }
@@ -3616,7 +3616,7 @@ testFullDuplexMtStrand(StreamFactory make_stream)
     std::error_code client_write_ec;
     std::size_t client_got_size = 0;
 
-    auto server_reader = [&]() -> capy::io_task<> {
+    auto server_reader = [&]() -> capy::task<capy::results<>> {
         char buf[2048];
         for (;;)
         {
@@ -3626,7 +3626,7 @@ testFullDuplexMtStrand(StreamFactory make_stream)
                 co_return {ec};
         }
     };
-    auto server_writer = [&]() -> capy::io_task<> {
+    auto server_writer = [&]() -> capy::task<capy::results<>> {
         auto [ec, n] = co_await capy::write(
             server, capy::const_buffer(reply.data(), reply.size()));
         co_return {ec};
