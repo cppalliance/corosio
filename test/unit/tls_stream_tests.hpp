@@ -499,6 +499,39 @@ testCertificateValidation(StreamFactory make_stream)
     }
 }
 
+/** Test that every certificate in a multi-certificate CA bundle is trusted.
+
+    The trusted CA is placed second so a loader that stops after the first
+    certificate fails verification. An expired root ahead of it must not
+    keep the bundle from loading, as system bundles can carry such roots.
+*/
+template<typename StreamFactory>
+void
+testCaBundle(StreamFactory make_stream)
+{
+    // Trusted CA is the second certificate in the bundle
+    {
+        io_context ioc;
+        tls_context client_ctx;
+        require_ok(client_ctx.add_certificate_authority(
+            std::string(wrong_ca_cert_pem) + ca_cert_pem));
+        require_ok(client_ctx.set_verify_mode(tls_verify_mode::peer));
+        run_tls_test(
+            ioc, client_ctx, make_server_context(), make_stream, make_stream);
+    }
+
+    // Expired root ahead of the trusted CA
+    {
+        io_context ioc;
+        tls_context client_ctx;
+        require_ok(client_ctx.add_certificate_authority(
+            std::string(expired_cert_pem) + ca_cert_pem));
+        require_ok(client_ctx.set_verify_mode(tls_verify_mode::peer));
+        run_tls_test(
+            ioc, client_ctx, make_server_context(), make_stream, make_stream);
+    }
+}
+
 /** Test SNI (Server Name Indication). */
 template<typename StreamFactory>
 void

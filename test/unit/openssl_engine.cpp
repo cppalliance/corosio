@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -532,6 +533,9 @@ struct openssl_engine_test
         testInvertedVersionWindowFailsSetup();
         testGarbagePrivateKeyFailsSetup();
         testGarbageCaFailsSetup();
+        testNonPemCaFailsSetup();
+        testEmptyCaFailsSetup();
+        testCorruptCaInBundleFailsSetup();
         testGarbagePkcs12FailsSetup();
         testGarbageCrlFailsSetup();
         testInvalidCipherListFailsSetup();
@@ -673,6 +677,41 @@ struct openssl_engine_test
             ctx.use_private_key(test::server_key_pem, tls_file_format::pem);
         std::ignore = ctx.add_certificate_authority(
             "-----BEGIN CERTIFICATE-----\nnope\n-----END CERTIFICATE-----\n");
+
+        ossl_engine eng;
+        BOOST_TEST(!eng.init(ctx));
+        BOOST_TEST(!!eng.check_context());
+    }
+
+    // A trust anchor with no PEM block at all must fail setup.
+    void testNonPemCaFailsSetup()
+    {
+        tls_context ctx;
+        std::ignore = ctx.add_certificate_authority("not a certificate");
+
+        ossl_engine eng;
+        BOOST_TEST(!eng.init(ctx));
+        BOOST_TEST(!!eng.check_context());
+    }
+
+    // An empty trust anchor must fail setup.
+    void testEmptyCaFailsSetup()
+    {
+        tls_context ctx;
+        std::ignore = ctx.add_certificate_authority("");
+
+        ossl_engine eng;
+        BOOST_TEST(!eng.init(ctx));
+        BOOST_TEST(!!eng.check_context());
+    }
+
+    // A corrupt certificate after a valid one fails the whole bundle.
+    void testCorruptCaInBundleFailsSetup()
+    {
+        tls_context ctx;
+        std::ignore = ctx.add_certificate_authority(
+            std::string(test::ca_cert_pem) +
+            "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n");
 
         ossl_engine eng;
         BOOST_TEST(!eng.init(ctx));

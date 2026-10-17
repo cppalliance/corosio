@@ -210,18 +210,17 @@ tls_context_data const& get_tls_context_data(tls_context const&) noexcept;
     share the same underlying state. This allows contexts to be passed
     by value and shared across multiple TLS streams.
 
-    This class abstracts the configuration phase of TLS across multiple
-    backend implementations, among them OpenSSL, WolfSSL, mbedTLS and
-    Schannel. Portable code therefore works regardless of which TLS
-    library is linked.
+    This class abstracts the configuration phase of TLS across the
+    OpenSSL and WolfSSL backends. Portable code therefore works
+    regardless of which TLS library is linked.
 
     @par Modification After Stream Creation
 
     Modifying a context after creating a TLS stream from it
-    results in undefined behavior. The context's configuration is
-    captured when the first stream is constructed, and subsequent
-    modifications are not reflected in existing or new streams
-    sharing the context.
+    results in undefined behavior. Most settings are captured at the
+    first handshake of any stream using it; others, such as callbacks,
+    are read later. A modification may therefore apply partly or not at
+    all.
 
     If different configurations are needed, create separate context
     objects.
@@ -492,15 +491,17 @@ public:
 
     /** Add a certificate authority for peer verification.
 
-        Adds a single CA certificate to the trust store used for verifying
-        peer certificates. Call this multiple times to add multiple CAs,
-        or use `load_verify_file()` for a bundle.
+        Adds one or more CA certificates to the trust store used for
+        verifying peer certificates. The data may contain multiple
+        concatenated PEM certificates.
 
         @param ca The CA certificate data in PEM format.
 
-        @return Success. The certificate is recorded and decoded when the
-            native context is first built; a malformed certificate
-            surfaces as a handshake failure.
+        @return Success. The certificates are recorded and decoded when
+            the native context is first built. Whether a malformed
+            certificate fails the handshake depends on the backend. On
+            OpenSSL, any one does. WolfSSL skips certificates it cannot
+            use and fails only when none load.
 
         @see load_verify_file
         @see set_default_verify_paths
@@ -517,7 +518,8 @@ public:
 
         @return Success, or an error if the file could not be read. The
             certificates are decoded when the native context is first
-            built; malformed certificates surface as a handshake failure.
+            built. Malformed certificates are handled as described for
+            `add_certificate_authority()`.
 
         @par Example
         @par !example load_verify_file
@@ -555,8 +557,8 @@ public:
 
     /** Use the system default CA certificate store.
 
-        Configures the context to use the operating system's default
-        trust store for peer certificate verification. This is the
+        Configures the context to use the backend's default trust store
+        for peer certificate verification. This is the
         recommended approach for HTTPS clients connecting to public
         servers.
 
@@ -571,10 +573,11 @@ public:
         must reject unverified peers should therefore also use
         `set_verify_mode( tls_verify_mode::peer )`.
 
-        @note The OpenSSL backend honors the `SSL_CERT_FILE` and
-            `SSL_CERT_DIR` environment variables. The WolfSSL backend
-            requires a build with `WOLFSSL_SYS_CA_CERTS`; without it the
-            system store is unavailable and this call has no effect.
+        @note OpenSSL reads the CA file and directory it was built with,
+            or those named by `SSL_CERT_FILE` and `SSL_CERT_DIR`. It does
+            not read the macOS Keychain or the Windows Certificate Store.
+            WolfSSL reads the platform store and requires a build with
+            `WOLFSSL_SYS_CA_CERTS`; without it this call has no effect.
 
         @par Example
         @par !example set_default_verify_paths
@@ -836,8 +839,8 @@ public:
 
         @note CRLs are consulted only when a revocation policy is set via
             @ref set_revocation_policy. On WolfSSL, CRL checking requires a
-            build with `HAVE_CRL`; without it, supplying a CRL or a
-            revocation policy fails the handshake with
+            build with `HAVE_CRL`; without it, a revocation policy
+            other than `disabled` fails the handshake with
             `std::errc::function_not_supported`.
 
         @see add_crl_file

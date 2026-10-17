@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -484,12 +485,17 @@ public:
             // A trust anchor that fails to load must not pass silently: the
             // context would then verify against an empty store and every
             // handshake would fail ASN_NO_SIGNER_E. Fail closed and keep the
-            // library's reason so init reports it directly.
+            // library's reason so init reports it directly. A bundle fails
+            // only when none of its certificates load: WolfSSL rejects
+            // roots that system bundles ship (expired ones under peer
+            // verification, serial number 0 on some builds), and failing
+            // on those would reject the whole store. An empty buffer
+            // returns 0 rather than an error code.
             int const ret = wolfSSL_CTX_load_verify_buffer(
                 ctx, reinterpret_cast<unsigned char const*>(ca.data()),
                 static_cast<long>(ca.size()), WOLFSSL_FILETYPE_PEM);
             if (ret != WOLFSSL_SUCCESS)
-                setup_error_ = setup_error_ ? setup_error_ : ret;
+                setup_error_ = setup_error_ ? setup_error_ : (ret ? ret : 1);
         }
 
         // Trust anchors from the system store and explicit directories.

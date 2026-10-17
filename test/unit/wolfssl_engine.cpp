@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -574,6 +575,9 @@ struct wolfssl_engine_test
         testInvertedVersionWindowFailsSetup();
         testGarbagePrivateKeyFailsSetup();
         testGarbageCaFailsSetup();
+        testNonPemCaFailsSetup();
+        testEmptyCaFailsSetup();
+        testCorruptCaInBundleSkipped();
         testGarbagePkcs12FailsSetup();
         testGarbageCrlFailsSetup();
         testInvalidCipherListFailsSetup();
@@ -641,6 +645,39 @@ struct wolfssl_engine_test
 
         wssl_engine eng;
         BOOST_TEST(!!eng.init(ctx, tls_role::client, std::string()));
+    }
+
+    // A trust anchor with no PEM block at all must fail setup.
+    void testNonPemCaFailsSetup()
+    {
+        tls_context ctx;
+        std::ignore = ctx.add_certificate_authority("not a certificate");
+
+        wssl_engine eng;
+        BOOST_TEST(!!eng.init(ctx, tls_role::client, std::string()));
+    }
+
+    // An empty trust anchor must fail setup.
+    void testEmptyCaFailsSetup()
+    {
+        tls_context ctx;
+        std::ignore = ctx.add_certificate_authority("");
+
+        wssl_engine eng;
+        BOOST_TEST(!!eng.init(ctx, tls_role::client, std::string()));
+    }
+
+    // Unlike OpenSSL, a corrupt certificate after a valid one is skipped:
+    // a bundle fails only when none of its certificates load.
+    void testCorruptCaInBundleSkipped()
+    {
+        tls_context ctx;
+        std::ignore = ctx.add_certificate_authority(
+            std::string(test::ca_cert_pem) +
+            "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n");
+
+        wssl_engine eng;
+        BOOST_TEST(!eng.init(ctx, tls_role::client, std::string()));
     }
 
     // A PKCS#12 bundle that does not decode must fail setup closed.
