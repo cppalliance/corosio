@@ -279,13 +279,14 @@ jobs:
           ln -sfn "boost-root/libs/${module}/include" include 2>/dev/null || true
           ln -sfn "boost-root/libs/${module}/src" src 2>/dev/null || true
 
-          # Second pass: generate nested HTML from fixed JSON with custom templates
+          # Second pass: generate nested HTML from fixed JSON with gcovr's boost theme
           gcovr \
             -a gcovr/coverage-fixed.json \
             --merge-mode-functions separate \
             --sort uncovered-percent \
             --html-nested \
-            --html-template-dir=ci-automation/gcovr-templates/html \
+            --html-theme=boost.green \
+            --no-html-self-contained \
             --html-title "${module}" \
             --merge-lines \
             --exclude-unreachable-branches \
@@ -297,8 +298,8 @@ jobs:
             --html --output gcovr/index.html \
             --json-summary-pretty --json-summary gcovr/summary.json
 
-      - name: Generate sidebar navigation
-        run: python3 ci-automation/scripts/gcovr_build_tree.py gcovr
+          # The theme's stylesheet references these fonts but gcovr does not emit them
+          cp ci-automation/gcovr-templates/html/*.woff2 gcovr/
 
       - name: Generate badges
         run: python3 ci-automation/scripts/generate_badges.py gcovr --json gcovr/summary.json
@@ -507,13 +508,14 @@ jobs:
           ln -sfn "boost-root/libs/${module}/include" include 2>/dev/null || true
           ln -sfn "boost-root/libs/${module}/src" src 2>/dev/null || true
 
-          # Second pass: generate nested HTML from fixed JSON with custom templates
+          # Second pass: generate nested HTML from fixed JSON with gcovr's boost theme
           gcovr \
             -a gcovr/coverage-fixed.json \
             --merge-mode-functions separate \
             --sort uncovered-percent \
             --html-nested \
-            --html-template-dir=ci-automation/gcovr-templates/html \
+            --html-theme=boost.green \
+            --no-html-self-contained \
             --html-title "${module}" \
             --merge-lines \
             --exclude-unreachable-branches \
@@ -525,8 +527,8 @@ jobs:
             --html --output gcovr/index.html \
             --json-summary-pretty --json-summary gcovr/summary.json
 
-      - name: Generate sidebar navigation
-        run: python3 ci-automation/scripts/gcovr_build_tree.py gcovr
+          # The theme's stylesheet references these fonts but gcovr does not emit them
+          cp ci-automation/gcovr-templates/html/*.woff2 gcovr/
 
       - name: Generate badges
         run: python3 ci-automation/scripts/generate_badges.py gcovr --json gcovr/summary.json
