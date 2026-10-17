@@ -207,9 +207,8 @@ A stop request cancels only the wait that is pending when it arrives. Unlike
 a stop request that arrives between waits is discarded. The following
 `wait()` starts uncancelled.
 
-NOTE: On Windows the cancelled wait resumes inline, on the thread that
-called `request_stop()`. On POSIX it always resumes on a thread running the
-execution context.
+A cancelled wait resumes on a thread running the execution context, even
+when `request_stop()` is called from another thread.
 
 == Use Cases
 

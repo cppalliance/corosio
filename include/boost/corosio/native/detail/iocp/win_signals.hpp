@@ -416,7 +416,8 @@ win_signal::wait(
         stop_cb_.emplace(token, token_canceller{this});
 
     svc_.start_wait(*this, &pending_op_);
-    // cancellation resumes inline here too; only signal delivery is posted.
+    // Every completion -- delivery, cancel() or a stop request -- is
+    // posted, so the waiter never resumes inline from here.
     return std::noop_coroutine();
 }
 
