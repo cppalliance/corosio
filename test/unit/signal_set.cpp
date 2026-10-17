@@ -771,6 +771,48 @@ struct signal_set_test
         }
     }
 
+    // A stop request made on another thread completes the parked wait,
+    // but the waiter resumes on a thread running the context, never
+    // inline on the thread that called request_stop().
+    void testStopFromOtherThreadResumesOnContext()
+    {
+        io_context ioc(Backend);
+        signal_set s(ioc, SIGINT);
+
+        std::stop_source src;
+        std::atomic<bool> parked{false};
+        bool completed            = false;
+        std::error_code result_ec = capy::error::eof;
+        std::thread::id resumed_on;
+        auto const run_thread = std::this_thread::get_id();
+
+        auto wait_task = [&]() -> capy::task<> {
+            parked.store(true, std::memory_order_release);
+            [[maybe_unused]] auto [ec, signum] = co_await s.wait();
+            resumed_on = std::this_thread::get_id();
+            result_ec  = ec;
+            completed  = true;
+        };
+        capy::run_async(ioc.get_executor(), src.get_token())(wait_task());
+
+        std::thread stopper([&] {
+            while (!parked.load(std::memory_order_acquire))
+                std::this_thread::yield();
+            // Give the wait time to park so the stop takes the
+            // cancel-a-parked-wait path rather than the pre-park one.
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            src.request_stop();
+        });
+
+        // Bounded so a lost wakeup is a red assertion, not a hang.
+        std::ignore = ioc.run_for(std::chrono::seconds(5));
+        stopper.join();
+
+        BOOST_TEST(completed);
+        BOOST_TEST(result_ec == capy::cond::canceled);
+        BOOST_TEST(resumed_on == run_thread);
+    }
+
     void testShutdownWithPendingSignalSet()
     {
         // A set destroyed in the documented order gives its registrations
@@ -1617,6 +1659,7 @@ struct signal_set_test
         testNormalDeliveryWithLiveToken();
         testDestroyWithArmedStopToken();
         testConcurrentStopRequestRace();
+        testStopFromOtherThreadResumesOnContext();
         testStopRacingTeardown();
         testShutdownWithPendingSignalSet();
 
