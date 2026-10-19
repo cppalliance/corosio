@@ -181,17 +181,15 @@ reach an unrelated file:
 ## 6. Teardown
 
 `io_context` destruction runs every service's `shutdown()` newest
-first, then deletes the services in the same order. Services created
-after the scheduler come before it; the timer service, which the
-scheduler's constructor creates, comes after it. Every service gives
-up all its work in `shutdown()` and posts nothing from its destructor.
+first, then deletes the services in the same order. The scheduler is
+created with the context, and every other service after it, so every
+service shuts down before the scheduler drains. Every service gives up
+all its work in `shutdown()` and posts nothing from its destructor.
 So nothing reaches the queue after the drain in step 3. Waiting for
 the kernel or the OS to return operations a service submitted, as in
 step 2, is part of giving up its work. The contract for that
 sequence:
 
-0. **Timers first.** Every scheduler shuts the timer service down
-   before it drains, so work a timer's teardown posts is drained too.
 1. **Cancel.** Each service cancels or closes every live
    implementation. Its pool's `shutdown()` pins each one with
    `try_acquire` and switches the pool to delete-on-zero.
@@ -260,5 +258,5 @@ How the code meets each rule:
 | §5.3 IOCP | Conforms: socket and acceptor initiators re-check cancellation before `on_pending`, as the handle initiators do. IOCP is checked only by Windows CI. |
 | §5.5 descriptor numbers | Conforms: posix file gate, uring flush before close or release, cancelled waits skip the probe on uring and the IOCP wait reactor. |
 | §5.4 executor queues | Conforms: every awaitable owns its continuation; no op embeds one. |
-| §6 teardown | Conforms on all backends, timers first everywhere; implemented per backend with no shared statement. Every service gives up its work in `shutdown()` and posts nothing from its destructor, so every frame is destroyed before any service (`testShutdownDestroysFramesBeforeServices` in `teardown_destroy.cpp`). |
+| §6 teardown | Conforms on all backends. Implemented per backend with no shared statement. Every service gives up its work in `shutdown()` and posts nothing from its destructor, so every frame is destroyed before any service (`testShutdownDestroysFramesBeforeServices` in `teardown_destroy.cpp`). |
 | §7 recycling | Mixed. Some `reuse()` methods assert fields others reset. |

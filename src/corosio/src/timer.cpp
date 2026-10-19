@@ -16,8 +16,23 @@ namespace boost::corosio::detail {
 
 timer::~timer() = default;
 
+namespace {
+
+// The context's first timer creates the timer service. Only the service
+// the context keeps is attached; a concurrent first use may construct
+// one more, which the context discards.
+timer_service&
+attached_timer_service(capy::execution_context& ctx)
+{
+    auto& svc = ctx.use_service<timer_service>();
+    svc.attach();
+    return svc;
+}
+
+} // namespace
+
 timer::timer(capy::execution_context& ctx)
-    : io_object(create_handle<detail::timer_service>(ctx))
+    : io_object(handle(ctx, attached_timer_service(ctx)))
 {
 }
 

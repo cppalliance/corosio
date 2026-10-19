@@ -164,7 +164,7 @@ private:
     mutable int max_fd_ = -1;
 };
 
-inline select_scheduler::select_scheduler(capy::execution_context& ctx, int)
+inline select_scheduler::select_scheduler(capy::execution_context&, int)
     : pipe_fds_{-1, -1}
     , max_fd_(-1)
 {
@@ -196,12 +196,6 @@ inline select_scheduler::select_scheduler(capy::execution_context& ctx, int)
             detail::throw_system_error(make_err(errn), "fcntl F_SETFD");
         }
     }
-
-    timer_svc_ = &get_timer_service(ctx, *this);
-    timer_svc_->set_on_earliest_changed(
-        timer_service::callback(this, [](void* p) {
-            static_cast<select_scheduler*>(p)->interrupt_reactor();
-        }));
 
     completed_ops_.push(&task_op_);
 }
@@ -307,7 +301,10 @@ select_scheduler::calculate_timeout(long requested_timeout_us) const
     if (requested_timeout_us == 0)
         return 0; // LCOV_EXCL_LINE run_task passes 0 via task_interrupted_, never through this argument
 
-    auto nearest = timer_svc_->nearest_expiry();
+    auto* tsvc = timers();
+    if (!tsvc)
+        return requested_timeout_us;
+    auto nearest = tsvc->nearest_expiry();
     if (nearest == timer_service::time_point::max())
         return requested_timeout_us;
 
@@ -433,7 +430,8 @@ select_scheduler::run_task(lock_type& lock, context_type& ctx, long timeout_us)
     }
 
     // Process timers outside the lock
-    timer_svc_->process_expired();
+    if (auto* tsvc = timers())
+        tsvc->process_expired();
 
     ready_queue local_ops;
 

@@ -249,7 +249,7 @@ private:
     std::vector<kqueue_event> event_buffer_;
 };
 
-inline kqueue_scheduler::kqueue_scheduler(capy::execution_context& ctx, int)
+inline kqueue_scheduler::kqueue_scheduler(capy::execution_context&, int)
     : kq_fd_(-1)
     , event_buffer_(max_events_per_poll_)
 {
@@ -272,12 +272,6 @@ inline kqueue_scheduler::kqueue_scheduler(capy::execution_context& ctx, int)
         ::close(kq_fd_);
         detail::throw_system_error(make_err(errn), "kevent (EVFILT_USER)");
     }
-
-    timer_svc_ = &get_timer_service(ctx, *this);
-    timer_svc_->set_on_earliest_changed(
-        timer_service::callback(this, [](void* p) {
-            static_cast<kqueue_scheduler*>(p)->interrupt_reactor();
-        }));
 
     completed_ops_.push(&task_op_);
 }
@@ -417,7 +411,10 @@ kqueue_scheduler::calculate_timeout(long requested_timeout_us) const
     if (requested_timeout_us == 0)
         return 0;
 
-    auto nearest = timer_svc_->nearest_expiry();
+    auto* tsvc = timers();
+    if (!tsvc)
+        return requested_timeout_us;
+    auto nearest = tsvc->nearest_expiry();
     if (nearest == timer_service::time_point::max())
         return requested_timeout_us;
 
@@ -521,7 +518,8 @@ kqueue_scheduler::run_task(lock_type& lock, context_type& ctx, long timeout_us)
         }
     }
 
-    timer_svc_->process_expired();
+    if (auto* tsvc = timers())
+        tsvc->process_expired();
 
     lock.lock();
 

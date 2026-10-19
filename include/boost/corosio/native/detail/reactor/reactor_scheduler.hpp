@@ -295,7 +295,6 @@ public:
     }
 
 protected:
-    timer_service* timer_svc_        = nullptr;
     bool scheduler_locking_disabled_ = false;
     bool reactor_io_locking_         = true;
     bool one_thread_                 = false;
@@ -380,6 +379,9 @@ protected:
 
     /// Wake a blocked reactor (e.g. write to eventfd or pipe).
     virtual void interrupt_reactor() const = 0;
+
+    /// Wake the reactor whenever the earliest timer changes.
+    void on_timer_service_attached(timer_service& svc) override;
 
 private:
     struct work_cleanup
@@ -823,15 +825,16 @@ reactor_scheduler::settle_retired(lock_type& lock) const
 }
 
 inline void
+reactor_scheduler::on_timer_service_attached(timer_service& svc)
+{
+    svc.set_on_earliest_changed(timer_service::callback(this, [](void* p) {
+        static_cast<reactor_scheduler*>(p)->interrupt_reactor();
+    }));
+}
+
+inline void
 reactor_scheduler::shutdown_drain()
 {
-    // This scheduler's constructor registered the timer service, so
-    // the context shuts it down later; its waiters' frames must be
-    // destroyed before the drain, which then destroys whatever their
-    // destructors post. The context's own call later finds no waiter.
-    if (timer_svc_)
-        timer_svc_->shutdown();
-
     wait_cancels_posting();
 
     lock_type lock(mutex_);

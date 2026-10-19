@@ -416,6 +416,8 @@ public:
     }
 
 private:
+    void on_timer_service_attached(timer_service& svc) override;
+
     /// Destroy every queued operation without running it.
     void destroy_queued(lock_type& lock) noexcept;
 
@@ -423,7 +425,6 @@ private:
     // from const contexts like post()) can populate them on first use.
     mutable struct ::io_uring ring_{};
     mutable int wakeup_eventfd_ = -1;
-    timer_service* timer_svc_   = nullptr;
 
     // dispatch_mutex_ protects completed_ops_, cond_, task_running_.
     // ring_mutex_ protects every userspace touch of ring_ (SQ tail,
@@ -559,19 +560,11 @@ private:
 };
 
 inline uring_scheduler::uring_scheduler(
-    capy::execution_context& ctx, int /*concurrency_hint*/)
+    capy::execution_context&, int /*concurrency_hint*/)
 {
     // sched_ cannot be set in the member initialiser — `this` is not
     // available there.
     submit_op_.sched_ = this;
-
-    // Wire timer service. on_earliest_changed wakes the run loop so it
-    // recomputes its wait timeout.
-    timer_svc_ = &get_timer_service(ctx, *this);
-    timer_svc_->set_on_earliest_changed(
-        timer_service::callback(this, [](void* p) {
-            static_cast<uring_scheduler*>(p)->interrupt_reactor();
-        }));
 
     // Ring init is deferred so the options the io_context applies
     // after this constructor — the locking tier and SQPOLL — can feed
@@ -694,10 +687,6 @@ inline void
 uring_scheduler::shutdown()
 {
     stopped_.store(true, std::memory_order_release);
-
-    // See reactor_scheduler::shutdown_drain().
-    if (timer_svc_)
-        timer_svc_->shutdown();
 
     // Cancel every request still in the kernel and wait for each to
     // come back: the services free their impls next, and an op still
@@ -846,6 +835,14 @@ uring_scheduler::interrupt_reactor() const noexcept
     // the eventfd counter).
     std::uint64_t v = 1;
     std::ignore     = ::write(wakeup_eventfd_, &v, sizeof(v));
+}
+
+inline void
+uring_scheduler::on_timer_service_attached(timer_service& svc)
+{
+    svc.set_on_earliest_changed(timer_service::callback(this, [](void* p) {
+        static_cast<uring_scheduler*>(p)->interrupt_reactor();
+    }));
 }
 
 inline void
@@ -1218,8 +1215,8 @@ uring_scheduler::do_one(long timeout_us)
     // (~25 pp on io_context:single_threaded). When a timer IS
     // registered the call runs exactly as before, preserving the
     // deadlock fix this guard was originally written to address.
-    if (!timer_svc_->empty())
-        timer_svc_->process_expired();
+    if (auto* tsvc = timers(); tsvc && !tsvc->empty())
+        tsvc->process_expired();
 
     lock_type lock(dispatch_mutex_);
     for (;;)
@@ -1280,8 +1277,10 @@ uring_scheduler::do_one(long timeout_us)
         // work.
         __kernel_timespec ts{};
         __kernel_timespec* ts_ptr = nullptr;
-        auto next_expiry          = timer_svc_->nearest_expiry();
-        auto now                  = std::chrono::steady_clock::now();
+        auto* tsvc                = timers();
+        auto next_expiry =
+            tsvc ? tsvc->nearest_expiry() : timer_service::time_point::max();
+        auto now = std::chrono::steady_clock::now();
 
         if (timeout_us == 0)
         {
@@ -1368,8 +1367,8 @@ uring_scheduler::do_one(long timeout_us)
                 make_err(-rc), "io_uring_wait_cqe_timeout");
         }
 
-        if (!timer_svc_->empty())
-            timer_svc_->process_expired();
+        if (tsvc && !tsvc->empty())
+            tsvc->process_expired();
 
         lock.lock();
         task_running_ = false;

@@ -156,6 +156,9 @@ private:
     timer_object_pool pool_;
     callback on_earliest_changed_;
     bool shutting_down_ = false;
+    // Set once the scheduler waits on this service; read without the
+    // mutex by every timer construction after the first.
+    std::atomic<bool> attached_{false};
 
     // Cancellers that claimed a waiter and have yet to post it;
     // shutdown waits them out so the scheduler's drain finds the post.
@@ -166,10 +169,21 @@ private:
     BOOST_COROSIO_MSVC_WARNING_POP
 
 public:
-    /// Construct the timer service bound to a scheduler.
-    inline timer_service(capy::execution_context&, scheduler& sched)
-        : sched_(&sched)
+    /** Construct the timer service for a context's scheduler.
+
+        Created with the context's first timer. It does not attach to
+        the scheduler here: a concurrent first use may construct a
+        second service that the context then discards. See
+        @ref attach.
+
+        @throws std::logic_error if the context has no scheduler.
+    */
+    inline explicit timer_service(capy::execution_context& ctx)
+        : sched_(ctx.find_service<scheduler>())
     {
+        if (!sched_)
+            detail::throw_logic_error(
+                "timer_service: the context has no scheduler");
     }
 
     /// Return the associated scheduler.
@@ -178,8 +192,35 @@ public:
         return *sched_;
     }
 
-    /// Destroy the timer service.
-    ~timer_service() override = default;
+    /// Destroy the timer service, detaching it from the scheduler.
+    ~timer_service() override
+    {
+        if (attached_.load(std::memory_order_acquire))
+            sched_->detach_timer_service();
+    }
+
+    /** Attach this service to the scheduler, if not yet attached.
+
+        Call once the context has settled which service it keeps; no
+        timer of this service can wait before this returns.
+
+        @par Exception Safety
+        Strong guarantee: on failure the service stays detached and
+        the next call retries.
+
+        @throws std::system_error if the scheduler cannot start waiting
+            on timers.
+    */
+    inline void attach()
+    {
+        if (attached_.load(std::memory_order_acquire))
+            return;
+        std::lock_guard lock(mutex_);
+        if (attached_.load(std::memory_order_relaxed))
+            return;
+        sched_->attach_timer_service(*this);
+        attached_.store(true, std::memory_order_release);
+    }
 
     timer_service(timer_service const&)            = delete;
     timer_service& operator=(timer_service const&) = delete;
@@ -698,14 +739,6 @@ timer_service::swap_heap(std::size_t i1, std::size_t i2)
 // is not guaranteed for every caller of wait_awaitable::await_suspend
 // in timer.hpp (e.g. code that only reaches timer.hpp through
 // delay.hpp, without transitively including a scheduler header).
-
-// Free functions
-
-inline timer_service&
-get_timer_service(capy::execution_context& ctx, scheduler& sched)
-{
-    return ctx.make_service<timer_service>(sched);
-}
 
 } // namespace boost::corosio::detail
 
