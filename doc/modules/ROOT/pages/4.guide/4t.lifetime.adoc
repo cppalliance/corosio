@@ -113,6 +113,10 @@ Check each of these:
 . *Give up, never destroy.* A holder that is shutting down, and so can no
   longer resume a continuation, passes it to `capy::abandon`. It never calls
   `destroy()` on the handle.
+. *A service gives up its work in `shutdown()`.* Its destructor posts nothing.
+  Work posted once every service has shut down is destroyed while the
+  services are being destroyed, and its destructors may reach one already
+  gone.
 . *One owner of a continuation.* Each continuation is resumed, abandoned, or
   still held by the caller after a `post` that threw. Never two of these, and
   never none.

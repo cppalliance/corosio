@@ -183,7 +183,11 @@ reach an unrelated file:
 `io_context` destruction runs every service's `shutdown()` newest
 first, then deletes the services in the same order. Services created
 after the scheduler come before it; the timer service, which the
-scheduler's constructor creates, comes after it. The contract for that
+scheduler's constructor creates, comes after it. Every service gives
+up all its work in `shutdown()` and posts nothing from its destructor.
+So nothing reaches the queue after the drain in step 3. Waiting for
+the kernel or the OS to return operations a service submitted, as in
+step 2, is part of giving up its work. The contract for that
 sequence:
 
 0. **Timers first.** Every scheduler shuts the timer service down
@@ -218,9 +222,11 @@ sequence:
    context, and work that crosses contexts is finished before either
    is destroyed. The count is pinned before each delete, so references
    an implementation holds on itself cannot re-enter `retire()`.
-5. **Late work.** Work posted after the drain, for example from a
-   service's destructor, is destroyed when the scheduler is deleted,
-   after every service created after it.
+5. **Late work.** Nothing should reach this step. Work posted after
+   the drain anyway, for example from a service's destructor, is
+   destroyed when the scheduler is deleted, after every service created
+   after it. That work must not use those services: an op embedded in
+   one of their implementations has already been freed.
 
 A step that cannot complete must not be skipped silently. For
 example, a cancel that cannot be submitted is the one case where
@@ -254,5 +260,5 @@ How the code meets each rule:
 | §5.3 IOCP | Conforms: socket and acceptor initiators re-check cancellation before `on_pending`, as the handle initiators do. IOCP is checked only by Windows CI. |
 | §5.5 descriptor numbers | Conforms: posix file gate, uring flush before close or release, cancelled waits skip the probe on uring and the IOCP wait reactor. |
 | §5.4 executor queues | Conforms: every awaitable owns its continuation; no op embeds one. |
-| §6 teardown | Conforms on all backends, timers first everywhere; implemented per backend with no shared statement. |
+| §6 teardown | Conforms on all backends, timers first everywhere; implemented per backend with no shared statement. Every service gives up its work in `shutdown()` and posts nothing from its destructor, so every frame is destroyed before any service (`testShutdownDestroysFramesBeforeServices` in `teardown_destroy.cpp`). |
 | §7 recycling | Mixed. Some `reuse()` methods assert fields others reset. |

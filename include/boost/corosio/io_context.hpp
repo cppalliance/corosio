@@ -407,9 +407,11 @@ public:
             whatever the order of destruction. Stop such work and run both
             contexts until it ends before destroying either.
 
-        @note Work posted after the services have shut down, for example
-            from a service's destructor, is abandoned while the services
-            are being destroyed. Its destructors must not use them.
+        @note Every service gives up its work while the services shut
+            down, so nothing is left when they are destroyed. Work posted
+            after that anyway, for example from a service's destructor, is
+            abandoned while the services are being destroyed. Its
+            destructors must not use any service.
     */
     ~io_context();
 
