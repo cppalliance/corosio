@@ -109,10 +109,11 @@ public:
     void on_completion(overlapped_op* op, DWORD error, DWORD bytes) const;
 
     // Timer service integration
-    void set_timer_service(timer_service* svc);
     void update_timeout();
 
 private:
+    void on_timer_service_attached(timer_service& svc) override;
+
     /// Destroy every packet and deferred entry still queued, without
     /// running them; stops once the port is empty.
     void sweep_port() noexcept;
@@ -125,7 +126,6 @@ private:
     void post_deferred_completions(op_queue& ops);
     std::size_t do_one(unsigned long timeout_ms);
 
-    timer_service* timer_svc_ = nullptr;
     void* iocp_;
     mutable long outstanding_work_;
 
@@ -538,8 +538,8 @@ win_scheduler::do_one(unsigned long timeout_ms)
             }
             post_deferred_completions(local_ops);
 
-            if (timer_svc_)
-                timer_svc_->process_expired();
+            if (auto* tsvc = timers())
+                tsvc->process_expired();
 
             update_timeout();
         }
@@ -664,11 +664,10 @@ win_scheduler::on_timer_changed(void* ctx)
 }
 
 inline void
-win_scheduler::set_timer_service(timer_service* svc)
+win_scheduler::on_timer_service_attached(timer_service& svc)
 {
-    timer_svc_ = svc;
     // Pass 'this' as context - callback routes to correct instance
-    svc->set_on_earliest_changed(
+    svc.set_on_earliest_changed(
         timer_service::callback{this, &on_timer_changed});
     if (timers_)
         timers_->start();
@@ -677,8 +676,9 @@ win_scheduler::set_timer_service(timer_service* svc)
 inline void
 win_scheduler::update_timeout()
 {
-    if (timer_svc_ && timers_)
-        timers_->update_timeout(timer_svc_->nearest_expiry());
+    auto* tsvc = timers();
+    if (tsvc && timers_)
+        timers_->update_timeout(tsvc->nearest_expiry());
 }
 
 } // namespace boost::corosio::detail
@@ -697,7 +697,7 @@ win_scheduler::update_timeout()
 namespace boost::corosio::detail {
 
 inline win_scheduler::win_scheduler(
-    capy::execution_context& ctx, int concurrency_hint)
+    capy::execution_context&, int concurrency_hint)
     : iocp_(nullptr)
     , outstanding_work_(0)
     , stopped_(0)
@@ -716,7 +716,6 @@ inline win_scheduler::win_scheduler(
     try
     {
         timers_ = make_win_timers(iocp_, &dispatch_required_);
-        set_timer_service(&get_timer_service(ctx, *this));
 
         // A scheduler whose wait reactor could not be built would
         // answer every wait with a parked op, so it refuses to exist
@@ -728,21 +727,7 @@ inline win_scheduler::win_scheduler(
     catch (...)
     {
         // ~win_scheduler never runs for a constructor that throws, and
-        // the port is a raw handle nothing else owns. The timer thread
-        // is stopped first because it posts to that port.
-        //
-        // The services registered above are not unregistered here, and
-        // cannot be: the context owns them and offers no way to take
-        // one back. Each holds a scheduler reference this unwind is
-        // about to invalidate, and each survives to be shut down and
-        // destroyed with the context. What makes that safe is that
-        // none of them touches its scheduler while it holds nothing:
-        // a scheduler that never finished constructing handed out no
-        // timer, resolver or file, so every one of those shutdowns
-        // walks an empty list. Registering anything here that would
-        // reach back into the scheduler on an empty shutdown breaks
-        // that, and the fix would have to be a rollback in the
-        // context, not an ordering trick here.
+        // the port is a raw handle nothing else owns.
         timers_.reset();
         ::CloseHandle(iocp_);
         iocp_ = nullptr;
@@ -756,19 +741,9 @@ win_scheduler::shutdown()
     if (timers_)
         timers_->stop();
 
-    // Drain timer heap before the work-counting loop. The timer_service
-    // is created from our constructor, so it finishes, and is linked,
-    // first; execution_context::shutdown() runs newest first, so it
-    // calls us first.
-    // Asio avoids this by owning timer queues directly inside the
-    // scheduler; we bridge the gap by shutting down the timer service
-    // early. The subsequent call from execution_context is a no-op.
-    if (timer_svc_)
-        timer_svc_->shutdown();
-
-    // Same problem for the auxiliary wait reactor: ops parked in it
-    // owe completion packets. Stop the reactor early so its loop
-    // posts them as cancelled and the pending count can reach zero.
+    // Ops parked in the auxiliary wait reactor owe completion packets.
+    // Stop the reactor early so its loop posts them as cancelled and
+    // the pending count can reach zero.
     wait_reactor_->stop();
 
     wait_cancels_posting();

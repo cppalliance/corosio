@@ -15,6 +15,7 @@
 #include "test_utils.hpp"
 
 #include <boost/corosio/delay.hpp>
+#include <boost/corosio/detail/timer.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/local_endpoint.hpp>
 #include <boost/corosio/local_stream_acceptor.hpp>
@@ -236,6 +237,8 @@ struct iocp_faults
             sys::WaitForSingleObject, ERROR_INVALID_HANDLE, 1, any_thread);
         {
             io_context ioc(iocp);
+            // The first timer starts the timer thread.
+            corosio::detail::timer t(ioc);
             for (int i = 0; i < 2000 && !f.fired(); ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }

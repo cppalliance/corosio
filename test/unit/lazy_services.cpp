@@ -31,7 +31,10 @@
 #include <boost/corosio/win_stream_handle.hpp>
 
 #include <boost/corosio/detail/platform.hpp>
+#include <boost/corosio/detail/timer.hpp>
 #include <boost/corosio/detail/timer_service.hpp>
+#include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/task.hpp>
 
 #if BOOST_COROSIO_HAS_IOCP
 #include <boost/corosio/detail/win_handle_service.hpp>
@@ -57,6 +60,9 @@
 #include <boost/corosio/native/detail/posix/posix_signal_service.hpp>
 #endif
 
+#include <chrono>
+#include <cstddef>
+#include <latch>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -138,9 +144,52 @@ struct lazy_services_test
             ioc.template find_service<random_access_file_service_t>() ==
             nullptr);
 
-        // The scheduler's own infrastructure stays eager.
+        // Timers too: the first timer creates the timer service.
+        BOOST_TEST(
+            ioc.template find_service<detail::timer_service>() == nullptr);
+    }
+
+    void testTimerCreatesTimerService()
+    {
+        io_context ioc(Backend);
+
+        detail::timer t(ioc);
         BOOST_TEST(
             ioc.template find_service<detail::timer_service>() != nullptr);
+    }
+
+    // The first timers may be made on several threads at once; one timer
+    // service is kept, and it drives the waits.
+    void testConcurrentFirstTimer()
+    {
+        io_context ioc(Backend);
+
+        std::vector<std::thread> threads;
+        std::vector<std::unique_ptr<detail::timer>> timers(8);
+        // Spawning a thread takes longer than making a timer, so without
+        // a common start the timers would mostly be made one at a time.
+        std::latch start(static_cast<std::ptrdiff_t>(timers.size()));
+        for (std::size_t i = 0; i < timers.size(); ++i)
+            threads.emplace_back([&, i] {
+                start.arrive_and_wait();
+                timers[i] = std::make_unique<detail::timer>(ioc);
+            });
+        for (auto& t : threads)
+            t.join();
+
+        int fired = 0;
+        for (auto& t : timers)
+        {
+            t->expires_after(std::chrono::milliseconds(1));
+            capy::run_async(ioc.get_executor())(
+                [](detail::timer& tm, int& n) -> capy::task<> {
+                    auto [ec] = co_await tm.wait();
+                    if (!ec)
+                        ++n;
+                }(*t, fired));
+        }
+        ioc.run();
+        BOOST_TEST_EQ(fired, static_cast<int>(timers.size()));
     }
 
     void testObjectCreatesOnlyItsOwnService()
@@ -236,6 +285,8 @@ struct lazy_services_test
         testObjectCreatesOnlyItsOwnService();
         testEachObjectCreatesItsService();
         testConcurrentFirstUse();
+        testTimerCreatesTimerService();
+        testConcurrentFirstTimer();
     }
 };
 

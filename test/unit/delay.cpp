@@ -208,6 +208,30 @@ struct delay_test
         BOOST_TEST(ok);
     }
 
+    // The first timer of a context may be made on another thread while
+    // run() waits for work; run() still wakes when it expires.
+    void testFirstTimerMadeOnAnotherThread()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+        ex.on_work_started();
+        bool fired = false;
+        std::thread runner([&] { ioc.run(); });
+        {
+            detail::timer t(ioc);
+            t.expires_after(std::chrono::milliseconds(1));
+            capy::run_async(ex)(
+                [](detail::timer& tm, bool& f,
+                   io_context::executor_type e) -> capy::task<> {
+                    auto [ec] = co_await tm.wait();
+                    f         = !ec;
+                    e.on_work_finished();
+                }(t, fired, ex));
+            runner.join();
+        }
+        BOOST_TEST(fired);
+    }
+
     void testCancellation()
     {
         io_context ioc(Backend);
@@ -1153,6 +1177,7 @@ struct delay_test
         testZeroDurationCompletesImmediately();
         testPastTimePointCompletesImmediately();
         testCancellation();
+        testFirstTimerMadeOnAnotherThread();
         testAlreadyStoppedCompletesCanceled();
         testZeroDurationWithStopRequested();
         testPastTimePointWithStopRequested();

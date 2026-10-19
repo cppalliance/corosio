@@ -139,6 +139,7 @@ private:
     void run_task(lock_type& lock, context_type& ctx, long timeout_us) override;
     void interrupt_reactor() const override;
     void update_timerfd() const;
+    void on_timer_service_attached(timer_service& svc) override;
 
     int epoll_fd_;
     int event_fd_;
@@ -159,7 +160,7 @@ private:
     std::vector<epoll_event> event_buffer_;
 };
 
-inline epoll_scheduler::epoll_scheduler(capy::execution_context& ctx, int)
+inline epoll_scheduler::epoll_scheduler(capy::execution_context&, int)
     : epoll_fd_(-1)
     , event_fd_(-1)
     , timer_fd_(-1)
@@ -210,15 +211,17 @@ inline epoll_scheduler::epoll_scheduler(capy::execution_context& ctx, int)
         detail::throw_system_error(make_err(errn), "epoll_ctl (timerfd)");
     }
 
-    timer_svc_ = &get_timer_service(ctx, *this);
-    timer_svc_->set_on_earliest_changed(
-        timer_service::callback(this, [](void* p) {
-            auto* self = static_cast<epoll_scheduler*>(p);
-            self->timerfd_stale_.store(true, std::memory_order_release);
-            self->interrupt_reactor();
-        }));
-
     completed_ops_.push(&task_op_);
+}
+
+inline void
+epoll_scheduler::on_timer_service_attached(timer_service& svc)
+{
+    svc.set_on_earliest_changed(timer_service::callback(this, [](void* p) {
+        auto* self = static_cast<epoll_scheduler*>(p);
+        self->timerfd_stale_.store(true, std::memory_order_release);
+        self->interrupt_reactor();
+    }));
 }
 
 inline epoll_scheduler::~epoll_scheduler()
@@ -326,7 +329,10 @@ epoll_scheduler::interrupt_reactor() const
 inline void
 epoll_scheduler::update_timerfd() const
 {
-    auto nearest = timer_svc_->nearest_expiry();
+    auto* tsvc = timers();
+    if (!tsvc)
+        return;
+    auto nearest = tsvc->nearest_expiry();
 
     itimerspec ts{};
     int flags = 0;
@@ -444,7 +450,8 @@ epoll_scheduler::run_task(lock_type& lock, context_type& ctx, long timeout_us)
 
     if (check_timers)
     {
-        timer_svc_->process_expired();
+        if (auto* tsvc = timers())
+            tsvc->process_expired();
         update_timerfd();
     }
 

@@ -28,6 +28,7 @@
 namespace boost::corosio::detail {
 
 class scheduler_op;
+class timer_service;
 
 /** Define the abstract interface for the event loop scheduler.
 
@@ -156,7 +157,56 @@ public:
         cancels_posting_.fetch_sub(1, std::memory_order_release);
     }
 
+    /** Attach the context's timer service.
+
+        The timer service is created with the context's first timer,
+        possibly on a thread other than the one running the loop; until
+        it is attached the loop has no timers to wait on.
+
+        @par Preconditions
+        No timer service is attached.
+
+        @par Exception Safety
+        Strong guarantee: if the scheduler cannot start waiting on
+        timers, nothing is attached.
+
+        @throws std::system_error if the scheduler cannot start waiting
+            on timers.
+
+        @param svc The service to attach.
+    */
+    void attach_timer_service(timer_service& svc)
+    {
+        on_timer_service_attached(svc);
+        timer_svc_.store(&svc, std::memory_order_release);
+    }
+
+    /// Detach the timer service as it is destroyed.
+    void detach_timer_service() noexcept
+    {
+        timer_svc_.store(nullptr, std::memory_order_release);
+    }
+
 protected:
+    /// Return the attached timer service, or null before the first timer.
+    timer_service* timers() const noexcept
+    {
+        return timer_svc_.load(std::memory_order_acquire);
+    }
+
+    /** Prepare to wait on a timer service about to be attached.
+
+        Called before the service is published to the loop, so the loop
+        never sees a service it cannot yet wait on.
+
+        @par Exception Safety
+        Strong guarantee: a throw leaves the scheduler as it was, and
+        the next timer calls this again.
+
+        @param svc The service being attached.
+    */
+    virtual void on_timer_service_attached(timer_service& svc) = 0;
+
     /** Wait out the cancellers counted by @ref cancel_posting_begin.
 
         Called before the shutdown drain, so it finds their posts; the
@@ -173,6 +223,7 @@ private:
     BOOST_COROSIO_MSVC_WARNING_PUSH
     BOOST_COROSIO_MSVC_WARNING_DISABLE(4251)
     std::atomic<std::size_t> cancels_posting_{0};
+    std::atomic<timer_service*> timer_svc_{nullptr};
     BOOST_COROSIO_MSVC_WARNING_POP
 };
 
