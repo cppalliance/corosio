@@ -141,13 +141,12 @@ public:
             throw std::logic_error("thread_pool requires at least 1 thread");
     }
 
-    /** Destroy the pool, joining any worker `shutdown()` never reached.
+    /** Destroy the pool, joining any worker `shutdown()` did not.
 
-        The context's shutdown walk is the normal path; this only
-        catches a pool created after that walk, whose `shutdown()` is
-        therefore never called and whose joinable threads would
-        otherwise terminate the process. A pool that was never posted
-        to holds no thread and needs neither.
+        A context shuts down the pool it owns before destroying it, or
+        at creation if the context's shutdown already began. A pool
+        constructed directly gets no such call, so this shuts it down
+        rather than leave a joinable worker to terminate the process.
     */
     ~thread_pool() override
     {
