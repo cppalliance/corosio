@@ -583,7 +583,8 @@ inline uring_scheduler::uring_scheduler(
 
 inline uring_scheduler::~uring_scheduler()
 {
-    // Service destructors run after the drain and may still post.
+    // Services give up their work in shutdown(), but anything posted
+    // after the drain, such as from a destructor, is still destroyed.
     {
         lock_type lock(dispatch_mutex_);
         destroy_queued(lock);

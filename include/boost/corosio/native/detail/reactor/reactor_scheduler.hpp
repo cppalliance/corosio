@@ -842,7 +842,8 @@ reactor_scheduler::shutdown_drain()
 
 inline reactor_scheduler::~reactor_scheduler()
 {
-    // Service destructors run after the drain and may still post.
+    // Services give up their work in shutdown(), but anything posted
+    // after the drain, such as from a destructor, is still destroyed.
     lock_type lock(mutex_);
     destroy_queued(lock);
 }

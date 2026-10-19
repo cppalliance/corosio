@@ -8,6 +8,7 @@
 //
 
 #include <boost/corosio/detail/platform.hpp>
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/detail/thread_pool.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/random_access_file.hpp>
@@ -20,6 +21,7 @@
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/ex/strand.hpp>
 #include <boost/capy/task.hpp>
 
 #include <chrono>
@@ -44,6 +46,13 @@ namespace boost::corosio {
 template<auto Backend>
 struct teardown_destroy_test
 {
+#if BOOST_COROSIO_HAS_URING
+    static constexpr bool on_ring =
+        std::is_same_v<std::remove_const_t<decltype(Backend)>, uring_t>;
+#else
+    static constexpr bool on_ring = false;
+#endif
+
     // Frames from the recycling allocator are never really freed, which
     // hides a use-after-free from ASan; these go through operator new.
     static auto spawn(io_context& ioc)
@@ -219,12 +228,6 @@ struct teardown_destroy_test
 #if BOOST_COROSIO_POSIX
         test::temp_file tmp("teardown_destroy_", "hello world");
 
-#if BOOST_COROSIO_HAS_URING
-        constexpr bool on_ring =
-            std::is_same_v<std::remove_const_t<decltype(Backend)>, uring_t>;
-#else
-        constexpr bool on_ring = false;
-#endif
         // io_uring reads files through the ring, not the pool.
         if constexpr (!on_ring)
         {
@@ -439,18 +442,136 @@ struct teardown_destroy_test
 
     void testCrossContextSessionDrains()
     {
-#if BOOST_COROSIO_HAS_URING
-        constexpr bool on_ring =
-            std::is_same_v<std::remove_const_t<decltype(Backend)>, uring_t>;
-#else
-        constexpr bool on_ring = false;
-#endif
         // io_uring reads files through the ring, not the pool.
         if constexpr (!on_ring)
             checkCrossContextSessionDrains(true);
         checkCrossContextSessionDrains(false);
     }
 #endif
+
+    // Records, when the context destroys its services, how many frames
+    // were already destroyed. Made last, it is destroyed first.
+    struct teardown_witness : capy::execution_context::service
+    {
+        int const* down;
+        int* seen;
+
+        teardown_witness(capy::execution_context&, int const& d, int& s)
+            : down(&d)
+            , seen(&s)
+        {
+        }
+
+        ~teardown_witness()
+        {
+            *seen = *down;
+        }
+
+        void shutdown() override {}
+    };
+
+    // Shutting a context down destroys every frame suspended in it before
+    // any service is destroyed. The frames that own their I/O object, the
+    // timers and the pool read are still held by a service when it shuts
+    // down; those that borrow one are cancelled when it closes, before
+    // the context goes.
+    void testShutdownDestroysFramesBeforeServices()
+    {
+        int down     = 0;
+        int seen     = -1;
+        int expected = 0;
+        auto counted = [&] {
+            ++expected;
+            return destroy_count_t(down);
+        };
+#if BOOST_COROSIO_POSIX
+        test::temp_file tmp("teardown_destroy_", "hello world");
+        test::pool_blocker blocker;
+#endif
+        {
+            io_context ioc(Backend);
+            auto [a, b] = test::make_socket_pair(ioc);
+            auto [c, d] = test::make_socket_pair(ioc);
+            tcp_acceptor acc(ioc);
+            BOOST_TEST(!acc.open());
+            acc.set_option(socket_option::reuse_address(true));
+            BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+            BOOST_TEST(!acc.listen());
+            tcp_acceptor owned(ioc);
+            BOOST_TEST(!owned.open());
+            BOOST_TEST(
+                !owned.bind(endpoint(ipv4_address::loopback(), 0)));
+            BOOST_TEST(!owned.listen());
+            signal_set sigs(ioc, SIGINT);
+            capy::strand st(ioc.get_executor());
+
+            auto on_delay = [](destroy_count_t) -> capy::task<> {
+                std::ignore = co_await delay(std::chrono::hours(1));
+            };
+            auto on_read = [](tcp_socket& s, destroy_count_t) -> capy::task<> {
+                char ch;
+                std::ignore =
+                    co_await s.read_some(capy::mutable_buffer(&ch, 1));
+            };
+            auto owns_socket = [](tcp_socket s,
+                                  destroy_count_t) -> capy::task<> {
+                char ch;
+                std::ignore =
+                    co_await s.read_some(capy::mutable_buffer(&ch, 1));
+            };
+            auto on_accept = [](tcp_acceptor& ac,
+                                destroy_count_t) -> capy::task<> {
+                std::ignore = co_await ac.accept();
+            };
+            auto owns_acceptor = [](tcp_acceptor ac,
+                                    destroy_count_t) -> capy::task<> {
+                std::ignore = co_await ac.accept();
+            };
+            auto on_signal = [](signal_set& ss,
+                                destroy_count_t) -> capy::task<> {
+                std::ignore = co_await ss.wait();
+            };
+            auto owns_set = [](signal_set ss, destroy_count_t) -> capy::task<> {
+                std::ignore = co_await ss.wait();
+            };
+
+            spawn(ioc)(on_delay(counted()));
+            spawn(ioc)(on_read(a, counted()));
+            spawn(ioc)(owns_socket(std::move(c), counted()));
+            spawn(ioc)(on_accept(acc, counted()));
+            spawn(ioc)(
+                owns_acceptor(std::move(owned), counted()));
+            spawn(ioc)(on_signal(sigs, counted()));
+            spawn(ioc)(
+                owns_set(signal_set(ioc, SIGINT), counted()));
+            capy::run_async(st, std::allocator<std::byte>{})(
+                on_delay(counted()));
+#if BOOST_COROSIO_POSIX
+            // io_uring reads files through the ring, so a read there can
+            // complete; elsewhere it waits behind the parked pool worker,
+            // which is held until the pool's own shutdown disposes of it.
+            std::optional<random_access_file> f;
+            if constexpr (!on_ring)
+            {
+                BOOST_TEST(test::park_pool_worker(ioc, blocker, true));
+                f.emplace(ioc);
+                BOOST_TEST(!f->open(tmp.path, file_base::read_only));
+                auto on_file = [](random_access_file& rf,
+                                  destroy_count_t) -> capy::task<> {
+                    char ch;
+                    std::ignore = co_await rf.read_some_at(
+                        0, capy::mutable_buffer(&ch, 1));
+                };
+                spawn(ioc)(on_file(*f, counted()));
+            }
+#endif
+            std::ignore = ioc.poll();
+            BOOST_TEST_EQ(down, 0);
+            ioc.make_service<teardown_witness>(down, seen);
+        }
+        BOOST_TEST_EQ(seen, expected);
+        BOOST_TEST_EQ(down, expected);
+    }
 
     // Posts from a service's destructor, after the teardown drain.
     struct late_poster : capy::execution_context::service
@@ -475,8 +596,8 @@ struct teardown_destroy_test
         void shutdown() override {}
     };
 
-    // Work posted after the drain is destroyed with the context, not
-    // left queued.
+    // A service should not post from its destructor, but work one posts
+    // anyway is destroyed with the context, not left queued.
     void testPostAfterDrainDestroyed()
     {
         int down = 0;
@@ -506,6 +627,7 @@ struct teardown_destroy_test
         testPoolOpIsWorkOnItsOwnContext();
         testCrossContextSessionDrains();
 #endif
+        testShutdownDestroysFramesBeforeServices();
         testPostAfterDrainDestroyed();
     }
 };

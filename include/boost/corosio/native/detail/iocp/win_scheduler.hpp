@@ -875,7 +875,8 @@ inline win_scheduler::~win_scheduler()
 
     if (iocp_ != nullptr)
     {
-        // Service destructors run after the drain and may still post.
+        // Services give up their work in shutdown(), but anything posted
+        // after the drain, such as from a destructor, is still destroyed.
         sweep_port();
         ::CloseHandle(iocp_);
     }
