@@ -60,11 +60,16 @@
 #include <boost/corosio/native/detail/posix/posix_signal_service.hpp>
 #endif
 
+#if BOOST_COROSIO_HAS_EPOLL
+#include <dirent.h>
+#endif
+
 #include <chrono>
 #include <cstddef>
 #include <latch>
 #include <memory>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include "context.hpp"
@@ -103,6 +108,21 @@ using resolver_service_t       = detail::posix_resolver_service;
 using signal_service_t         = detail::posix_signal_service;
 using file_service_t           = detail::file_service;
 using random_access_file_service_t = detail::random_access_file_service;
+#endif
+
+#if BOOST_COROSIO_HAS_EPOLL
+int
+open_descriptor_count()
+{
+    DIR* d = ::opendir("/proc/self/fd");
+    if (!d)
+        return -1;
+    int n = 0;
+    while (::readdir(d))
+        ++n;
+    ::closedir(d);
+    return n;
+}
 #endif
 
 } // namespace
@@ -190,6 +210,26 @@ struct lazy_services_test
         }
         ioc.run();
         BOOST_TEST_EQ(fired, static_cast<int>(timers.size()));
+    }
+
+    // On epoll the timerfd belongs to timers, so a context that makes
+    // none never opens it.
+    void testFirstTimerOpensTimerDescriptor()
+    {
+#if BOOST_COROSIO_HAS_EPOLL
+        if constexpr (std::is_same_v<
+                          std::remove_const_t<decltype(Backend)>, epoll_t>)
+        {
+            io_context ioc(Backend);
+            int const before = open_descriptor_count();
+            detail::timer t1(ioc);
+            int const after = open_descriptor_count();
+            detail::timer t2(ioc);
+            BOOST_TEST(before >= 0);
+            BOOST_TEST_EQ(after, before + 1);
+            BOOST_TEST_EQ(open_descriptor_count(), after);
+        }
+#endif
     }
 
     void testObjectCreatesOnlyItsOwnService()
@@ -287,6 +327,7 @@ struct lazy_services_test
         testConcurrentFirstUse();
         testTimerCreatesTimerService();
         testConcurrentFirstTimer();
+        testFirstTimerOpensTimerDescriptor();
     }
 };
 

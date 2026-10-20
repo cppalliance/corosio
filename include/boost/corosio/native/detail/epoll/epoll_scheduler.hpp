@@ -30,6 +30,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <limits>
 #include <mutex>
 #include <vector>
 
@@ -65,8 +66,9 @@ class BOOST_COROSIO_DECL epoll_scheduler final : public reactor_scheduler
 public:
     /** Construct the scheduler.
 
-        Creates an epoll instance, eventfd for reactor interruption,
-        and timerfd for kernel-managed timer expiry.
+        Creates an epoll instance and an eventfd for reactor
+        interruption. The timerfd for timer expiry is created with the
+        context's first timer.
 
         @param ctx Reference to the owning execution_context.
         @param concurrency_hint Hint for expected thread count (unused).
@@ -139,6 +141,7 @@ private:
     void run_task(lock_type& lock, context_type& ctx, long timeout_us) override;
     void interrupt_reactor() const override;
     void update_timerfd() const;
+    static int timer_timeout_ms(timer_service& svc, int timeout_ms) noexcept;
     void on_timer_service_attached(timer_service& svc) override;
 
     int epoll_fd_;
@@ -178,37 +181,15 @@ inline epoll_scheduler::epoll_scheduler(capy::execution_context&, int)
         detail::throw_system_error(make_err(errn), "eventfd");
     }
 
-    timer_fd_ = ::timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
-    if (timer_fd_ < 0)
-    {
-        int errn = errno;
-        ::close(event_fd_);
-        ::close(epoll_fd_);
-        detail::throw_system_error(make_err(errn), "timerfd_create");
-    }
-
     epoll_event ev{};
     ev.events   = EPOLLIN | EPOLLET;
     ev.data.ptr = nullptr;
     if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, event_fd_, &ev) < 0)
     {
         int errn = errno;
-        ::close(timer_fd_);
         ::close(event_fd_);
         ::close(epoll_fd_);
         detail::throw_system_error(make_err(errn), "epoll_ctl");
-    }
-
-    epoll_event timer_ev{};
-    timer_ev.events   = EPOLLIN | EPOLLERR;
-    timer_ev.data.ptr = &timer_fd_;
-    if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, timer_fd_, &timer_ev) < 0)
-    {
-        int errn = errno;
-        ::close(timer_fd_);
-        ::close(event_fd_);
-        ::close(epoll_fd_);
-        detail::throw_system_error(make_err(errn), "epoll_ctl (timerfd)");
     }
 
     completed_ops_.push(&task_op_);
@@ -217,6 +198,23 @@ inline epoll_scheduler::epoll_scheduler(capy::execution_context&, int)
 inline void
 epoll_scheduler::on_timer_service_attached(timer_service& svc)
 {
+    // Without a timerfd the epoll_wait timeout drives the timers: the
+    // first timer is often made where a throw can only terminate.
+    int fd = ::timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
+    if (fd >= 0)
+    {
+        // Set before registration, which orders it for every thread
+        // the timerfd's events can wake.
+        timer_fd_ = fd;
+        epoll_event timer_ev{};
+        timer_ev.events   = EPOLLIN | EPOLLERR;
+        timer_ev.data.ptr = &timer_fd_;
+        if (::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &timer_ev) < 0)
+        {
+            ::close(fd);
+            timer_fd_ = -1;
+        }
+    }
     svc.set_on_earliest_changed(timer_service::callback(this, [](void* p) {
         auto* self = static_cast<epoll_scheduler*>(p);
         self->timerfd_stale_.store(true, std::memory_order_release);
@@ -330,7 +328,7 @@ inline void
 epoll_scheduler::update_timerfd() const
 {
     auto* tsvc = timers();
-    if (!tsvc)
+    if (!tsvc || timer_fd_ < 0)
         return;
     auto nearest = tsvc->nearest_expiry();
 
@@ -365,6 +363,26 @@ epoll_scheduler::update_timerfd() const
         detail::throw_system_error(make_err(errno), "timerfd_settime");
 }
 
+// Rounded up, so the wait never wakes before the timer is due.
+inline int
+epoll_scheduler::timer_timeout_ms(timer_service& svc, int timeout_ms) noexcept
+{
+    auto nearest = svc.nearest_expiry();
+    if (nearest == timer_service::time_point::max())
+        return timeout_ms;
+    auto now = std::chrono::steady_clock::now();
+    if (nearest <= now)
+        return 0;
+    auto ms =
+        std::chrono::ceil<std::chrono::milliseconds>(nearest - now).count();
+    ms = (std::min)(ms,
+                    static_cast<decltype(ms)>(
+                        (std::numeric_limits<int>::max)()));
+    if (timeout_ms >= 0 && timeout_ms < ms)
+        return timeout_ms;
+    return static_cast<int>(ms);
+}
+
 inline void
 epoll_scheduler::run_task(lock_type& lock, context_type& ctx, long timeout_us)
 {
@@ -385,6 +403,13 @@ epoll_scheduler::run_task(lock_type& lock, context_type& ctx, long timeout_us)
     if (timerfd_stale_.exchange(false, std::memory_order_acquire))
         update_timerfd();
 
+    // timer_fd_ is read only once the service is seen, after which it
+    // no longer changes.
+    auto* tsvc             = timers();
+    bool const poll_timers = tsvc && timer_fd_ < 0;
+    if (poll_timers && timeout_ms != 0)
+        timeout_ms = timer_timeout_ms(*tsvc, timeout_ms);
+
     int nfds = ::epoll_wait(
         epoll_fd_, event_buffer_.data(), static_cast<int>(event_buffer_.size()),
         timeout_ms);
@@ -392,7 +417,7 @@ epoll_scheduler::run_task(lock_type& lock, context_type& ctx, long timeout_us)
     if (nfds < 0 && errno != EINTR)
         detail::throw_system_error(make_err(errno), "epoll_wait");
 
-    bool check_timers = false;
+    bool check_timers = poll_timers;
     ready_queue local_ops;
 
     for (int i = 0; i < nfds; ++i)
@@ -450,8 +475,8 @@ epoll_scheduler::run_task(lock_type& lock, context_type& ctx, long timeout_us)
 
     if (check_timers)
     {
-        if (auto* tsvc = timers())
-            tsvc->process_expired();
+        if (auto* svc = timers())
+            svc->process_expired();
         update_timerfd();
     }
 
