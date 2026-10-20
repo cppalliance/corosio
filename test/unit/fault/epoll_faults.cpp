@@ -57,11 +57,36 @@ struct epoll_faults
         expect_throw(
             sys::epoll_create1, 1, EMFILE, std::errc::too_many_files_open);
         expect_throw(sys::eventfd, 1, EMFILE, std::errc::too_many_files_open);
-        expect_throw(
-            sys::timerfd_create, 1, EMFILE, std::errc::too_many_files_open);
-        // 1 registers the eventfd, 2 the timerfd.
         expect_throw(sys::epoll_ctl, 1, ENOMEM, std::errc::not_enough_memory);
-        expect_throw(sys::epoll_ctl, 2, ENOMEM, std::errc::not_enough_memory);
+    }
+
+    // A timerfd the first timer cannot get leaves timers to the
+    // epoll_wait timeout instead. The first timer is often made inside
+    // a delay's await_suspend, where a throw could only terminate.
+    void testFirstTimerWithoutTimerfd()
+    {
+        auto delay_completes = [](sys which, int err) {
+            in_child([=] {
+                // Timers that nothing drives would leave run() waiting.
+                ::alarm(10);
+                io_context ioc(epoll);
+                int const before = open_fds();
+                bool done        = false;
+                auto body        = [&]() -> capy::task<> {
+                    auto [ec] =
+                        co_await corosio::delay(std::chrono::milliseconds(1));
+                    done = !ec;
+                };
+                fault_scope f(which, err);
+                capy::run_async(ioc.get_executor())(body());
+                ioc.run();
+                return f.fired() && done && open_fds() == before;
+            });
+        };
+        delay_completes(sys::timerfd_create, EMFILE);
+        // The timerfd exists when registration fails; it is closed, not
+        // left open and unwatched.
+        delay_completes(sys::epoll_ctl, ENOMEM);
     }
 
     void testOpenFails()
@@ -373,6 +398,7 @@ struct epoll_faults
         if (skip_under_valgrind())
             return;
         testConstructorFails();
+        testFirstTimerWithoutTimerfd();
         testOpenFails();
         testAcceptorRegisterFails();
         testAcceptFails();
