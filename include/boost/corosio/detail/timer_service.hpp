@@ -207,9 +207,6 @@ public:
         @par Exception Safety
         Strong guarantee: on failure the service stays detached and
         the next call retries.
-
-        @throws std::system_error if the scheduler cannot start waiting
-            on timers.
     */
     inline void attach()
     {

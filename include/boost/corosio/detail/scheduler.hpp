@@ -167,11 +167,7 @@ public:
         No timer service is attached.
 
         @par Exception Safety
-        Strong guarantee: if the scheduler cannot start waiting on
-        timers, nothing is attached.
-
-        @throws std::system_error if the scheduler cannot start waiting
-            on timers.
+        Strong guarantee: on a throw, nothing is attached.
 
         @param svc The service to attach.
     */
@@ -197,7 +193,11 @@ protected:
     /** Prepare to wait on a timer service about to be attached.
 
         Called before the service is published to the loop, so the loop
-        never sees a service it cannot yet wait on.
+        never sees a service it cannot yet wait on. A scheduler that
+        cannot get a kernel timer falls back to bounding its wait by the
+        nearest expiry rather than throwing: the first timer is often
+        made inside an `await_suspend`, where a throw could only
+        terminate.
 
         @par Exception Safety
         Strong guarantee: a throw leaves the scheduler as it was, and

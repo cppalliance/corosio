@@ -26,7 +26,10 @@ class win_timers_none final : public win_timers
 public:
     win_timers_none() = default;
 
-    void start() override {}
+    bool start() override
+    {
+        return true;
+    }
     void stop() override {}
     void update_timeout(time_point) override {}
 };
