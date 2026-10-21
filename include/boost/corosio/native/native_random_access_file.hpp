@@ -63,7 +63,7 @@ namespace boost::corosio {
     @par Example
     @par !example native_random_access_file
 
-    @see random_access_file, epoll_t, iocp_t
+    @see @ref random_access_file, @ref epoll_t, @ref iocp_t
 */
 template<auto Backend>
 class native_random_access_file : public random_access_file

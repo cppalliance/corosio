@@ -42,7 +42,7 @@ namespace boost::corosio {
     @par Thread Safety
     Same as @ref win_object_handle.
 
-    @see win_object_handle, iocp_t
+    @see @ref win_object_handle, @ref iocp_t
 */
 template<auto Backend>
 class native_win_object_handle : public win_object_handle

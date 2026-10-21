@@ -55,7 +55,7 @@ namespace boost::corosio {
     @return An awaitable yielding `results` matching the inner
         awaitable's result type.
 
-    @see delay
+    @see @ref delay
 */
 template<capy::ContextAwaitable A, typename Rep, typename Period>
     requires detail::is_results_v<
@@ -88,7 +88,7 @@ timeout(A a, std::chrono::duration<Rep, Period> dur)
     @return An awaitable yielding `results` matching the inner
         awaitable's result type.
 
-    @see delay
+    @see @ref delay
 */
 template<capy::ContextAwaitable A>
     requires detail::is_results_v<

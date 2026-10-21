@@ -63,7 +63,7 @@ namespace boost::corosio {
     @par Example
     @par !example native_udp_socket
 
-    @see udp_socket, epoll_t
+    @see @ref udp_socket, @ref epoll_t
 */
 template<auto Backend>
 class native_udp_socket : public udp_socket

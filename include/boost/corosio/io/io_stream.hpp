@@ -56,7 +56,7 @@ namespace boost::corosio {
     @par Example
     @par !example io_stream
 
-    @see io_read_stream, io_write_stream, tcp_socket
+    @see @ref io_read_stream, @ref io_write_stream, @ref tcp_socket
 */
 class BOOST_COROSIO_DECL io_stream
     : public io_read_stream

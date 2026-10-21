@@ -68,7 +68,7 @@ namespace boost::corosio {
     Distinct objects: Safe.@n
     Shared objects: Unsafe. One wait may be pending at a time.
 
-    @see win_stream_handle, timeout
+    @see @ref win_stream_handle, @ref timeout
 */
 class BOOST_COROSIO_DECL win_object_handle : public io_object
 {
@@ -218,7 +218,7 @@ public:
         Throws nothing. On failure the object is unchanged and @p h
         stays with the caller.
 
-        @see release
+        @see @ref release
     */
     [[nodiscard]] std::error_code assign(native_handle_type h) noexcept;
 
@@ -292,7 +292,7 @@ public:
         @par Example
         @par !example wait
 
-        @see timeout
+        @see @ref timeout
     */
     [[nodiscard]] wait_awaitable wait()
     {

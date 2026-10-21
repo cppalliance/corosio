@@ -33,8 +33,6 @@
     Both variants satisfy the same option-type interface and work
     interchangeably with `tcp_socket::set_option` /
     `tcp_socket::get_option` and the corresponding acceptor methods.
-
-    @see native_socket_option
 */
 
 namespace boost::corosio::socket_option {

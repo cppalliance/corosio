@@ -60,7 +60,7 @@ namespace boost::corosio {
     @par Example
     @par !example openssl_stream
 
-    @see tls_stream, wolfssl_stream
+    @see @ref tls_stream, @ref wolfssl_stream
 */
 class BOOST_COROSIO_DECL openssl_stream final : public tls_stream
 {

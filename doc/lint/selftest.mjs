@@ -403,7 +403,44 @@ try {
       '',
     ].join('\n'));
 
-    const d = spawnSync('node', [path.join(SCRIPT_DIR, 'doc-lint.mjs'), DOCLINT_TMP],
+    // B6 header fixture, passed to doc-lint.mjs as its header tree. Line
+    // numbers are asserted below: 3, 4 and 5 must fire; 6 and 7 must not.
+    // detail/ is outside B6's scope, so its bare `@see` must not fire either.
+    write('hdr/see.hpp', [
+      '/** Brief.',                                       // 1
+      '',                                                 // 2
+      '    @see delay',                                   // 3 <- must fire
+      '    @see @ref delay, wait_traits',                 // 4 <- must fire (one name unlinked)
+      '    @see @ref add, for the non-throwing form.',    // 5 <- must fire (prose)
+      '    @see @ref delay, @ref io_context_options::locking', // 6 <- must NOT fire
+      '    @see @ref accept(tcp_socket&)',                // 7 <- must NOT fire
+      '*/',
+      '',
+    ].join('\n'));
+    write('hdr/detail/hidden.hpp', '/** Brief.\n    @see delay\n*/\n');
+    // B6 continuation fixture: a `@see` paragraph wraps onto following lines
+    // until a blank line, `*/`, a non-@ref command, or the end of a `///` run.
+    // 3 and 12 must fire; nothing else may.
+    write('hdr/see-wrap.hpp', [
+      '/** Brief.',                                  // 1
+      '    @see @ref a,',                            // 2
+      '         b',                                  // 3  <- must fire (bare name, wrapped)
+      '    @see @ref a,',                            // 4
+      '         @ref b',                             // 5  <- must NOT fire (wrapped @ref)
+      '    @see @ref a',                             // 6
+      '',                                            // 7  blank line ends the paragraph
+      '    Plain prose after the list.',             // 8  <- must NOT fire
+      '    @see @ref a',                             // 9
+      '    @par Note',                               // 10 a command ends the paragraph
+      '    More prose.',                             // 11 <- must NOT fire
+      '    @see @ref a, b */',                       // 12 <- must fire (bare name before */)
+      '/// @see @ref a,',                            // 13
+      '///      @ref b',                             // 14 <- must NOT fire
+      'int prose_outside_the_comment;',              // 15 <- must NOT fire (/// run ended)
+      '',
+    ].join('\n'));
+
+    const d = spawnSync('node', [path.join(SCRIPT_DIR, 'doc-lint.mjs'), DOCLINT_TMP, path.join(DOCLINT_TMP, 'hdr')],
       { encoding: 'utf8', cwd: DOC_DIR, maxBuffer: 16 * 1024 * 1024 });
     check('doc-lint.mjs exits 0 against the B2 fixture tree', d.status === 0,
       `exited ${d.status}: ${(d.stderr || '').trim().slice(-200)}`);
@@ -498,6 +535,15 @@ try {
         `attr-anchor.adoc:10 is the passthrough fix and must not fire; got: ${JSON.stringify(anchorRule)}`);
       check('ANCHOR finds exactly the one planted prose violation',
         anchorRule.length === 1, `expected exactly 1 ANCHOR finding, got: ${JSON.stringify(anchorRule)}`);
+
+      // B6: MrDocs renders a bare `@see` name as plain text and warns about
+      // nothing, so a regression here would be silent on the site too.
+      const seeLines = dOut.findings.B6.map((f) => `${f.file}:${f.line}`).sort();
+      check('B6 flags exactly the bare-name, mixed and prose @see lines, nothing in detail/',
+        JSON.stringify(seeLines) === JSON.stringify(
+          ['include/boost/corosio/see-wrap.hpp:12', 'include/boost/corosio/see-wrap.hpp:3',
+           'include/boost/corosio/see.hpp:3', 'include/boost/corosio/see.hpp:4', 'include/boost/corosio/see.hpp:5']),
+        `got: ${JSON.stringify(seeLines)}`);
     }
   } finally {
     fs.rmSync(DOCLINT_TMP, { recursive: true, force: true });

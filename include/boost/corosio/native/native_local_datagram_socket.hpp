@@ -65,7 +65,7 @@ namespace boost::corosio {
     @par Example
     @par !example open_bind_recv
 
-    @see local_datagram_socket, epoll_t, iocp_t
+    @see @ref local_datagram_socket, @ref epoll_t, @ref iocp_t
 */
 template<auto Backend>
 class native_local_datagram_socket : public local_datagram_socket

@@ -43,7 +43,7 @@ namespace boost::corosio {
     @par Thread Safety
     Same as @ref win_stream_handle.
 
-    @see win_stream_handle, iocp_t
+    @see @ref win_stream_handle, @ref iocp_t
 */
 template<auto Backend>
 class native_win_stream_handle : public win_stream_handle

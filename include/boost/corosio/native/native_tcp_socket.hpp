@@ -63,7 +63,7 @@ namespace boost::corosio {
     @par Example
     @par !example native_tcp_socket
 
-    @see tcp_socket, epoll_t, iocp_t
+    @see @ref tcp_socket, @ref epoll_t, @ref iocp_t
 */
 template<auto Backend>
 class native_tcp_socket : public tcp_socket

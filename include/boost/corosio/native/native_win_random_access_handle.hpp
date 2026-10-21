@@ -46,7 +46,7 @@ namespace boost::corosio {
     @par Example
     @par !example native_win_random_access_handle
 
-    @see win_random_access_handle, iocp_t
+    @see @ref win_random_access_handle, @ref iocp_t
 */
 template<auto Backend>
 class native_win_random_access_handle : public win_random_access_handle

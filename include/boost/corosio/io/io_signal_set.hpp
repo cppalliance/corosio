@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -36,7 +37,7 @@ namespace boost::corosio {
     Distinct objects: Safe.
     Shared objects: Unsafe.
 
-    @see signal_set, io_object
+    @see @ref signal_set, @ref io_object
 */
 class BOOST_COROSIO_DECL io_signal_set : public io_object
 {

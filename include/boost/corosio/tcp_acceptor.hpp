@@ -307,7 +307,7 @@ public:
         @par Example
         @par !example open
 
-        @see bind, listen
+        @see @ref bind, @ref listen
 
         @return The error code, empty on success.
     */
@@ -395,7 +395,7 @@ public:
         @par Example
         @par !example accept_into_a_reused_socket
 
-        @see accept()
+        @see @ref accept()
     */
     [[nodiscard]] auto accept(tcp_socket& peer)
     {
@@ -435,7 +435,7 @@ public:
         @par Example
         @par !example accept_returning_a_new_socket
 
-        @see accept(tcp_socket&)
+        @see @ref accept(tcp_socket&)
     */
     [[nodiscard]] auto accept()
     {

@@ -58,7 +58,7 @@ namespace boost::corosio {
     @par Example
     @par !example poll
 
-    @see io_context, epoll_t, iocp_t
+    @see @ref io_context, @ref epoll_t, @ref iocp_t
 */
 template<auto Backend>
 class native_io_context : public io_context

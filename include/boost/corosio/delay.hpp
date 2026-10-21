@@ -101,7 +101,7 @@ emplace_delay_timer(std::optional<timer>& t, capy::execution_context& ctx)
     auto-enabled at `concurrency_hint` == 1. Cross-thread cancellation
     requires a multi-threaded-capable context.
 
-    @see delay
+    @see @ref delay
 */
 class delay_awaitable
 {
@@ -217,7 +217,7 @@ public:
     resumes inline with `error::canceled`; stop while suspended
     cancels the pending wait, including between re-arms.
 
-    @see delay, wait_traits
+    @see @ref delay, @ref wait_traits
 */
 template<class Clock, class Traits>
 class clock_delay_awaitable

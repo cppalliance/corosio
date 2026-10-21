@@ -330,7 +330,7 @@ public:
             read or write then fails with `ESPIPE` on the epoll,
             kqueue, and select I/O backends.
 
-        @see release
+        @see @ref release
     */
     [[nodiscard]] std::error_code assign(native_handle_type handle) noexcept;
 

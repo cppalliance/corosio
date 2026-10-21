@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -45,7 +46,7 @@ namespace boost::corosio {
     @par Thread Safety
     Same as @ref signal_set.
 
-    @see signal_set, epoll_t, iocp_t
+    @see @ref signal_set, @ref epoll_t, @ref iocp_t
 */
 template<auto Backend>
 class native_signal_set : public signal_set
@@ -87,14 +88,16 @@ public:
 
     /** Construct a native signal set with initial signals.
 
+        For the non-throwing form, construct with the context alone,
+        then call @ref signal_set::add for each signal.
+
         @param ctx The execution context that owns this signal set.
         @param signal First signal number to add.
         @param signals Additional signal numbers to add.
 
         @throws std::system_error on failure.
 
-        @see add for the non-throwing form: construct with the
-            context alone, then `add()` each signal.
+        @see @ref signal_set::add
     */
     template<std::convertible_to<int>... Signals>
     native_signal_set(

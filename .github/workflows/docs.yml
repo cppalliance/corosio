@@ -309,7 +309,7 @@ jobs:
         working-directory: boost-root/libs/corosio/doc
         run: node lint/check-no-new-violations.mjs --show-baseline
 
-      # The gate: reports any NEW A1/A6/B2/D2/ANCHOR violation, any NEW MrDocs
+      # The gate: reports any NEW A1/A6/B2/B6/D2/ANCHOR violation, any NEW MrDocs
       # reference-surface warning, any NEW C2 sentence-length violation in the hard
       # slice, and any NEW C4/C9/C10 wording violation on EITHER surface.
       #
@@ -325,7 +325,7 @@ jobs:
       #     So `^C2:` is the correct shape THERE, and it deliberately cannot reach
       #     the `advisory-C2` slice (doc/STYLE_GUIDE.md C2 relaxes the 25-word limit
       #     for 2.networking-tutorial/, which is essay-style protocol theory).
-      #   * doc_lint is also rule-at-the-head, hence `^(A1|A6|B2|D2|ANCHOR):`. SHOULD
+      #   * doc_lint is also rule-at-the-head, hence `^(A1|A6|B2|B6|D2|ANCHOR):`. SHOULD
       #     a rule be added there, note SHAPE is deliberately excluded: it is an
       #     advisory content heuristic, not a defect.
       #
@@ -341,7 +341,7 @@ jobs:
       # THE GATE IS SPLIT IN TWO. Everything blocks EXCEPT the MrDocs
       # reference-surface check, and that exception is evidence-based.
       #
-      # A1/A6/B2/D2/ANCHOR, C2, and the C4/C9/C10/A7 wording rules are all STRICT.
+      # A1/A6/B2/B6/D2/ANCHOR, C2, and the C4/C9/C10/A7 wording rules are all STRICT.
       # baseline.json is now authored by this job (workflow_dispatch reseed), so a
       # strict comparison is CI-against-CI and carries no environment drift. The
       # wording rules additionally have an EMPTY gated subset — zero baselined
@@ -366,7 +366,7 @@ jobs:
         working-directory: boost-root/libs/corosio/doc
         run: |
           node lint/check-no-new-violations.mjs --strict \
-            --gate 'doc_lint:^(A1|A6|B2|D2|ANCHOR):' \
+            --gate 'doc_lint:^(A1|A6|B2|B6|D2|ANCHOR):' \
             --gate 'sentence_length:^C2:' \
             --gate 'vale_adoc:Corosio\.PartHeadings$' \
             --gate 'vale_adoc:(Corosio\.SimpleTense|Corosio\.NoFluff|Corosio\.Terminology)$' \

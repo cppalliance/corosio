@@ -63,7 +63,7 @@ namespace boost::corosio {
     @par Example
     @par !example native_stream_file
 
-    @see stream_file, epoll_t, iocp_t
+    @see @ref stream_file, @ref epoll_t, @ref iocp_t
 */
 template<auto Backend>
 class native_stream_file : public stream_file
