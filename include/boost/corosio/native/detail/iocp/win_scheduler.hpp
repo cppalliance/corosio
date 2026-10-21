@@ -123,8 +123,11 @@ private:
     void post_copy(capy::continuation const& c) const;
 
     static void on_timer_changed(void* ctx);
+    static unsigned long
+    timer_timeout_ms(timer_service& svc, unsigned long timeout_ms) noexcept;
     void post_deferred_completions(op_queue& ops);
     std::size_t do_one(unsigned long timeout_ms);
+    std::size_t do_one_wait(unsigned long timeout_ms, bool& took_wake);
 
     void* iocp_;
     mutable long outstanding_work_;
@@ -526,6 +529,24 @@ win_scheduler::post_deferred_completions(op_queue& ops)
 inline std::size_t
 win_scheduler::do_one(unsigned long timeout_ms)
 {
+    bool took_wake = false;
+    std::size_t n  = do_one_wait(timeout_ms, took_wake);
+    // Without the timer thread, the wake is all that tells a thread
+    // blocked with no timeout about a new earliest timer; leaving
+    // with it would strand those threads.
+    if (took_wake && !timers_)
+    {
+        auto* tsvc = timers();
+        if (tsvc &&
+            tsvc->nearest_expiry() != (timer_service::time_point::max)())
+            ::PostQueuedCompletionStatus(iocp_, 0, key_wake_dispatch, nullptr);
+    }
+    return n;
+}
+
+inline std::size_t
+win_scheduler::do_one_wait(unsigned long timeout_ms, bool& took_wake)
+{
     for (;;)
     {
         // Check if we need to process timers or deferred ops
@@ -544,13 +565,20 @@ win_scheduler::do_one(unsigned long timeout_ms)
             update_timeout();
         }
 
+        unsigned long wait_ms = timeout_ms;
+        if (auto* tsvc = timers(); tsvc && !timers_)
+        {
+            tsvc->process_expired();
+            wait_ms = timer_timeout_ms(*tsvc, timeout_ms);
+        }
+
         DWORD bytes             = 0;
         ULONG_PTR key           = 0;
         LPOVERLAPPED overlapped = nullptr;
         ::SetLastError(0);
 
         BOOL result = ::GetQueuedCompletionStatus(
-            iocp_, &bytes, &key, &overlapped, timeout_ms);
+            iocp_, &bytes, &key, &overlapped, wait_ms);
         DWORD dwError = ::GetLastError();
 
         // Handle based on completion key
@@ -623,6 +651,7 @@ win_scheduler::do_one(unsigned long timeout_ms)
             {
             case key_wake_dispatch:
                 // Timer wakeup - loop to check dispatch_required_
+                took_wake = true;
                 continue;
 
             case key_shutdown:
@@ -646,14 +675,17 @@ win_scheduler::do_one(unsigned long timeout_ms)
             }
         }
 
-        // Timeout or error. INFINITE never times out, so a WAIT_TIMEOUT
-        // can only be a finite caller timeout (wait_one/poll) elapsing
-        // with no work. run()/run_one() pass INFINITE and block until a
-        // real wake-up; they exit only when stop() posts key_shutdown
-        // (a failed post is fatal in stop()).
+        // Timeout or error. Unless a timer cut the wait short, a
+        // WAIT_TIMEOUT is a finite caller timeout (wait_one/poll)
+        // elapsing with no work. run()/run_one() pass INFINITE and
+        // block until a real wake-up; they exit only when stop() posts
+        // key_shutdown (a failed post is fatal in stop()).
         if (dwError != WAIT_TIMEOUT)
             detail::throw_system_error(make_err(dwError));
-        return 0;
+        if (wait_ms == timeout_ms)
+            return 0;
+        if (timeout_ms != INFINITE)
+            timeout_ms -= wait_ms;
     }
 }
 
@@ -663,22 +695,52 @@ win_scheduler::on_timer_changed(void* ctx)
     static_cast<win_scheduler*>(ctx)->update_timeout();
 }
 
+// Rounds up, so a timer is never seen early and polled for again.
+inline unsigned long
+win_scheduler::timer_timeout_ms(
+    timer_service& svc, unsigned long timeout_ms) noexcept
+{
+    auto nearest = svc.nearest_expiry();
+    if (nearest == (timer_service::time_point::max)())
+        return timeout_ms;
+    auto now = std::chrono::steady_clock::now();
+    if (nearest <= now)
+        return 0;
+    auto ms =
+        std::chrono::ceil<std::chrono::milliseconds>(nearest - now).count();
+    // Kept below INFINITE, which would never time out.
+    ms = (std::min)(ms, static_cast<decltype(ms)>(INFINITE - 1));
+    return (std::min)(timeout_ms, static_cast<unsigned long>(ms));
+}
+
 inline void
 win_scheduler::on_timer_service_attached(timer_service& svc)
 {
-    // Pass 'this' as context - callback routes to correct instance
+    // Without the timer thread the completion-port wait timeout drives
+    // timers instead. The first timer is often made inside a delay's
+    // await_suspend, where a throw could only terminate.
+    auto timers = make_win_timers(iocp_, &dispatch_required_);
+    if (timers->start())
+        timers_ = std::move(timers);
     svc.set_on_earliest_changed(
         timer_service::callback{this, &on_timer_changed});
-    if (timers_)
-        timers_->start();
 }
 
 inline void
 win_scheduler::update_timeout()
 {
     auto* tsvc = timers();
-    if (tsvc && timers_)
+    if (!tsvc)
+        return;
+    if (timers_)
+    {
         timers_->update_timeout(tsvc->nearest_expiry());
+    }
+    else
+    {
+        // A run loop may be waiting past the new earliest expiry.
+        ::PostQueuedCompletionStatus(iocp_, 0, key_wake_dispatch, nullptr);
+    }
 }
 
 } // namespace boost::corosio::detail
@@ -715,20 +777,15 @@ inline win_scheduler::win_scheduler(
 
     try
     {
-        timers_ = make_win_timers(iocp_, &dispatch_required_);
-
         // A scheduler whose wait reactor could not be built would
         // answer every wait with a parked op, so it refuses to exist
-        // instead. Last, so the catch below is the whole cleanup:
-        // the reactor holds its own Winsock reference and needs no
-        // help from the order.
+        // instead.
         wait_reactor_ = std::make_unique<win_wait_reactor>(*this);
     }
     catch (...)
     {
         // ~win_scheduler never runs for a constructor that throws, and
         // the port is a raw handle nothing else owns.
-        timers_.reset();
         ::CloseHandle(iocp_);
         iocp_ = nullptr;
         throw;
@@ -845,6 +902,9 @@ win_scheduler::sweep_port() noexcept
 
 inline win_scheduler::~win_scheduler()
 {
+    // A timer made after shutdown starts a thread that posts to the
+    // port, so it is joined before the port closes.
+    timers_.reset();
     wait_reactor_->stop();
     wait_reactor_.reset();
 

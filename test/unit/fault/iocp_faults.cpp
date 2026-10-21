@@ -182,30 +182,36 @@ struct iocp_faults
         }
     }
 
-    void testTimerCreationFails()
+    // A waitable timer or timer thread the first timer cannot get
+    // leaves timers to the completion-port wait timeout instead. The
+    // first timer is often made inside a delay's await_suspend, where a
+    // throw could only terminate.
+    void testFirstTimerWithoutTimerThread()
     {
-        // A null waitable timer is never reported: start() returns
-        // without a thread and update_timeout() does nothing, so
-        // timers simply never fire.
-        fault_scope f(sys::CreateWaitableTimerW, ERROR_NOT_ENOUGH_MEMORY);
-        io_context ioc(iocp);
-        BOOST_TEST(f.fired());
-
-        bool fired_timer = false;
-        auto body        = [&]() -> capy::task<> {
-            std::ignore = co_await corosio::delay(std::chrono::milliseconds(1));
-            fired_timer = true;
+        auto delay_completes = [](sys which, int err) {
+            expect_no_handle_leak(
+                [&] {
+                    io_context ioc(iocp);
+                    bool done = false;
+                    auto body = [&]() -> capy::task<> {
+                        auto [ec] = co_await corosio::delay(
+                            std::chrono::milliseconds(1));
+                        done = !ec;
+                    };
+                    fault_scope f(which, err);
+                    capy::run_async(ioc.get_executor())(body());
+                    // Bounds a hang, not a timing assertion.
+                    ioc.run_for(std::chrono::seconds(10));
+                    BOOST_TEST(f.fired());
+                    BOOST_TEST(done);
+                },
+                16, 8);
         };
-        capy::run_async(ioc.get_executor())(body());
-        // Nothing else can end the loop, so the run is bounded by the
-        // stop rather than by the timer.
-        ioc.stop();
-        ioc.run();
-        // A smoke check rather than a proof: the stop latches before
-        // run() begins, so the loop would have returned early even with
-        // a working timer. What the arm proves is that construction
-        // swallowed the failure; this only shows nothing fired anyway.
-        BOOST_TEST(!fired_timer);
+        delay_completes(sys::CreateWaitableTimerW, ERROR_NOT_ENOUGH_MEMORY);
+        // The waitable timer exists when the thread is refused; it is
+        // closed, not left open and unwatched.
+        if (hook_is_live(sys::pthread_create))
+            delay_completes(sys::pthread_create, ERROR_MAX_THRDS_REACHED);
     }
 
     void testTimerThreadWaitFails()
@@ -1954,7 +1960,7 @@ struct iocp_faults
     void run()
     {
         testSchedulerConstructFails();
-        testTimerCreationFails();
+        testFirstTimerWithoutTimerThread();
         testTimerThreadWaitFails();
         testStopPostFails();
         testPostFallbackRuns();

@@ -42,7 +42,9 @@ public:
 
     virtual ~win_timers() = default;
 
-    virtual void start()                                = 0;
+    /// Start delivering wakeups; return false, keeping nothing, if
+    /// the resources for them cannot be created.
+    virtual bool start()                                = 0;
     virtual void stop()                                 = 0;
     virtual void update_timeout(time_point next_expiry) = 0;
 };

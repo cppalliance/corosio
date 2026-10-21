@@ -219,9 +219,6 @@ public:
             throws (a timer service is required).
 
         @throws std::logic_error if @p ctx is not an io_context.
-
-        @throws std::system_error if this is the context's first timer
-            and the context cannot start waiting on timers.
     */
     explicit timer(capy::execution_context& ctx);
 

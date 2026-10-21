@@ -18,6 +18,7 @@
 #include <boost/corosio/native/detail/iocp/win_timers.hpp>
 #include <boost/corosio/native/detail/iocp/win_completion_key.hpp>
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
+#include <system_error>
 #include <thread>
 
 namespace boost::corosio::detail {
@@ -36,7 +37,7 @@ public:
     win_timers_thread(win_timers_thread const&)            = delete;
     win_timers_thread& operator=(win_timers_thread const&) = delete;
 
-    void start() override;
+    bool start() override;
     void stop() override;
     void update_timeout(time_point next_expiry) override;
 
@@ -49,7 +50,6 @@ inline win_timers_thread::win_timers_thread(
     : win_timers(dispatch_required)
     , iocp_(iocp_handle)
 {
-    waitable_timer_ = ::CreateWaitableTimerW(nullptr, FALSE, nullptr);
 }
 
 inline win_timers_thread::~win_timers_thread()
@@ -59,13 +59,23 @@ inline win_timers_thread::~win_timers_thread()
         ::CloseHandle(waitable_timer_);
 }
 
-inline void
+inline bool
 win_timers_thread::start()
 {
+    waitable_timer_ = ::CreateWaitableTimerW(nullptr, FALSE, nullptr);
     if (!waitable_timer_)
-        return;
-
-    thread_ = std::thread([this] { thread_func(); });
+        return false;
+    try
+    {
+        thread_ = std::thread([this] { thread_func(); });
+    }
+    catch (std::system_error const&)
+    {
+        ::CloseHandle(waitable_timer_);
+        waitable_timer_ = nullptr;
+        return false;
+    }
+    return true;
 }
 
 inline void
