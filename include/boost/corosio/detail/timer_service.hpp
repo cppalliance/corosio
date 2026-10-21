@@ -81,7 +81,7 @@ class scheduler;
     pointer on waiter_node is used as a "still in list" marker.
     A waiter_node's storage is the suspended coroutine's frame:
     every completion path must finish touching the node before
-    posting the continuation or destroying the handle.
+    dispatching the continuation or destroying the handle.
 */
 
 inline void timer_service_invalidate_cache() noexcept;

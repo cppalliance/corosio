@@ -251,6 +251,26 @@ struct delay_test
         BOOST_TEST(canceled);
     }
 
+    // The completion runs on the context the waiter belongs to, so it
+    // resumes the waiter itself rather than queueing it a second time.
+    void testCompletionResumesWaiterInline()
+    {
+        io_context ioc(Backend);
+        std::stop_source src;
+        bool resumed = false;
+
+        auto t = [](bool& resumed_out) -> capy::task<> {
+            std::ignore = co_await delay(std::chrono::hours(1));
+            resumed_out = true;
+        };
+        capy::run_async(ioc.get_executor(), src.get_token())(t(resumed));
+
+        ioc.poll();
+        src.request_stop();
+        BOOST_TEST_EQ(ioc.poll_one(), 1u);
+        BOOST_TEST(resumed);
+    }
+
     void testAlreadyStoppedCompletesCanceled()
     {
         io_context ioc(Backend);
@@ -1177,6 +1197,7 @@ struct delay_test
         testZeroDurationCompletesImmediately();
         testPastTimePointCompletesImmediately();
         testCancellation();
+        testCompletionResumesWaiterInline();
         testFirstTimerMadeOnAnotherThread();
         testAlreadyStoppedCompletesCanceled();
         testZeroDurationWithStopRequested();

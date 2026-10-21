@@ -234,7 +234,7 @@ class clock_delay_awaitable
     }
 
     // Runs on the scheduler thread executing the completion op,
-    // before the continuation is posted, so the frame cannot die
+    // before the continuation is dispatched, so the frame cannot die
     // concurrently.
     static bool on_fire(void* ctx) noexcept
     {
