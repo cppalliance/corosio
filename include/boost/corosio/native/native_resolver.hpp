@@ -46,7 +46,7 @@ namespace boost::corosio {
     @par Thread Safety
     Same as @ref resolver.
 
-    @see resolver, epoll_t, iocp_t
+    @see @ref resolver, @ref epoll_t, @ref iocp_t
 */
 template<auto Backend>
 class native_resolver : public resolver

@@ -61,6 +61,17 @@
 //        block-depth skip rather than a whole-file regex. Bite-test per
 //        style-guide F4: put `` `[[nodiscard]]` `` in a page and confirm
 //        ANCHOR fires.
+//   B6 — every `@see` line in a public header names its targets with
+//        `@ref`. MrDocs does not auto-link names in `@see` (Doxygen does),
+//        so `@see delay` renders as plain text in "See Also" and nothing
+//        warns: `warn-broken-ref` only checks `@ref` targets. The line must
+//        be `@see @ref a, @ref b` and nothing else; prose after `@see` also
+//        renders unlinked, so it fires too. The lines a `@see` paragraph
+//        wraps onto are held to the same rule. Scans include/boost/corosio
+//        minus detail/ (the same directories as extract-docstrings.mjs).
+//        This is the one rule here that reads headers, not pages, so its
+//        `file` is repo-relative (`include/...`). Bite-test per style-guide
+//        F4: write `@see delay` in a header and confirm B6 fires.
 //   D2 — every page in a CONCEPT_DIRS chapter (or quick-start.adoc) has
 //        >=1 include::example$. D2's "concept page" is a pedagogical
 //        category, not a Diátaxis mode — deliberately independent of
@@ -79,6 +90,8 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..')
 // pages-tree override is for (exercising B2 in isolation).
 const PAGES_DIR = process.argv[2] ? path.resolve(process.argv[2]) : path.join(ROOT, 'modules/ROOT/pages');
 const NAV_FILE = path.join(ROOT, 'modules/ROOT/nav.adoc');
+// B6's header tree; a second CLI arg overrides it for the self-test.
+const HEADERS_DIR = process.argv[3] ? path.resolve(process.argv[3]) : path.join(ROOT, '../include/boost/corosio');
 
 // The four Diátaxis modes doc/STYLE_GUIDE.md Part A defines. A1 rejects
 // anything else, including the legacy `concept` value (never a Diátaxis
@@ -264,7 +277,55 @@ function scanAnchors(lines) {
   return out;
 }
 
-const findings = { A1: [], A6: [], B2: [], SHAPE: [], ANCHOR: [], D2: [] };
+function walkHeaders(dir) {
+  let out = [];
+  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, ent.name);
+    if (ent.isDirectory()) { if (ent.name !== 'detail') out = out.concat(walkHeaders(p)); }
+    else if (ent.name.endsWith('.hpp')) out.push(p);
+  }
+  return out;
+}
+
+// A `@see` paragraph holding anything other than `@ref name` items joined by
+// commas. The paragraph runs past the `@see` line, as Doxygen's does, until a
+// blank line, `*/`, a line opening with any command but `@ref`, or (for a
+// `///` comment) a line that is not `///`. Each offending line is reported.
+const SEE_LINE = /^(\s*)(\/\/\/)?\s*[@\\]see\b(.*)$/;
+const SEE_REF = /[@\\]ref\s+[\w:~<>]+(?:\([^)]*\))?/g;
+const NOT_REF_COMMAND = /^[@\\](?!ref\b)\w/;
+function scanSeeLines(lines) {
+  const out = [];
+  const check = (text, i) => {
+    const body = text.split('*/')[0];
+    if (body.replace(SEE_REF, '').replace(/[\s,]/g, '') !== '')
+      out.push({ line: i + 1, message: `@see entry without @ref renders unlinked: ${body.trim()}` });
+    return !text.includes('*/');
+  };
+  let open = false;   // inside a @see paragraph
+  let slashes = false; // ...that lives in a `///` run
+  lines.forEach((l, i) => {
+    const m = SEE_LINE.exec(l);
+    if (m) {
+      slashes = m[2] !== undefined;
+      open = check(m[3], i);
+      return;
+    }
+    if (!open) return;
+    let text = l;
+    if (slashes) {
+      const s = /^\s*\/\/\/(.*)$/.exec(l);
+      if (!s) { open = false; return; }
+      text = s[1];
+    }
+    const t = text.trim();
+    if (t === '' || t.startsWith('*/') || NOT_REF_COMMAND.test(t)) { open = false; return; }
+    open = check(text, i);
+  });
+  return out;
+}
+
+const findings = { A1: [], A6: [], B2: [], B6: [], SHAPE: [], ANCHOR: [], D2: [] };
 const files = walk(PAGES_DIR);
 
 for (const file of files) {
@@ -291,6 +352,13 @@ for (const file of files) {
 
   if (isConceptOrTutorial(rel) && !text.includes('include::example$')) {
     findings.D2.push({ file: rel, message: 'tutorial/concept page has no include::example$' });
+  }
+}
+
+for (const file of walkHeaders(HEADERS_DIR)) {
+  const rel = path.join('include/boost/corosio', path.relative(HEADERS_DIR, file));
+  for (const s of scanSeeLines(fs.readFileSync(file, 'utf8').split('\n'))) {
+    findings.B6.push({ file: rel, line: s.line, message: s.message });
   }
 }
 

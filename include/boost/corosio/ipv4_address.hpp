@@ -49,7 +49,7 @@ namespace boost::corosio {
 
     @see
         @ref make_ipv4_address,
-        @ref ipv6_address.
+        @ref ipv6_address
 */
 class BOOST_COROSIO_DECL ipv4_address
 {
@@ -130,7 +130,7 @@ public:
             >3.2.2. Host (rfc3986)</a>
 
         @see
-            @ref make_ipv4_address.
+            @ref make_ipv4_address
     */
     explicit ipv4_address(std::string_view s);
 

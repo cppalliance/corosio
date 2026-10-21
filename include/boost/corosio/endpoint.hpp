@@ -91,11 +91,13 @@ public:
         @li IPv6 without port: `::1` or `2001:db8::1`
         @li IPv6 with port (bracketed): `[::1]:8080`
 
+        @ref make_endpoint is the non-throwing form.
+
         @param s The string to parse.
 
         @throws std::system_error on parse failure.
 
-        @see make_endpoint for the non-throwing form.
+        @see @ref make_endpoint
     */
     explicit endpoint(std::string_view s);
 

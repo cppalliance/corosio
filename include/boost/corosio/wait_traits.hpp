@@ -30,7 +30,7 @@ namespace boost::corosio {
 
     @tparam Clock The clock type whose durations are converted.
 
-    @see delay
+    @see @ref delay
 */
 template<class Clock>
 struct wait_traits

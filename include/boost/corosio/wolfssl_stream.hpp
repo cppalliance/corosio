@@ -60,7 +60,7 @@ namespace boost::corosio {
     @par Example
     @par !example wolfssl_stream
 
-    @see tls_stream, openssl_stream
+    @see @ref tls_stream, @ref openssl_stream
 */
 class BOOST_COROSIO_DECL wolfssl_stream final : public tls_stream
 {
@@ -267,7 +267,7 @@ BOOST_COROSIO_DECL std::error_category const& wolfssl_category() noexcept;
     @return `true` if verify callbacks are fully supported by this build,
         `false` if installing one causes the handshake to fail.
 
-    @see tls_context::set_verify_callback
+    @see @ref tls_context::set_verify_callback
 */
 BOOST_COROSIO_DECL bool wolfssl_supports_verify_callback() noexcept;
 
@@ -281,7 +281,7 @@ BOOST_COROSIO_DECL bool wolfssl_supports_verify_callback() noexcept;
     @return `true` if ALPN is supported by this build, `false` if
         offering protocols causes the handshake to fail.
 
-    @see tls_context::set_alpn, tls_stream::alpn_protocol
+    @see @ref tls_context::set_alpn, @ref tls_stream::alpn_protocol
 */
 BOOST_COROSIO_DECL bool wolfssl_supports_alpn() noexcept;
 
@@ -294,7 +294,7 @@ BOOST_COROSIO_DECL bool wolfssl_supports_alpn() noexcept;
 
     @return `true` if revocation checking is supported by this build.
 
-    @see tls_context::add_crl, tls_context::set_revocation_policy
+    @see @ref tls_context::add_crl, @ref tls_context::set_revocation_policy
 */
 BOOST_COROSIO_DECL bool wolfssl_supports_crl() noexcept;
 
@@ -312,7 +312,7 @@ BOOST_COROSIO_DECL bool wolfssl_supports_crl() noexcept;
 
     @return `true` if IP-literal verification is supported by this build.
 
-    @see tls_stream::set_hostname
+    @see @ref tls_stream::set_hostname
 */
 BOOST_COROSIO_DECL bool wolfssl_supports_ip_alt_name() noexcept;
 

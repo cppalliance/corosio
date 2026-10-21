@@ -62,7 +62,7 @@ namespace boost::corosio {
     @par Example
     @par !example assign_and_wait
 
-    @see posix_stream_descriptor, epoll_t, kqueue_t
+    @see @ref posix_stream_descriptor, @ref epoll_t, @ref kqueue_t
 */
 template<auto Backend>
 class native_posix_stream_descriptor : public posix_stream_descriptor

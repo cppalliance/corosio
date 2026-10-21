@@ -17,7 +17,7 @@ rationale. What is Corosio-specific is recorded here.
 
 | Script | What it checks |
 |---|---|
-| `doc-lint.mjs` | Structural AsciiDoc/nav rules (A1, A6, B2, ANCHOR, SHAPE, D2). JSON on stdout. |
+| `doc-lint.mjs` | Structural AsciiDoc/nav rules (A1, A6, B2, ANCHOR, SHAPE, D2), plus B6 (`@see` without `@ref`) over the public headers. JSON on stdout. |
 | `extract-docstrings.mjs` | Extracts header docstrings into `.docstrings/*.adoc` so Vale can lint them. Doxygen targets (`@ref`/`@p`/`@c`/`@see`) are re-emitted as code spans, and `@par !example` directives are dropped — see below. |
 | `sentence-length.mjs` | **The authority for C2** (no sentence over 25 words), over both corpora. |
 | `check-include-tags.mjs` | Every `include::example$…[tag=…]` resolves to a live tag in a compiled source. |
@@ -213,7 +213,7 @@ The gate runs as two steps:
 
 | Step | Checks | Posture |
 |---|---|---|
-| `Lint: gate (BLOCKING)` | `doc_lint` (A1/A6/B2/D2/ANCHOR), `sentence_length` (C2), and the C4/C9/C10/A7 wording rules on both corpora | **`--strict`** |
+| `Lint: gate (BLOCKING)` | `doc_lint` (A1/A6/B2/B6/D2/ANCHOR), `sentence_length` (C2), and the C4/C9/C10/A7 wording rules on both corpora | **`--strict`** |
 | `Lint: gate (reference surface, reporting)` | `mrdocs_warnings` | reports, does not fail |
 
 `baseline.json` is now authored by the Documentation job itself, so a strict comparison is
@@ -237,7 +237,7 @@ pin that skipped this check on the first reseed. Promote it only alongside a pin
 >
 > ```sh
 > node lint/check-no-new-violations.mjs --strict \
->   --gate 'doc_lint:^(A1|A6|B2|D2|ANCHOR):' --gate 'sentence_length:^C2:' \
+>   --gate 'doc_lint:^(A1|A6|B2|B6|D2|ANCHOR):' --gate 'sentence_length:^C2:' \
 >   --gate 'vale_adoc:Corosio\.PartHeadings$' \
 >   --gate 'vale_adoc:(Corosio\.SimpleTense|Corosio\.NoFluff|Corosio\.Terminology)$' \
 >   --gate 'vale_docstrings:(Corosio\.SimpleTense|Corosio\.NoFluff|Corosio\.Terminology)$'

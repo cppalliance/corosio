@@ -98,7 +98,7 @@ namespace boost::corosio {
     @par Example
     @par !example custom_worker
 
-    @see worker_base, set_workers, launcher
+    @see @ref worker_base, @ref set_workers, @ref launcher
 */
 class BOOST_COROSIO_DECL tcp_server
 {
@@ -573,7 +573,7 @@ public:
         @par Thread Safety
         run() and socket() execute on the server's executor.
 
-        @see tcp_server, launcher
+        @see @ref boost::corosio::tcp_server, @ref launcher
     */
     class BOOST_COROSIO_DECL worker_base
     {
@@ -630,7 +630,7 @@ public:
         abandoned before it completes, as when the execution context
         holding it is destroyed.
 
-        @see worker_base::run
+        @see @ref worker_base::run
     */
     class BOOST_COROSIO_DECL launcher
     {
@@ -973,7 +973,7 @@ public:
         @par Thread Safety
         Not thread safe.
 
-        @see join, start
+        @see @ref join, @ref start
     */
     void stop();
 
@@ -1002,7 +1002,7 @@ public:
         May be called from any thread. It deadlocks if called
         from within the `io_context` event loop or from a worker coroutine.
 
-        @see stop, start
+        @see @ref stop, @ref start
     */
     void join();
 

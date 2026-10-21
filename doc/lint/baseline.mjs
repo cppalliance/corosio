@@ -245,9 +245,13 @@ function docLintFingerprints() {
     for (const it of items) {
       const fp = occurrenceKey(seen, `${check}:${it.file}`, it.message);
       fingerprints.push(fp);
-      // doc-lint reports paths relative to the pages tree, not to doc/.
+      // doc-lint reports paths relative to the pages tree, not to doc/ --
+      // except B6, which scans headers and reports repo-relative paths.
       if (wantDetails) {
-        details[fp] = { ...resolveSource(`modules/ROOT/pages/${it.file}`, it.line ?? null, null),
+        const src = it.file.startsWith('include/')
+          ? { file: it.file, line: it.line ?? null }
+          : resolveSource(`modules/ROOT/pages/${it.file}`, it.line ?? null, null);
+        details[fp] = { ...src,
                         rule: check, message: it.message, excerpt: null };
       }
     }

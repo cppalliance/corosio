@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2026 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -56,7 +57,7 @@ namespace boost::corosio {
     @see
         @ref ipv4_address,
         @ref ipv6_address,
-        @ref make_ip_address.
+        @ref make_ip_address
 */
 class BOOST_COROSIO_DECL ip_address
 {
@@ -119,7 +120,7 @@ public:
         @param s The string to parse.
 
         @see
-            @ref make_ip_address.
+            @ref make_ip_address
     */
     explicit ip_address(std::string_view s);
 
@@ -189,7 +190,7 @@ public:
         IPv4-Mapped IPv6 Address (`::ffff:a.b.c.d`).
 
         @see
-            @ref to_v4.
+            @ref to_v4
     */
     bool is_v4_mapped() const noexcept
     {
@@ -208,7 +209,7 @@ public:
         @return The IPv4 form of the address.
 
         @see
-            @ref is_v4, @ref is_v4_mapped.
+            @ref is_v4, @ref is_v4_mapped
     */
     ipv4_address to_v4() const
     {
@@ -226,7 +227,7 @@ public:
         @return The held IPv6 address.
 
         @see
-            @ref is_v6.
+            @ref is_v6
     */
     ipv6_address to_v6() const
     {

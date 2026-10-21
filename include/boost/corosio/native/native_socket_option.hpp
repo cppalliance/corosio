@@ -24,7 +24,7 @@
     interchangeably with `tcp_socket::set_option` /
     `tcp_socket::get_option` and the corresponding acceptor methods.
 
-    @see boost::corosio::socket_option
+    @see @ref boost::corosio::socket_option
 */
 
 #ifndef BOOST_COROSIO_NATIVE_NATIVE_SOCKET_OPTION_HPP

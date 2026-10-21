@@ -36,7 +36,7 @@ namespace boost::corosio {
     from the `concurrency_hint`. (The reverse does apply: a lockless tier
     reduces the effective hint used for performance tuning to 1.)
 
-    @see io_context_options::locking
+    @see @ref io_context_options::locking
 */
 enum class locking_mode
 {
@@ -77,7 +77,7 @@ enum class locking_mode
     @par Example
     @par !example configure
 
-    @see io_context, native_io_context
+    @see @ref io_context, @ref native_io_context
 */
 struct io_context_options
 {
@@ -235,7 +235,7 @@ effective_concurrency_hint(
     lockless @ref io_context_options::locking tier (`unsafe_io` or
     `unsafe`), in which case a single thread must drive it.
 
-    @see epoll_t, select_t, kqueue_t, iocp_t
+    @see @ref epoll_t, @ref select_t, @ref kqueue_t, @ref iocp_t
 */
 class BOOST_COROSIO_DECL io_context : public capy::execution_context
 {

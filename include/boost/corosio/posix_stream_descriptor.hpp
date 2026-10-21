@@ -132,7 +132,7 @@ namespace boost::corosio {
     operations of the same type (e.g. two simultaneous reads). One
     read and one write may be in flight simultaneously.
 
-    @see io_stream, stream_file, wait_type
+    @see @ref io_stream, @ref stream_file, @ref wait_type
 */
 class BOOST_COROSIO_DECL posix_stream_descriptor : public io_stream
 {
@@ -292,7 +292,7 @@ public:
         Throws nothing. On failure the object is unchanged and @p fd
         stays with the caller.
 
-        @see release
+        @see @ref release
     */
     [[nodiscard]] std::error_code assign(native_handle_type fd) noexcept;
 
@@ -353,7 +353,7 @@ public:
         @par Example
         @par !example wait
 
-        @see wait_type
+        @see @ref wait_type
     */
     [[nodiscard]] wait_awaitable wait(wait_type w)
     {

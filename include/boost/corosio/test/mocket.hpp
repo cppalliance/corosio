@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -57,7 +58,7 @@ namespace boost::corosio::test {
     All coroutines using the mocket must be suspended when calling
     `expect()` or `provide()`.
 
-    @see make_mocket_pair
+    @see @ref make_mocket_pair
 */
 template<class Socket = tcp_socket>
 class basic_mocket

@@ -104,6 +104,15 @@ The Antora pipeline provides two mechanisms; use them instead of hand-authoring:
   suppressions live in `test/doc/doc_warnings.hpp`, included once per file outside every tag; a
   warning that fires in one fragment stays in that fragment with a comment saying why. B5 is
   enforced by review only — no script checks it.
+- **B6. Every `@see` target in a docstring is an `@ref`.** Write `@see @ref delay, @ref wait_traits`,
+  never `@see delay, wait_traits`. MrDocs treats the text after `@see` as an ordinary paragraph
+  and does not auto-link names in it (Doxygen does), so a bare name renders as plain text in the
+  "See Also" section. Nothing warns about it either: `warn-broken-ref` checks only `@ref`
+  targets. Keep the line to the list of links. Prose after `@see` ("for the non-throwing form")
+  renders unlinked too, so move it into the description. When a name inside a class resolves
+  to the wrong symbol (`@ref tcp_server` inside `tcp_server::worker_base` finds the
+  constructor), qualify it. `doc-lint.mjs` checks every `@see` paragraph in the public
+  headers, including the lines it wraps onto.
 
 ## Part C — Wording (pragmatic Simplified Technical English)
 
@@ -250,7 +259,7 @@ Not every rule is machine-checkable. Each rule sits in one of three tiers:
 
 | Tier | Rules |
 |---|---|
-| **Gate** | A1, A6, A7, B2, B3, C2, C4, C9, C10, D2 |
+| **Gate** | A1, A6, A7, B2, B3, B6, C2, C4, C9, C10, D2 |
 | **Warning** | A2, B1, C1, C3, C5, C6, D4, D5, E1 |
 | **Review** | A3, A4, A5, B4, B5, C7, C8, C11, D1, D3, E2, E3, E4 |
 

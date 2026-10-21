@@ -86,7 +86,7 @@ namespace boost::corosio {
     @par Example
     @par !example win_stream_handle
 
-    @see io_stream, stream_file, win_random_access_handle
+    @see @ref io_stream, @ref stream_file, @ref win_random_access_handle
 */
 class BOOST_COROSIO_DECL win_stream_handle : public io_stream
 {
@@ -198,7 +198,7 @@ public:
         Throws nothing. On failure the object is unchanged and @p h
         stays with the caller.
 
-        @see release
+        @see @ref release
     */
     [[nodiscard]] std::error_code assign(native_handle_type h) noexcept;
 

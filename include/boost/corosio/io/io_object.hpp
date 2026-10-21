@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -43,7 +44,7 @@ namespace boost::corosio {
     @note Intended as a protected base class. The handle member
         `h_` is accessible to derived classes.
 
-    @see io_stream, tcp_socket, tcp_acceptor
+    @see @ref io_stream, @ref tcp_socket, @ref tcp_acceptor
 */
 class BOOST_COROSIO_DECL io_object
 {

@@ -197,14 +197,16 @@ public:
 
     /** Construct a signal set with initial signals.
 
+        For the non-throwing form, construct with the context alone,
+        then call @ref add for each signal.
+
         @param ctx The execution context that owns this signal set.
         @param signal First signal number to add.
         @param signals Additional signal numbers to add.
 
         @throws std::system_error Thrown on failure.
 
-        @see add for the non-throwing form: construct with the
-            context alone, then `add()` each signal.
+        @see @ref add
     */
     template<std::convertible_to<int>... Signals>
     signal_set(capy::execution_context& ctx, int signal, Signals... signals)
@@ -234,6 +236,8 @@ public:
     /** Construct a signal set with initial signals from an executor.
 
         The signal set is associated with the executor's context.
+        For the non-throwing form, construct with the executor alone,
+        then call @ref add for each signal.
 
         @param ex The executor whose context owns this signal set.
         @param signal First signal number to add.
@@ -241,8 +245,7 @@ public:
 
         @throws std::system_error Thrown on failure.
 
-        @see add for the non-throwing form: construct with the
-            executor alone, then `add()` each signal.
+        @see @ref add
     */
     template<class Ex, std::convertible_to<int>... Signals>
         requires capy::Executor<Ex>

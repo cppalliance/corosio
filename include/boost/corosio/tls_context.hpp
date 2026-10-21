@@ -31,8 +31,8 @@ namespace boost::corosio {
     Specifies the minimum or maximum TLS protocol version to use
     for connections. Only modern, secure versions are supported.
 
-    @see tls_context::set_min_protocol_version
-    @see tls_context::set_max_protocol_version
+    @see @ref tls_context::set_min_protocol_version
+    @see @ref tls_context::set_max_protocol_version
 */
 enum class tls_version
 {
@@ -47,8 +47,8 @@ enum class tls_version
 
     Specifies the encoding format for certificate and key data.
 
-    @see tls_context::use_certificate
-    @see tls_context::use_private_key
+    @see @ref tls_context::use_certificate
+    @see @ref tls_context::use_private_key
 */
 enum class tls_file_format
 {
@@ -64,7 +64,7 @@ enum class tls_file_format
     Controls how the TLS implementation verifies the peer's
     certificate during the handshake.
 
-    @see tls_context::set_verify_mode
+    @see @ref tls_context::set_verify_mode
 */
 enum class tls_verify_mode
 {
@@ -83,7 +83,7 @@ enum class tls_verify_mode
     Controls how certificate revocation status is checked during
     verification.
 
-    @see tls_context::set_revocation_policy
+    @see @ref tls_context::set_revocation_policy
 */
 enum class tls_revocation_policy
 {
@@ -102,7 +102,7 @@ enum class tls_revocation_policy
     Indicates whether the password is needed for reading (decrypting)
     or writing (encrypting) key material.
 
-    @see tls_context::set_password_callback
+    @see @ref tls_context::set_password_callback
 */
 enum class tls_password_purpose
 {
@@ -134,7 +134,7 @@ class tls_context;
     backend and are valid only for the duration of a single callback
     invocation. Do not retain them beyond the call.
 
-    @see tls_context::set_verify_callback
+    @see @ref tls_context::set_verify_callback
 */
 class verify_context
 {
@@ -235,7 +235,7 @@ tls_context_data const& get_tls_context_data(tls_context const&) noexcept;
     @par Example
     @par !example tls_context
 
-    @see tls_role
+    @see @ref tls_role
 */
 class BOOST_COROSIO_DECL tls_context
 {
@@ -318,8 +318,8 @@ public:
             native context is first built; a malformed certificate surfaces
             as a handshake failure.
 
-        @see use_certificate_file
-        @see use_private_key
+        @see @ref use_certificate_file
+        @see @ref use_private_key
     */
     [[nodiscard]] std::error_code
     use_certificate(std::string_view certificate, tls_file_format format);
@@ -341,8 +341,8 @@ public:
         @par Example
         @par !example use_certificate_file
 
-        @see use_certificate
-        @see use_private_key_file
+        @see @ref use_certificate
+        @see @ref use_private_key_file
     */
     [[nodiscard]] std::error_code
     use_certificate_file(std::string_view filename, tls_file_format format);
@@ -360,7 +360,7 @@ public:
             context is first built; a malformed chain surfaces as a
             handshake failure.
 
-        @see use_certificate_chain_file
+        @see @ref use_certificate_chain_file
     */
     [[nodiscard]] std::error_code use_certificate_chain(std::string_view chain);
 
@@ -379,7 +379,7 @@ public:
         @par Example
         @par !example use_certificate_chain_file
 
-        @see use_certificate_chain
+        @see @ref use_certificate_chain
     */
     [[nodiscard]] std::error_code
     use_certificate_chain_file(std::string_view filename);
@@ -402,8 +402,8 @@ public:
         failure: a malformed key, a missing password callback for an
         encrypted key, and a certificate mismatch.
 
-        @see use_private_key_file
-        @see set_password_callback
+        @see @ref use_private_key_file
+        @see @ref set_password_callback
     */
     [[nodiscard]] std::error_code
     use_private_key(std::string_view private_key, tls_file_format format);
@@ -429,8 +429,8 @@ public:
         @par Example
         @par !example use_private_key_file
 
-        @see use_private_key
-        @see set_password_callback
+        @see @ref use_private_key
+        @see @ref set_password_callback
     */
     [[nodiscard]] std::error_code
     use_private_key_file(std::string_view filename, tls_file_format format);
@@ -453,7 +453,7 @@ public:
         @note Intermediate certificates inside the bundle are loaded and
             sent during the handshake on both backends.
 
-        @see use_pkcs12_file
+        @see @ref use_pkcs12_file
     */
     [[nodiscard]] std::error_code
     use_pkcs12(std::string_view data, std::string_view passphrase);
@@ -480,7 +480,7 @@ public:
         @par Example
         @par !example use_pkcs12_file
 
-        @see use_pkcs12
+        @see @ref use_pkcs12
     */
     [[nodiscard]] std::error_code
     use_pkcs12_file(std::string_view filename, std::string_view passphrase);
@@ -503,8 +503,8 @@ public:
             OpenSSL, any one does. WolfSSL skips certificates it cannot
             use and fails only when none load.
 
-        @see load_verify_file
-        @see set_default_verify_paths
+        @see @ref load_verify_file
+        @see @ref set_default_verify_paths
     */
     [[nodiscard]] std::error_code
     add_certificate_authority(std::string_view ca);
@@ -524,8 +524,8 @@ public:
         @par Example
         @par !example load_verify_file
 
-        @see add_certificate_authority
-        @see add_verify_path
+        @see @ref add_certificate_authority
+        @see @ref add_verify_path
     */
     [[nodiscard]] std::error_code load_verify_file(std::string_view filename);
 
@@ -550,8 +550,8 @@ public:
         @par Example
         @par !example add_verify_path
 
-        @see load_verify_file
-        @see set_default_verify_paths
+        @see @ref load_verify_file
+        @see @ref set_default_verify_paths
     */
     [[nodiscard]] std::error_code add_verify_path(std::string_view path);
 
@@ -582,9 +582,9 @@ public:
         @par Example
         @par !example set_default_verify_paths
 
-        @see load_verify_file
-        @see add_verify_path
-        @see set_verify_mode
+        @see @ref load_verify_file
+        @see @ref add_verify_path
+        @see @ref set_verify_mode
     */
     [[nodiscard]] std::error_code set_default_verify_paths();
 
@@ -605,7 +605,7 @@ public:
         @par Example
         @par !example set_min_protocol_version
 
-        @see set_max_protocol_version
+        @see @ref set_max_protocol_version
     */
     [[nodiscard]] std::error_code set_min_protocol_version(tls_version v);
 
@@ -624,7 +624,7 @@ public:
         invalid window, where the minimum exceeds the maximum, yields a
         context that fails the handshake.
 
-        @see set_min_protocol_version
+        @see @ref set_min_protocol_version
     */
     [[nodiscard]] std::error_code set_max_protocol_version(tls_version v);
 
@@ -667,7 +667,7 @@ public:
             single cipher list; this call and @ref set_ciphersuites are
             merged into one list.
 
-        @see set_ciphersuites
+        @see @ref set_ciphersuites
     */
     [[nodiscard]] std::error_code
     set_ciphersuites_tls13(std::string_view ciphers);
@@ -714,7 +714,7 @@ public:
         @par Example
         @par !example set_verify_mode
 
-        @see tls_verify_mode
+        @see @ref tls_verify_mode
     */
     [[nodiscard]] std::error_code set_verify_mode(tls_verify_mode mode);
 
@@ -778,8 +778,8 @@ public:
         @par Example
         @par !example set_verify_callback
 
-        @see verify_context
-        @see set_verify_mode
+        @see @ref verify_context
+        @see @ref set_verify_mode
     */
     template<typename Callback>
     void set_verify_callback(Callback callback);
@@ -804,7 +804,7 @@ public:
             create separate contexts and select the appropriate one before
             creating the TLS stream.
 
-        @see tls_stream::set_hostname
+        @see @ref tls_stream::set_hostname
     */
     template<typename Callback>
     void set_servername_callback(Callback callback);
@@ -843,8 +843,8 @@ public:
             other than `disabled` fails the handshake with
             `std::errc::function_not_supported`.
 
-        @see add_crl_file
-        @see set_revocation_policy
+        @see @ref add_crl_file
+        @see @ref set_revocation_policy
     */
     [[nodiscard]] std::error_code add_crl(std::string_view crl);
 
@@ -866,8 +866,8 @@ public:
         @par Example
         @par !example add_crl_file
 
-        @see add_crl
-        @see set_revocation_policy
+        @see @ref add_crl
+        @see @ref set_revocation_policy
     */
     [[nodiscard]] std::error_code add_crl_file(std::string_view filename);
 
@@ -890,8 +890,8 @@ public:
             build, else the handshake fails with
             `std::errc::function_not_supported`.
 
-        @see tls_revocation_policy
-        @see add_crl
+        @see @ref tls_revocation_policy
+        @see @ref add_crl
     */
     void set_revocation_policy(tls_revocation_policy policy);
 
@@ -915,7 +915,7 @@ public:
         @par Example
         @par !example set_password_callback
 
-        @see tls_password_purpose
+        @see @ref tls_password_purpose
     */
     template<typename Callback>
     void set_password_callback(Callback callback);

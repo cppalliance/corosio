@@ -68,7 +68,7 @@ namespace boost::corosio {
 
     @see
         @ref ipv4_address,
-        @ref make_ipv6_address.
+        @ref make_ipv6_address
 */
 class BOOST_COROSIO_DECL ipv6_address
 {
@@ -182,7 +182,7 @@ public:
             >3.2.2. Host (rfc3986)</a>
 
         @see
-            @ref make_ipv6_address.
+            @ref make_ipv6_address
     */
     explicit ipv6_address(std::string_view s);
 
@@ -288,7 +288,7 @@ public:
             2.5.5.2. IPv4-Mapped IPv6 Address (rfc4291)</a>
 
         @see
-            @ref is_v4_mapped.
+            @ref is_v4_mapped
     */
     ipv4_address to_v4() const;
 

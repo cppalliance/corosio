@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -41,7 +42,7 @@ namespace boost::corosio {
     Distinct objects: Safe.
     Shared objects: Unsafe.
 
-    @see io_read_stream, io_stream, io_object
+    @see @ref io_read_stream, @ref io_stream, @ref io_object
 */
 class BOOST_COROSIO_DECL io_write_stream : virtual public io_object
 {
@@ -122,7 +123,7 @@ public:
 
         @return An awaitable yielding `(error_code, std::size_t)`.
 
-        @see io_stream::read_some
+        @see @ref io_stream::read_some
     */
     template<capy::ConstBufferSequence CB>
     [[nodiscard]] auto write_some(CB const& buffers)

@@ -63,7 +63,7 @@ namespace boost::corosio {
     @par Example
     @par !example connect
 
-    @see local_stream_socket, epoll_t, iocp_t
+    @see @ref local_stream_socket, @ref epoll_t, @ref iocp_t
 */
 template<auto Backend>
 class native_local_stream_socket : public local_stream_socket

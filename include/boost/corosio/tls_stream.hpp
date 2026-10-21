@@ -79,7 +79,7 @@ make_owned_transport(S* p) noexcept
 
     Specifies whether to perform the TLS handshake as a client or server.
 
-    @see tls_stream::handshake
+    @see @ref tls_stream::handshake
 */
 enum class tls_role
 {
@@ -115,7 +115,7 @@ enum class tls_role
     `capy::strand`, or must otherwise never run concurrently. A
     single-threaded context needs no strand.
 
-    @see openssl_stream, wolfssl_stream
+    @see @ref openssl_stream, @ref wolfssl_stream
 */
 class BOOST_COROSIO_DECL tls_stream
 {
