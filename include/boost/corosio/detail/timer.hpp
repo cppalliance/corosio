@@ -427,10 +427,10 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE waiter_node
     /// The timer service that completes this waiter.
     timer_service* svc_ = nullptr;
 
-    /// The continuation posted to resume the coroutine.
+    /// The continuation that resumes the coroutine.
     capy::continuation cont_;
 
-    /// The executor the continuation is posted through.
+    /// The executor the coroutine resumes on.
     capy::executor_ref d_;
 
     // Borrowed from the awaiting chain's await_context, which outlives the

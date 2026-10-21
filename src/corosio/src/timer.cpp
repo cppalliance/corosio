@@ -10,6 +10,7 @@
 
 #include <boost/corosio/detail/timer.hpp>
 #include <boost/corosio/detail/timer_service.hpp>
+#include <boost/corosio/detail/dispatch_coro.hpp>
 #include <boost/capy/ex/abandon.hpp>
 
 namespace boost::corosio::detail {
@@ -164,9 +165,9 @@ waiter_node::completion_op::do_complete(
 void
 waiter_node::completion_op::operator()() noexcept
 {
-    // The node lives in the resuming coroutine's frame: posting the
-    // continuation is the last access, since the frame (and node)
-    // may complete and die on another thread immediately after.
+    // The node lives in the resuming coroutine's frame: dispatching
+    // the continuation is the last access, since the frame (and node)
+    // may complete and die, here or on another thread, once it runs.
     auto* w = waiter_;
     // A true return means the waiter re-published itself: the frame
     // stays suspended, the wait's work count stays live, and the
@@ -177,9 +178,7 @@ waiter_node::completion_op::operator()() noexcept
     w->reset_stop_cb();
     auto d      = w->d_;
     auto& sched = w->svc_->get_scheduler();
-    // A throw terminates: the waiter is already off the heap, so nothing
-    // else could resume or abandon the coroutine.
-    d.post(w->cont_);
+    dispatch_coro(d, w->cont_).resume();
     sched.work_finished();
 }
 
