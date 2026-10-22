@@ -1037,7 +1037,7 @@ reactor_scheduler::do_one(lock_type& lock, long timeout_us, context_type& ctx)
         }
 
         // Handle ready entry (op or continuation)
-        if (e != 0)
+        if (e != nullptr)
         {
             bool more = !completed_ops_.empty();
 
