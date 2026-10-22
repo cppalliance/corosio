@@ -63,7 +63,9 @@ make_socket_pair(io_context& ctx)
     if (auto open_ec = acc.open())
         throw std::runtime_error(
             "socket_pair open failed: " + open_ec.message());
-    acc.set_option(socket_option::reuse_address(true));
+    if (auto ec = acc.set_option(socket_option::reuse_address(true)))
+        throw std::runtime_error(
+            "socket_pair set_option failed: " + ec.message());
     if (auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0)))
         throw std::runtime_error("socket_pair bind failed: " + ec.message());
     if (auto ec = acc.listen())
@@ -127,8 +129,12 @@ make_socket_pair(io_context& ctx)
 
     if constexpr (Linger)
     {
-        s1.set_option(socket_option::linger(true, 0));
-        s2.set_option(socket_option::linger(true, 0));
+        if (auto ec = s1.set_option(socket_option::linger(true, 0)))
+            throw std::runtime_error(
+                "socket_pair set_option failed: " + ec.message());
+        if (auto ec = s2.set_option(socket_option::linger(true, 0)))
+            throw std::runtime_error(
+                "socket_pair set_option failed: " + ec.message());
     }
 
     return {std::move(s1), std::move(s2)};

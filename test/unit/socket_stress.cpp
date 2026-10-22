@@ -40,6 +40,7 @@
 #include <vector>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -72,7 +73,7 @@ make_stress_pair(io_context& ctx)
 
     tcp_acceptor acc(ctx);
     BOOST_TEST(!acc.open());
-    acc.set_option(socket_option::reuse_address(true));
+    test::must_ok(acc.set_option(socket_option::reuse_address(true)));
     if (auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0)))
         throw std::runtime_error("stress_pair bind failed: " + ec.message());
     if (auto ec = acc.listen())
@@ -634,7 +635,7 @@ struct accept_stress_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         if (auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0)))
         {
             BOOST_ERROR("accept_stress: bind failed");
@@ -665,14 +666,8 @@ struct accept_stress_test
                 // range for every test running alongside. Resetting the
                 // client instead can kill the connection before it is
                 // accepted, which some stacks drop from the queue.
-                try
-                {
-                    peer.set_option(socket_option::linger(true, 0));
-                }
-                catch (std::system_error const&)
-                {
-                    // Already reset by the peer: nothing left to linger.
-                }
+                // May fail if the peer already reset: nothing left to linger.
+                std::ignore = peer.set_option(socket_option::linger(true, 0));
                 peer.close();
             }
         };

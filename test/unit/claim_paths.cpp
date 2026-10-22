@@ -43,6 +43,7 @@
 #include <unistd.h>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -75,8 +76,7 @@ struct claim_paths_test
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
-        BOOST_TEST_NO_THROW(
-            s1.set_option(socket_option::send_buffer_size(4096)));
+        test::must_ok(s1.set_option(socket_option::send_buffer_size(4096)));
         fill_send_buffer(s1.native_handle());
 
         char buf[8];
@@ -185,7 +185,7 @@ struct claim_paths_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open(family::v4));
-        BOOST_TEST_NO_THROW(acc.set_option(socket_option::reuse_address(true)));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
 
@@ -244,7 +244,7 @@ struct claim_paths_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open(family::v4));
-        BOOST_TEST_NO_THROW(acc.set_option(socket_option::reuse_address(true)));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
 
@@ -282,8 +282,7 @@ struct claim_paths_test
         for (tcp_acceptor* acc : {&a, &b})
         {
             BOOST_TEST(!acc->open(family::v4));
-            BOOST_TEST_NO_THROW(
-                acc->set_option(socket_option::reuse_address(true)));
+            test::must_ok(acc->set_option(socket_option::reuse_address(true)));
             BOOST_TEST(!acc->bind(endpoint(ipv4_address::loopback(), 0)));
             BOOST_TEST(!acc->listen());
         }
@@ -349,7 +348,7 @@ struct claim_paths_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open(family::v4));
-        BOOST_TEST_NO_THROW(acc.set_option(socket_option::reuse_address(true)));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
 

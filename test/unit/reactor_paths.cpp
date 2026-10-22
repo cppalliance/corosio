@@ -56,6 +56,7 @@
 #include <boost/corosio/local_connect_pair.hpp>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -307,8 +308,8 @@ struct reactor_paths_test
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
         // Shrink kernel buffers as much as possible.
-        s1.set_option(socket_option::send_buffer_size(1024));
-        s2.set_option(socket_option::receive_buffer_size(1024));
+        test::must_ok(s1.set_option(socket_option::send_buffer_size(1024)));
+        test::must_ok(s2.set_option(socket_option::receive_buffer_size(1024)));
 
         constexpr std::size_t total = std::size_t{256} * 1024; // 256 KiB
         std::vector<char> payload(total, 'X');
@@ -429,7 +430,7 @@ struct reactor_paths_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         auto bec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
         auto lec = acc.listen();
@@ -460,7 +461,7 @@ struct reactor_paths_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         auto bec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
         auto lec = acc.listen();
@@ -804,7 +805,8 @@ struct reactor_paths_test
         {
             accs.emplace_back(ioc);
             BOOST_TEST(!accs.back().open());
-            accs.back().set_option(socket_option::reuse_address(true));
+            test::must_ok(
+                accs.back().set_option(socket_option::reuse_address(true)));
             BOOST_TEST(
                 !accs.back().bind(endpoint(ipv4_address::loopback(), 0)));
             BOOST_TEST(!accs.back().listen());
@@ -1006,7 +1008,7 @@ struct reactor_paths_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
 
@@ -1055,7 +1057,7 @@ struct reactor_paths_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
 
@@ -1705,8 +1707,8 @@ struct reactor_paths_test
         if (auto ec = connect_pair(s1, s2))
             throw std::system_error(ec, "connect_pair");
 
-        s1.set_option(socket_option::send_buffer_size(1024));
-        s2.set_option(socket_option::receive_buffer_size(1024));
+        test::must_ok(s1.set_option(socket_option::send_buffer_size(1024)));
+        test::must_ok(s2.set_option(socket_option::receive_buffer_size(1024)));
 
         constexpr std::size_t total = std::size_t{256} * 1024; // 256 KiB
         std::vector<char> payload(total, 'L');

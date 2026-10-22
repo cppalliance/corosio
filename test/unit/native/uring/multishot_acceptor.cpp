@@ -8,6 +8,7 @@
 // Official repository: https://github.com/cppalliance/corosio
 //
 
+#include "must.hpp"
 #include "test_suite.hpp"
 
 #include <boost/corosio/detail/platform.hpp>
@@ -127,7 +128,7 @@ struct multishot_acceptor_test
         {
             tcp_acceptor acc(ctx);
             BOOST_TEST(!acc.open());
-            acc.set_option(socket_option::reuse_address(true));
+            test::must_ok(acc.set_option(socket_option::reuse_address(true)));
             BOOST_TEST(!acc.bind(endpoint(0)));
             // listen() calls start_multishot(), submitting a multishot
             // accept SQE (counted once).
@@ -165,7 +166,7 @@ struct multishot_acceptor_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
         endpoint local = acc.local_endpoint();
@@ -203,7 +204,7 @@ struct multishot_acceptor_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
         endpoint local = acc.local_endpoint();
@@ -241,7 +242,7 @@ struct multishot_acceptor_test
         {
             tcp_acceptor acc(ioc);
             BOOST_TEST(!acc.open());
-            acc.set_option(socket_option::reuse_address(true));
+            test::must_ok(acc.set_option(socket_option::reuse_address(true)));
             BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
             BOOST_TEST(!acc.listen());
             endpoint local = acc.local_endpoint();

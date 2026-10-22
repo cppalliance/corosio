@@ -203,7 +203,8 @@ struct wait_test
 
         corosio::tcp_acceptor acceptor(ioc);
         BOOST_TEST(!acceptor.open());
-        acceptor.set_option(corosio::socket_option::reuse_address(true));
+        BOOST_TEST(
+            !acceptor.set_option(corosio::socket_option::reuse_address(true)));
         auto bec = acceptor.bind(
             corosio::endpoint(corosio::ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);

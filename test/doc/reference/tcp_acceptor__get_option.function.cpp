@@ -22,13 +22,12 @@ namespace corosio = boost::corosio;
 namespace {
 
 // tag::get_option[]
-// Precondition: acc is open (get_option throws bad_file_descriptor
-// otherwise).
+// A closed acc reports bad_file_descriptor, which reads here as disabled.
 bool
 reuse_address_is_enabled(corosio::tcp_acceptor& acc)
 {
-    auto opt = acc.get_option<corosio::socket_option::reuse_address>();
-    return opt.value();
+    auto [ec, opt] = acc.get_option<corosio::socket_option::reuse_address>();
+    return !ec && opt.value();
 }
 // end::get_option[]
 

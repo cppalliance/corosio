@@ -37,6 +37,7 @@
 #include "context.hpp"
 #include "pool_teardown.hpp"
 #include "temp_path.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -125,7 +126,7 @@ struct teardown_destroy_test
             io_context ioc(Backend);
             tcp_acceptor acc(ioc);
             BOOST_TEST(!acc.open());
-            acc.set_option(socket_option::reuse_address(true));
+            test::must_ok(acc.set_option(socket_option::reuse_address(true)));
             BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
             BOOST_TEST(!acc.listen());
             auto parent = [](tcp_acceptor& a, destroy_count_t) -> capy::task<> {
@@ -494,7 +495,7 @@ struct teardown_destroy_test
             auto [c, d] = test::make_socket_pair(ioc);
             tcp_acceptor acc(ioc);
             BOOST_TEST(!acc.open());
-            acc.set_option(socket_option::reuse_address(true));
+            test::must_ok(acc.set_option(socket_option::reuse_address(true)));
             BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
             BOOST_TEST(!acc.listen());
             tcp_acceptor owned(ioc);

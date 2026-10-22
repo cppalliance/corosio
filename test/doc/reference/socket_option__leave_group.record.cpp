@@ -31,11 +31,12 @@ stop_receiving_an_ipv4_multicast_group(corosio::udp_socket& sock)
     // Membership otherwise lasts until the socket closes. The group and the
     // interface have to match the join_group that established it --
     // attempting to leave a (group, interface) pair the kernel has no
-    // membership for fails with EADDRNOTAVAIL, which set_option reports by
-    // throwing.
-    sock.set_option(
-        corosio::socket_option::leave_group(
-            corosio::ipv4_address("239.255.0.1")));
+    // membership for fails with EADDRNOTAVAIL, which set_option reports
+    // through its return value.
+    if (auto ec = sock.set_option(
+            corosio::socket_option::leave_group(
+                corosio::ipv4_address("239.255.0.1"))))
+        return; // report the error
 }
 // end::leave_group[]
 

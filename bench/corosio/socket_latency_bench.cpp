@@ -26,6 +26,7 @@
 #include <vector>
 #include <tuple>
 
+#include "../common/must.hpp"
 #include "../common/native_includes.hpp"
 
 namespace corosio = boost::corosio;
@@ -86,8 +87,10 @@ bench_pingpong_latency(bench::state& state)
     auto [client, server] = corosio::test::make_socket_pair<
         socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
 
-    client.set_option(corosio::native_socket_option::no_delay(true));
-    server.set_option(corosio::native_socket_option::no_delay(true));
+    bench::must_ok(
+        client.set_option(corosio::native_socket_option::no_delay(true)));
+    bench::must_ok(
+        server.set_option(corosio::native_socket_option::no_delay(true)));
 
     capy::run_async(ioc.get_executor())(
         pingpong_client_task<Backend>(client, server, message_size, state));
@@ -128,8 +131,10 @@ bench_concurrent_latency(bench::state& state)
     {
         auto [c, s] = corosio::test::make_socket_pair<
             socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
-        c.set_option(corosio::native_socket_option::no_delay(true));
-        s.set_option(corosio::native_socket_option::no_delay(true));
+        bench::must_ok(
+            c.set_option(corosio::native_socket_option::no_delay(true)));
+        bench::must_ok(
+            s.set_option(corosio::native_socket_option::no_delay(true)));
         clients.push_back(std::move(c));
         servers.push_back(std::move(s));
     }
@@ -173,8 +178,10 @@ bench_pingpong_latency_lockless(bench::state& state)
     auto [client, server] = corosio::test::make_socket_pair<
         socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
 
-    client.set_option(corosio::native_socket_option::no_delay(true));
-    server.set_option(corosio::native_socket_option::no_delay(true));
+    bench::must_ok(
+        client.set_option(corosio::native_socket_option::no_delay(true)));
+    bench::must_ok(
+        server.set_option(corosio::native_socket_option::no_delay(true)));
 
     capy::run_async(ioc.get_executor())(
         pingpong_client_task<Backend>(client, server, message_size, state));
@@ -217,8 +224,10 @@ bench_concurrent_latency_lockless(bench::state& state)
     {
         auto [c, s] = corosio::test::make_socket_pair<
             socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
-        c.set_option(corosio::native_socket_option::no_delay(true));
-        s.set_option(corosio::native_socket_option::no_delay(true));
+        bench::must_ok(
+            c.set_option(corosio::native_socket_option::no_delay(true)));
+        bench::must_ok(
+            s.set_option(corosio::native_socket_option::no_delay(true)));
         clients.push_back(std::move(c));
         servers.push_back(std::move(s));
     }

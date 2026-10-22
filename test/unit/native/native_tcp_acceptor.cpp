@@ -21,6 +21,7 @@
 #include <tuple>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -59,7 +60,7 @@ struct native_tcp_acceptor_test
         native_io_context<Backend> ctx;
         native_tcp_acceptor<Backend> a1(ctx);
         BOOST_TEST(!a1.open());
-        a1.set_option(native_socket_option::reuse_address(true));
+        test::must_ok(a1.set_option(native_socket_option::reuse_address(true)));
         auto ec = a1.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
         ec = a1.listen();
@@ -75,7 +76,7 @@ struct native_tcp_acceptor_test
         native_io_context<Backend> ctx;
         native_tcp_acceptor<Backend> na(ctx);
         BOOST_TEST(!na.open());
-        na.set_option(native_socket_option::reuse_address(true));
+        test::must_ok(na.set_option(native_socket_option::reuse_address(true)));
         auto ec = na.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
         ec = na.listen();
@@ -94,7 +95,8 @@ struct native_tcp_acceptor_test
 
         native_tcp_acceptor<Backend> acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(native_socket_option::reuse_address(true));
+        test::must_ok(
+            acc.set_option(native_socket_option::reuse_address(true)));
         auto bec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
         auto lec = acc.listen();
@@ -134,7 +136,8 @@ struct native_tcp_acceptor_test
 
         native_tcp_acceptor<Backend> acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(native_socket_option::reuse_address(true));
+        test::must_ok(
+            acc.set_option(native_socket_option::reuse_address(true)));
         auto bec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
         auto lec = acc.listen();
@@ -176,9 +179,11 @@ struct native_tcp_acceptor_test
         native_tcp_acceptor<Backend> acc(ctx);
         BOOST_TEST(!acc.open());
 
-        acc.set_option(native_socket_option::reuse_address(true));
-        acc.set_option(native_socket_option::reuse_port(true));
-        auto rp = acc.template get_option<native_socket_option::reuse_port>();
+        test::must_ok(
+            acc.set_option(native_socket_option::reuse_address(true)));
+        test::must_ok(acc.set_option(native_socket_option::reuse_port(true)));
+        auto rp = test::must(
+            acc.template get_option<native_socket_option::reuse_port>());
         BOOST_TEST(rp.value());
 
         acc.close();

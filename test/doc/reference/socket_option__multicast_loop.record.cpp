@@ -31,7 +31,8 @@ loop_multicast_back_to_this_host(corosio::udp_socket& sock)
     // Enabled, datagrams this socket sends are also delivered to members of
     // the group on this same host, the sending process included. Disable it
     // when a sender must not receive its own traffic.
-    sock.set_option(corosio::socket_option::multicast_loop(true));
+    if (auto ec = sock.set_option(corosio::socket_option::multicast_loop(true)))
+        return; // report the error
 }
 // end::multicast_loop[]
 

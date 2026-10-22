@@ -627,7 +627,7 @@ immediately regardless of size. Use this for latency-sensitive applications
 where you're sending small packets that shouldn't be delayed.
 
 Corosio exposes this through `socket_option::no_delay`, set via
-`tcp_socket::set_option`:
+`tcp_socket::set_option`, which returns an error code:
 
 [source,cpp]
 ----

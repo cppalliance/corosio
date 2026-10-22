@@ -37,9 +37,9 @@ accept_ipv6_peers_only(corosio::tcp_acceptor& acc)
     // (v6_only false) on every backend; tcp_socket and udp_socket are the
     // opposite, their open() making an IPv6 socket v6-only. Set the option
     // explicitly whenever either behavior matters, rather than relying on a
-    // default that differs by object. set_option reports failure by throwing,
-    // not by returning a code.
-    acc.set_option(corosio::socket_option::v6_only(true));
+    // default that differs by object.
+    if (auto ec = acc.set_option(corosio::socket_option::v6_only(true)))
+        return; // report the error
 
     if (auto ec =
             acc.bind(corosio::endpoint(corosio::ipv6_address::any(), 8080)))

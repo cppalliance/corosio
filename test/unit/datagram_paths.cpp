@@ -44,6 +44,7 @@
 #endif
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -320,8 +321,8 @@ struct datagram_paths_test
         if (auto ec = connect_pair(s1, s2))
             throw std::system_error(ec, "connect_pair");
 
-        s1.set_option(socket_option::send_buffer_size(2048));
-        s2.set_option(socket_option::receive_buffer_size(2048));
+        test::must_ok(s1.set_option(socket_option::send_buffer_size(2048)));
+        test::must_ok(s2.set_option(socket_option::receive_buffer_size(2048)));
 
         constexpr std::size_t count = 32;
         char dgram[1024];
@@ -401,8 +402,8 @@ struct datagram_paths_test
         BOOST_TEST(!ec1);
         BOOST_TEST(!ec2);
 
-        s1.set_option(socket_option::send_buffer_size(2048));
-        s2.set_option(socket_option::receive_buffer_size(2048));
+        test::must_ok(s1.set_option(socket_option::send_buffer_size(2048)));
+        test::must_ok(s2.set_option(socket_option::receive_buffer_size(2048)));
 
         constexpr std::size_t count = 32;
         char dgram[1024];
@@ -554,8 +555,8 @@ struct datagram_paths_test
         if (auto ec = connect_pair(s1, s2))
             throw std::system_error(ec, "connect_pair");
 
-        s1.set_option(socket_option::send_buffer_size(2048));
-        s2.set_option(socket_option::receive_buffer_size(2048));
+        test::must_ok(s1.set_option(socket_option::send_buffer_size(2048)));
+        test::must_ok(s2.set_option(socket_option::receive_buffer_size(2048)));
 
         char dgram[1024];
         std::memset(dgram, 'C', sizeof(dgram));
@@ -619,8 +620,8 @@ struct datagram_paths_test
         BOOST_TEST(!ec1);
         BOOST_TEST(!ec2);
 
-        s1.set_option(socket_option::send_buffer_size(2048));
-        s2.set_option(socket_option::receive_buffer_size(2048));
+        test::must_ok(s1.set_option(socket_option::send_buffer_size(2048)));
+        test::must_ok(s2.set_option(socket_option::receive_buffer_size(2048)));
 
         char dgram[1024];
         std::memset(dgram, 'C', sizeof(dgram));

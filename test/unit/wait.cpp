@@ -48,6 +48,7 @@
 #endif
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -188,7 +189,7 @@ make_backpressured_pair(io_context& ioc)
 
     tcp_acceptor acc(ioc);
     BOOST_TEST(!acc.open());
-    acc.set_option(socket_option::reuse_address(true));
+    test::must_ok(acc.set_option(socket_option::reuse_address(true)));
     shrink_socket_buffer(acc.native_handle(), SO_SNDBUF);
     shrink_socket_buffer(acc.native_handle(), SO_RCVBUF);
     auto bec = acc.bind(endpoint(ipv4_address::loopback(), 0));
@@ -514,7 +515,7 @@ struct wait_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         auto bec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!bec);
         auto lec = acc.listen();

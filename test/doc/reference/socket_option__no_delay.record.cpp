@@ -31,9 +31,12 @@ void
 disable_nagle_on_a_connected_socket(corosio::tcp_socket& sock)
 {
     // Send small writes immediately instead of coalescing them.
-    sock.set_option(corosio::socket_option::no_delay(true));
+    if (auto ec = sock.set_option(corosio::socket_option::no_delay(true)))
+        return; // report the error
 
-    auto nd       = sock.get_option<corosio::socket_option::no_delay>();
+    auto [ec, nd] = sock.get_option<corosio::socket_option::no_delay>();
+    if (ec)
+        return;
     bool disabled = nd.value(); // true: Nagle's algorithm is off
 }
 // end::no_delay[]

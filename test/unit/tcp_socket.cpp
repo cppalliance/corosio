@@ -58,6 +58,7 @@
 #endif
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 #include "test_utils.hpp"
 
@@ -217,7 +218,7 @@ struct tcp_socket_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
         ec = acc.listen();
@@ -260,7 +261,7 @@ struct tcp_socket_test
         acc.close();
     }
 
-    void testOptionFailureThrows()
+    void testOptionFailureReported()
     {
 #if !BOOST_COROSIO_HAS_IOCP
         // WinSock accepts IPv6-level options on AF_INET stream
@@ -270,28 +271,13 @@ struct tcp_socket_test
         BOOST_TEST(!sock.open(family::v4));
 
         // An IPv6-level option on an IPv4 socket fails with a genuine
-        // error surfaced as system_error
-        bool set_threw = false;
-        try
-        {
-            sock.set_option(socket_option::v6_only(true));
-        }
-        catch (std::system_error const& e)
-        {
-            set_threw = bool(e.code());
-        }
-        BOOST_TEST(set_threw);
+        // error code
+        auto const set_ec = sock.set_option(socket_option::v6_only(true));
+        BOOST_TEST(bool(set_ec));
 
-        bool get_threw = false;
-        try
-        {
-            std::ignore = sock.get_option<socket_option::v6_only>();
-        }
-        catch (std::system_error const& e)
-        {
-            get_threw = bool(e.code());
-        }
-        BOOST_TEST(get_threw);
+        auto [get_ec, get_opt] = sock.get_option<socket_option::v6_only>();
+        BOOST_TEST(bool(get_ec));
+        BOOST_TEST(!get_opt.value());
         sock.close();
 #endif
     }
@@ -1215,15 +1201,20 @@ struct tcp_socket_test
         tcp_socket sock(ioc);
         BOOST_TEST(!sock.open());
 
-        sock.set_option(socket_option::no_delay(true));
-        BOOST_TEST_EQ(sock.get_option<socket_option::no_delay>().value(), true);
-
-        sock.set_option(socket_option::no_delay(false));
+        test::must_ok(sock.set_option(socket_option::no_delay(true)));
         BOOST_TEST_EQ(
-            sock.get_option<socket_option::no_delay>().value(), false);
+            test::must(sock.get_option<socket_option::no_delay>()).value(),
+            true);
 
-        sock.set_option(socket_option::no_delay(true));
-        BOOST_TEST_EQ(sock.get_option<socket_option::no_delay>().value(), true);
+        test::must_ok(sock.set_option(socket_option::no_delay(false)));
+        BOOST_TEST_EQ(
+            test::must(sock.get_option<socket_option::no_delay>()).value(),
+            false);
+
+        test::must_ok(sock.set_option(socket_option::no_delay(true)));
+        BOOST_TEST_EQ(
+            test::must(sock.get_option<socket_option::no_delay>()).value(),
+            true);
 
         sock.close();
     }
@@ -1234,17 +1225,20 @@ struct tcp_socket_test
         tcp_socket sock(ioc);
         BOOST_TEST(!sock.open());
 
-        sock.set_option(socket_option::keep_alive(true));
+        test::must_ok(sock.set_option(socket_option::keep_alive(true)));
         BOOST_TEST_EQ(
-            sock.get_option<socket_option::keep_alive>().value(), true);
+            test::must(sock.get_option<socket_option::keep_alive>()).value(),
+            true);
 
-        sock.set_option(socket_option::keep_alive(false));
+        test::must_ok(sock.set_option(socket_option::keep_alive(false)));
         BOOST_TEST_EQ(
-            sock.get_option<socket_option::keep_alive>().value(), false);
+            test::must(sock.get_option<socket_option::keep_alive>()).value(),
+            false);
 
-        sock.set_option(socket_option::keep_alive(true));
+        test::must_ok(sock.set_option(socket_option::keep_alive(true)));
         BOOST_TEST_EQ(
-            sock.get_option<socket_option::keep_alive>().value(), true);
+            test::must(sock.get_option<socket_option::keep_alive>()).value(),
+            true);
 
         sock.close();
     }
@@ -1256,12 +1250,15 @@ struct tcp_socket_test
         BOOST_TEST(!sock.open());
 
         int initial_size =
-            sock.get_option<socket_option::receive_buffer_size>().value();
+            test::must(sock.get_option<socket_option::receive_buffer_size>())
+                .value();
         BOOST_TEST(initial_size > 0);
 
-        sock.set_option(socket_option::receive_buffer_size(65536));
+        test::must_ok(
+            sock.set_option(socket_option::receive_buffer_size(65536)));
         int new_size =
-            sock.get_option<socket_option::receive_buffer_size>().value();
+            test::must(sock.get_option<socket_option::receive_buffer_size>())
+                .value();
         BOOST_TEST(new_size > 0);
 
         sock.close();
@@ -1274,12 +1271,14 @@ struct tcp_socket_test
         BOOST_TEST(!sock.open());
 
         int initial_size =
-            sock.get_option<socket_option::send_buffer_size>().value();
+            test::must(sock.get_option<socket_option::send_buffer_size>())
+                .value();
         BOOST_TEST(initial_size > 0);
 
-        sock.set_option(socket_option::send_buffer_size(65536));
+        test::must_ok(sock.set_option(socket_option::send_buffer_size(65536)));
         int new_size =
-            sock.get_option<socket_option::send_buffer_size>().value();
+            test::must(sock.get_option<socket_option::send_buffer_size>())
+                .value();
         BOOST_TEST(new_size > 0);
 
         sock.close();
@@ -1291,17 +1290,17 @@ struct tcp_socket_test
         tcp_socket sock(ioc);
         BOOST_TEST(!sock.open());
 
-        sock.set_option(socket_option::linger(true, 5));
-        auto opts = sock.get_option<socket_option::linger>();
+        test::must_ok(sock.set_option(socket_option::linger(true, 5)));
+        auto opts = test::must(sock.get_option<socket_option::linger>());
         BOOST_TEST_EQ(opts.enabled(), true);
         BOOST_TEST_EQ(opts.timeout(), 5);
 
-        sock.set_option(socket_option::linger(false, 0));
-        opts = sock.get_option<socket_option::linger>();
+        test::must_ok(sock.set_option(socket_option::linger(false, 0)));
+        opts = test::must(sock.get_option<socket_option::linger>());
         BOOST_TEST_EQ(opts.enabled(), false);
 
-        sock.set_option(socket_option::linger(true, 10));
-        opts = sock.get_option<socket_option::linger>();
+        test::must_ok(sock.set_option(socket_option::linger(true, 10)));
+        opts = test::must(sock.get_option<socket_option::linger>());
         BOOST_TEST_EQ(opts.enabled(), true);
         BOOST_TEST_EQ(opts.timeout(), 10);
 
@@ -1322,21 +1321,27 @@ struct tcp_socket_test
         auto [s1, s2] =
             test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
 
-        s1.set_option(socket_option::no_delay(true));
-        BOOST_TEST_EQ(s1.get_option<socket_option::no_delay>().value(), true);
+        test::must_ok(s1.set_option(socket_option::no_delay(true)));
+        BOOST_TEST_EQ(
+            test::must(s1.get_option<socket_option::no_delay>()).value(), true);
 
-        s2.set_option(socket_option::no_delay(true));
-        BOOST_TEST_EQ(s2.get_option<socket_option::no_delay>().value(), true);
+        test::must_ok(s2.set_option(socket_option::no_delay(true)));
+        BOOST_TEST_EQ(
+            test::must(s2.get_option<socket_option::no_delay>()).value(), true);
 
-        s1.set_option(socket_option::keep_alive(true));
-        BOOST_TEST_EQ(s1.get_option<socket_option::keep_alive>().value(), true);
+        test::must_ok(s1.set_option(socket_option::keep_alive(true)));
+        BOOST_TEST_EQ(
+            test::must(s1.get_option<socket_option::keep_alive>()).value(),
+            true);
 
         int recv_size =
-            s1.get_option<socket_option::receive_buffer_size>().value();
+            test::must(s1.get_option<socket_option::receive_buffer_size>())
+                .value();
         BOOST_TEST(recv_size > 0);
 
         int send_size =
-            s1.get_option<socket_option::send_buffer_size>().value();
+            test::must(s1.get_option<socket_option::send_buffer_size>())
+                .value();
         BOOST_TEST(send_size > 0);
 
         s1.close();
@@ -1349,11 +1354,13 @@ struct tcp_socket_test
         tcp_socket sock(ioc);
         BOOST_TEST(!sock.open());
 
-        sock.set_option(socket_option::no_delay(true));
-        BOOST_TEST(sock.get_option<socket_option::no_delay>().value());
+        test::must_ok(sock.set_option(socket_option::no_delay(true)));
+        BOOST_TEST(
+            test::must(sock.get_option<socket_option::no_delay>()).value());
 
-        sock.set_option(socket_option::no_delay(false));
-        BOOST_TEST(!sock.get_option<socket_option::no_delay>().value());
+        test::must_ok(sock.set_option(socket_option::no_delay(false)));
+        BOOST_TEST(
+            !test::must(sock.get_option<socket_option::no_delay>()).value());
 
         sock.close();
     }
@@ -1364,8 +1371,11 @@ struct tcp_socket_test
         tcp_socket sock(ioc);
         BOOST_TEST(!sock.open());
 
-        sock.set_option(socket_option::receive_buffer_size(32768));
-        int sz = sock.get_option<socket_option::receive_buffer_size>().value();
+        test::must_ok(
+            sock.set_option(socket_option::receive_buffer_size(32768)));
+        int sz =
+            test::must(sock.get_option<socket_option::receive_buffer_size>())
+                .value();
         BOOST_TEST(sz >= 32768);
 
         sock.close();
@@ -1377,8 +1387,8 @@ struct tcp_socket_test
         tcp_socket sock(ioc);
         BOOST_TEST(!sock.open());
 
-        sock.set_option(socket_option::linger(true, 5));
-        auto lg = sock.get_option<socket_option::linger>();
+        test::must_ok(sock.set_option(socket_option::linger(true, 5)));
+        auto lg = test::must(sock.get_option<socket_option::linger>());
         BOOST_TEST(lg.enabled());
         BOOST_TEST_EQ(lg.timeout(), 5);
 
@@ -1396,22 +1406,24 @@ struct tcp_socket_test
         BOOST_TEST(!nd);
         nd = true;
         BOOST_TEST(nd.value());
-        sock.set_option(nd);
-        BOOST_TEST(sock.get_option<socket_option::no_delay>().value());
+        test::must_ok(sock.set_option(nd));
+        BOOST_TEST(
+            test::must(sock.get_option<socket_option::no_delay>()).value());
 
         nd = false;
         BOOST_TEST(!nd);
-        sock.set_option(nd);
-        BOOST_TEST(!sock.get_option<socket_option::no_delay>().value());
+        test::must_ok(sock.set_option(nd));
+        BOOST_TEST(
+            !test::must(sock.get_option<socket_option::no_delay>()).value());
 
         // integer assignment
         socket_option::receive_buffer_size rbs(0);
         rbs = 32768;
         BOOST_TEST_EQ(rbs.value(), 32768);
-        sock.set_option(rbs);
+        test::must_ok(sock.set_option(rbs));
         BOOST_TEST(
-            sock.get_option<socket_option::receive_buffer_size>().value() >=
-            32768);
+            test::must(sock.get_option<socket_option::receive_buffer_size>())
+                .value() >= 32768);
 
         // linger setters
         socket_option::linger lg;
@@ -1421,8 +1433,8 @@ struct tcp_socket_test
         lg.timeout(3);
         BOOST_TEST(lg.enabled());
         BOOST_TEST_EQ(lg.timeout(), 3);
-        sock.set_option(lg);
-        auto lg2 = sock.get_option<socket_option::linger>();
+        test::must_ok(sock.set_option(lg));
+        auto lg2 = test::must(sock.get_option<socket_option::linger>());
         BOOST_TEST(lg2.enabled());
         BOOST_TEST_EQ(lg2.timeout(), 3);
 
@@ -1519,7 +1531,7 @@ struct tcp_socket_test
 
         // Bind to loopback with port 0 (ephemeral)
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         auto listen_ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         if (!listen_ec)
             listen_ec = acc.listen();
@@ -1592,7 +1604,7 @@ struct tcp_socket_test
         for (int attempt = 0; attempt < 100; ++attempt)
         {
             BOOST_TEST(!acc.open());
-            acc.set_option(socket_option::reuse_address(true));
+            test::must_ok(acc.set_option(socket_option::reuse_address(true)));
             if (!acc.bind(endpoint(ipv4_address::loopback(), test_port)) &&
                 !acc.listen())
             {
@@ -1850,7 +1862,7 @@ struct tcp_socket_test
             auto ex = ioc.get_executor();
             tcp_acceptor acc(ioc);
             BOOST_TEST(!acc.open());
-            acc.set_option(socket_option::reuse_address(true));
+            test::must_ok(acc.set_option(socket_option::reuse_address(true)));
             BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
             BOOST_TEST(!acc.listen());
             auto const ep =
@@ -1929,7 +1941,7 @@ struct tcp_socket_test
         testBindThenConnect();
         testBindV6();
         testBindClosedSocket();
-        testOptionFailureThrows();
+        testOptionFailureReported();
         testBindAddressInUse();
         testBindNonLocalAddress();
         testMoveConstruct();
@@ -2030,7 +2042,7 @@ struct tcp_socket_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open(family::v6));
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
         if (!ec)
             ec = acc.listen();
@@ -2088,7 +2100,7 @@ struct tcp_socket_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         if (!ec)
             ec = acc.listen();
@@ -2142,7 +2154,7 @@ struct tcp_socket_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         if (!ec)
             ec = acc.listen();
@@ -2152,8 +2164,8 @@ struct tcp_socket_test
         tcp_socket s1(ioc);
         tcp_socket s2(ioc);
         BOOST_TEST(!s2.open());
-        s2.set_option(socket_option::no_delay(true));
-        BOOST_TEST(s2.get_option<socket_option::no_delay>());
+        test::must_ok(s2.set_option(socket_option::no_delay(true)));
+        BOOST_TEST(test::must(s2.get_option<socket_option::no_delay>()));
 
         bool accept_done  = false;
         bool connect_done = false;
@@ -2185,7 +2197,7 @@ struct tcp_socket_test
         BOOST_TEST(!connect_ec);
 
         // Socket option should be preserved across connect
-        BOOST_TEST(s2.get_option<socket_option::no_delay>());
+        BOOST_TEST(test::must(s2.get_option<socket_option::no_delay>()));
 
         s1.close();
         s2.close();
@@ -2198,7 +2210,7 @@ struct tcp_socket_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open(family::v6));
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
         if (!ec)
             ec = acc.listen();
@@ -2290,13 +2302,19 @@ struct tcp_socket_test
         BOOST_TEST(!sock.open(family::v6)); // IPv6
 
         // Default is v6only=true (kernel default after open_socket sets it)
-        BOOST_TEST_EQ(sock.get_option<socket_option::v6_only>().value(), true);
+        BOOST_TEST_EQ(
+            test::must(sock.get_option<socket_option::v6_only>()).value(),
+            true);
 
-        sock.set_option(socket_option::v6_only(false));
-        BOOST_TEST_EQ(sock.get_option<socket_option::v6_only>().value(), false);
+        test::must_ok(sock.set_option(socket_option::v6_only(false)));
+        BOOST_TEST_EQ(
+            test::must(sock.get_option<socket_option::v6_only>()).value(),
+            false);
 
-        sock.set_option(socket_option::v6_only(true));
-        BOOST_TEST_EQ(sock.get_option<socket_option::v6_only>().value(), true);
+        test::must_ok(sock.set_option(socket_option::v6_only(true)));
+        BOOST_TEST_EQ(
+            test::must(sock.get_option<socket_option::v6_only>()).value(),
+            true);
 
         sock.close();
     }
@@ -2308,7 +2326,7 @@ struct tcp_socket_test
         // Dual-stack listener (v6only=false is the default)
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open(family::v6));
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         auto ec = acc.bind(endpoint(ipv6_address::any(), 0));
         if (!ec)
             ec = acc.listen();
@@ -2318,7 +2336,7 @@ struct tcp_socket_test
         tcp_socket s1(ioc);
         tcp_socket s2(ioc);
         BOOST_TEST(!s2.open(family::v6)); // IPv6 socket
-        s2.set_option(socket_option::v6_only(false));
+        test::must_ok(s2.set_option(socket_option::v6_only(false)));
 
         bool accept_done  = false;
         bool connect_done = false;
@@ -2366,7 +2384,7 @@ struct tcp_socket_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
         ec = acc.listen();
@@ -2749,7 +2767,7 @@ struct tcp_socket_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open(family::v6));
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         auto ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
         if (ec)
             return; // no IPv6 loopback on this host

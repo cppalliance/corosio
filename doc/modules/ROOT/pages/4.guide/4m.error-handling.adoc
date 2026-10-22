@@ -22,11 +22,11 @@ Every fallible operation reports through exactly one channel:
 * *Expected runtime conditions return the error.* Synchronous
   operations return `std::error_code` (or `results<T>` when a
   payload rides along — `seek()`, `size()`, `available()`,
-  `release()`, the `make_*` factories), and
+  `release()`, `get_option()`, the `make_*` factories), and
   asynchronous operations complete with `results<...>`. Every
   error-returning function is `+[[nodiscard]]+`.
 * *Misuse of a documented precondition throws* `std::system_error` —
-  for example `set_option()` or `get_option()` on a closed object.
+  for example a `local_endpoint` path longer than its maximum.
 * *Operations whose outcome nobody can act on report nothing.*
   `close()` and `cancel()` are `void noexcept`. Durability reporting
   belongs to `sync_data()`/`sync_all()`. Cancellation reports
@@ -69,9 +69,6 @@ Windows. The constructor throws exactly the codes this path reports
 | cpp:io_context[]'s options constructor throwing `std::invalid_argument`
   (POSIX only)
 | ensure `opts.thread_pool_size >= 1`
-
-| `set_option()`, `get_option()` on a closed object
-| check `is_open()` first — closed-ness is the documented precondition
 |===
 
 What cannot be spelled exception-free: root construction and the run
@@ -79,13 +76,11 @@ loop. cpp:io_context[] itself throws if I/O backend setup fails, because
 there is no code-returning way to construct it. Any constructor can
 throw `std::bad_alloc`. `run()`/`stop()` throw `std::system_error` if
 the OS demultiplexer itself fails — a process-fatal condition with no
-per-operation channel to carry it. One environmental caveat applies to
-the last table row. `set_option()`/`get_option()` also throw when the
-platform rejects the option itself, such as an unsupported option on
-that protocol or OS. An open check therefore removes the closed-object
-throw but not that environmental arm. Probe an option once at startup if
-it must not throw later.
-`release()`, `size()`, and `available()` never throw. A closed object
+per-operation channel to carry it.
+`set_option()`, `get_option()`, `release()`, `size()`, and `available()`
+never throw. `set_option()` and `get_option()` report a platform that
+rejects the option, such as an unsupported option on that protocol or OS,
+through the returned code. A closed object
 reports `errc::bad_file_descriptor` through the returned code. On
 cpp:win_stream_handle[], cpp:win_random_access_handle[],
 cpp:stream_file[], and cpp:random_access_file[], `release()` can also

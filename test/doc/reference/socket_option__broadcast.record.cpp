@@ -33,8 +33,8 @@ allow_sending_to_a_broadcast_address(corosio::io_context& ioc)
 
     // Without this the kernel refuses a send_to a broadcast address; the
     // permission is opt-in so a stray destination cannot flood a segment.
-    // set_option reports failure by throwing, not by returning a code.
-    sock.set_option(corosio::socket_option::broadcast(true));
+    if (auto ec = sock.set_option(corosio::socket_option::broadcast(true)))
+        return; // report the error
 
     // send_to may now target ipv4_address::broadcast(), 255.255.255.255,
     // or a subnet-directed broadcast address.

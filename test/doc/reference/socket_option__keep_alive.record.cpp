@@ -27,7 +27,8 @@ detect_a_peer_that_went_away(corosio::tcp_socket& sock)
 {
     // Probe an idle connection so a peer that vanished without closing is
     // eventually reported as an error instead of hanging forever.
-    sock.set_option(corosio::socket_option::keep_alive(true));
+    if (auto ec = sock.set_option(corosio::socket_option::keep_alive(true)))
+        return; // report the error
 }
 // end::keep_alive[]
 

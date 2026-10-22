@@ -27,7 +27,9 @@ widen_the_send_buffer(corosio::tcp_socket& sock)
 {
     // Room for the kernel to hold data the peer has not acknowledged yet;
     // worth raising on a high-bandwidth, high-latency path.
-    sock.set_option(corosio::socket_option::send_buffer_size(65536));
+    if (auto ec =
+            sock.set_option(corosio::socket_option::send_buffer_size(65536)))
+        return; // report the error
 }
 // end::send_buffer_size[]
 
