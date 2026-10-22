@@ -40,7 +40,8 @@ inline scheduler_op*
 ready_as_op(void* e) noexcept
 {
     return reinterpret_cast<scheduler_op*>(
-        reinterpret_cast<std::uintptr_t>(e) & ~ready_cont_bit);
+        reinterpret_cast<std::uintptr_t>(e) &
+        ~ready_cont_bit); // NOLINT(performance-no-int-to-ptr)
 }
 
 /// Recover the continuation from a continuation-tagged entry.
@@ -48,7 +49,8 @@ inline capy::continuation*
 ready_as_cont(void* e) noexcept
 {
     return reinterpret_cast<capy::continuation*>(
-        reinterpret_cast<std::uintptr_t>(e) & ~ready_cont_bit);
+        reinterpret_cast<std::uintptr_t>(e) &
+        ~ready_cont_bit); // NOLINT(performance-no-int-to-ptr)
 }
 
 /** A unified intrusive FIFO of scheduler_ops and continuations.
@@ -132,7 +134,8 @@ public:
     {
         push_entry(
             reinterpret_cast<void*>(
-                reinterpret_cast<std::uintptr_t>(&c) | ready_cont_bit));
+                reinterpret_cast<std::uintptr_t>(&c) |
+                ready_cont_bit)); // NOLINT(performance-no-int-to-ptr)
     }
 
     /// Move all entries of @p other to the back in O(1); @p other is emptied.
