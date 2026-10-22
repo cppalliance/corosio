@@ -67,7 +67,12 @@ struct mocket_page_test
         // tag::creating[]
         corosio::io_context ioc;
 
-        auto [m, peer] = corosio::test::make_mocket_pair(ioc);
+        auto [ec, m, peer] = corosio::test::make_mocket_pair(ioc);
+        if (ec)
+        {
+            BOOST_TEST(!ec);
+            return;
+        }
         // end::creating[]
         // "Both are open and immediately usable."
         BOOST_TEST(m.is_open());
@@ -80,7 +85,10 @@ struct mocket_page_test
     void testProvide()
     {
         corosio::io_context ioc;
-        auto [m, peer] = corosio::test::make_mocket_pair(ioc);
+        auto [ec, m, peer] = corosio::test::make_mocket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
 
         // tag::provide[]
         m.provide("HTTP/1.1 200 OK\r\n\r\nHello");
@@ -104,7 +112,10 @@ struct mocket_page_test
     void testExpect()
     {
         corosio::io_context ioc;
-        auto [m, peer] = corosio::test::make_mocket_pair(ioc);
+        auto [ec, m, peer] = corosio::test::make_mocket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
 
         // tag::expect[]
         m.expect("GET / HTTP/1.1\r\n\r\n");
@@ -130,7 +141,12 @@ struct mocket_page_test
         corosio::io_context ioc;
         // tag::chunked[]
         // max_read_size = 4, max_write_size = 3 force short transfers.
-        auto [m, peer] = corosio::test::make_mocket_pair(ioc, {}, 4, 3);
+        auto [ec, m, peer] = corosio::test::make_mocket_pair(ioc, {}, 4, 3);
+        if (ec)
+        {
+            BOOST_TEST(!ec);
+            return;
+        }
 
         m.provide("0123456789");
         m.expect("abcdef");
@@ -176,7 +192,10 @@ struct mocket_page_test
     void testCloseCheck()
     {
         corosio::io_context ioc;
-        auto [m, peer] = corosio::test::make_mocket_pair(ioc);
+        auto [pair_ec, m, peer] = corosio::test::make_mocket_pair(ioc);
+        BOOST_TEST(!pair_ec);
+        if (pair_ec)
+            return;
 
         // Deliberately leave staged data unconsumed so close() reports it.
         m.provide("unread");
@@ -203,8 +222,13 @@ struct mocket_page_test
 
         corosio::io_context ioc(backend);
 
-        auto [m, peer] =
+        auto [ec, m, peer] =
             corosio::test::make_mocket_pair<socket_type, acceptor_type>(ioc);
+        if (ec)
+        {
+            BOOST_TEST(!ec);
+            return;
+        }
         // end::native[]
         static_assert(std::is_same_v<decltype(m), mocket_type>);
         BOOST_TEST(m.is_open());
@@ -218,7 +242,12 @@ struct mocket_page_test
     {
         corosio::io_context ioc;
         // tag::socket_access[]
-        auto [m, peer] = corosio::test::make_mocket_pair(ioc);
+        auto [ec, m, peer] = corosio::test::make_mocket_pair(ioc);
+        if (ec)
+        {
+            BOOST_TEST(!ec);
+            return;
+        }
 
         corosio::tcp_socket& under = m.socket();
         // Pass `under` into a TLS stream, a custom framing layer, etc.

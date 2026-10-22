@@ -73,8 +73,8 @@ struct budget_disabled_test
     {
         auto ioc = make_ioc();
         auto ex  = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         std::error_code wec;
         std::size_t wn = 0;
@@ -224,8 +224,8 @@ struct uring_budget_test
     {
         io_context ioc(uring);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
         auto peer = s1.remote_endpoint();
 
         std::stop_source ss;
@@ -260,8 +260,8 @@ struct uring_budget_test
     {
         io_context ioc(uring);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         char big[64] = {};
         std::error_code pec;

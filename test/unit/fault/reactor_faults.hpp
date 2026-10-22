@@ -196,8 +196,8 @@ struct reactor_common_faults
         // perform_io() inline, so what these blocks prove is that the
         // probe and the SO_ERROR read in reactor_connect_op::perform_io
         // are reached -- not that a reactor dispatch delivered them.
-        auto [d1, peer1] = test::make_socket_pair(ioc);
-        auto [d2, peer2] = test::make_socket_pair(ioc);
+        auto [d1, peer1] = must(test::make_socket_pair(ioc));
+        auto [d2, peer2] = must(test::make_socket_pair(ioc));
         std::error_code sync_ec, poll_ec, soerr_ec;
         auto body = [&]() -> capy::task<> {
             {
@@ -243,7 +243,7 @@ struct reactor_common_faults
     void testStreamIoFails()
     {
         io_context ioc(Backend);
-        auto [a, b] = test::make_socket_pair(ioc);
+        auto [a, b] = must(test::make_socket_pair(ioc));
         char buf[8] = "1234567";
         std::error_code rec, wec, rec_multi, wec_multi, drec;
         auto body = [&]() -> capy::task<> {
@@ -411,7 +411,7 @@ struct reactor_common_faults
     {
         io_context ioc(Backend);
         // b is unused beyond keeping the peer of a alive.
-        auto [a, b] = test::make_socket_pair(ioc);
+        auto [a, b] = must(test::make_socket_pair(ioc));
         std::ignore = b;
         {
             fault_scope f(sys::shutdown, ENOTCONN);
@@ -536,7 +536,7 @@ struct reactor_common_faults
     void testErrorEventOnParkedWaitRead()
     {
         io_context ioc(Backend);
-        auto [c, peer] = test::make_socket_pair(ioc);
+        auto [c, peer] = must(test::make_socket_pair(ioc));
         std::stop_source guard;
         std::error_code wec;
         bool probe_fired = false;
@@ -567,7 +567,7 @@ struct reactor_common_faults
     void testErrorEventOnParkedWaitError()
     {
         io_context ioc(Backend);
-        auto [c, peer] = test::make_socket_pair(ioc);
+        auto [c, peer] = must(test::make_socket_pair(ioc));
         std::stop_source guard;
         std::error_code wec;
         auto waiter = [&]() -> capy::task<> {
@@ -814,7 +814,7 @@ struct reactor_common_faults
         if constexpr (is_select)
         {
             io_context ioc(Backend);
-            auto [c, peer] = test::make_socket_pair(ioc);
+            auto [c, peer] = must(test::make_socket_pair(ioc));
             char buf[8]    = "1234567";
             std::stop_source guard;
             std::error_code wec;

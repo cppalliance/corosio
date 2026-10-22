@@ -235,7 +235,7 @@ struct wait_test
     {
         io_context ioc(Backend);
         auto ex       = ioc.get_executor();
-        auto [s1, s2] = test::make_socket_pair(ioc);
+        auto [s1, s2] = test::must(test::make_socket_pair(ioc));
 
         constexpr std::string_view payload = "hello";
 
@@ -277,7 +277,7 @@ struct wait_test
     {
         io_context ioc(Backend);
         auto ex       = ioc.get_executor();
-        auto [s1, s2] = test::make_socket_pair(ioc);
+        auto [s1, s2] = test::must(test::make_socket_pair(ioc));
 
         std::error_code wait_ec;
         bool wait_done = false;
@@ -610,7 +610,7 @@ struct wait_test
     {
         io_context ioc(Backend);
         auto ex       = ioc.get_executor();
-        auto [s1, s2] = test::make_socket_pair(ioc);
+        auto [s1, s2] = test::must(test::make_socket_pair(ioc));
 
         std::error_code wait_ec;
         bool wait_done = false;
@@ -675,7 +675,7 @@ struct wait_test
     {
         io_context ioc(Backend);
         auto ex       = ioc.get_executor();
-        auto [s1, s2] = test::make_socket_pair(ioc);
+        auto [s1, s2] = test::must(test::make_socket_pair(ioc));
 
         std::error_code read_ec;
         std::size_t bytes_read = 0;
@@ -726,8 +726,8 @@ struct wait_test
     {
         io_context ioc(Backend);
         auto ex       = ioc.get_executor();
-        auto [s1, s2] = test::make_socket_pair(ioc);
-        auto [t1, t2] = test::make_socket_pair(ioc);
+        auto [s1, s2] = test::must(test::make_socket_pair(ioc));
+        auto [t1, t2] = test::must(test::make_socket_pair(ioc));
 
         std::size_t drained_n = 0;
         std::error_code wait_ec;
@@ -841,7 +841,7 @@ struct wait_test
         udp_socket ssock(ioc);
         BOOST_TEST(!ssock.open(family::v4));
 
-        auto [t1, t2] = test::make_socket_pair(ioc);
+        auto [t1, t2] = test::must(test::make_socket_pair(ioc));
 
         std::size_t drained_n = 0;
         std::error_code wait_ec;
@@ -947,7 +947,7 @@ struct wait_test
     {
         io_context ioc(Backend);
         auto ex       = ioc.get_executor();
-        auto [s1, s2] = test::make_socket_pair(ioc);
+        auto [s1, s2] = test::must(test::make_socket_pair(ioc));
 
         std::error_code read_ec;
         std::size_t bytes_read = 0;
@@ -991,7 +991,7 @@ struct wait_test
     void waitReadOnResetThenReadNamesReset(bool parked)
     {
         io_context ioc(Backend);
-        auto [s1, s2] = test::make_socket_pair(ioc); // RST on close
+        auto [s1, s2] = test::must(test::make_socket_pair(ioc)); // RST on close
 
         std::error_code wec, rec;
         bool done   = false;
@@ -1000,7 +1000,7 @@ struct wait_test
             {
                 s2.close();
                 auto [e] = co_await delay(std::chrono::milliseconds(10));
-                (void)e;
+                std::ignore = e;
             }
             auto [e] = co_await s1.wait(wait_type::read);
             wec      = e;
@@ -1037,12 +1037,12 @@ struct wait_test
         // A reset socket is "ready" for a write: the write that follows
         // fails at once and names the reset.
         io_context ioc(Backend);
-        auto [s1, s2] = test::make_socket_pair(ioc); // RST on close
+        auto [s1, s2] = test::must(test::make_socket_pair(ioc)); // RST on close
         std::error_code wec, xec;
         auto t = [&]() -> capy::task<> {
             s2.close();
             auto [e0] = co_await delay(std::chrono::milliseconds(10));
-            (void)e0;
+            std::ignore = e0;
             auto [e] = co_await s1.wait(wait_type::write);
             wec      = e;
             auto [we, n] =
@@ -1195,7 +1195,7 @@ struct error_wait_names_reset_test
         auto ex = ioc.get_executor();
         // Both ends linger with a zero timeout, so closing the peer
         // sends an RST rather than a graceful FIN.
-        auto [s1, s2] = test::make_socket_pair(ioc);
+        auto [s1, s2] = test::must(test::make_socket_pair(ioc));
 
         std::error_code wait_ec;
         bool wait_done = false;

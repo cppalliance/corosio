@@ -62,8 +62,9 @@ struct native_resume_cancel_test
     {
         native_io_context<Backend> ioc;
         auto ex       = ioc.get_executor();
-        auto [s1, s2] = test::make_socket_pair<
-            native_tcp_socket<Backend>, native_tcp_acceptor<Backend>>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<
+                native_tcp_socket<Backend>, native_tcp_acceptor<Backend>>(ioc));
         auto peer = s1.remote_endpoint();
 
         std::stop_source ss;
@@ -97,9 +98,10 @@ struct native_resume_cancel_test
         auto ex = ioc.get_executor();
         // Graceful-close pair: the verifier below reads buffered data
         // after close(), and an abortive close discards it on the peer.
-        auto [s1, s2] = test::make_socket_pair<
-            native_tcp_socket<Backend>, native_tcp_acceptor<Backend>, false>(
-            ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<
+                native_tcp_socket<Backend>, native_tcp_acceptor<Backend>,
+                false>(ioc));
 
         // Preload and wait for delivery so the buffered data is
         // guaranteed present before the pre-stopped read.
@@ -167,8 +169,9 @@ struct native_resume_cancel_test
         opts.inline_budget_max = 0;
         native_io_context<Backend> ioc(opts);
         auto ex       = ioc.get_executor();
-        auto [s1, s2] = test::make_socket_pair<
-            native_tcp_socket<Backend>, native_tcp_acceptor<Backend>>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<
+                native_tcp_socket<Backend>, native_tcp_acceptor<Backend>>(ioc));
 
         std::stop_source ss;
         std::error_code wec = capy::error::eof;

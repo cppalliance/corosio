@@ -46,9 +46,10 @@ Mockets are created paired with a peer socket, connected via loopback:
 include::example$snippets/5a_mocket.cpp[tag=creating,indent=0]
 ----
 
-cpp:make_mocket_pair[] returns a pair. The first element is the mocket
-(test-instrumented). The second is the peer (a plain `Socket`). Both are
-open and immediately usable.
+cpp:make_mocket_pair[] returns the error code followed by the pair. The
+first socket is the mocket (test-instrumented). The second is the peer
+(a plain `Socket`). On success both are open and immediately usable; on
+failure both are closed and the error code is that of the step that failed.
 
 == Staging Data for Reads
 

@@ -75,7 +75,12 @@ struct patterns_page_test
     {
         // tag::request_format[]
         corosio::io_context ioc;
-        auto [m, peer] = corosio::test::make_mocket_pair(ioc);
+        auto [pair_ec, m, peer] = corosio::test::make_mocket_pair(ioc);
+        if (pair_ec)
+        {
+            BOOST_TEST(!pair_ec);
+            return;
+        }
 
         m.expect("GET /api/v1/users HTTP/1.1\r\n\r\n");
 
@@ -95,7 +100,10 @@ struct patterns_page_test
     void testStagedResponse()
     {
         corosio::io_context ioc;
-        auto [m, peer] = corosio::test::make_mocket_pair(ioc);
+        auto [ec, m, peer] = corosio::test::make_mocket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
 
         // tag::staged_response[]
         m.provide(
@@ -123,8 +131,13 @@ struct patterns_page_test
     {
         corosio::io_context ioc;
         // tag::chunked_reads[]
-        auto [m, peer] =
+        auto [ec, m, peer] =
             corosio::test::make_mocket_pair(ioc, {}, /*max_read_size=*/4);
+        if (ec)
+        {
+            BOOST_TEST(!ec);
+            return;
+        }
 
         m.provide("ABCDEFGH");
 
@@ -152,7 +165,12 @@ struct patterns_page_test
     {
         corosio::io_context ioc;
         // tag::layering[]
-        auto [m, peer] = corosio::test::make_mocket_pair(ioc);
+        auto [ec, m, peer] = corosio::test::make_mocket_pair(ioc);
+        if (ec)
+        {
+            BOOST_TEST(!ec);
+            return;
+        }
 
         // Pass m.socket() into a TLS stream or other layer in production code:
         corosio::tcp_socket& under = m.socket();
@@ -168,7 +186,12 @@ struct patterns_page_test
     {
         // tag::end_to_end[]
         corosio::io_context ioc;
-        auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+        auto [ec, s1, s2] = corosio::test::make_socket_pair(ioc);
+        if (ec)
+        {
+            BOOST_TEST(!ec);
+            return;
+        }
 
         auto task = [](corosio::tcp_socket& a,
                        corosio::tcp_socket& b) -> capy::task<> {
@@ -206,7 +229,10 @@ struct patterns_page_test
     void testCloseVerification()
     {
         corosio::io_context ioc;
-        auto [m, peer] = corosio::test::make_mocket_pair(ioc);
+        auto [pair_ec, m, peer] = corosio::test::make_mocket_pair(ioc);
+        BOOST_TEST(!pair_ec);
+        if (pair_ec)
+            return;
 
         // Deliberately leave staged data unconsumed so close() reports it.
         m.expect("never written");

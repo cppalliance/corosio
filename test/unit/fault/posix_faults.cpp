@@ -102,18 +102,12 @@ struct posix_common_faults
 #endif
         io_context ioc(Backend);
         fault_scope f(sys::connect, EADDRNOTAVAIL);
-        bool threw = false;
-        try
-        {
-            std::ignore =
-                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
-        }
-        catch (std::runtime_error const&)
-        {
-            threw = true;
-        }
+        auto [ec, a, b] =
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
         BOOST_TEST(f.fired());
-        BOOST_TEST(threw);
+        BOOST_TEST(ec == std::errc::address_not_available);
+        BOOST_TEST(!a.is_open());
+        BOOST_TEST(!b.is_open());
     }
 
     // Same for the mocket pair, built the same way over a socket pair.
@@ -126,17 +120,112 @@ struct posix_common_faults
 #endif
         io_context ioc(Backend);
         fault_scope f(sys::connect, EADDRNOTAVAIL);
-        bool threw = false;
-        try
-        {
-            std::ignore = test::make_mocket_pair(ioc);
-        }
-        catch (std::runtime_error const&)
-        {
-            threw = true;
-        }
+        auto [ec, m, peer] = test::make_mocket_pair(ioc);
         BOOST_TEST(f.fired());
-        BOOST_TEST(threw);
+        BOOST_TEST(ec == std::errc::address_not_available);
+        BOOST_TEST(!m.is_open());
+        BOOST_TEST(!peer.is_open());
+    }
+
+    // The pair's first step is opening the acceptor.
+    void testSocketPairOpenFails()
+    {
+        io_context ioc(Backend);
+        int before = open_fds();
+        {
+            fault_scope f(sys::socket, EMFILE);
+            auto [ec, a, b] = test::make_socket_pair(ioc);
+            BOOST_TEST(f.fired());
+            BOOST_TEST(ec == std::errc::too_many_files_open);
+            BOOST_TEST(!a.is_open());
+            BOOST_TEST(!b.is_open());
+        }
+        BOOST_TEST_EQ(open_fds(), before);
+    }
+
+    void testMocketPairOpenFails()
+    {
+        io_context ioc(Backend);
+        int before = open_fds();
+        {
+            fault_scope f(sys::socket, EMFILE);
+            auto [ec, m, peer] = test::make_mocket_pair(ioc);
+            BOOST_TEST(f.fired());
+            BOOST_TEST(ec == std::errc::too_many_files_open);
+            BOOST_TEST(!m.is_open());
+            BOOST_TEST(!peer.is_open());
+        }
+        BOOST_TEST_EQ(open_fds(), before);
+    }
+
+    // Fail each setsockopt the factory makes in turn. Which calls it
+    // makes differs per platform (kqueue sets SO_NOSIGPIPE as sockets
+    // open), so walk the call numbers until one is never reached.
+    void testSocketPairOptionFails()
+    {
+        unsigned failed = 0;
+        for (unsigned nth = 1;; ++nth)
+        {
+            io_context ioc(Backend);
+            int before = open_fds();
+            bool fired = false;
+            {
+                fault_scope f(sys::setsockopt, ENOPROTOOPT, nth);
+                auto [ec, a, b] = test::make_socket_pair(ioc);
+                fired           = f.fired();
+                if (fired)
+                {
+                    BOOST_TEST(ec == std::errc::no_protocol_option);
+                    BOOST_TEST(!a.is_open());
+                    BOOST_TEST(!b.is_open());
+                }
+                else
+                {
+                    BOOST_TEST(!ec);
+                    a.close();
+                    b.close();
+                }
+            }
+            BOOST_TEST_EQ(open_fds(), before);
+            if (!fired)
+                break;
+            ++failed;
+        }
+        // The acceptor's reuse_address and the two lingers.
+        BOOST_TEST(failed >= 3u);
+    }
+
+    void testMocketPairOptionFails()
+    {
+        unsigned failed = 0;
+        for (unsigned nth = 1;; ++nth)
+        {
+            io_context ioc(Backend);
+            int before = open_fds();
+            bool fired = false;
+            {
+                fault_scope f(sys::setsockopt, ENOPROTOOPT, nth);
+                auto [ec, m, peer] = test::make_mocket_pair(ioc);
+                fired              = f.fired();
+                if (fired)
+                {
+                    BOOST_TEST(ec == std::errc::no_protocol_option);
+                    BOOST_TEST(!m.is_open());
+                    BOOST_TEST(!peer.is_open());
+                }
+                else
+                {
+                    BOOST_TEST(!ec);
+                    m.close();
+                    peer.close();
+                }
+            }
+            BOOST_TEST_EQ(open_fds(), before);
+            if (!fired)
+                break;
+            ++failed;
+        }
+        BOOST_TEST(failed >= 1u);
     }
 
     void testBindFails()
@@ -852,6 +941,10 @@ struct posix_common_faults
         testBindFails();
         testSocketPairConnectFails();
         testMocketPairConnectFails();
+        testSocketPairOpenFails();
+        testMocketPairOpenFails();
+        testSocketPairOptionFails();
+        testMocketPairOptionFails();
         testSetOptionFails();
         testGetOptionFails();
         testAssignValidateFails();

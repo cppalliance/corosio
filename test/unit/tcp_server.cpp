@@ -1810,7 +1810,7 @@ struct tcp_server_test
             sock_.close();
             if (runs_++ != 0)
                 return;
-            auto [a, b] = test::make_socket_pair(session_ctx_);
+            auto [a, b] = test::must(test::make_socket_pair(session_ctx_));
             launch(
                 session_ctx_.get_executor(),
                 [](tcp_socket s, tcp_socket, destroy_count_t) -> capy::task<> {

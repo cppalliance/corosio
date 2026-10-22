@@ -29,7 +29,6 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
-#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <tuple>
@@ -559,11 +558,19 @@ public:
     The socket is the "peer" end with no test instrumentation.
 
     Runs `ctx` until the connection is made, restarting it first if
-    it was stopped, and leaves it restarted.
+    it was stopped, and leaves it restarted. A failure before the
+    connection attempt returns without running `ctx`, so its state is
+    unchanged.
 
     Optional `max_read_size` and `max_write_size` parameters limit the
     number of bytes transferred per I/O operation on the mocket,
     simulating chunked network delivery for testing purposes.
+
+    On failure both returned sockets are closed and the error code
+    is that of the step that failed.
+
+    @note Mockets are not thread-safe and must be used in a
+        single-threaded, deterministic context.
 
     @tparam Socket The socket type (default `tcp_socket`).
     @tparam Acceptor The acceptor type (default `tcp_acceptor`).
@@ -573,16 +580,10 @@ public:
     @param max_read_size Maximum bytes per read operation (default unlimited).
     @param max_write_size Maximum bytes per write operation (default unlimited).
 
-    @return A pair of (mocket, socket).
-
-    @throws std::runtime_error if opening, binding, listening, accepting,
-        or connecting fails.
-
-    @note Mockets are not thread-safe and must be used in a
-        single-threaded, deterministic context.
+    @return The error code and the (mocket, socket) pair.
 */
 template<class Socket = tcp_socket, class Acceptor = tcp_acceptor>
-std::pair<basic_mocket<Socket>, Socket>
+[[nodiscard]] capy::results<basic_mocket<Socket>, Socket>
 make_mocket_pair(
     io_context& ctx,
     capy::test::fuse f         = {},
@@ -594,6 +595,15 @@ make_mocket_pair(
     basic_mocket<Socket> m(ctx, std::move(f), max_read_size, max_write_size);
 
     Socket peer(ctx);
+    Socket accepted_socket(ctx);
+
+    auto fail =
+        [&](std::error_code ec) -> capy::results<basic_mocket<Socket>, Socket> {
+        m.close();
+        peer.close();
+        accepted_socket.close();
+        return {ec, std::move(m), std::move(peer)};
+    };
 
     std::error_code accept_ec;
     std::error_code connect_ec;
@@ -601,21 +611,18 @@ make_mocket_pair(
     bool connect_done = false;
 
     Acceptor acc(ctx);
-    if (auto open_ec = acc.open())
-        throw std::runtime_error("mocket open failed: " + open_ec.message());
+    if (auto ec = acc.open())
+        return fail(ec);
     if (auto ec = acc.set_option(socket_option::reuse_address(true)))
-        throw std::runtime_error("mocket set_option failed: " + ec.message());
-    if (auto bind_ec = acc.bind(endpoint(ipv4_address::loopback(), 0)))
-        throw std::runtime_error("mocket bind failed: " + bind_ec.message());
-    if (auto listen_ec = acc.listen())
-        throw std::runtime_error(
-            "mocket listen failed: " + listen_ec.message());
+        return fail(ec);
+    if (auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0)))
+        return fail(ec);
+    if (auto ec = acc.listen())
+        return fail(ec);
     auto port = acc.local_endpoint().port();
 
-    if (auto open_ec = peer.open())
-        throw std::runtime_error("mocket open failed: " + open_ec.message());
-
-    Socket accepted_socket(ctx);
+    if (auto ec = peer.open())
+        return fail(ec);
 
     capy::run_async(ex)(
         [](Acceptor& a, Socket& s, std::error_code& ec_out,
@@ -638,7 +645,7 @@ make_mocket_pair(
                            connect_done));
 
     // Both coroutines write to locals here, so they must finish before
-    // this returns or throws, even on a context something stopped.
+    // this returns, even on a context something stopped.
     while (!accept_done || !connect_done)
     {
         ctx.run();
@@ -651,8 +658,7 @@ make_mocket_pair(
             stderr, "make_mocket_pair: connect failed: %s\n",
             connect_ec.message().c_str());
         acc.close();
-        accepted_socket.close();
-        throw std::runtime_error("mocket connect failed");
+        return fail(connect_ec);
     }
 
     if (accept_ec)
@@ -661,14 +667,14 @@ make_mocket_pair(
             stderr, "make_mocket_pair: accept failed: %s\n",
             accept_ec.message().c_str());
         acc.close();
-        throw std::runtime_error("mocket accept failed");
+        return fail(accept_ec);
     }
 
     m.socket() = std::move(accepted_socket);
 
     acc.close();
 
-    return {std::move(m), std::move(peer)};
+    return {std::error_code{}, std::move(m), std::move(peer)};
 }
 
 } // namespace boost::corosio::test

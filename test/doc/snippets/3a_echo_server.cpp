@@ -145,8 +145,10 @@ struct echo_server_test
     static std::pair<corosio::tcp_socket, corosio::tcp_socket>
     make_pair(corosio::io_context& ioc)
     {
-        return corosio::test::make_socket_pair<
+        auto [ec, a, b] = corosio::test::make_socket_pair<
             corosio::tcp_socket, corosio::tcp_acceptor, false>(ioc);
+        BOOST_TEST(!ec);
+        return {std::move(a), std::move(b)};
     }
 
     void testComposedWrite()

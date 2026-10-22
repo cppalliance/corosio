@@ -187,8 +187,8 @@ struct uring_teardown_test
             // The pair is made outside the coroutine (it drains the
             // context internally); the socket moves into the frame so
             // its fd stays open when the frame is destroyed.
-            auto [s1, s2] =
-                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+            auto [s1, s2] = test::must(
+                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
             fill_fd(static_cast<int>(s1.native_handle()));
             auto keeper = [](tcp_socket s, bool& flag) -> capy::task<> {
                 char big[65536] = {};
@@ -355,10 +355,10 @@ struct uring_teardown_test
         int resumed = 0;
         {
             io_context ioc(uring);
-            auto [s1, s2] =
-                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
-            auto [s3, s4] =
-                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+            auto [s1, s2] = test::must(
+                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
+            auto [s3, s4] = test::must(
+                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
             fill_fd(static_cast<int>(s1.native_handle()));
             fill_fd(static_cast<int>(s3.native_handle()));
             char big[65536] = {};

@@ -412,7 +412,10 @@ struct error_handling_test
         ioc.restart();
         BOOST_TEST(connect_ec == std::errc::connection_refused);
 
-        auto [a, b] = corosio::test::make_socket_pair(ioc);
+        auto [ec, a, b] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         char data[64];
         std::error_code read_ec;
         std::size_t read_n = 0;
@@ -442,7 +445,10 @@ struct error_handling_test
     void testThrowExplicit()
     {
         corosio::io_context ioc;
-        auto [a, b] = corosio::test::make_socket_pair(ioc);
+        auto [ec, a, b] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         char data[64];
         std::size_t n = 0;
         capy::run_async(ioc.get_executor())(
@@ -458,7 +464,10 @@ struct error_handling_test
     void testInspectEof()
     {
         corosio::io_context ioc;
-        auto [a, b] = corosio::test::make_socket_pair(ioc);
+        auto [ec, a, b] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         // A FIN from the peer surfaces as the eof condition.
         b.shutdown(corosio::shutdown_send);
         char data[64];
@@ -548,7 +557,10 @@ struct error_handling_test
     void testEofExpected()
     {
         corosio::io_context ioc;
-        auto [a, b] = corosio::test::make_socket_pair(ioc);
+        auto [ec, a, b] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         char data[64];
         std::error_code out_ec;
         std::size_t out_n = 0;
@@ -567,7 +579,10 @@ struct error_handling_test
     void testEofFiltered()
     {
         corosio::io_context ioc;
-        auto [a, b] = corosio::test::make_socket_pair(ioc);
+        auto [ec, a, b] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         char data[64];
         std::size_t out_n = 0;
         capy::run_async(ioc.get_executor())(
@@ -584,7 +599,10 @@ struct error_handling_test
     void testPartialSuccess()
     {
         corosio::io_context ioc;
-        auto [a, b] = corosio::test::make_socket_pair(ioc);
+        auto [ec, a, b] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         // The pair sets linger(0): closing the peer sends a RST, so a
         // large write fails partway through with a real error.
         b.close();

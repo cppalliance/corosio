@@ -56,7 +56,8 @@ template<
     class Socket   = corosio::tcp_socket,
     class Acceptor = corosio::tcp_acceptor,
     bool Linger    = true>
-std::pair<Socket, Socket> make_socket_pair(corosio::io_context& ctx);
+[[nodiscard]] capy::results<Socket, Socket>
+make_socket_pair(corosio::io_context& ctx);
 // end::signature[]
 
 struct socket_pair_page_test
@@ -66,7 +67,12 @@ struct socket_pair_page_test
         // tag::round_trip[]
         corosio::io_context ioc;
 
-        auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+        auto [ec, s1, s2] = corosio::test::make_socket_pair(ioc);
+        if (ec)
+        {
+            BOOST_TEST(!ec);
+            return;
+        }
 
         auto task = [](corosio::tcp_socket& a,
                        corosio::tcp_socket& b) -> capy::task<> {
@@ -108,9 +114,14 @@ struct socket_pair_page_test
     {
         corosio::io_context ioc;
         // tag::linger_false[]
-        auto [s1, s2] = corosio::test::make_socket_pair<
+        auto [ec, s1, s2] = corosio::test::make_socket_pair<
             corosio::tcp_socket, corosio::tcp_acceptor,
             /*Linger=*/false>(ioc);
+        if (ec)
+        {
+            BOOST_TEST(!ec);
+            return;
+        }
         // end::linger_false[]
         BOOST_TEST(s1.is_open());
         BOOST_TEST(s2.is_open());

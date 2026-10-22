@@ -461,7 +461,7 @@ struct iocp_paths_test
             udp_socket u(ioc);
             std::ignore = u.open(family::v4);
         }
-        auto [s1, s2] = test::make_socket_pair(ioc);
+        auto [s1, s2]      = test::must(test::make_socket_pair(ioc));
         std::error_code ec = std::make_error_code(std::errc::io_error);
         auto waiter        = [&]() -> capy::task<> {
             auto [e] = co_await s1.wait(wait_type::write);
@@ -481,7 +481,7 @@ struct iocp_paths_test
     {
         io_context ioc(iocp);
         auto ex       = ioc.get_executor();
-        auto [r1, r2] = test::make_socket_pair(ioc);
+        auto [r1, r2] = test::must(test::make_socket_pair(ioc));
         test::temp_socket_dir tmp;
         auto [l1, l2] = make_local_pair(ioc, tmp);
 
@@ -670,8 +670,8 @@ struct iocp_paths_test
         {
             io_context ioc(iocp);
             auto ex       = ioc.get_executor();
-            auto [a1, a2] = test::make_socket_pair(ioc);
-            auto [b1, b2] = test::make_socket_pair(ioc);
+            auto [a1, a2] = test::must(test::make_socket_pair(ioc));
+            auto [b1, b2] = test::must(test::make_socket_pair(ioc));
 
             // Fill b1's send buffer; b2 never reads.
             auto const raw = static_cast<SOCKET>(b1.native_handle());

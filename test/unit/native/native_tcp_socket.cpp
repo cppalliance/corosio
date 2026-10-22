@@ -104,8 +104,9 @@ struct native_tcp_socket_test
     void testWait()
     {
         native_io_context<Backend> ioc;
-        auto [s1, s2] = test::make_socket_pair<
-            native_tcp_socket<Backend>, native_tcp_acceptor<Backend>>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<
+                native_tcp_socket<Backend>, native_tcp_acceptor<Backend>>(ioc));
 
         std::error_code wait_ec;
         bool wait_done = false;

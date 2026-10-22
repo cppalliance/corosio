@@ -111,8 +111,9 @@ bench_fork_join(bench::state& state)
 
     for (int i = 0; i < fan_out; ++i)
     {
-        auto [c, s] = corosio::test::make_socket_pair<
-            socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+        auto [c, s] = bench::must(
+            corosio::test::make_socket_pair<
+                socket_type, corosio::native_tcp_acceptor<Backend>>(ioc));
         bench::must_ok(
             c.set_option(corosio::native_socket_option::no_delay(true)));
         bench::must_ok(
@@ -182,8 +183,9 @@ bench_nested(bench::state& state)
 
     for (int i = 0; i < total_subs; ++i)
     {
-        auto [c, s] = corosio::test::make_socket_pair<
-            socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+        auto [c, s] = bench::must(
+            corosio::test::make_socket_pair<
+                socket_type, corosio::native_tcp_acceptor<Backend>>(ioc));
         bench::must_ok(
             c.set_option(corosio::native_socket_option::no_delay(true)));
         bench::must_ok(
@@ -265,8 +267,9 @@ bench_concurrent_parents(bench::state& state)
 
     for (int i = 0; i < total_subs; ++i)
     {
-        auto [c, s] = corosio::test::make_socket_pair<
-            socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+        auto [c, s] = bench::must(
+            corosio::test::make_socket_pair<
+                socket_type, corosio::native_tcp_acceptor<Backend>>(ioc));
         bench::must_ok(
             c.set_option(corosio::native_socket_option::no_delay(true)));
         bench::must_ok(
@@ -342,8 +345,9 @@ bench_fork_join_lockless(bench::state& state)
 
     for (int i = 0; i < fan_out; ++i)
     {
-        auto [c, s] = corosio::test::make_socket_pair<
-            socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+        auto [c, s] = bench::must(
+            corosio::test::make_socket_pair<
+                socket_type, corosio::native_tcp_acceptor<Backend>>(ioc));
         bench::must_ok(
             c.set_option(corosio::native_socket_option::no_delay(true)));
         bench::must_ok(
@@ -414,8 +418,9 @@ bench_nested_lockless(bench::state& state)
 
     for (int i = 0; i < total_subs; ++i)
     {
-        auto [c, s] = corosio::test::make_socket_pair<
-            socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+        auto [c, s] = bench::must(
+            corosio::test::make_socket_pair<
+                socket_type, corosio::native_tcp_acceptor<Backend>>(ioc));
         bench::must_ok(
             c.set_option(corosio::native_socket_option::no_delay(true)));
         bench::must_ok(
@@ -498,8 +503,9 @@ bench_concurrent_parents_lockless(bench::state& state)
 
     for (int i = 0; i < total_subs; ++i)
     {
-        auto [c, s] = corosio::test::make_socket_pair<
-            socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+        auto [c, s] = bench::must(
+            corosio::test::make_socket_pair<
+                socket_type, corosio::native_tcp_acceptor<Backend>>(ioc));
         bench::must_ok(
             c.set_option(corosio::native_socket_option::no_delay(true)));
         bench::must_ok(

@@ -35,6 +35,7 @@
 #include <unistd.h>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -157,10 +158,10 @@ struct reactor_teardown_test
             // Made outside the coroutines (it drains the context); each
             // socket moves into a frame so its fd stays open when the
             // frame is destroyed.
-            auto [w1, w2] =
-                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
-            auto [r1, r2] =
-                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+            auto [w1, w2] = test::must(
+                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
+            auto [r1, r2] = test::must(
+                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
             fill_fd(
                 static_cast<int>(w1.native_handle()),
                 static_cast<int>(w2.native_handle()));

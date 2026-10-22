@@ -26,8 +26,8 @@ include::example$snippets/5b_socket_pair.cpp[tag=assume]
 
 == Overview
 
-cpp:make_socket_pair[] takes an cpp:io_context[] and returns a
-`std::pair` of two connected sockets. Three template parameters
+cpp:make_socket_pair[] takes an cpp:io_context[] and returns the
+error code and two connected sockets. Three template parameters
 customize it: `Socket` (default cpp:tcp_socket[]), `Acceptor` (default
 cpp:tcp_acceptor[]), and `Linger` (default `true`, see below).
 
@@ -36,15 +36,14 @@ The function:
 . Opens an acceptor on `ipv4_address::loopback():0` with `SO_REUSEADDR`.
 . Accepts on one side while connecting on the other.
 . Runs the I/O context to completion, then restarts it.
-. Returns the connected pair.
+. Returns the error code and the connected pair.
 
-Both sockets come back `is_open()` and ready to use.
+On success both sockets come back `is_open()` and ready to use.
 
-If open, bind, listen, accept, or connect fails, `make_socket_pair`
-throws `std::runtime_error` naming the failing step. The underlying
-`error_code::message()` appears in the exception text for open, bind,
-and listen failures. It appears on `stderr` for accept and connect
-failures.
+If open, setting `SO_REUSEADDR`, bind, listen, accept, connect, or
+setting `SO_LINGER` fails, `make_socket_pair`
+returns that step's error code and both sockets closed. Accept and connect
+failures are also reported on `stderr`.
 
 == Round Trip
 

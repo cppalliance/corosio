@@ -34,6 +34,7 @@
 #include "fault.hpp"
 #include "fault_test_utils.hpp"
 
+#include "must.hpp"
 #include "test_utils.hpp"
 
 #include "test_suite.hpp"
@@ -59,7 +60,7 @@ std::error_code
 server_handshake_ec(tls_context const& server_ctx)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client = openssl_stream(&m1, warm_client_ctx());
     auto server = openssl_stream(&m2, server_ctx);
@@ -225,7 +226,7 @@ struct tls_engine_faults
         for (sys which : {sys::SSL_clear, sys::SSL_set_session})
         {
             io_context ioc;
-            auto [m1, m2]   = corosio::test::make_mocket_pair(ioc);
+            auto [m1, m2]   = must(corosio::test::make_mocket_pair(ioc));
             auto server_ctx = make_server_context();
             auto client     = openssl_stream(&m1, warm_client_ctx());
             auto server     = openssl_stream(&m2, server_ctx);
@@ -267,7 +268,7 @@ struct tls_engine_faults
              {sys::SSL_get0_param, sys::X509_VERIFY_PARAM_set1_host})
         {
             io_context ioc;
-            auto [m1, m2]   = corosio::test::make_mocket_pair(ioc);
+            auto [m1, m2]   = must(corosio::test::make_mocket_pair(ioc));
             auto server_ctx = make_server_context();
             auto client     = openssl_stream(&m1, warm_client_ctx());
             auto server     = openssl_stream(&m2, server_ctx);
@@ -303,7 +304,7 @@ struct tls_engine_faults
         for (sys which : {sys::BIO_nwrite0})
         {
             io_context ioc;
-            auto [m1, m2]   = corosio::test::make_mocket_pair(ioc);
+            auto [m1, m2]   = must(corosio::test::make_mocket_pair(ioc));
             auto server_ctx = make_server_context();
             auto client     = openssl_stream(&m1, warm_client_ctx());
             auto server     = openssl_stream(&m2, server_ctx);

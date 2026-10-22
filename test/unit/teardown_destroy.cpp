@@ -80,7 +80,7 @@ struct teardown_destroy_test
         int child_down = 0, parent_down = 0;
         {
             io_context ioc(Backend);
-            auto [a, b] = test::make_socket_pair(ioc);
+            auto [a, b] = test::must(test::make_socket_pair(ioc));
             auto child = [](tcp_socket& s, destroy_count_t) -> capy::task<> {
                 char c;
                 std::ignore = co_await s.read_some(capy::mutable_buffer(&c, 1));
@@ -106,7 +106,7 @@ struct teardown_destroy_test
         int down = 0;
         {
             io_context ioc(Backend);
-            auto [a, b] = test::make_socket_pair(ioc);
+            auto [a, b] = test::must(test::make_socket_pair(ioc));
             auto owner = [](tcp_socket s, destroy_count_t) -> capy::task<> {
                 char c;
                 std::ignore = co_await s.read_some(capy::mutable_buffer(&c, 1));
@@ -491,8 +491,8 @@ struct teardown_destroy_test
 #endif
         {
             io_context ioc(Backend);
-            auto [a, b] = test::make_socket_pair(ioc);
-            auto [c, d] = test::make_socket_pair(ioc);
+            auto [a, b] = test::must(test::make_socket_pair(ioc));
+            auto [c, d] = test::must(test::make_socket_pair(ioc));
             tcp_acceptor acc(ioc);
             BOOST_TEST(!acc.open());
             test::must_ok(acc.set_option(socket_option::reuse_address(true)));

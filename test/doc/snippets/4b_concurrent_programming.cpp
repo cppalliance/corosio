@@ -352,7 +352,10 @@ struct concurrent_programming_test
     void testHandleClient()
     {
         corosio::io_context ioc;
-        auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+        auto [ec, s1, s2] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         auto ex       = ioc.get_executor();
         bool done     = false;
         capy::run_async(ex)(feed(s2));
@@ -378,7 +381,10 @@ struct concurrent_programming_test
     void testSession()
     {
         corosio::io_context ioc;
-        auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+        auto [ec, s1, s2] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         auto ex       = ioc.get_executor();
         bool done     = false;
         capy::run_async(ex)(feed(s2));

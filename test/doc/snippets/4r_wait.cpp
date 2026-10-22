@@ -181,8 +181,11 @@ struct wait_test
     void testWaitRead()
     {
         corosio::io_context ioc;
-        auto ex           = ioc.get_executor();
-        auto [sock, peer] = boost::corosio::test::make_socket_pair(ioc);
+        auto ex                    = ioc.get_executor();
+        auto [pair_ec, sock, peer] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!pair_ec);
+        if (pair_ec)
+            return;
 
         std::error_code ec = std::make_error_code(std::errc::io_error);
         capy::run_async(ex)(wait_readable(sock, ec));
@@ -232,8 +235,11 @@ struct wait_test
     void testWaitCancel()
     {
         corosio::io_context ioc;
-        auto ex           = ioc.get_executor();
-        auto [sock, peer] = boost::corosio::test::make_socket_pair(ioc);
+        auto ex               = ioc.get_executor();
+        auto [ec, sock, peer] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
 
         // tag::wait_cancel[]
         auto waiter = [&]() -> capy::task<> {
@@ -262,7 +268,10 @@ struct wait_test
         corosio::io_context ioc;
         auto ex = ioc.get_executor();
         // The peer stays silent, so readiness never arrives.
-        auto [sock, peer] = boost::corosio::test::make_socket_pair(ioc);
+        auto [pair_ec, sock, peer] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!pair_ec);
+        if (pair_ec)
+            return;
 
         std::error_code ec;
         capy::run_async(ex)(wait_with_deadline(sock, ec));

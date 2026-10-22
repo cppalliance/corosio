@@ -16,10 +16,10 @@
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/socket_option.hpp>
 #include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 
 #include <cstdio>
-#include <stdexcept>
 #include <system_error>
 #include <utility>
 
@@ -31,7 +31,12 @@ namespace boost::corosio::test {
     Data written to one socket can be read from the other.
 
     Runs `ctx` until the connection is made, restarting it first if
-    it was stopped, and leaves it restarted.
+    it was stopped, and leaves it restarted. A failure before the
+    connection attempt returns without running `ctx`, so its state is
+    unchanged.
+
+    On failure the returned sockets are closed and the error code
+    is that of the step that failed.
 
     @tparam Socket The socket type (default `tcp_socket`).
     @tparam Acceptor The acceptor type (default `tcp_acceptor`).
@@ -40,19 +45,25 @@ namespace boost::corosio::test {
 
     @param ctx The I/O context for the sockets.
 
-    @return A pair of connected sockets.
-
-    @throws std::runtime_error if opening, binding, listening,
-        accepting, or connecting fails.
+    @return The error code and the connected sockets.
 */
 template<
     class Socket   = tcp_socket,
     class Acceptor = tcp_acceptor,
     bool Linger    = true>
-std::pair<Socket, Socket>
+[[nodiscard]] capy::results<Socket, Socket>
 make_socket_pair(io_context& ctx)
 {
     auto ex = ctx.get_executor();
+
+    Socket s1(ctx);
+    Socket s2(ctx);
+
+    auto fail = [&](std::error_code ec) -> capy::results<Socket, Socket> {
+        s1.close();
+        s2.close();
+        return {ec, std::move(s1), std::move(s2)};
+    };
 
     std::error_code accept_ec;
     std::error_code connect_ec;
@@ -60,23 +71,18 @@ make_socket_pair(io_context& ctx)
     bool connect_done = false;
 
     Acceptor acc(ctx);
-    if (auto open_ec = acc.open())
-        throw std::runtime_error(
-            "socket_pair open failed: " + open_ec.message());
+    if (auto ec = acc.open())
+        return fail(ec);
     if (auto ec = acc.set_option(socket_option::reuse_address(true)))
-        throw std::runtime_error(
-            "socket_pair set_option failed: " + ec.message());
+        return fail(ec);
     if (auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0)))
-        throw std::runtime_error("socket_pair bind failed: " + ec.message());
+        return fail(ec);
     if (auto ec = acc.listen())
-        throw std::runtime_error("socket_pair listen failed: " + ec.message());
+        return fail(ec);
     auto port = acc.local_endpoint().port();
 
-    Socket s1(ctx);
-    Socket s2(ctx);
-    if (auto open_ec = s2.open())
-        throw std::runtime_error(
-            "socket_pair open failed: " + open_ec.message());
+    if (auto ec = s2.open())
+        return fail(ec);
 
     capy::run_async(ex)(
         [](Acceptor& a, Socket& s, std::error_code& ec_out,
@@ -99,7 +105,7 @@ make_socket_pair(io_context& ctx)
                            connect_done));
 
     // Both coroutines write to locals here, so they must finish before
-    // this returns or throws, even on a context something stopped.
+    // this returns, even on a context something stopped.
     while (!accept_done || !connect_done)
     {
         ctx.run();
@@ -112,8 +118,7 @@ make_socket_pair(io_context& ctx)
             stderr, "socket_pair: connect failed: %s\n",
             connect_ec.message().c_str());
         acc.close();
-        s1.close();
-        throw std::runtime_error("socket_pair connect failed");
+        return fail(connect_ec);
     }
 
     if (accept_ec)
@@ -122,7 +127,7 @@ make_socket_pair(io_context& ctx)
             stderr, "socket_pair: accept failed: %s\n",
             accept_ec.message().c_str());
         acc.close();
-        throw std::runtime_error("socket_pair accept failed");
+        return fail(accept_ec);
     }
 
     acc.close();
@@ -130,14 +135,12 @@ make_socket_pair(io_context& ctx)
     if constexpr (Linger)
     {
         if (auto ec = s1.set_option(socket_option::linger(true, 0)))
-            throw std::runtime_error(
-                "socket_pair set_option failed: " + ec.message());
+            return fail(ec);
         if (auto ec = s2.set_option(socket_option::linger(true, 0)))
-            throw std::runtime_error(
-                "socket_pair set_option failed: " + ec.message());
+            return fail(ec);
     }
 
-    return {std::move(s1), std::move(s2)};
+    return {std::error_code{}, std::move(s1), std::move(s2)};
 }
 
 } // namespace boost::corosio::test

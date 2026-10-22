@@ -542,9 +542,7 @@ struct tcp_acceptor_test
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
-        auto sockets = test::make_socket_pair(ioc);
-        auto& server = sockets.first;
-        auto& client = sockets.second;
+        auto [server, client] = test::must(test::make_socket_pair(ioc));
 
         bool read_done = false;
         char buf[8];
