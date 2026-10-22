@@ -28,6 +28,7 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include <cerrno>
 #include <chrono>
 #include <csignal>
 #include <cstdio>
@@ -581,6 +582,26 @@ struct win_common_faults
             BOOST_TEST(ec == std::errc::not_a_socket);
             BOOST_TEST(!a.is_open() && !b.is_open());
         });
+        // The worker thread is refused: nothing will ever connect, so
+        // the call has to return before polling, with the listener
+        // closed rather than waiting on a worker that does not exist.
+        // Called directly, since the deadline's own thread would take
+        // the thread-local arm.
+        if (hook_is_live(sys::pthread_create))
+        {
+            expect_no_handle_leak([&] {
+                local_stream_socket a(ioc), b(ioc);
+                fault_scope f(sys::pthread_create, EAGAIN);
+                auto ec = connect_pair(a, b);
+                BOOST_TEST(f.fired());
+                BOOST_TEST(ec == std::errc::resource_unavailable_try_again);
+                BOOST_TEST(!a.is_open() && !b.is_open());
+            });
+        }
+        else
+        {
+            test_suite::log << "thread-creation hook not live; skipping\n";
+        }
         // Unfaulted, a pair still forms.
         local_stream_socket a(ioc), b(ioc);
         BOOST_TEST(!connect_pair_bounded(a, b));

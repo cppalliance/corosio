@@ -25,8 +25,10 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <new>
 #include <random>
 #include <string>
 #include <thread>
@@ -96,34 +98,80 @@ assign_pair(Socket& a, Socket& b, int a_fd, int b_fd) noexcept
 
 #elif BOOST_COROSIO_HAS_IOCP
 
-// Build a unique sub-directory under temp and return the full socket
-// path inside it. Empty string on failure.
-std::string
-pick_pair_path(std::filesystem::path& dir_out)
+// random_device may throw, and a predictable seed only costs a retry
+// on a name collision.
+std::uint64_t
+pair_seed() noexcept
+{
+    try
+    {
+        return std::random_device{}();
+    }
+    catch (...)
+    {
+        LARGE_INTEGER t{};
+        ::QueryPerformanceCounter(&t);
+        return static_cast<std::uint64_t>(t.QuadPart) ^
+            (static_cast<std::uint64_t>(::GetCurrentProcessId()) << 32) ^
+            ::GetCurrentThreadId();
+    }
+}
+
+// Build a unique sub-directory under temp and the socket path inside
+// it.
+std::error_code
+pick_pair_path(
+    std::filesystem::path& dir_out,
+    std::filesystem::path& file_out,
+    std::string& path_out) noexcept
 {
     namespace fs = std::filesystem;
 
-    thread_local std::mt19937_64 gen{std::random_device{}()};
+    thread_local std::mt19937_64 gen{pair_seed()};
 
-    for (int attempt = 0; attempt < 16; ++attempt)
+    try
     {
-        auto candidate =
-            fs::temp_directory_path() / ("co_pair_" + std::to_string(gen()));
         std::error_code ec;
-        if (fs::create_directory(candidate, ec))
+        fs::path const tmp = fs::temp_directory_path(ec);
+        if (ec)
+            return ec;
+
+        for (int attempt = 0; attempt < 16; ++attempt)
         {
-            dir_out = candidate;
-            return (candidate / "s").string();
+            fs::path dir  = tmp / ("co_pair_" + std::to_string(gen()));
+            fs::path file = dir / "s";
+            // Converted before the directory exists, so a throw here
+            // leaves nothing on disk to remove.
+            std::string path = file.string();
+            if (fs::create_directory(dir, ec))
+            {
+                dir_out  = std::move(dir);
+                file_out = std::move(file);
+                path_out = std::move(path);
+                return {};
+            }
         }
+        if (ec)
+            return ec;
+        return detail::make_err(ERROR_PATH_NOT_FOUND);
     }
-    return {};
+    catch (std::system_error const& e)
+    {
+        return e.code();
+    }
+    catch (std::bad_alloc const&)
+    {
+        return std::make_error_code(std::errc::not_enough_memory);
+    }
 }
 
 void
-remove_pair_path(std::filesystem::path const& dir, std::string const& path)
+remove_pair_path(
+    std::filesystem::path const& dir,
+    std::filesystem::path const& file) noexcept
 {
     std::error_code ec;
-    std::filesystem::remove(std::filesystem::path(path), ec);
+    std::filesystem::remove(file, ec);
     std::filesystem::remove(dir, ec);
 }
 
@@ -141,16 +189,17 @@ make_pair_sockets(SOCKET& a_sock, SOCKET& b_sock) noexcept
     b_sock = INVALID_SOCKET;
 
     fs::path dir;
-    std::string path = pick_pair_path(dir);
-    if (path.empty())
-        return detail::make_err(ERROR_PATH_NOT_FOUND);
+    fs::path file;
+    std::string path;
+    if (auto ec = pick_pair_path(dir, file, path))
+        return ec;
 
     SOCKET listen_sock =
         ::WSASocketW(AF_UNIX, SOCK_STREAM, 0, nullptr, 0, WSA_FLAG_OVERLAPPED);
     if (listen_sock == INVALID_SOCKET)
     {
         auto ec = detail::make_err(::WSAGetLastError());
-        remove_pair_path(dir, path);
+        remove_pair_path(dir, file);
         return ec;
     }
 
@@ -167,7 +216,7 @@ make_pair_sockets(SOCKET& a_sock, SOCKET& b_sock) noexcept
     {
         auto ec = detail::make_err(::WSAGetLastError());
         ::closesocket(listen_sock);
-        remove_pair_path(dir, path);
+        remove_pair_path(dir, file);
         return ec;
     }
 
@@ -175,7 +224,7 @@ make_pair_sockets(SOCKET& a_sock, SOCKET& b_sock) noexcept
     {
         auto ec = detail::make_err(::WSAGetLastError());
         ::closesocket(listen_sock);
-        remove_pair_path(dir, path);
+        remove_pair_path(dir, file);
         return ec;
     }
 
@@ -187,7 +236,7 @@ make_pair_sockets(SOCKET& a_sock, SOCKET& b_sock) noexcept
     {
         auto ec = detail::make_err(::WSAGetLastError());
         ::closesocket(listen_sock);
-        remove_pair_path(dir, path);
+        remove_pair_path(dir, file);
         return ec;
     }
 
@@ -197,7 +246,7 @@ make_pair_sockets(SOCKET& a_sock, SOCKET& b_sock) noexcept
 
     // One exit, so worker_done is published on every path: the accept
     // below waits on it, and a path that skipped it would hang.
-    std::thread worker([&] {
+    auto connect_worker = [&] {
         worker_sock = ::WSASocketW(
             AF_UNIX, SOCK_STREAM, 0, nullptr, 0, WSA_FLAG_OVERLAPPED);
         if (worker_sock == INVALID_SOCKET)
@@ -225,7 +274,38 @@ make_pair_sockets(SOCKET& a_sock, SOCKET& b_sock) noexcept
         }
         // Released last so a reader that sees it also sees worker_ec.
         worker_done.store(true, std::memory_order_release);
-    });
+    };
+
+    // A thread that never starts publishes nothing, so this returns
+    // before the accept loop could wait on it.
+    std::thread worker;
+    std::error_code thread_ec;
+    try
+    {
+        worker = std::thread(connect_worker);
+    }
+    catch (std::system_error const& e)
+    {
+        thread_ec = e.code();
+    }
+    catch (std::bad_alloc const&)
+    {
+        thread_ec = std::make_error_code(std::errc::not_enough_memory);
+    }
+    catch (...)
+    {
+    }
+    if (!worker.joinable())
+    {
+        if (!thread_ec)
+        {
+            thread_ec =
+                std::make_error_code(std::errc::resource_unavailable_try_again);
+        }
+        ::closesocket(listen_sock);
+        remove_pair_path(dir, file);
+        return thread_ec;
+    }
 
     SOCKET accept_sock = INVALID_SOCKET;
     std::error_code accept_ec;
@@ -271,7 +351,7 @@ make_pair_sockets(SOCKET& a_sock, SOCKET& b_sock) noexcept
     worker.join();
 
     ::closesocket(listen_sock);
-    remove_pair_path(dir, path);
+    remove_pair_path(dir, file);
 
     if (accept_ec)
     {
