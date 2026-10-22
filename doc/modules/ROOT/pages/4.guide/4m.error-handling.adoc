@@ -25,15 +25,17 @@ Every fallible operation reports through exactly one channel:
   `release()`, `get_option()`, and the `make_*` factories, and
   asynchronous operations complete with `results<...>`. Every
   error-returning function is `+[[nodiscard]]+`.
-* *Misuse of a documented precondition throws* — for example an
-  `io_context` options constructor given a `thread_pool_size` of zero.
+* *Contract violations throw* — for example an `io_context` options
+  constructor given a `thread_pool_size` of zero, or `to_v4()` on an
+  IPv6 address that is not v4-mapped. Using a closed object is not
+  one of them: it returns like any other runtime condition.
 * *Operations whose outcome nobody can act on report nothing.*
   `close()` and `cancel()` are `void noexcept`. Durability reporting
   belongs to `sync_data()`/`sync_all()`. Cancellation reports
   through each canceled completion.
 
 Using a closed object is deterministic on every I/O backend and every
-channel: the operation returns, throws, or completes with
+channel: the operation returns or completes with
 `errc::bad_file_descriptor`.
 
 == Avoiding Exceptions
@@ -66,9 +68,12 @@ Windows. The constructor throws exactly the codes this path reports
 What cannot be spelled exception-free: root construction and the run
 loop. cpp:io_context[] itself throws if I/O backend setup fails, because
 there is no code-returning way to construct it. Any constructor can
-throw `std::bad_alloc`. `run()`/`stop()` throw `std::system_error` if
-the OS demultiplexer itself fails — a process-fatal condition with no
-per-operation channel to carry it.
+throw `std::bad_alloc`. `run()`, `poll()` and their siblings throw
+`std::system_error` if waiting on the OS demultiplexer fails — a
+condition with no per-operation channel to carry it, after which the
+context cannot dispatch work. On Windows `stop()` throws if it cannot
+queue the wakeup, and so does a run or poll call made with no
+outstanding work, which stops the context itself.
 `set_option()`, `get_option()`, `release()`, `size()`, and `available()`
 never throw. `set_option()` and `get_option()` report a platform that
 rejects the option, such as an unsupported option on that protocol or OS,
@@ -235,7 +240,12 @@ platform and I/O backend:
   truncated hostname from `host_name()`
 
 | `filename_too_long`
-| A cpp:local_endpoint[] path over cpp:local_endpoint::max_path_length[max_path_length]
+| A path over cpp:local_endpoint::max_path_length[max_path_length] passed to
+  `make_local_endpoint()`
+
+| `device_or_resource_busy`
+| `release()` with an operation in flight on a Windows file or handle,
+  or while a thread-pool worker is using the file
 |===
 
 === Cancellation

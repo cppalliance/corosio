@@ -12,9 +12,16 @@ by classifying its failures:
   exhaustion, disk full, peer disconnect race, unparseable input,
   foreign descriptors unfit for adoption — report through the
   **return value**.
-- **Misuse** — violations of a documented precondition the caller
-  could have checked: calling on a closed object, invoking twice,
-  breaking a stated invariant — **throw**.
+- **Misuse the object can observe** — calling on a closed object,
+  or another condition a different party can cause — reports
+  through the **return value** like any runtime condition.
+- **Contract violations** — breaking a documented precondition on
+  the caller's own argument values or call sequence (`to_v4`
+  on the wrong family, a `to_buffer` too small, an out-of-range
+  option value, `tcp_server` calls out of sequence) — **throw**.
+  The address-family conversions throw `std::system_error` carrying
+  `address_family_not_supported`; the other violations throw
+  `std::logic_error` types.
 - **Not actionable** — nothing a caller can act on remains — report
   nothing: **`void noexcept`**. The effect is guaranteed: `close()`
   releases the descriptor even when the OS objects, `cancel()`'s
@@ -62,15 +69,17 @@ return `results<T>` with a default-constructed payload on failure.
 Every awaitable-returning initiator is `[[nodiscard]]`: a discarded
 awaitable is a silent no-op that also drops any pre-set completion.
 
-Constructors have no return channel to choose, so rule 1 admits only
-three constructor failures: misuse, guarded by a public pre-check
-(`local_endpoint`'s `max_path_length`, `io_context`'s
-`thread_pool_size`); the wrapped codes of a code-returning path the
-constructor abbreviates (`tcp_acceptor(ctx, ep)` over
-`open`+`bind`+`listen`, `endpoint(str)` over `make_endpoint`, thrown
-as `std::system_error` carrying the code the piecewise spelling
-returns); and root setup for which no code-returning spelling can
-exist (`io_context` backend creation, allocation).
+Constructors have no return channel to choose, so they throw only
+for root setup for which no code-returning spelling can exist
+(`io_context` backend creation, allocation, WSA startup) and for
+contract violations (a service not installed, `io_context`'s
+`thread_pool_size` and reactor option ranges). The one runtime
+exception is the convenience constructors (`tcp_acceptor` and
+`local_stream_acceptor` from an endpoint, `signal_set` from a signal
+list): each has a code-returning spelling (the piecewise calls) and
+throws the code that spelling returns. Building an address or
+endpoint from a string has no constructor; it goes through the
+`make_*` factories.
 
 Root setup is everything the backend needs — completion port, ring,
 wakeup channel, thread pool — and all of it is built during
@@ -83,6 +92,15 @@ workers, which start on the first blocking operation: a thread the
 system refuses there is reported through that operation's own channel,
 never thrown.
 
+The run loop is the other exception. `run()`, `poll()` and their
+siblings throw `std::system_error` when waiting on the event
+demultiplexer fails with anything other than an interruption or a
+transient condition the next wait clears: no completion can carry
+that error, and the context cannot dispatch work past it. On Windows,
+`stop()` belongs to the same exception: it throws `std::system_error`
+when the wakeup cannot be queued, and so does a run or poll call made
+with no outstanding work, which stops the context itself.
+
 ## 3. The Classification Test
 
 Ask: **can the caller reliably prevent the failure by checking state
@@ -91,31 +109,34 @@ they own, race-free, before the call?**
 - **No** → normal error. File existence (TOCTOU), a port's
   availability, a peer's connection state, or whether a string parses
   cannot be pre-checked.
-- **Yes** → precondition, misuse, throw. The canonical example:
-  `local_endpoint(path)` throws on an over-long path because the
-  limit is the public `max_path_length` constant — one integer
-  comparison, no grammar, no race. The pre-check *is* the
-  non-throwing API.
-
-Corollary: an operation with no realistic failure on a valid open
-object (`size()`, `release()`, `available()`) stays on the throwing
-channel — a `results` return would tax every correct call site to
-carry a bit that is always "you have a bug".
+- **Yes** → the caller may pre-check, but a failure the operation
+  can observe at runtime still reports through the return value. The
+  canonical example: `make_local_endpoint(path)` reports
+  `filename_too_long` for an over-long path, and the public
+  `max_path_length` constant lets a caller test the same limit
+  beforehand — one integer comparison, no grammar, no race. Only an
+  operation with no return channel throws: a conversion with no error
+  slot is a contract violation (§1), and a convenience constructor
+  such as `tcp_acceptor(ctx, ep)` throws `std::system_error` carrying
+  the code its code-returning spelling reports (§2).
 
 ## 4. The Closed-Object Condition
 
 One condition, one code — `errc::bad_file_descriptor` — delivered
 through whichever channel the operation already uses:
 
-- Error-returning sync methods (`bind`, `listen`, `shutdown`,
-  `assign`, file `resize`/`sync_*`/`seek`) **return** it.
-- Throwing-channel methods (`size`, `release`, `available`,
-  `set_option`, `get_option`) **throw**
-  `std::system_error(errc::bad_file_descriptor)`. Not `logic_error`:
-  closed-ness is legitimately observable in async teardown (another
-  coroutine closes to cancel), the platform spells it as a system
-  condition (`EBADF`), and one exception type keeps the surface
-  coherent.
+- Sync methods (`bind`, `listen`, `shutdown`, `assign`, file
+  `resize`/`sync_*`/`seek`, `size`, `release`, `available`,
+  `set_option`, `get_option`) **return** it. Closed-ness is
+  legitimately observable in async teardown (another coroutine closes
+  to cancel), so it is a runtime outcome, not a bug to throw over.
+- A `release()` that fails leaves the object owning the handle and
+  returns the invalid sentinel `native_handle()` reports when closed,
+  never a descriptor value a caller could mistake for a real one. A
+  release refused because an operation is in flight
+  (`device_or_resource_busy`) has already cancelled the pending
+  operations, so none of them can run on a recycled descriptor; the
+  caller retries once they complete.
 - Async initiators **pre-fail the awaitable**: set `aw.ec_` and
   return it; `await_ready` treats a pre-set `ec_` as
   ready-with-result, so the operation completes immediately without
@@ -126,8 +147,11 @@ through whichever channel the operation already uses:
   so the code is deterministic on every path, including the
   devirtualized native facades.
 
-Genuine logic errors unrelated to object state stay `logic_error`:
-service not installed, launcher invoked twice, zero-sized thread pool.
+Contract violations unrelated to object state throw `std::logic_error`
+types: service not installed, launcher invoked twice, zero-sized thread
+pool. The address-family conversions (`to_v4`, `to_v6`) are the
+exception: they throw `std::system_error` carrying
+`address_family_not_supported`.
 
 ## 5. Composite Operations
 
@@ -138,8 +162,10 @@ second channel:
 - `connect()` opens the socket automatically when needed; an open
   failure surfaces through the connect completion, so callers need no
   explicit `open()` before `connect`.
-- The convenience constructors wrap `open`+`bind`+`listen` and throw
-  the code the failing step returned.
+- The convenience constructors wrap their code-returning spelling
+  (`open`+`bind`+`listen`, with `set_option` between for
+  `tcp_acceptor`, or `add` per signal) and
+  throw the code it returned.
 - The free `corosio::connect` walks a candidate range and reports
   through one completion — `no_such_device_or_address` when no
   candidate is viable.
@@ -190,13 +216,16 @@ second channel:
 
 - **The user vocabulary is `std::errc`**. The one exception is
   `corosio::error::already_open` (`assign()` or `connect_pair()` on
-  an open object), which matches Asio.
+  an open object).
 - Codes corosio generates itself are deterministic contracts:
   `invalid_argument` (parsers, signal_set, negative seek),
   `bad_file_descriptor` (closed objects, descriptor validation),
   `wrong_protocol_type` / `address_family_not_supported` (adoption
   rejection), `value_too_large` (off_t guard, truncated hostname),
   `filename_too_long`,
+  `device_or_resource_busy` (`release()` on a Windows file, stream
+  handle, or random-access handle with an operation in flight, or on a
+  file a thread-pool worker is using),
   `no_such_device_or_address` (`corosio::connect` with no viable
   candidate),
   `resource_unavailable_try_again` (io_uring submission queue
@@ -257,7 +286,7 @@ second channel:
   raw-value pinning is reserved for kernel codes outside the contract
   list.
 - Closed-object behavior is tested on **every channel**: returned
-  codes, thrown `system_error`s, and awaited completions
+  codes and awaited completions
   (`co_await` + `ioc.run()` + a `done` flag so the test cannot pass
   vacuously).
 - Error paths count as coverage targets: exercise the reachable ones
@@ -268,9 +297,10 @@ second channel:
 ## 9. Documentation
 
 - Javadocs state the channel: `@return The error code, empty on
-  success.` for returns; `@throws std::system_error
-  \`errc::bad_file_descriptor\` if ...` for throws. Never a stale
-  `@throws` on a `noexcept` function.
+  success.` for returns, with the codes named in prose; `@throws`
+  only for root setup, contract violations, the convenience
+  constructors, and the run loop (including `stop()` on Windows). Never
+  a stale `@throws` on a `noexcept` function.
 - Examples and doc snippets model checked usage — `if (auto ec = ...)`
   early-return — and never discard a `[[nodiscard]]` result, even
   where a pragma would let it compile. Fragments before `connect`
