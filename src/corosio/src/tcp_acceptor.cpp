@@ -12,7 +12,6 @@
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/error.hpp>
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
-#include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_IOCP
@@ -24,6 +23,7 @@
 
 #include <boost/corosio/detail/except.hpp>
 
+#include "src/detail/open_listener.hpp"
 #include "src/detail/use_backend_service.hpp"
 
 namespace boost::corosio {
@@ -37,38 +37,6 @@ using tcp_peer_service = detail::tcp_service;
 #endif
 
 } // namespace
-
-#if BOOST_COROSIO_HAS_IOCP
-namespace {
-
-// On Windows SO_REUSEADDR grants bind-over ("hijack") rights instead
-// of TIME_WAIT reuse, so a second listener would share the port
-// silently. SO_EXCLUSIVEADDRUSE restores the POSIX contract: the
-// collision surfaces as WSAEADDRINUSE (errc::address_in_use).
-struct exclusive_address_use
-{
-    int value_ = 1;
-
-    static int level(family) noexcept
-    {
-        return SOL_SOCKET;
-    }
-    static int name(family) noexcept
-    {
-        return SO_EXCLUSIVEADDRUSE;
-    }
-    void const* data(family) const noexcept
-    {
-        return &value_;
-    }
-    std::size_t size(family) const noexcept
-    {
-        return sizeof(value_);
-    }
-};
-
-} // namespace
-#endif
 
 tcp_acceptor::~tcp_acceptor()
 {
@@ -93,18 +61,7 @@ tcp_acceptor::tcp_acceptor(
     capy::execution_context& ctx, endpoint ep, int backlog)
     : tcp_acceptor(ctx)
 {
-    if (auto ec = open(ep.address().family()))
-        detail::throw_system_error(ec, "tcp_acceptor");
-#if BOOST_COROSIO_HAS_IOCP
-    if (auto ec = set_option(exclusive_address_use{}))
-        detail::throw_system_error(ec, "tcp_acceptor");
-#else
-    if (auto ec = set_option(socket_option::reuse_address(true)))
-        detail::throw_system_error(ec, "tcp_acceptor");
-#endif
-    if (auto ec = bind(ep))
-        detail::throw_system_error(ec, "tcp_acceptor");
-    if (auto ec = listen(backlog))
+    if (auto ec = detail::open_listener(*this, ep, backlog))
         detail::throw_system_error(ec, "tcp_acceptor");
 }
 

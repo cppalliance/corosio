@@ -448,6 +448,24 @@ struct tcp_server_test
         acc.close();
     }
 
+    void testBindCollision()
+    {
+        io_context ioc(Backend);
+
+        tcp_acceptor first(ioc);
+        test::must_ok(first.open());
+        test::must_ok(first.bind(endpoint(ipv4_address::loopback(), 0)));
+        test::must_ok(first.listen());
+        auto const port = first.local_endpoint().port();
+
+        // Holds on every platform, including those where SO_REUSEADDR
+        // would let a second listener share the port.
+        test_server srv(ioc);
+        BOOST_TEST(
+            srv.bind(endpoint(ipv4_address::loopback(), port)) ==
+            std::errc::address_in_use);
+    }
+
     void testBindErrorNonLocalAddress()
     {
         io_context ioc(Backend);
@@ -2167,6 +2185,7 @@ struct tcp_server_test
         testStartWithoutJoinThrows();
         testListenErrorCode();
         testBindSuccess();
+        testBindCollision();
         testBindErrorNonLocalAcceptor();
         testBindErrorNonLocalAddress();
         testRelistenAfterClose();
