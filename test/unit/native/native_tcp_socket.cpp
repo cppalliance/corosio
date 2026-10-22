@@ -22,6 +22,7 @@
 #include <utility>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -129,12 +130,14 @@ struct native_tcp_socket_test
         native_tcp_socket<Backend> s(ctx);
         BOOST_TEST(!s.open());
 
-        s.set_option(native_socket_option::no_delay(true));
-        auto nd = s.template get_option<native_socket_option::no_delay>();
+        test::must_ok(s.set_option(native_socket_option::no_delay(true)));
+        auto nd =
+            test::must(s.template get_option<native_socket_option::no_delay>());
         BOOST_TEST(nd.value());
 
-        s.set_option(native_socket_option::no_delay(false));
-        nd = s.template get_option<native_socket_option::no_delay>();
+        test::must_ok(s.set_option(native_socket_option::no_delay(false)));
+        nd =
+            test::must(s.template get_option<native_socket_option::no_delay>());
         BOOST_TEST(!nd.value());
 
         // Cover member accessors on the inline boolean<>.

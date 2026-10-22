@@ -69,7 +69,8 @@ closed_endpoint(corosio::io_context& ioc)
 {
     corosio::tcp_acceptor acc(ioc);
     BOOST_TEST(!acc.open());
-    acc.set_option(corosio::socket_option::reuse_address(true));
+    if (auto ec = acc.set_option(corosio::socket_option::reuse_address(true)))
+        throw std::runtime_error("set_option failed: " + ec.message());
     if (auto ec =
             acc.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0)))
         throw std::runtime_error("bind failed: " + ec.message());
@@ -473,7 +474,8 @@ struct error_handling_test
         corosio::io_context ioc;
         corosio::tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(corosio::socket_option::reuse_address(true));
+        BOOST_TEST(
+            !acc.set_option(corosio::socket_option::reuse_address(true)));
         BOOST_TEST(
             !acc.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
@@ -633,7 +635,8 @@ struct error_handling_test
         corosio::io_context ioc;
         corosio::tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(corosio::socket_option::reuse_address(true));
+        BOOST_TEST(
+            !acc.set_option(corosio::socket_option::reuse_address(true)));
         BOOST_TEST(
             !acc.bind(corosio::endpoint(corosio::ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());

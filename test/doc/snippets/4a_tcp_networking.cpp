@@ -75,7 +75,8 @@ void
 set_no_delay(corosio::tcp_socket& sock)
 {
     // tag::no_delay[]
-    sock.set_option(corosio::socket_option::no_delay(true));
+    if (auto ec = sock.set_option(corosio::socket_option::no_delay(true)))
+        return; // report the error
     // end::no_delay[]
 }
 
@@ -107,7 +108,9 @@ struct tcp_networking_test
         corosio::io_context ioc;
         auto [s1, s2] = corosio::test::make_socket_pair(ioc);
         set_no_delay(s1);
-        BOOST_TEST(s1.get_option<corosio::socket_option::no_delay>().value());
+        auto [ec, nd] = s1.get_option<corosio::socket_option::no_delay>();
+        BOOST_TEST(!ec);
+        BOOST_TEST(nd.value());
     }
 
     void testPartialReads()

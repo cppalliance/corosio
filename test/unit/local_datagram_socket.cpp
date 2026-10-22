@@ -42,6 +42,7 @@
 #include <unistd.h>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -771,53 +772,27 @@ struct local_datagram_socket_test
     {
         io_context ioc(Backend);
 
-        // Closed socket: option access throws bad_file_descriptor
+        // Closed socket: option access reports bad_file_descriptor
         local_datagram_socket closed(ioc);
-        std::error_code set_ec, get_ec;
-        try
-        {
-            closed.set_option(socket_option::send_buffer_size(4096));
-        }
-        catch (std::system_error const& e)
-        {
-            set_ec = e.code();
-        }
-        BOOST_TEST(set_ec == std::errc::bad_file_descriptor);
-        try
-        {
-            std::ignore = closed.get_option<socket_option::send_buffer_size>();
-        }
-        catch (std::system_error const& e)
-        {
-            get_ec = e.code();
-        }
+        BOOST_TEST(
+            closed.set_option(socket_option::send_buffer_size(4096)) ==
+            std::errc::bad_file_descriptor);
+        auto [get_ec, get_opt] =
+            closed.get_option<socket_option::send_buffer_size>();
         BOOST_TEST(get_ec == std::errc::bad_file_descriptor);
+        BOOST_TEST_EQ(get_opt.value(), 0);
 
         // Open socket: a TCP-level option on an AF_UNIX socket fails
         // with a genuine (platform-specific) error code
         local_datagram_socket sock(ioc);
         BOOST_TEST(!sock.open());
-        bool threw = false;
-        try
-        {
-            sock.set_option(socket_option::no_delay(true));
-        }
-        catch (std::system_error const& e)
-        {
-            threw = bool(e.code());
-        }
-        BOOST_TEST(threw);
+        auto const set_ec = sock.set_option(socket_option::no_delay(true));
+        BOOST_TEST(bool(set_ec));
 
-        bool get_threw = false;
-        try
-        {
-            std::ignore = sock.get_option<socket_option::no_delay>();
-        }
-        catch (std::system_error const& e)
-        {
-            get_threw = bool(e.code());
-        }
-        BOOST_TEST(get_threw);
+        auto [sock_get_ec, sock_get_opt] =
+            sock.get_option<socket_option::no_delay>();
+        BOOST_TEST(bool(sock_get_ec));
+        BOOST_TEST(!sock_get_opt.value());
         sock.close();
     }
 

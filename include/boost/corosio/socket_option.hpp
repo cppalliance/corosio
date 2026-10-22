@@ -290,7 +290,7 @@ public:
 /** Allow multiple sockets to bind to the same port (SO_REUSEPORT).
 
     Not available on all platforms. On unsupported platforms,
-    `set_option` throws `std::system_error`.
+    `set_option` returns the operating system error.
 
     @par Example
     @par !example reuse_port
@@ -533,7 +533,7 @@ public:
         @param v The hop count, 0 to 255 — the range the IPv4 wire
         rendering can carry.
 
-        @throws std::logic_error if `v` is outside [0, 255].
+        @throws std::logic_error if `v` is outside [ 0, 255 ].
     */
     explicit multicast_hops(int v)
     {
@@ -545,7 +545,7 @@ public:
 
     /** Assign a new value.
 
-        @throws std::logic_error if `v` is outside [0, 255].
+        @throws std::logic_error if `v` is outside [ 0, 255 ].
     */
     multicast_hops& operator=(int v)
     {

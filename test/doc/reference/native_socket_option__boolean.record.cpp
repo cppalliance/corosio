@@ -42,7 +42,8 @@ receive_urgent_data_inline(corosio::tcp_socket& sock)
     // A peer's TCP urgent byte normally has to be read separately with
     // MSG_OOB; enabling this folds it into the regular byte stream at its
     // marked position instead.
-    sock.set_option(oob_inline(true));
+    if (auto ec = sock.set_option(oob_inline(true)))
+        return; // report the error
 }
 // end::boolean[]
 

@@ -11,6 +11,7 @@
 #include "fault.hpp"
 #include "fault_test_utils.hpp"
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 #include "test_utils.hpp"
 
@@ -374,19 +375,17 @@ struct iocp_faults
         BOOST_TEST(!s.open(family::v4));
         {
             fault_scope f(sys::setsockopt, WSAENOTSOCK);
-            expect_system_error(
-                [&] { s.set_option(socket_option::reuse_address(true)); },
+            BOOST_TEST(
+                s.set_option(socket_option::reuse_address(true)) ==
                 std::errc::not_a_socket);
             BOOST_TEST(f.fired());
             BOOST_TEST(s.is_open());
         }
         {
             fault_scope f(sys::getsockopt, WSAENOTSOCK);
-            expect_system_error(
-                [&] {
-                    std::ignore = s.get_option<socket_option::reuse_address>();
-                },
-                std::errc::not_a_socket);
+            auto [gec, gopt] = s.get_option<socket_option::reuse_address>();
+            BOOST_TEST(gec == std::errc::not_a_socket);
+            BOOST_TEST(!gopt.value());
             BOOST_TEST(f.fired());
             BOOST_TEST(s.is_open());
         }
@@ -789,19 +788,16 @@ struct iocp_faults
             BOOST_TEST(!u.open(family::v4));
             {
                 fault_scope f(sys::setsockopt, WSAENOTSOCK);
-                expect_system_error(
-                    [&] { u.set_option(socket_option::reuse_address(true)); },
+                BOOST_TEST(
+                    u.set_option(socket_option::reuse_address(true)) ==
                     std::errc::not_a_socket);
                 BOOST_TEST(f.fired());
             }
             {
                 fault_scope f(sys::getsockopt, WSAENOTSOCK);
-                expect_system_error(
-                    [&] {
-                        std::ignore =
-                            u.get_option<socket_option::reuse_address>();
-                    },
-                    std::errc::not_a_socket);
+                auto [gec, gopt] = u.get_option<socket_option::reuse_address>();
+                BOOST_TEST(gec == std::errc::not_a_socket);
+                BOOST_TEST(!gopt.value());
                 BOOST_TEST(f.fired());
             }
             {
@@ -1864,19 +1860,16 @@ struct iocp_faults
         BOOST_TEST(!acc.open());
         {
             fault_scope f(sys::setsockopt, WSAENOTSOCK);
-            expect_system_error(
-                [&] { acc.set_option(socket_option::reuse_address(true)); },
+            BOOST_TEST(
+                acc.set_option(socket_option::reuse_address(true)) ==
                 std::errc::not_a_socket);
             BOOST_TEST(f.fired());
         }
         {
             fault_scope f(sys::getsockopt, WSAENOTSOCK);
-            expect_system_error(
-                [&] {
-                    std::ignore =
-                        acc.get_option<socket_option::reuse_address>();
-                },
-                std::errc::not_a_socket);
+            auto [gec, gopt] = acc.get_option<socket_option::reuse_address>();
+            BOOST_TEST(gec == std::errc::not_a_socket);
+            BOOST_TEST(!gopt.value());
             BOOST_TEST(f.fired());
         }
         BOOST_TEST(acc.is_open());

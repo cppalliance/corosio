@@ -31,6 +31,7 @@
 #include <tuple>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -49,29 +50,38 @@ struct socket_option_test
         tcp_socket sock(ioc);
         BOOST_TEST(!sock.open());
 
-        sock.set_option(socket_option::no_delay(true));
-        BOOST_TEST(sock.get_option<socket_option::no_delay>().value());
-        sock.set_option(socket_option::no_delay(false));
-        BOOST_TEST(!sock.get_option<socket_option::no_delay>().value());
+        test::must_ok(sock.set_option(socket_option::no_delay(true)));
+        BOOST_TEST(
+            test::must(sock.get_option<socket_option::no_delay>()).value());
+        test::must_ok(sock.set_option(socket_option::no_delay(false)));
+        BOOST_TEST(
+            !test::must(sock.get_option<socket_option::no_delay>()).value());
 
-        sock.set_option(socket_option::keep_alive(true));
-        BOOST_TEST(sock.get_option<socket_option::keep_alive>().value());
+        test::must_ok(sock.set_option(socket_option::keep_alive(true)));
+        BOOST_TEST(
+            test::must(sock.get_option<socket_option::keep_alive>()).value());
 
-        sock.set_option(socket_option::reuse_address(true));
-        BOOST_TEST(sock.get_option<socket_option::reuse_address>().value());
+        test::must_ok(sock.set_option(socket_option::reuse_address(true)));
+        BOOST_TEST(
+            test::must(sock.get_option<socket_option::reuse_address>())
+                .value());
 
         // Kernels round buffer sizes (Linux doubles them); only require
         // that the readback is at least what was requested.
-        sock.set_option(socket_option::receive_buffer_size(16384));
+        test::must_ok(
+            sock.set_option(socket_option::receive_buffer_size(16384)));
         BOOST_TEST_GE(
-            sock.get_option<socket_option::receive_buffer_size>().value(),
+            test::must(sock.get_option<socket_option::receive_buffer_size>())
+                .value(),
             16384);
-        sock.set_option(socket_option::send_buffer_size(16384));
+        test::must_ok(sock.set_option(socket_option::send_buffer_size(16384)));
         BOOST_TEST_GE(
-            sock.get_option<socket_option::send_buffer_size>().value(), 16384);
+            test::must(sock.get_option<socket_option::send_buffer_size>())
+                .value(),
+            16384);
 
-        sock.set_option(socket_option::linger(true, 5));
-        auto lg = sock.get_option<socket_option::linger>();
+        test::must_ok(sock.set_option(socket_option::linger(true, 5)));
+        auto lg = test::must(sock.get_option<socket_option::linger>());
         BOOST_TEST(lg.enabled());
         BOOST_TEST_EQ(lg.timeout(), 5);
 
@@ -102,15 +112,20 @@ struct socket_option_test
         udp_socket sock(ioc);
         BOOST_TEST(!sock.open(family::v4));
 
-        sock.set_option(socket_option::broadcast(true));
-        BOOST_TEST(sock.get_option<socket_option::broadcast>().value());
+        test::must_ok(sock.set_option(socket_option::broadcast(true)));
+        BOOST_TEST(
+            test::must(sock.get_option<socket_option::broadcast>()).value());
 
-        sock.set_option(socket_option::reuse_address(true));
-        BOOST_TEST(sock.get_option<socket_option::reuse_address>().value());
+        test::must_ok(sock.set_option(socket_option::reuse_address(true)));
+        BOOST_TEST(
+            test::must(sock.get_option<socket_option::reuse_address>())
+                .value());
 
-        sock.set_option(socket_option::receive_buffer_size(16384));
+        test::must_ok(
+            sock.set_option(socket_option::receive_buffer_size(16384)));
         BOOST_TEST_GE(
-            sock.get_option<socket_option::receive_buffer_size>().value(),
+            test::must(sock.get_option<socket_option::receive_buffer_size>())
+                .value(),
             16384);
 
         sock.close();
@@ -129,16 +144,21 @@ struct socket_option_test
             udp_socket sock(ioc);
             BOOST_TEST(!sock.open(family::v4));
 
-            sock.set_option(socket_option::multicast_loop(false));
+            test::must_ok(
+                sock.set_option(socket_option::multicast_loop(false)));
             BOOST_TEST(
-                !sock.get_option<socket_option::multicast_loop>().value());
-            sock.set_option(socket_option::multicast_loop(true));
+                !test::must(sock.get_option<socket_option::multicast_loop>())
+                     .value());
+            test::must_ok(sock.set_option(socket_option::multicast_loop(true)));
             BOOST_TEST(
-                sock.get_option<socket_option::multicast_loop>().value());
+                test::must(sock.get_option<socket_option::multicast_loop>())
+                    .value());
 
-            sock.set_option(socket_option::multicast_hops(5));
+            test::must_ok(sock.set_option(socket_option::multicast_hops(5)));
             BOOST_TEST_EQ(
-                sock.get_option<socket_option::multicast_hops>().value(), 5);
+                test::must(sock.get_option<socket_option::multicast_hops>())
+                    .value(),
+                5);
 
             sock.close();
         }
@@ -148,16 +168,21 @@ struct socket_option_test
             udp_socket sock(ioc);
             BOOST_TEST(!sock.open(family::v6));
 
-            sock.set_option(socket_option::multicast_loop(false));
+            test::must_ok(
+                sock.set_option(socket_option::multicast_loop(false)));
             BOOST_TEST(
-                !sock.get_option<socket_option::multicast_loop>().value());
-            sock.set_option(socket_option::multicast_loop(true));
+                !test::must(sock.get_option<socket_option::multicast_loop>())
+                     .value());
+            test::must_ok(sock.set_option(socket_option::multicast_loop(true)));
             BOOST_TEST(
-                sock.get_option<socket_option::multicast_loop>().value());
+                test::must(sock.get_option<socket_option::multicast_loop>())
+                    .value());
 
-            sock.set_option(socket_option::multicast_hops(7));
+            test::must_ok(sock.set_option(socket_option::multicast_hops(7)));
             BOOST_TEST_EQ(
-                sock.get_option<socket_option::multicast_hops>().value(), 7);
+                test::must(sock.get_option<socket_option::multicast_hops>())
+                    .value(),
+                7);
 
             sock.close();
         }
@@ -288,60 +313,40 @@ struct socket_option_test
         udp_socket sock(ioc);
         BOOST_TEST(!sock.open(family::v6));
 
-        sock.set_option(socket_option::v6_only(true));
-        BOOST_TEST(sock.get_option<socket_option::v6_only>().value());
-        sock.set_option(socket_option::v6_only(false));
-        BOOST_TEST(!sock.get_option<socket_option::v6_only>().value());
+        test::must_ok(sock.set_option(socket_option::v6_only(true)));
+        BOOST_TEST(
+            test::must(sock.get_option<socket_option::v6_only>()).value());
+        test::must_ok(sock.set_option(socket_option::v6_only(false)));
+        BOOST_TEST(
+            !test::must(sock.get_option<socket_option::v6_only>()).value());
 
         sock.close();
     }
 
-    void testClosedSocketThrows()
+    void testClosedSocketReported()
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
 
-        std::error_code set_caught;
-        try
-        {
-            sock.set_option(socket_option::no_delay(true));
-        }
-        catch (std::system_error const& e)
-        {
-            set_caught = e.code();
-        }
-        BOOST_TEST(set_caught == std::errc::bad_file_descriptor);
+        BOOST_TEST(
+            sock.set_option(socket_option::no_delay(true)) ==
+            std::errc::bad_file_descriptor);
 
-        std::error_code get_caught;
-        try
-        {
-            std::ignore = sock.get_option<socket_option::no_delay>();
-        }
-        catch (std::system_error const& e)
-        {
-            get_caught = e.code();
-        }
+        auto [get_caught, get_caught_opt] =
+            sock.get_option<socket_option::no_delay>();
         BOOST_TEST(get_caught == std::errc::bad_file_descriptor);
+        BOOST_TEST(!get_caught_opt.value());
     }
 
-    // An option the protocol does not support reports a system error.
+    // An option the protocol does not support reports an error code.
     void testInvalidOptionReportsError()
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
         BOOST_TEST(!sock.open(family::v4));
 
-        bool threw = false;
-        try
-        {
-            // TCP_NODELAY on a UDP socket.
-            sock.set_option(socket_option::no_delay(true));
-        }
-        catch (std::system_error const&)
-        {
-            threw = true;
-        }
-        BOOST_TEST(threw);
+        // TCP_NODELAY on a UDP socket.
+        BOOST_TEST(bool(sock.set_option(socket_option::no_delay(true))));
 
         sock.close();
     }
@@ -355,13 +360,17 @@ struct socket_option_test
         if (auto ec = connect_pair(s1, s2))
             throw std::system_error(ec, "connect_pair");
 
-        s1.set_option(socket_option::receive_buffer_size(16384));
+        test::must_ok(s1.set_option(socket_option::receive_buffer_size(16384)));
         BOOST_TEST_GE(
-            s1.get_option<socket_option::receive_buffer_size>().value(), 16384);
+            test::must(s1.get_option<socket_option::receive_buffer_size>())
+                .value(),
+            16384);
 
-        s1.set_option(socket_option::send_buffer_size(16384));
+        test::must_ok(s1.set_option(socket_option::send_buffer_size(16384)));
         BOOST_TEST_GE(
-            s1.get_option<socket_option::send_buffer_size>().value(), 16384);
+            test::must(s1.get_option<socket_option::send_buffer_size>())
+                .value(),
+            16384);
     }
 
     void testLocalDatagramOptions()
@@ -371,13 +380,17 @@ struct socket_option_test
         if (auto ec = connect_pair(s1, s2))
             throw std::system_error(ec, "connect_pair");
 
-        s1.set_option(socket_option::receive_buffer_size(16384));
+        test::must_ok(s1.set_option(socket_option::receive_buffer_size(16384)));
         BOOST_TEST_GE(
-            s1.get_option<socket_option::receive_buffer_size>().value(), 16384);
+            test::must(s1.get_option<socket_option::receive_buffer_size>())
+                .value(),
+            16384);
 
-        s1.set_option(socket_option::send_buffer_size(16384));
+        test::must_ok(s1.set_option(socket_option::send_buffer_size(16384)));
         BOOST_TEST_GE(
-            s1.get_option<socket_option::send_buffer_size>().value(), 16384);
+            test::must(s1.get_option<socket_option::send_buffer_size>())
+                .value(),
+            16384);
     }
 
 #endif // BOOST_COROSIO_POSIX
@@ -407,7 +420,7 @@ struct socket_option_test
         testMembershipTraits();
         testMulticastInterfaceRendering();
         testV6Only();
-        testClosedSocketThrows();
+        testClosedSocketReported();
         testInvalidOptionReportsError();
 #if BOOST_COROSIO_POSIX
         testLocalStreamOptions();

@@ -506,58 +506,54 @@ public:
         Applies a type-safe socket option to the underlying socket.
         The option type encodes the protocol level and option name.
 
+        Fails with `errc::bad_file_descriptor` if the acceptor is not
+        open, or with the error the operating system reports.
+
         @param opt The option to set.
 
         @tparam Option A socket option type providing static
             `level()` and `name()` members, and `data()` / `size()`
             accessors.
 
-        @throws std::system_error `errc::bad_file_descriptor` if the
-            acceptor is not open; otherwise thrown on failure.
+        @return The error code, empty on success.
     */
     template<class Option>
-    void set_option(Option const& opt)
+    [[nodiscard]] std::error_code set_option(Option const& opt) noexcept
     {
         if (!is_open())
-            detail::throw_system_error(
-                make_error_code(std::errc::bad_file_descriptor),
-                "local_stream_acceptor::set_option");
-        auto const fam     = get().family();
-        std::error_code ec = get().set_option(
+            return make_error_code(std::errc::bad_file_descriptor);
+        auto const fam = get().family();
+        return get().set_option(
             opt.level(fam), opt.name(fam), opt.data(fam), opt.size(fam));
-        if (ec)
-            detail::throw_system_error(ec, "local_stream_acceptor::set_option");
     }
 
     /** Get a socket option from the acceptor.
 
         Retrieves the current value of a type-safe socket option.
 
-        @return The current option value.
+        Fails with `errc::bad_file_descriptor` if the acceptor is not
+        open, or with the error the operating system reports. On
+        failure the option is value-initialized.
+
+        @return The error code and the option value.
 
         @tparam Option A socket option type providing static
             `level()` and `name()` members, and `data()` / `size()`
             / `resize()` members.
-
-        @throws std::system_error `errc::bad_file_descriptor` if the
-            acceptor is not open; otherwise thrown on failure.
     */
     template<class Option>
-    Option get_option() const
+    [[nodiscard]] capy::results<Option> get_option() const noexcept
     {
         if (!is_open())
-            detail::throw_system_error(
-                make_error_code(std::errc::bad_file_descriptor),
-                "local_stream_acceptor::get_option");
+            return {make_error_code(std::errc::bad_file_descriptor), Option{}};
         Option opt{};
         auto const fam = get().family();
         std::size_t sz = opt.size(fam);
-        std::error_code ec =
-            get().get_option(opt.level(fam), opt.name(fam), opt.data(fam), &sz);
-        if (ec)
-            detail::throw_system_error(ec, "local_stream_acceptor::get_option");
+        if (auto ec = get().get_option(
+                opt.level(fam), opt.name(fam), opt.data(fam), &sz))
+            return {ec, Option{}};
         opt.resize(fam, sz);
-        return opt;
+        return {std::error_code{}, std::move(opt)};
     }
 
     /** Backends derive from this to implement accept, option, and

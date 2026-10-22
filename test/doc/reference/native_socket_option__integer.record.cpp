@@ -35,7 +35,7 @@ limit_how_far_outgoing_packets_can_travel(corosio::udp_socket& sock)
 {
     // Precondition: sock is open on family::v4. IPPROTO_IP options don't
     // apply to an AF_INET6 socket; set_option compiles either way and
-    // throws at runtime on the wrong family.
+    // may fail at runtime on the wrong family.
     //
     // corosio wraps the multicast hop limit (multicast_hops) but not the
     // plain unicast one; IP_TTL is the general-purpose option this class is
@@ -44,7 +44,8 @@ limit_how_far_outgoing_packets_can_travel(corosio::udp_socket& sock)
     using unicast_ttl_v4 =
         corosio::native_socket_option::integer<IPPROTO_IP, IP_TTL>;
 
-    sock.set_option(unicast_ttl_v4(1));
+    if (auto ec = sock.set_option(unicast_ttl_v4(1)))
+        return; // report the error
 }
 // end::integer[]
 

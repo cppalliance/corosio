@@ -53,6 +53,7 @@
 #include <vector>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -112,7 +113,7 @@ struct iocp_paths_test
         // SO_SNDBUF of zero makes every overlapped send pend until the
         // peer reads, so the write is reliably in flight when the stop
         // arrives.
-        BOOST_TEST_NO_THROW(s1.set_option(socket_option::send_buffer_size(0)));
+        test::must_ok(s1.set_option(socket_option::send_buffer_size(0)));
 
         std::stop_source ss;
         char big[65536] = {};
@@ -422,12 +423,13 @@ struct iocp_paths_test
         ::closesocket(static_cast<SOCKET>(fd));
 
         BOOST_TEST(acc.native_handle() == invalid);
-        BOOST_TEST_THROWS(
-            acc.set_option(socket_option::reuse_address(true)),
-            std::system_error);
-        BOOST_TEST_THROWS(
-            std::ignore = acc.get_option<socket_option::reuse_address>(),
-            std::system_error);
+        BOOST_TEST(
+            acc.set_option(socket_option::reuse_address(true)) ==
+            std::errc::bad_file_descriptor);
+        auto [acc_gec, acc_gopt] =
+            acc.get_option<socket_option::reuse_address>();
+        BOOST_TEST(acc_gec == std::errc::bad_file_descriptor);
+        BOOST_TEST(!acc_gopt.value());
     }
 
     void testTruncateWithoutCreate()

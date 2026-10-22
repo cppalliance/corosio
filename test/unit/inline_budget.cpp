@@ -46,6 +46,7 @@
 #endif
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -368,7 +369,7 @@ struct uring_budget_test
         auto ep1 = s1.local_endpoint();
         auto ep2 = s2.local_endpoint();
 
-        BOOST_TEST_NO_THROW(
+        test::must_ok(
             s1.set_option(socket_option::receive_buffer_size(1 << 20)));
 
         int preloaded = 0;

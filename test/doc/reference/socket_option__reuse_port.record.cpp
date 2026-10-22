@@ -36,10 +36,9 @@ share_one_port_across_several_acceptors(corosio::tcp_acceptor& acc)
     // incoming connections across them. reuse_address is the weaker relative:
     // it only permits rebinding a port no longer being listened on.
     //
-    // set_option reports failure by throwing, not by returning a code --
-    // including on a platform with no SO_REUSEPORT at all, where it throws
-    // std::system_error.
-    acc.set_option(corosio::socket_option::reuse_port(true));
+    // set_option fails on a platform with no SO_REUSEPORT at all.
+    if (auto ec = acc.set_option(corosio::socket_option::reuse_port(true)))
+        return; // report the error
 
     if (auto ec =
             acc.bind(corosio::endpoint(corosio::ipv6_address::any(), 8080)))

@@ -31,6 +31,7 @@
 #include <tuple>
 
 #include "../common/http_protocol.hpp"
+#include "../common/must.hpp"
 #include "../common/native_includes.hpp"
 
 namespace corosio = boost::corosio;
@@ -150,8 +151,10 @@ bench_single_connection(bench::state& state)
     auto [client, server] = corosio::test::make_socket_pair<
         socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
 
-    client.set_option(corosio::native_socket_option::no_delay(true));
-    server.set_option(corosio::native_socket_option::no_delay(true));
+    bench::must_ok(
+        client.set_option(corosio::native_socket_option::no_delay(true)));
+    bench::must_ok(
+        server.set_option(corosio::native_socket_option::no_delay(true)));
 
     capy::run_async(ioc.get_executor())(server_task<Backend>(server));
     capy::run_async(ioc.get_executor())(client_task<Backend>(client, state));
@@ -183,8 +186,10 @@ bench_single_connection_lockless(bench::state& state)
     auto [client, server] = corosio::test::make_socket_pair<
         socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
 
-    client.set_option(corosio::native_socket_option::no_delay(true));
-    server.set_option(corosio::native_socket_option::no_delay(true));
+    bench::must_ok(
+        client.set_option(corosio::native_socket_option::no_delay(true)));
+    bench::must_ok(
+        server.set_option(corosio::native_socket_option::no_delay(true)));
 
     capy::run_async(ioc.get_executor())(server_task<Backend>(server));
     capy::run_async(ioc.get_executor())(client_task<Backend>(client, state));
@@ -225,8 +230,10 @@ bench_concurrent_connections(bench::state& state)
     {
         auto [c, s] = corosio::test::make_socket_pair<
             socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
-        c.set_option(corosio::native_socket_option::no_delay(true));
-        s.set_option(corosio::native_socket_option::no_delay(true));
+        bench::must_ok(
+            c.set_option(corosio::native_socket_option::no_delay(true)));
+        bench::must_ok(
+            s.set_option(corosio::native_socket_option::no_delay(true)));
         clients.push_back(std::move(c));
         servers.push_back(std::move(s));
     }
@@ -280,8 +287,10 @@ bench_multithread(bench::state& state)
     {
         auto [c, s] = corosio::test::make_socket_pair<
             socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
-        c.set_option(corosio::native_socket_option::no_delay(true));
-        s.set_option(corosio::native_socket_option::no_delay(true));
+        bench::must_ok(
+            c.set_option(corosio::native_socket_option::no_delay(true)));
+        bench::must_ok(
+            s.set_option(corosio::native_socket_option::no_delay(true)));
         clients.push_back(std::move(c));
         servers.push_back(std::move(s));
     }

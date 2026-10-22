@@ -17,19 +17,23 @@
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 
+#include <system_error>
+
 namespace corosio = boost::corosio;
 
 namespace {
 
 // tag::set_option[]
-// Precondition: sock is open (set_option throws bad_file_descriptor
-// otherwise). set_option itself throws rather than returning an error
-// code.
-void
+// A closed sock reports bad_file_descriptor through the returned code.
+std::error_code
 configure_low_latency(corosio::tcp_socket& sock)
 {
-    sock.set_option(corosio::socket_option::no_delay(true));
-    sock.set_option(corosio::socket_option::receive_buffer_size(65536));
+    if (auto ec = sock.set_option(corosio::socket_option::no_delay(true)))
+        return ec;
+    if (auto ec =
+            sock.set_option(corosio::socket_option::receive_buffer_size(65536)))
+        return ec;
+    return {};
 }
 // end::set_option[]
 

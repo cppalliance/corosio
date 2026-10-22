@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -42,7 +43,7 @@ struct connect_test
     open_listener(tcp_acceptor& acc, family proto = family::v4)
     {
         BOOST_TEST(!acc.open(proto));
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         std::error_code ec;
         if (proto == family::v6)
             ec = acc.bind(endpoint(ipv6_address::loopback(), 0));
@@ -63,7 +64,7 @@ struct connect_test
     {
         tcp_acceptor tmp(ioc);
         BOOST_TEST(!tmp.open());
-        tmp.set_option(socket_option::reuse_address(true));
+        test::must_ok(tmp.set_option(socket_option::reuse_address(true)));
         auto ec = tmp.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
         auto port = tmp.local_endpoint().port();

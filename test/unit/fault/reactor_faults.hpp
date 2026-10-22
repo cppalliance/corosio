@@ -14,6 +14,7 @@
 #include "fault.hpp"
 #include "fault_test_utils.hpp"
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 #include <boost/corosio/delay.hpp>
@@ -104,26 +105,25 @@ struct reactor_common_faults
         auto ex = ioc.get_executor();
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
-        acc.set_option(socket_option::send_buffer_size(1024));
-        // set_option throws rather than reporting, so reaching here
-        // only proves the call was accepted. Every kernel clamps and
-        // rescales the request, so read the effective size back: what
-        // the caller depends on is that it is far below the payload,
-        // not that it is 1 KiB.
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
+        test::must_ok(acc.set_option(socket_option::send_buffer_size(1024)));
+        // Success only proves the call was accepted. Every kernel
+        // clamps and rescales the request, so read the effective size
+        // back: what the caller depends on is that it is far below the
+        // payload, not that it is 1 KiB.
         BOOST_TEST(
-            acc.get_option<socket_option::send_buffer_size>().value() <
-            64 * 1024);
+            test::must(acc.get_option<socket_option::send_buffer_size>())
+                .value() < 64 * 1024);
         BOOST_TEST(!acc.bind(loopback()));
         BOOST_TEST(!acc.listen());
         auto port = acc.local_endpoint().port();
 
         tcp_socket s1(ioc), s2(ioc);
         BOOST_TEST(!s2.open(family::v4));
-        s2.set_option(socket_option::send_buffer_size(1024));
+        test::must_ok(s2.set_option(socket_option::send_buffer_size(1024)));
         BOOST_TEST(
-            s2.get_option<socket_option::send_buffer_size>().value() <
-            64 * 1024);
+            test::must(s2.get_option<socket_option::send_buffer_size>())
+                .value() < 64 * 1024);
 
         std::error_code aec, cec;
         auto accept_task = [&]() -> capy::task<> {
@@ -511,7 +511,7 @@ struct reactor_common_faults
         }
         else
         {
-            peer.set_option(socket_option::linger(true, 0));
+            test::must_ok(peer.set_option(socket_option::linger(true, 0)));
             peer.close();
         }
     }
@@ -549,7 +549,7 @@ struct reactor_common_faults
         };
         auto trigger = [&]() -> capy::task<> {
             std::ignore = co_await corosio::delay(std::chrono::milliseconds(1));
-            peer.set_option(socket_option::linger(true, 0));
+            test::must_ok(peer.set_option(socket_option::linger(true, 0)));
             peer.close();
         };
         bool expired = false;
@@ -683,7 +683,7 @@ struct reactor_common_faults
             parked = !done;
             if (parked)
             {
-                peer.set_option(socket_option::linger(true, 0));
+                test::must_ok(peer.set_option(socket_option::linger(true, 0)));
                 peer.close();
             }
             co_return;
@@ -986,7 +986,7 @@ struct reactor_common_faults
             {
                 // SO_LINGER 0 makes close send a RST, which surfaces as
                 // an error event on the parked reader.
-                s.set_option(socket_option::linger(true, 0));
+                test::must_ok(s.set_option(socket_option::linger(true, 0)));
             }
             // Nothing else on this path reads a socket option, so the
             // armed getsockopt is the reactor's SO_ERROR probe.

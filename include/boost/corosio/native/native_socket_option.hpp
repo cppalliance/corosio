@@ -594,7 +594,7 @@ public:
         @param v The hop count, 0 to 255 — the range the IPv4 wire
         rendering can carry.
 
-        @throws std::logic_error if `v` is outside [0, 255].
+        @throws std::logic_error if `v` is outside [ 0, 255 ].
     */
     explicit multicast_hops(int v)
     {
@@ -606,7 +606,7 @@ public:
 
     /** Assign a new value.
 
-        @throws std::logic_error if `v` is outside [0, 255].
+        @throws std::logic_error if `v` is outside [ 0, 255 ].
     */
     multicast_hops& operator=(int v)
     {

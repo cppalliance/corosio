@@ -24,6 +24,7 @@
 #include <tuple>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -38,7 +39,8 @@ struct native_io_test
 
         native_tcp_acceptor<Backend> acc(ctx);
         BOOST_TEST(!acc.open());
-        acc.set_option(native_socket_option::reuse_address(true));
+        test::must_ok(
+            acc.set_option(native_socket_option::reuse_address(true)));
         auto ec = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec);
         ec = acc.listen();

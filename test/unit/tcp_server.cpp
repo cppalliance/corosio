@@ -35,6 +35,7 @@
 #include <thread>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -401,7 +402,7 @@ struct tcp_server_test
         // Test success case
         tcp_acceptor acc1(ioc);
         BOOST_TEST(!acc1.open());
-        acc1.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc1.set_option(socket_option::reuse_address(true)));
         auto ec1 = acc1.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec1);
         ec1 = acc1.listen();
@@ -413,7 +414,7 @@ struct tcp_server_test
         // Test with explicit backlog
         tcp_acceptor acc2(ioc);
         BOOST_TEST(!acc2.open());
-        acc2.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc2.set_option(socket_option::reuse_address(true)));
         auto ec2 = acc2.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec2);
         ec2 = acc2.listen(64);
@@ -464,7 +465,7 @@ struct tcp_server_test
 
         // First listen
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         auto ec1 = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec1);
         ec1 = acc.listen();
@@ -474,7 +475,7 @@ struct tcp_server_test
         // Close and re-listen
         acc.close();
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         auto ec2 = acc.bind(endpoint(ipv4_address::loopback(), 0));
         BOOST_TEST(!ec2);
         ec2 = acc.listen();
@@ -1084,7 +1085,7 @@ struct tcp_server_test
     {
         tcp_socket c(ioc);
         BOOST_TEST(!c.open());
-        c.set_option(socket_option::linger(true, 0));
+        test::must_ok(c.set_option(socket_option::linger(true, 0)));
         capy::run_async(ioc.get_executor())(
             [](tcp_socket& c, endpoint ep) -> capy::task<> {
                 std::ignore = co_await c.connect(ep);

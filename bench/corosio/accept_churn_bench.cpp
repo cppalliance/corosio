@@ -26,6 +26,7 @@
 #include <vector>
 #include <tuple>
 
+#include "../common/must.hpp"
 #include "../common/native_includes.hpp"
 
 namespace corosio = boost::corosio;
@@ -38,9 +39,12 @@ namespace {
 static void
 configure_churn_socket(corosio::tcp_socket& s)
 {
-    s.set_option(corosio::native_socket_option::send_buffer_size(1024));
-    s.set_option(corosio::native_socket_option::receive_buffer_size(1024));
-    s.set_option(corosio::native_socket_option::linger(true, 0));
+    bench::must_ok(
+        s.set_option(corosio::native_socket_option::send_buffer_size(1024)));
+    bench::must_ok(
+        s.set_option(corosio::native_socket_option::receive_buffer_size(1024)));
+    bench::must_ok(
+        s.set_option(corosio::native_socket_option::linger(true, 0)));
 }
 
 // Accepted sockets inherit buffer sizes and linger from the listener,
@@ -49,9 +53,12 @@ template<class Acceptor>
 static void
 configure_churn_acceptor(Acceptor& acc)
 {
-    acc.set_option(corosio::native_socket_option::send_buffer_size(1024));
-    acc.set_option(corosio::native_socket_option::receive_buffer_size(1024));
-    acc.set_option(corosio::native_socket_option::linger(true, 0));
+    bench::must_ok(
+        acc.set_option(corosio::native_socket_option::send_buffer_size(1024)));
+    bench::must_ok(acc.set_option(
+        corosio::native_socket_option::receive_buffer_size(1024)));
+    bench::must_ok(
+        acc.set_option(corosio::native_socket_option::linger(true, 0)));
 }
 
 // Single connect/accept/1-byte-exchange/close loop
@@ -65,7 +72,8 @@ bench_sequential_churn(bench::state& state)
     corosio::native_io_context<Backend> ioc;
     acceptor_type acc(ioc);
     std::ignore = acc.open();
-    acc.set_option(corosio::native_socket_option::reuse_address(true));
+    bench::must_ok(
+        acc.set_option(corosio::native_socket_option::reuse_address(true)));
     configure_churn_acceptor(acc);
 
     if (auto ec =
@@ -149,7 +157,8 @@ bench_sequential_churn_lockless(bench::state& state)
     corosio::native_io_context<Backend> ioc(opts, 1);
     acceptor_type acc(ioc);
     std::ignore = acc.open();
-    acc.set_option(corosio::native_socket_option::reuse_address(true));
+    bench::must_ok(
+        acc.set_option(corosio::native_socket_option::reuse_address(true)));
     configure_churn_acceptor(acc);
 
     if (auto ec =
@@ -241,8 +250,9 @@ bench_concurrent_churn(bench::state& state)
         acceptors.emplace_back(ioc);
         auto& acc   = acceptors.back();
         std::ignore = acc.open();
-        acc.set_option(corosio::native_socket_option::reuse_address(true));
-    configure_churn_acceptor(acc);
+        bench::must_ok(
+            acc.set_option(corosio::native_socket_option::reuse_address(true)));
+        configure_churn_acceptor(acc);
         if (auto ec = acc.bind(
                 corosio::endpoint(corosio::ipv4_address::loopback(), 0)))
         {
@@ -330,7 +340,8 @@ bench_burst_churn(bench::state& state)
     corosio::native_io_context<Backend> ioc;
     acceptor_type acc(ioc);
     std::ignore = acc.open();
-    acc.set_option(corosio::native_socket_option::reuse_address(true));
+    bench::must_ok(
+        acc.set_option(corosio::native_socket_option::reuse_address(true)));
     configure_churn_acceptor(acc);
 
     if (auto ec =
@@ -417,7 +428,8 @@ bench_burst_churn_lockless(bench::state& state)
     corosio::native_io_context<Backend> ioc(opts, 1);
     acceptor_type acc(ioc);
     std::ignore = acc.open();
-    acc.set_option(corosio::native_socket_option::reuse_address(true));
+    bench::must_ok(
+        acc.set_option(corosio::native_socket_option::reuse_address(true)));
     configure_churn_acceptor(acc);
 
     if (auto ec =

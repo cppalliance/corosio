@@ -42,6 +42,7 @@
 #endif
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 #include "test_utils.hpp"
 
@@ -232,38 +233,24 @@ struct udp_socket_test
             std::errc::bad_file_descriptor);
     }
 
-    void testSetOptionClosedThrows()
+    void testSetOptionClosedFails()
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
 
-        std::error_code caught;
-        try
-        {
-            sock.set_option(socket_option::broadcast(true));
-        }
-        catch (std::system_error const& e)
-        {
-            caught = e.code();
-        }
-        BOOST_TEST(caught == std::errc::bad_file_descriptor);
+        BOOST_TEST(
+            sock.set_option(socket_option::broadcast(true)) ==
+            std::errc::bad_file_descriptor);
     }
 
-    void testGetOptionClosedThrows()
+    void testGetOptionClosedFails()
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
 
-        std::error_code caught;
-        try
-        {
-            std::ignore = sock.get_option<socket_option::broadcast>();
-        }
-        catch (std::system_error const& e)
-        {
-            caught = e.code();
-        }
+        auto [caught, caught_opt] = sock.get_option<socket_option::broadcast>();
         BOOST_TEST(caught == std::errc::bad_file_descriptor);
+        BOOST_TEST(!caught_opt.value());
     }
 
     void testClosedOpsComplete()
@@ -381,13 +368,15 @@ struct udp_socket_test
         udp_socket sock(ioc);
         BOOST_TEST(!sock.open());
 
-        sock.set_option(socket_option::receive_buffer_size(65536));
-        auto opt = sock.get_option<socket_option::receive_buffer_size>();
+        test::must_ok(
+            sock.set_option(socket_option::receive_buffer_size(65536)));
+        auto opt =
+            test::must(sock.get_option<socket_option::receive_buffer_size>());
         // Kernel may double the value
         BOOST_TEST_GE(opt.value(), 65536);
 
-        sock.set_option(socket_option::broadcast(true));
-        auto bc = sock.get_option<socket_option::broadcast>();
+        test::must_ok(sock.set_option(socket_option::broadcast(true)));
+        auto bc = test::must(sock.get_option<socket_option::broadcast>());
         BOOST_TEST(bc.value());
 
         sock.close();
@@ -551,7 +540,7 @@ struct udp_socket_test
         ioc.run();
     }
 
-    void testOptionFailureThrows()
+    void testOptionFailureReported()
     {
 #if !BOOST_COROSIO_HAS_IOCP
         // WinSock's acceptance of IPv6-level options on AF_INET
@@ -560,27 +549,12 @@ struct udp_socket_test
         udp_socket sock(ioc);
         BOOST_TEST(!sock.open(family::v4));
 
-        bool set_threw = false;
-        try
-        {
-            sock.set_option(socket_option::v6_only(true));
-        }
-        catch (std::system_error const& e)
-        {
-            set_threw = bool(e.code());
-        }
-        BOOST_TEST(set_threw);
+        auto const set_ec = sock.set_option(socket_option::v6_only(true));
+        BOOST_TEST(bool(set_ec));
 
-        bool get_threw = false;
-        try
-        {
-            std::ignore = sock.get_option<socket_option::v6_only>();
-        }
-        catch (std::system_error const& e)
-        {
-            get_threw = bool(e.code());
-        }
-        BOOST_TEST(get_threw);
+        auto [get_ec, get_opt] = sock.get_option<socket_option::v6_only>();
+        BOOST_TEST(bool(get_ec));
+        BOOST_TEST(!get_opt.value());
         sock.close();
 #endif
     }
@@ -874,16 +848,18 @@ struct udp_socket_test
         udp_socket sock(ioc);
         BOOST_TEST(!sock.open());
 
-        sock.set_option(socket_option::multicast_loop(true));
-        auto loop = sock.get_option<socket_option::multicast_loop>();
+        test::must_ok(sock.set_option(socket_option::multicast_loop(true)));
+        auto loop =
+            test::must(sock.get_option<socket_option::multicast_loop>());
         BOOST_TEST(loop.value());
 
-        sock.set_option(socket_option::multicast_loop(false));
-        loop = sock.get_option<socket_option::multicast_loop>();
+        test::must_ok(sock.set_option(socket_option::multicast_loop(false)));
+        loop = test::must(sock.get_option<socket_option::multicast_loop>());
         BOOST_TEST(!loop.value());
 
-        sock.set_option(socket_option::multicast_hops(4));
-        auto hops = sock.get_option<socket_option::multicast_hops>();
+        test::must_ok(sock.set_option(socket_option::multicast_hops(4)));
+        auto hops =
+            test::must(sock.get_option<socket_option::multicast_hops>());
         BOOST_TEST_EQ(hops.value(), 4);
 
         sock.close();
@@ -895,16 +871,18 @@ struct udp_socket_test
         udp_socket sock(ioc);
         BOOST_TEST(!sock.open(family::v6));
 
-        sock.set_option(socket_option::multicast_loop(true));
-        auto loop = sock.get_option<socket_option::multicast_loop>();
+        test::must_ok(sock.set_option(socket_option::multicast_loop(true)));
+        auto loop =
+            test::must(sock.get_option<socket_option::multicast_loop>());
         BOOST_TEST(loop.value());
 
-        sock.set_option(socket_option::multicast_loop(false));
-        loop = sock.get_option<socket_option::multicast_loop>();
+        test::must_ok(sock.set_option(socket_option::multicast_loop(false)));
+        loop = test::must(sock.get_option<socket_option::multicast_loop>());
         BOOST_TEST(!loop.value());
 
-        sock.set_option(socket_option::multicast_hops(4));
-        auto hops = sock.get_option<socket_option::multicast_hops>();
+        test::must_ok(sock.set_option(socket_option::multicast_hops(4)));
+        auto hops =
+            test::must(sock.get_option<socket_option::multicast_hops>());
         BOOST_TEST_EQ(hops.value(), 4);
 
         sock.close();
@@ -1221,19 +1199,15 @@ struct udp_socket_test
 
         // Join may fail with an environment-specific error in CI
         // without multicast routing; skip the rest of the test.
-        try
-        {
-            receiver.set_option(
-                socket_option::join_group(ipv4_address("239.255.0.1")));
-        }
-        catch (std::system_error const&)
+        if (receiver.set_option(
+                socket_option::join_group(ipv4_address("239.255.0.1"))))
         {
             receiver.close();
             sender.close();
             return;
         }
 
-        receiver.set_option(socket_option::multicast_loop(true));
+        test::must_ok(receiver.set_option(socket_option::multicast_loop(true)));
 
         auto task = [](udp_socket& s, udp_socket& r,
                        unsigned short port) -> capy::task<> {
@@ -1262,7 +1236,7 @@ struct udp_socket_test
         sender.close();
     }
 
-    // Multicast set_option tests below accept any std::system_error.
+    // Multicast set_option tests below accept any error code.
     // Multicast routing is environment-specific: we've observed at
     // least EADDRNOTAVAIL (Linux containers), EINVAL (BSD strict
     // RFC 3493 reading), and ENODEV (interface-scoped without scope id)
@@ -1276,17 +1250,13 @@ struct udp_socket_test
         udp_socket sock(ioc);
         BOOST_TEST(!sock.open());
 
-        try
+        if (!sock.set_option(
+                socket_option::join_group(ipv4_address("239.255.0.2"))))
         {
-            sock.set_option(
-                socket_option::join_group(ipv4_address("239.255.0.2")));
-            sock.set_option(
+            std::ignore = sock.set_option(
                 socket_option::leave_group(ipv4_address("239.255.0.2")));
         }
-        catch (std::system_error const&)
-        {
-            BOOST_TEST_PASS();
-        }
+        BOOST_TEST_PASS();
 
         sock.close();
     }
@@ -1297,16 +1267,13 @@ struct udp_socket_test
         udp_socket sock(ioc);
         BOOST_TEST(!sock.open(family::v6));
 
-        try
+        if (!sock.set_option(
+                socket_option::join_group(ipv6_address("ff02::1"))))
         {
-            sock.set_option(socket_option::join_group(ipv6_address("ff02::1")));
-            sock.set_option(
+            std::ignore = sock.set_option(
                 socket_option::leave_group(ipv6_address("ff02::1")));
         }
-        catch (std::system_error const&)
-        {
-            BOOST_TEST_PASS();
-        }
+        BOOST_TEST_PASS();
 
         sock.close();
     }
@@ -1317,15 +1284,9 @@ struct udp_socket_test
         udp_socket sock(ioc);
         BOOST_TEST(!sock.open());
 
-        try
-        {
-            sock.set_option(
-                socket_option::multicast_interface(ipv4_address::any()));
-        }
-        catch (std::system_error const&)
-        {
-            BOOST_TEST_PASS();
-        }
+        std::ignore = sock.set_option(
+            socket_option::multicast_interface(ipv4_address::any()));
+        BOOST_TEST_PASS();
 
         sock.close();
     }
@@ -1336,16 +1297,14 @@ struct udp_socket_test
         udp_socket sock(ioc);
         BOOST_TEST(!sock.open(family::v6));
 
-        try
+        if (!sock.set_option(socket_option::multicast_interface(0)))
         {
-            sock.set_option(socket_option::multicast_interface(0));
-            auto opt = sock.get_option<socket_option::multicast_interface>();
-            BOOST_TEST_EQ(opt.if_index(), 0u);
+            auto [ec, opt] =
+                sock.get_option<socket_option::multicast_interface>();
+            if (!ec)
+                BOOST_TEST_EQ(opt.if_index(), 0u);
         }
-        catch (std::system_error const&)
-        {
-            BOOST_TEST_PASS();
-        }
+        BOOST_TEST_PASS();
 
         sock.close();
     }
@@ -1358,37 +1317,31 @@ struct udp_socket_test
 
         // Linux clamps SO_RCVBUF=0 to a minimum and reports success;
         // BSD platforms (macOS, FreeBSD) reject 0 with EINVAL.
-        try
+        if (!sock.set_option(socket_option::receive_buffer_size(0)))
         {
-            sock.set_option(socket_option::receive_buffer_size(0));
-            int rcv =
-                sock.get_option<socket_option::receive_buffer_size>().value();
             // Linux clamps to a minimum > 0; Windows allows 0.
-            BOOST_TEST(rcv >= 0);
-        }
-        catch (std::system_error const&)
-        {
-            BOOST_TEST_PASS();
+            auto [ec, opt] =
+                sock.get_option<socket_option::receive_buffer_size>();
+            BOOST_TEST(!ec);
+            BOOST_TEST(opt.value() >= 0);
         }
 
-        try
+        if (!sock.set_option(socket_option::send_buffer_size(0)))
         {
-            sock.set_option(socket_option::send_buffer_size(0));
-            int snd =
-                sock.get_option<socket_option::send_buffer_size>().value();
             // Linux clamps to a minimum > 0; Windows allows 0.
-            BOOST_TEST(snd >= 0);
-        }
-        catch (std::system_error const&)
-        {
-            BOOST_TEST_PASS();
+            auto [ec, opt] = sock.get_option<socket_option::send_buffer_size>();
+            BOOST_TEST(!ec);
+            BOOST_TEST(opt.value() >= 0);
         }
 
         // Large value: set succeeds on every platform, but the kernel
         // may clamp to net.core.rmem_max (often a few hundred KiB in
         // constrained containers). Only assert non-zero.
-        sock.set_option(socket_option::receive_buffer_size(1024 * 1024));
-        int rcv = sock.get_option<socket_option::receive_buffer_size>().value();
+        test::must_ok(
+            sock.set_option(socket_option::receive_buffer_size(1024 * 1024)));
+        int rcv =
+            test::must(sock.get_option<socket_option::receive_buffer_size>())
+                .value();
         BOOST_TEST(rcv > 0);
 
         sock.close();
@@ -1401,16 +1354,7 @@ struct udp_socket_test
         udp_socket sock(ioc);
         BOOST_TEST(!sock.open());
 
-        bool caught = false;
-        try
-        {
-            sock.set_option(socket_option::no_delay(true));
-        }
-        catch (std::system_error const&)
-        {
-            caught = true;
-        }
-        BOOST_TEST(caught);
+        BOOST_TEST(bool(sock.set_option(socket_option::no_delay(true))));
 
         sock.close();
     }
@@ -2038,8 +1982,8 @@ struct udp_socket_test
         testBind();
         testBindV6();
         testBindClosedSocket();
-        testSetOptionClosedThrows();
-        testGetOptionClosedThrows();
+        testSetOptionClosedFails();
+        testGetOptionClosedFails();
         testClosedOpsComplete();
         testBindAddressInUse();
         testBindNonLocalAddress();
@@ -2051,7 +1995,7 @@ struct udp_socket_test
         testEchoLoopback();
         testMultipleDatagrams();
         testShutdown();
-        testOptionFailureThrows();
+        testOptionFailureReported();
         testCancelRecv();
         testCloseWhileRecving();
         testStopTokenCancellation();

@@ -55,8 +55,7 @@ accept_with_the_convenience_constructor(corosio::io_context& ioc)
 // end::convenience_construction[]
 
 // tag::fine_grained_setup[]
-// set_option throws rather than returning an error code, unlike
-// open/bind/listen. Precondition: acc is not already open -- open() is a
+// Precondition: acc is not already open -- open() is a
 // no-op on an already-open acceptor, so an acceptor left over from a v4
 // attempt would silently keep its v4 socket and fail later at bind().
 std::error_code
@@ -65,8 +64,10 @@ open_ipv6_explicitly(corosio::io_context& ioc)
     corosio::tcp_acceptor acc(ioc);
     if (auto ec = acc.open(corosio::family::v6))
         return ec;
-    acc.set_option(corosio::socket_option::reuse_address(true));
-    acc.set_option(corosio::socket_option::v6_only(true));
+    if (auto ec = acc.set_option(corosio::socket_option::reuse_address(true)))
+        return ec;
+    if (auto ec = acc.set_option(corosio::socket_option::v6_only(true)))
+        return ec;
     if (auto ec =
             acc.bind(corosio::endpoint(corosio::ipv6_address::any(), 8080)))
         return ec;

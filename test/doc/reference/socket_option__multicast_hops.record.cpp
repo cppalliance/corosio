@@ -32,7 +32,8 @@ limit_how_far_multicast_travels(corosio::udp_socket& sock)
     // the datagram on the local link, 4 lets it cross four routers. Group
     // addresses also carry a scope of their own, and a datagram has to
     // satisfy both.
-    sock.set_option(corosio::socket_option::multicast_hops(4));
+    if (auto ec = sock.set_option(corosio::socket_option::multicast_hops(4)))
+        return; // report the error
 }
 // end::multicast_hops[]
 

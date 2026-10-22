@@ -26,6 +26,7 @@
 #include <thread>
 #include <vector>
 
+#include "../common/must.hpp"
 #include "../common/native_includes.hpp"
 
 namespace corosio = boost::corosio;
@@ -112,8 +113,10 @@ bench_fork_join(bench::state& state)
     {
         auto [c, s] = corosio::test::make_socket_pair<
             socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
-        c.set_option(corosio::native_socket_option::no_delay(true));
-        s.set_option(corosio::native_socket_option::no_delay(true));
+        bench::must_ok(
+            c.set_option(corosio::native_socket_option::no_delay(true)));
+        bench::must_ok(
+            s.set_option(corosio::native_socket_option::no_delay(true)));
         clients.push_back(std::move(c));
         servers.push_back(std::move(s));
     }
@@ -181,8 +184,10 @@ bench_nested(bench::state& state)
     {
         auto [c, s] = corosio::test::make_socket_pair<
             socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
-        c.set_option(corosio::native_socket_option::no_delay(true));
-        s.set_option(corosio::native_socket_option::no_delay(true));
+        bench::must_ok(
+            c.set_option(corosio::native_socket_option::no_delay(true)));
+        bench::must_ok(
+            s.set_option(corosio::native_socket_option::no_delay(true)));
         clients.push_back(std::move(c));
         servers.push_back(std::move(s));
     }
@@ -262,8 +267,10 @@ bench_concurrent_parents(bench::state& state)
     {
         auto [c, s] = corosio::test::make_socket_pair<
             socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
-        c.set_option(corosio::native_socket_option::no_delay(true));
-        s.set_option(corosio::native_socket_option::no_delay(true));
+        bench::must_ok(
+            c.set_option(corosio::native_socket_option::no_delay(true)));
+        bench::must_ok(
+            s.set_option(corosio::native_socket_option::no_delay(true)));
         clients.push_back(std::move(c));
         servers.push_back(std::move(s));
     }
@@ -337,8 +344,10 @@ bench_fork_join_lockless(bench::state& state)
     {
         auto [c, s] = corosio::test::make_socket_pair<
             socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
-        c.set_option(corosio::native_socket_option::no_delay(true));
-        s.set_option(corosio::native_socket_option::no_delay(true));
+        bench::must_ok(
+            c.set_option(corosio::native_socket_option::no_delay(true)));
+        bench::must_ok(
+            s.set_option(corosio::native_socket_option::no_delay(true)));
         clients.push_back(std::move(c));
         servers.push_back(std::move(s));
     }
@@ -407,8 +416,10 @@ bench_nested_lockless(bench::state& state)
     {
         auto [c, s] = corosio::test::make_socket_pair<
             socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
-        c.set_option(corosio::native_socket_option::no_delay(true));
-        s.set_option(corosio::native_socket_option::no_delay(true));
+        bench::must_ok(
+            c.set_option(corosio::native_socket_option::no_delay(true)));
+        bench::must_ok(
+            s.set_option(corosio::native_socket_option::no_delay(true)));
         clients.push_back(std::move(c));
         servers.push_back(std::move(s));
     }
@@ -489,8 +500,10 @@ bench_concurrent_parents_lockless(bench::state& state)
     {
         auto [c, s] = corosio::test::make_socket_pair<
             socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
-        c.set_option(corosio::native_socket_option::no_delay(true));
-        s.set_option(corosio::native_socket_option::no_delay(true));
+        bench::must_ok(
+            c.set_option(corosio::native_socket_option::no_delay(true)));
+        bench::must_ok(
+            s.set_option(corosio::native_socket_option::no_delay(true)));
         clients.push_back(std::move(c));
         servers.push_back(std::move(s));
     }

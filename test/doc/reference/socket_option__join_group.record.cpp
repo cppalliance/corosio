@@ -34,9 +34,9 @@ receive_an_ipv4_multicast_group(corosio::io_context& ioc)
         return; // report the error
 
     // Lets other listeners on this host bind the same port and receive the
-    // same group. set_option reports failure by throwing, not by returning
-    // a code.
-    sock.set_option(corosio::socket_option::reuse_address(true));
+    // same group.
+    if (auto ec = sock.set_option(corosio::socket_option::reuse_address(true)))
+        return; // report the error
 
     // Bind before joining: a membership attaches to the socket's local port,
     // so there is nothing for the join to attach to until the bind succeeds.
@@ -48,9 +48,10 @@ receive_an_ipv4_multicast_group(corosio::io_context& ioc)
     // of a private address range. The optional second argument names the
     // local interface to receive on; the default, 0.0.0.0, lets the kernel
     // choose one.
-    sock.set_option(
-        corosio::socket_option::join_group(
-            corosio::ipv4_address("239.255.0.1")));
+    if (auto ec = sock.set_option(
+            corosio::socket_option::join_group(
+                corosio::ipv4_address("239.255.0.1"))))
+        return; // report the error
 }
 // end::join_group[]
 

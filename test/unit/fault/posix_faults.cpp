@@ -11,6 +11,7 @@
 #include "fault.hpp"
 #include "fault_test_utils.hpp"
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 #include "test_utils.hpp"
 
@@ -156,8 +157,8 @@ struct posix_common_faults
         tcp_socket s(ioc);
         BOOST_TEST(!s.open(family::v4));
         fault_scope f(sys::setsockopt, ENOPROTOOPT);
-        expect_system_error(
-            [&] { s.set_option(socket_option::reuse_address(true)); },
+        BOOST_TEST(
+            s.set_option(socket_option::reuse_address(true)) ==
             std::errc::no_protocol_option);
         BOOST_TEST(f.fired());
         BOOST_TEST(s.is_open());
@@ -169,9 +170,9 @@ struct posix_common_faults
         tcp_socket s(ioc);
         BOOST_TEST(!s.open(family::v4));
         fault_scope f(sys::getsockopt, ENOPROTOOPT);
-        expect_system_error(
-            [&] { std::ignore = s.get_option<socket_option::reuse_address>(); },
-            std::errc::no_protocol_option);
+        auto [gec, gopt] = s.get_option<socket_option::reuse_address>();
+        BOOST_TEST(gec == std::errc::no_protocol_option);
+        BOOST_TEST(!gopt.value());
         BOOST_TEST(f.fired());
         BOOST_TEST(s.is_open());
     }
@@ -885,20 +886,17 @@ struct reactor_acceptor_option_faults
         BOOST_TEST(!acc.open());
         {
             fault_scope f(sys::setsockopt, ENOPROTOOPT);
-            expect_system_error(
-                [&] { acc.set_option(socket_option::reuse_address(true)); },
+            BOOST_TEST(
+                acc.set_option(socket_option::reuse_address(true)) ==
                 std::errc::no_protocol_option);
             BOOST_TEST(f.fired());
             BOOST_TEST(acc.is_open());
         }
         {
             fault_scope f(sys::getsockopt, ENOPROTOOPT);
-            expect_system_error(
-                [&] {
-                    std::ignore =
-                        acc.get_option<socket_option::reuse_address>();
-                },
-                std::errc::no_protocol_option);
+            auto [gec, gopt] = acc.get_option<socket_option::reuse_address>();
+            BOOST_TEST(gec == std::errc::no_protocol_option);
+            BOOST_TEST(!gopt.value());
             BOOST_TEST(f.fired());
             BOOST_TEST(acc.is_open());
         }

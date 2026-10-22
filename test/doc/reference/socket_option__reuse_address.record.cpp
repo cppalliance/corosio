@@ -34,8 +34,8 @@ restart_a_listener_on_the_same_port(corosio::tcp_acceptor& acc)
     // still in TIME_WAIT -- the difference between a server that restarts
     // and one that fails with address_in_use. It does not let two live
     // listeners share a port; that is reuse_port. Must precede bind().
-    // set_option reports failure by throwing, not by returning a code.
-    acc.set_option(corosio::socket_option::reuse_address(true));
+    if (auto ec = acc.set_option(corosio::socket_option::reuse_address(true)))
+        return; // report the error
 
     if (auto ec = acc.bind(corosio::endpoint(8080)))
         return; // report the error

@@ -53,6 +53,7 @@
 #include <type_traits>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 #include "test_utils.hpp"
 
@@ -1055,37 +1056,24 @@ struct local_stream_socket_test
             throw std::system_error(ec, "connect_pair");
 
         // AF_UNIX option support varies by platform; the point is to
-        // drive the set/get paths, so accept a system error as a
+        // drive the set/get paths, so accept an error code as a
         // valid outcome.
-        try
+        if (!s1.set_option(socket_option::send_buffer_size(16384)))
         {
-            s1.set_option(socket_option::send_buffer_size(16384));
-            auto opt = s1.get_option<socket_option::send_buffer_size>();
-            BOOST_TEST(opt.value() > 0);
+            auto [ec, opt] = s1.get_option<socket_option::send_buffer_size>();
+            if (!ec)
+                BOOST_TEST(opt.value() > 0);
         }
-        catch (std::system_error const&)
-        {
-            BOOST_TEST_PASS();
-        }
+        BOOST_TEST_PASS();
 
         local_stream_socket closed(ioc);
-        auto expect_bad_fd = [](auto fn) {
-            std::error_code caught;
-            try
-            {
-                fn();
-            }
-            catch (std::system_error const& e)
-            {
-                caught = e.code();
-            }
-            BOOST_TEST(caught == std::errc::bad_file_descriptor);
-        };
-        expect_bad_fd(
-            [&] { closed.set_option(socket_option::send_buffer_size(4096)); });
-        expect_bad_fd([&] {
-            std::ignore = closed.get_option<socket_option::send_buffer_size>();
-        });
+        BOOST_TEST(
+            closed.set_option(socket_option::send_buffer_size(4096)) ==
+            std::errc::bad_file_descriptor);
+        auto [closed_ec, closed_opt] =
+            closed.get_option<socket_option::send_buffer_size>();
+        BOOST_TEST(closed_ec == std::errc::bad_file_descriptor);
+        BOOST_TEST_EQ(closed_opt.value(), 0);
     }
 
     void testAcceptorOptions()
@@ -1097,37 +1085,21 @@ struct local_stream_socket_test
         BOOST_TEST(!acc.open());
 
         // AF_UNIX option support varies by platform; the point is to
-        // drive the set/get paths, so accept a system error as a
+        // drive the set/get paths, so accept an error code as a
         // valid outcome.
-        try
-        {
-            acc.set_option(socket_option::reuse_address(true));
+        if (!acc.set_option(socket_option::reuse_address(true)))
             std::ignore = acc.get_option<socket_option::reuse_address>();
-        }
-        catch (std::system_error const&)
-        {
-            BOOST_TEST_PASS();
-        }
+        BOOST_TEST_PASS();
         acc.close();
 
         local_stream_acceptor closed(ioc);
-        auto expect_bad_fd = [](auto fn) {
-            std::error_code caught;
-            try
-            {
-                fn();
-            }
-            catch (std::system_error const& e)
-            {
-                caught = e.code();
-            }
-            BOOST_TEST(caught == std::errc::bad_file_descriptor);
-        };
-        expect_bad_fd(
-            [&] { closed.set_option(socket_option::reuse_address(true)); });
-        expect_bad_fd([&] {
-            std::ignore = closed.get_option<socket_option::reuse_address>();
-        });
+        BOOST_TEST(
+            closed.set_option(socket_option::reuse_address(true)) ==
+            std::errc::bad_file_descriptor);
+        auto [closed_ec, closed_opt] =
+            closed.get_option<socket_option::reuse_address>();
+        BOOST_TEST(closed_ec == std::errc::bad_file_descriptor);
+        BOOST_TEST(!closed_opt.value());
     }
 
     // Acceptor wait(wait_type::write) fails uniformly on every
@@ -1247,7 +1219,7 @@ struct local_stream_socket_test
 #endif // BOOST_COROSIO_POSIX
 
     // accept() on an open, bound, but non-listening socket fails with
-    // a system error instead of hanging.
+    // an error code instead of hanging.
     void testAcceptWithoutListen()
     {
         io_context ioc(Backend);
@@ -1509,64 +1481,35 @@ struct local_stream_socket_test
         BOOST_TEST(acc.listen() == std::errc::bad_file_descriptor);
     }
 
-    void testOptionFailureThrows()
+    void testOptionFailureReported()
     {
         io_context ioc(Backend);
 
         // A TCP-level option on an AF_UNIX socket fails with a genuine
-        // error surfaced as system_error
+        // error code
         local_stream_socket s1(ioc), s2(ioc);
         if (auto ec = connect_pair(s1, s2))
             throw std::system_error(ec, "connect_pair");
-        bool threw = false;
-        try
-        {
-            s1.set_option(socket_option::no_delay(true));
-        }
-        catch (std::system_error const& e)
-        {
-            threw = bool(e.code());
-        }
-        BOOST_TEST(threw);
+        auto const set_ec = s1.set_option(socket_option::no_delay(true));
+        BOOST_TEST(bool(set_ec));
 
 #if !defined(__APPLE__)
         // Darwin's getsockopt accepts TCP_NODELAY on AF_UNIX sockets,
         // so the get failure is only asserted where the kernel rejects it.
-        bool sock_get_threw = false;
-        try
-        {
-            std::ignore = s1.get_option<socket_option::no_delay>();
-        }
-        catch (std::system_error const& e)
-        {
-            sock_get_threw = bool(e.code());
-        }
-        BOOST_TEST(sock_get_threw);
+        auto [sock_get_ec, sock_get_opt] =
+            s1.get_option<socket_option::no_delay>();
+        BOOST_TEST(bool(sock_get_ec));
+        BOOST_TEST(!sock_get_opt.value());
 #endif
 
         // Same through the acceptor's option surface
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        bool acc_threw = false;
-        try
-        {
-            acc.set_option(socket_option::no_delay(true));
-        }
-        catch (std::system_error const& e)
-        {
-            acc_threw = bool(e.code());
-        }
-        BOOST_TEST(acc_threw);
-        bool get_threw = false;
-        try
-        {
-            std::ignore = acc.get_option<socket_option::no_delay>();
-        }
-        catch (std::system_error const& e)
-        {
-            get_threw = bool(e.code());
-        }
-        BOOST_TEST(get_threw);
+        auto const acc_set_ec = acc.set_option(socket_option::no_delay(true));
+        BOOST_TEST(bool(acc_set_ec));
+        auto [get_ec, get_opt] = acc.get_option<socket_option::no_delay>();
+        BOOST_TEST(bool(get_ec));
+        BOOST_TEST(!get_opt.value());
         acc.close();
     }
 
@@ -2067,7 +2010,7 @@ struct local_stream_socket_test
         testAcceptorOnClosedNoOp();
         testAcceptorBindClosedThrows();
         testAcceptorListenClosedThrows();
-        testOptionFailureThrows();
+        testOptionFailureReported();
         testAcceptorClosedWaitCompletes();
         testAcceptorAcceptClosedThrows();
         testAcceptorReleaseClosedFails();

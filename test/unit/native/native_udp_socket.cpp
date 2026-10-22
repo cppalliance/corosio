@@ -23,6 +23,7 @@
 #include <tuple>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -388,42 +389,40 @@ struct native_udp_socket_test
         native_udp_socket<Backend> sock(ioc);
         BOOST_TEST(!sock.open());
 
-        sock.set_option(native_socket_option::broadcast(true));
-        auto bc = sock.template get_option<native_socket_option::broadcast>();
+        test::must_ok(sock.set_option(native_socket_option::broadcast(true)));
+        auto bc = test::must(
+            sock.template get_option<native_socket_option::broadcast>());
         BOOST_TEST(bc.value());
 
-        sock.set_option(native_socket_option::receive_buffer_size(32768));
-        auto rb = sock.template get_option<
-            native_socket_option::receive_buffer_size>();
+        test::must_ok(
+            sock.set_option(native_socket_option::receive_buffer_size(32768)));
+        auto rb = test::must(sock.template get_option<
+                             native_socket_option::receive_buffer_size>());
         BOOST_TEST(rb.value() > 0);
 
-        sock.set_option(native_socket_option::send_buffer_size(32768));
-        auto sb =
-            sock.template get_option<native_socket_option::send_buffer_size>();
+        test::must_ok(
+            sock.set_option(native_socket_option::send_buffer_size(32768)));
+        auto sb = test::must(
+            sock.template get_option<native_socket_option::send_buffer_size>());
         BOOST_TEST(sb.value() > 0);
 
-        sock.set_option(native_socket_option::multicast_loop(true));
-        auto ml =
-            sock.template get_option<native_socket_option::multicast_loop>();
+        test::must_ok(
+            sock.set_option(native_socket_option::multicast_loop(true)));
+        auto ml = test::must(
+            sock.template get_option<native_socket_option::multicast_loop>());
         BOOST_TEST(ml.value());
 
-        sock.set_option(native_socket_option::multicast_hops(4));
-        auto mh =
-            sock.template get_option<native_socket_option::multicast_hops>();
+        test::must_ok(sock.set_option(native_socket_option::multicast_hops(4)));
+        auto mh = test::must(
+            sock.template get_option<native_socket_option::multicast_hops>());
         BOOST_TEST_EQ(mh.value(), 4);
 
         // Multicast configuration is environment-specific; the option
         // type's storage and the library set_option path are exercised
         // regardless of whether the kernel completes the request.
-        try
-        {
-            sock.set_option(
-                native_socket_option::multicast_interface(ipv4_address::any()));
-        }
-        catch (std::system_error const&)
-        {
-            BOOST_TEST_PASS();
-        }
+        std::ignore = sock.set_option(
+            native_socket_option::multicast_interface(ipv4_address::any()));
+        BOOST_TEST_PASS();
 
         // Default-constructed variants exercise the no-arg constructors.
         native_socket_option::multicast_interface mif4;
@@ -441,17 +440,13 @@ struct native_udp_socket_test
         native_udp_socket<Backend> sock(ioc);
         BOOST_TEST(!sock.open());
 
-        try
+        if (!sock.set_option(
+                native_socket_option::join_group(ipv4_address("239.255.0.3"))))
         {
-            sock.set_option(
-                native_socket_option::join_group(ipv4_address("239.255.0.3")));
-            sock.set_option(
+            std::ignore = sock.set_option(
                 native_socket_option::leave_group(ipv4_address("239.255.0.3")));
         }
-        catch (std::system_error const&)
-        {
-            BOOST_TEST_PASS();
-        }
+        BOOST_TEST_PASS();
 
         // Default-constructed forms — verifies no-arg ctor coverage.
         native_socket_option::join_group jg;
@@ -475,32 +470,26 @@ struct native_udp_socket_test
         native_udp_socket<Backend> sock(ioc);
         BOOST_TEST(!sock.open(family::v6));
 
-        sock.set_option(native_socket_option::multicast_loop(true));
-        sock.set_option(native_socket_option::multicast_hops(4));
+        test::must_ok(
+            sock.set_option(native_socket_option::multicast_loop(true)));
+        test::must_ok(sock.set_option(native_socket_option::multicast_hops(4)));
 
-        try
+        if (!sock.set_option(native_socket_option::multicast_interface(0)))
         {
-            sock.set_option(native_socket_option::multicast_interface(0));
-            auto mif6 = sock.template get_option<
+            auto [ec, mif6] = sock.template get_option<
                 native_socket_option::multicast_interface>();
-            BOOST_TEST_EQ(mif6.if_index(), 0u);
+            if (!ec)
+                BOOST_TEST_EQ(mif6.if_index(), 0u);
         }
-        catch (std::system_error const&)
-        {
-            BOOST_TEST_PASS();
-        }
+        BOOST_TEST_PASS();
 
-        try
+        if (!sock.set_option(
+                native_socket_option::join_group(ipv6_address("ff02::1"))))
         {
-            sock.set_option(
-                native_socket_option::join_group(ipv6_address("ff02::1")));
-            sock.set_option(
+            std::ignore = sock.set_option(
                 native_socket_option::leave_group(ipv6_address("ff02::1")));
         }
-        catch (std::system_error const&)
-        {
-            BOOST_TEST_PASS();
-        }
+        BOOST_TEST_PASS();
 
         // v6-group forms carry v6 traits regardless of the family
         // argument; membership dispatches on the group's family.

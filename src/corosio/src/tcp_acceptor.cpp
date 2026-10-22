@@ -96,9 +96,11 @@ tcp_acceptor::tcp_acceptor(
     if (auto ec = open(ep.address().family()))
         detail::throw_system_error(ec, "tcp_acceptor");
 #if BOOST_COROSIO_HAS_IOCP
-    set_option(exclusive_address_use{});
+    if (auto ec = set_option(exclusive_address_use{}))
+        detail::throw_system_error(ec, "tcp_acceptor");
 #else
-    set_option(socket_option::reuse_address(true));
+    if (auto ec = set_option(socket_option::reuse_address(true)))
+        detail::throw_system_error(ec, "tcp_acceptor");
 #endif
     if (auto ec = bind(ep))
         detail::throw_system_error(ec, "tcp_acceptor");

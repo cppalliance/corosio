@@ -197,11 +197,17 @@ bool
 tune_options(corosio::udp_socket& sock)
 {
     // tag::options[]
-    sock.set_option(corosio::socket_option::reuse_address(true));
-    sock.set_option(corosio::socket_option::broadcast(true));
-    sock.set_option(corosio::socket_option::receive_buffer_size(1 << 20));
+    if (auto ec = sock.set_option(corosio::socket_option::reuse_address(true)))
+        return false;
+    if (auto ec = sock.set_option(corosio::socket_option::broadcast(true)))
+        return false;
+    if (auto ec = sock.set_option(
+            corosio::socket_option::receive_buffer_size(1 << 20)))
+        return false;
 
-    auto bcast = sock.get_option<corosio::socket_option::broadcast>();
+    auto [ec, bcast] = sock.get_option<corosio::socket_option::broadcast>();
+    if (ec)
+        return false;
     // end::options[]
     return bcast.value();
 }
@@ -215,15 +221,17 @@ multicast_join(corosio::io_context& ioc)
     corosio::udp_socket sock(ioc);
     if (auto ec = sock.open(corosio::family::v4))
         co_return;
-    sock.set_option(corosio::socket_option::reuse_address(true));
+    if (auto ec = sock.set_option(corosio::socket_option::reuse_address(true)))
+        co_return;
 
     if (auto ec =
             sock.bind(corosio::endpoint(corosio::ipv4_address::any(), 30001)))
         co_return;
 
-    sock.set_option(
-        corosio::socket_option::join_group(
-            corosio::ipv4_address("239.255.0.1")));
+    if (auto ec = sock.set_option(
+            corosio::socket_option::join_group(
+                corosio::ipv4_address("239.255.0.1"))))
+        co_return;
     // end::multicast[]
 }
 

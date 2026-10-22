@@ -52,6 +52,7 @@
 
 #include "context.hpp"
 #include "temp_path.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -148,7 +149,7 @@ struct object_reuse_test
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
         endpoint ep(ipv4_address::loopback(), acc.local_endpoint().port());
@@ -187,7 +188,7 @@ struct object_reuse_test
         {
             tcp_acceptor acc(ioc);
             BOOST_TEST(!acc.open());
-            acc.set_option(socket_option::reuse_address(true));
+            test::must_ok(acc.set_option(socket_option::reuse_address(true)));
             BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
             BOOST_TEST(!acc.listen());
             auto port = acc.local_endpoint().port();
@@ -231,7 +232,7 @@ struct object_reuse_test
         // impl, whose reuse() asserts `ready_fds_.empty()` (uring only).
         tcp_acceptor acc2(ioc);
         BOOST_TEST(!acc2.open());
-        acc2.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc2.set_option(socket_option::reuse_address(true)));
         BOOST_TEST(!acc2.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc2.listen());
         auto port2 = acc2.local_endpoint().port();
@@ -426,7 +427,7 @@ struct churn_then_exercise_test
     {
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        acc.set_option(socket_option::reuse_address(true));
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
         auto port = acc.local_endpoint().port();

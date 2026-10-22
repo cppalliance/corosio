@@ -36,9 +36,13 @@ control_what_close_does_with_queued_data(corosio::tcp_socket& sock)
     // This native variant stores the platform's struct linger directly,
     // where socket_option::linger keeps the same bytes behind opaque
     // storage -- an implementation detail invisible at this call site.
-    sock.set_option(corosio::native_socket_option::linger(true, 5));
+    if (auto ec =
+            sock.set_option(corosio::native_socket_option::linger(true, 5)))
+        return; // report the error
 
-    auto opt    = sock.get_option<corosio::native_socket_option::linger>();
+    auto [ec, opt] = sock.get_option<corosio::native_socket_option::linger>();
+    if (ec)
+        return;
     bool waits  = opt.enabled();
     int seconds = opt.timeout();
 }

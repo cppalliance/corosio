@@ -603,7 +603,8 @@ make_mocket_pair(
     Acceptor acc(ctx);
     if (auto open_ec = acc.open())
         throw std::runtime_error("mocket open failed: " + open_ec.message());
-    acc.set_option(socket_option::reuse_address(true));
+    if (auto ec = acc.set_option(socket_option::reuse_address(true)))
+        throw std::runtime_error("mocket set_option failed: " + ec.message());
     if (auto bind_ec = acc.bind(endpoint(ipv4_address::loopback(), 0)))
         throw std::runtime_error("mocket bind failed: " + bind_ec.message());
     if (auto listen_ec = acc.listen())

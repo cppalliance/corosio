@@ -18,25 +18,27 @@
 // automatically). But that made this page a near-duplicate of
 // socket_option__no_delay.record.cpp's own round-trip example. This version
 // instead teaches what is specific to get_option as a member: Option is an
-// explicit template argument, never deduced, and the call throws rather than
-// returning an error code.
+// explicit template argument, never deduced, and the result carries an error
+// code alongside the value.
 
 #include "../doc_warnings.hpp"
 
+#include <boost/capy/results.hpp>
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 
+namespace capy    = boost::capy;
 namespace corosio = boost::corosio;
 
 namespace {
 
 // tag::get_option[]
-// Precondition: sock is open (get_option throws bad_file_descriptor
-// otherwise, and throws again if the underlying getsockopt call fails).
+// A closed sock reports bad_file_descriptor; a failing getsockopt reports
+// its own error.
 // Option is always an explicit template argument -- it is never deduced
 // from sock or from any function argument.
 template<class Option>
-Option
+capy::results<Option>
 read_option(corosio::tcp_socket& sock)
 {
     return sock.get_option<Option>();
