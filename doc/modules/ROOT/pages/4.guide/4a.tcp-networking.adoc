@@ -646,8 +646,9 @@ The flag means something different on Windows. There it grants a socket the
 right to bind over an address another socket actively holds, silently
 splitting incoming connections between the two. Windows servers that want the
 POSIX contract set `SO_EXCLUSIVEADDRUSE` instead. The cpp:tcp_acceptor[]
-convenience constructor does this automatically, so a second listener fails
-with `errc::address_in_use` on every platform.
+convenience constructor and the cpp:tcp_server[] `bind()` do this
+automatically, so a second acceptor fails with `errc::address_in_use` on every
+platform. An acceptor bound piecewise uses only the options the caller sets.
 
 === SO_REUSEPORT
 

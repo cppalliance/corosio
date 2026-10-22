@@ -72,14 +72,21 @@ listener on an occupied endpoint throws `errc::address_in_use`.
 
 === bind() and listen()
 
-For explicit error handling, construct the acceptor, then bind and listen as
-separate steps. Both return a `std::error_code` and are marked `+[[nodiscard]]+`
+To handle errors without exceptions, construct the acceptor, then open, bind,
+and listen as separate steps. Each returns a `std::error_code` and is marked
+`+[[nodiscard]]+`
 to prevent accidentally ignoring errors:
 
 [source,cpp]
 ----
 include::example$snippets/4e_tcp_acceptor.cpp[tag=bind_listen,indent=0]
 ----
+
+Setting `SO_REUSEADDR` with `set_option()` between `open()` and `bind()` lets a
+restarted server reuse its port immediately instead of waiting out TIME_WAIT.
+An acceptor bound piecewise uses only the options the caller sets. On
+Windows, `SO_REUSEADDR` lets another socket bind over a listening port, so a
+second acceptor may share the port.
 
 The `listen()` method accepts an optional `backlog` parameter:
 

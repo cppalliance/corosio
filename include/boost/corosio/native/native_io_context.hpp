@@ -120,7 +120,11 @@ public:
     /// Copy assignment is disabled; the context owns its services.
     native_io_context& operator=(native_io_context const&) = delete;
 
-    /// Signal the context to stop processing.
+    /** Signal the context to stop processing.
+
+        @throws std::system_error on Windows if the wakeup cannot be
+            queued, which leaves blocked `run()` callers unable to wake.
+    */
     void stop()
     {
         sched().stop();
@@ -143,6 +147,13 @@ public:
 
     /** Process all pending work items.
 
+        @throws std::system_error if waiting on the operating system's
+            event demultiplexer fails other than by interruption or
+            another transient condition; the context can no longer
+            dispatch work. On Windows, also if it is called with no
+            outstanding work and the wakeup that stops the context
+            cannot be queued.
+
         @return The number of handlers executed.
     */
     std::size_t run()
@@ -153,6 +164,13 @@ public:
 
     /** Process at most one pending work item.
 
+        @throws std::system_error if waiting on the operating system's
+            event demultiplexer fails other than by interruption or
+            another transient condition; the context can no longer
+            dispatch work. On Windows, also if it is called with no
+            outstanding work and the wakeup that stops the context
+            cannot be queued.
+
         @return The number of handlers executed (0 or 1).
     */
     std::size_t run_one()
@@ -162,6 +180,13 @@ public:
     }
 
     /** Process work items for the specified duration.
+
+        @throws std::system_error if waiting on the operating system's
+            event demultiplexer fails other than by interruption or
+            another transient condition; the context can no longer
+            dispatch work. On Windows, also if it is called with no
+            outstanding work and the wakeup that stops the context
+            cannot be queued.
 
         @param rel_time The duration for which to process work.
 
@@ -174,6 +199,13 @@ public:
     }
 
     /** Process work items until the specified time.
+
+        @throws std::system_error if waiting on the operating system's
+            event demultiplexer fails other than by interruption or
+            another transient condition; the context can no longer
+            dispatch work. On Windows, also if it is called with no
+            outstanding work and the wakeup that stops the context
+            cannot be queued.
 
         @param abs_time The time point until which to process work.
 
@@ -192,6 +224,13 @@ public:
 
     /** Process at most one work item for the specified duration.
 
+        @throws std::system_error if waiting on the operating system's
+            event demultiplexer fails other than by interruption or
+            another transient condition; the context can no longer
+            dispatch work. On Windows, also if it is called with no
+            outstanding work and the wakeup that stops the context
+            cannot be queued.
+
         @param rel_time The duration for which the call may block.
 
         @return The number of handlers executed (0 or 1).
@@ -203,6 +242,13 @@ public:
     }
 
     /** Process at most one work item until the specified time.
+
+        @throws std::system_error if waiting on the operating system's
+            event demultiplexer fails other than by interruption or
+            another transient condition; the context can no longer
+            dispatch work. On Windows, also if it is called with no
+            outstanding work and the wakeup that stops the context
+            cannot be queued.
 
         @param abs_time The time point until which the call may block.
 
@@ -240,6 +286,13 @@ public:
 
     /** Process all ready work items without blocking.
 
+        @throws std::system_error if waiting on the operating system's
+            event demultiplexer fails other than by interruption or
+            another transient condition; the context can no longer
+            dispatch work. On Windows, also if it is called with no
+            outstanding work and the wakeup that stops the context
+            cannot be queued.
+
         @return The number of handlers executed.
     */
     std::size_t poll()
@@ -249,6 +302,13 @@ public:
     }
 
     /** Process at most one ready work item without blocking.
+
+        @throws std::system_error if waiting on the operating system's
+            event demultiplexer fails other than by interruption or
+            another transient condition; the context can no longer
+            dispatch work. On Windows, also if it is called with no
+            outstanding work and the wakeup that stops the context
+            cannot be queued.
 
         @return The number of handlers executed (0 or 1).
     */
