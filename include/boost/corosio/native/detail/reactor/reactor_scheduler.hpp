@@ -138,8 +138,7 @@ reactor_find_context(reactor_scheduler const* self) noexcept
     @par Thread Safety
     All public member functions are thread-safe.
 */
-class reactor_scheduler
-    : public scheduler
+class reactor_scheduler : public scheduler
 {
 public:
     using context_type = reactor_scheduler_context;
@@ -994,7 +993,7 @@ reactor_scheduler::do_one(lock_type& lock, long timeout_us, context_type& ctx)
         if (stopped_.load(std::memory_order_acquire))
             return 0;
 
-        std::uintptr_t e = completed_ops_.pop();
+        auto const e     = completed_ops_.pop();
         scheduler_op* op = ready_is_continuation(e) ? nullptr : ready_as_op(e);
 
         // Handle reactor sentinel — time to poll for I/O
