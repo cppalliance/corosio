@@ -116,16 +116,19 @@ include::example$snippets/4c2_configuration.cpp[tag=options_native,indent=0]
   cpp:io_context_options::enable_sqpoll[enable_sqpoll] is true.
 |===
 
-Options that do not apply to the active backend are silently ignored.
-Three options are validated on some I/O backends.
+Options that do not apply to the active backend are silently ignored,
+except for three that are validated.
 On POSIX, a cpp:io_context_options::thread_pool_size[thread_pool_size]
 less than `1` causes construction to throw `std::invalid_argument`.
-On the epoll, kqueue, and select I/O backends, construction throws
-`std::out_of_range` when
+On platforms with an epoll, kqueue, or select I/O backend, the other two
+are checked even if another backend is active. Construction throws
+`std::invalid_argument` when
 cpp:io_context_options::max_events_per_poll[max_events_per_poll] is
-outside `[1, INT_MAX]` or
+outside `[ 1, INT_MAX ]` or
 cpp:io_context_options::inline_budget_max[inline_budget_max] exceeds
 `INT_MAX`.
+Where epoll is available, `max_events_per_poll` must also not exceed
+`INT_MAX / sizeof(epoll_event)`, the most events one epoll wait accepts.
 
 == Tuning Guidelines
 

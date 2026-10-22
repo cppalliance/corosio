@@ -217,7 +217,7 @@ struct bounded_run_test
         io_context_options opts;
         opts.inline_budget_max = (std::numeric_limits<unsigned>::max)();
         BOOST_TEST_THROWS(
-            ([&] { io_context tmp(Backend, opts); }()), std::out_of_range);
+            ([&] { io_context tmp(Backend, opts); }()), std::invalid_argument);
     }
 
     // run_one() on a context with no outstanding work returns 0 at once,

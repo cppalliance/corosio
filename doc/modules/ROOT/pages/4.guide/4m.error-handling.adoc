@@ -58,7 +58,9 @@ Windows. The constructor throws exactly the codes this path reports
 
 | cpp:io_context[]'s options constructor throwing `std::invalid_argument`
   (POSIX only)
-| ensure `opts.thread_pool_size >= 1`
+| ensure `opts.thread_pool_size >= 1`, `opts.max_events_per_poll` is in
+  `[ 1, INT_MAX ]` (lower where epoll is available), and
+  `opts.inline_budget_max` does not exceed `INT_MAX`
 |===
 
 What cannot be spelled exception-free: root construction and the run
