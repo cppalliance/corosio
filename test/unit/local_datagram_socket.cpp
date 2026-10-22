@@ -92,13 +92,14 @@ struct local_datagram_socket_test
 
         local_datagram_socket peer(ioc);
         BOOST_TEST(!peer.open());
-        BOOST_TEST(!peer.bind(local_endpoint(path)));
+        BOOST_TEST(!peer.bind(test::must(make_local_endpoint(path))));
 
         local_datagram_socket sender(ioc); // left closed on purpose
         std::error_code cec;
         bool done = false;
         auto task = [&]() -> capy::task<> {
-            auto [ec] = co_await sender.connect(local_endpoint(path));
+            auto [ec] =
+                co_await sender.connect(test::must(make_local_endpoint(path)));
             cec       = ec;
             done      = true;
         };
@@ -165,7 +166,7 @@ struct local_datagram_socket_test
 
         test::temp_socket_dir tmp;
         auto path = tmp.path();
-        auto ec   = sock.bind(local_endpoint(path));
+        auto ec   = sock.bind(test::must(make_local_endpoint(path)));
         BOOST_TEST_EQ(!ec, true);
     }
 
@@ -184,8 +185,8 @@ struct local_datagram_socket_test
         BOOST_TEST(!s1.open());
         BOOST_TEST(!s2.open());
 
-        auto ec1 = s1.bind(local_endpoint(path1));
-        auto ec2 = s2.bind(local_endpoint(path2));
+        auto ec1 = s1.bind(test::must(make_local_endpoint(path1)));
+        auto ec2 = s2.bind(test::must(make_local_endpoint(path2)));
         BOOST_TEST_EQ(!ec1, true);
         BOOST_TEST_EQ(!ec2, true);
 
@@ -205,8 +206,8 @@ struct local_datagram_socket_test
                 ec_out = ec;
                 n_out  = n;
                 done   = true;
-            }(s1, msg, std::strlen(msg), local_endpoint(path2), send_ec, sent,
-                           send_done));
+            }(s1, msg, std::strlen(msg), test::must(make_local_endpoint(path2)),
+                           send_ec, sent, send_done));
 
         capy::run_async(ex)(
             [](local_datagram_socket& s, char* data, std::size_t len,
@@ -241,8 +242,9 @@ struct local_datagram_socket_test
         BOOST_TEST(!sock.open());
 
         // Bind to a path under a nonexistent directory
-        auto ec =
-            sock.bind(local_endpoint("/tmp/nonexistent_dir_corosio/sock"));
+        auto ec = sock.bind(
+            test::must(
+                make_local_endpoint("/tmp/nonexistent_dir_corosio/sock")));
         BOOST_TEST_EQ(!!ec, true);
     }
 
@@ -347,8 +349,8 @@ struct local_datagram_socket_test
         BOOST_TEST(!s1.open());
         BOOST_TEST(!s2.open());
 
-        auto ec1 = s1.bind(local_endpoint(abs_path1));
-        auto ec2 = s2.bind(local_endpoint(abs_path2));
+        auto ec1 = s1.bind(test::must(make_local_endpoint(abs_path1)));
+        auto ec2 = s2.bind(test::must(make_local_endpoint(abs_path2)));
         BOOST_TEST_EQ(!ec1, true);
         BOOST_TEST_EQ(!ec2, true);
 
@@ -368,7 +370,8 @@ struct local_datagram_socket_test
                 ec_out = ec;
                 n_out  = n;
                 done   = true;
-            }(s1, msg, std::strlen(msg), local_endpoint(abs_path2), send_ec,
+            }(s1, msg, std::strlen(msg),
+                           test::must(make_local_endpoint(abs_path2)), send_ec,
                            sent, send_done));
 
         capy::run_async(ex)(
@@ -477,8 +480,8 @@ struct local_datagram_socket_test
         BOOST_TEST(!s1.open());
         BOOST_TEST(!s2.open());
 
-        auto ec1 = s1.bind(local_endpoint(path1));
-        auto ec2 = s2.bind(local_endpoint(path2));
+        auto ec1 = s1.bind(test::must(make_local_endpoint(path1)));
+        auto ec2 = s2.bind(test::must(make_local_endpoint(path2)));
         BOOST_TEST_EQ(!ec1, true);
         BOOST_TEST_EQ(!ec2, true);
 
@@ -524,7 +527,8 @@ struct local_datagram_socket_test
                     rn2_out = n;
                 }
                 d = true;
-            }(s1, s2, msg, std::strlen(msg), local_endpoint(path2), buf1,
+            }(s1, s2, msg, std::strlen(msg),
+                        test::must(make_local_endpoint(path2)), buf1,
                         sizeof(buf1), buf2, sizeof(buf2), se, sn, re1, rn1,
                         src1, re2, rn2, src2, done));
 
@@ -598,7 +602,7 @@ struct local_datagram_socket_test
 
         test::temp_socket_dir tmp;
         auto path = tmp.path();
-        auto ec   = sock.bind(local_endpoint(path));
+        auto ec   = sock.bind(test::must(make_local_endpoint(path)));
         BOOST_TEST_EQ(!ec, true);
 
         BOOST_TEST_EQ(sock.local_endpoint().path(), path);
@@ -627,7 +631,7 @@ struct local_datagram_socket_test
         local_datagram_socket sock(ioc);
 
         BOOST_TEST(
-            sock.bind(local_endpoint("/tmp/never")) ==
+            sock.bind(test::must(make_local_endpoint("/tmp/never"))) ==
             std::errc::bad_file_descriptor);
     }
 
@@ -813,7 +817,8 @@ struct local_datagram_socket_test
             BOOST_TEST(e1 == std::errc::bad_file_descriptor);
 
             auto [e2, n2] = co_await sock.send_to(
-                capy::const_buffer(m, 1), local_endpoint("/tmp/x"));
+                capy::const_buffer(m, 1),
+                test::must(make_local_endpoint("/tmp/x")));
             BOOST_TEST(e2 == std::errc::bad_file_descriptor);
 
             auto [e3, n3] = co_await sock.recv(capy::mutable_buffer(buf, 1));
@@ -915,7 +920,8 @@ struct local_datagram_socket_test
         std::error_code sec;
         auto task = [&]() -> capy::task<> {
             auto [ec, n] = co_await d.send_to(
-                capy::const_buffer("x", 1), local_endpoint(tmp.path()));
+                capy::const_buffer("x", 1),
+                test::must(make_local_endpoint(tmp.path())));
             std::ignore = n;
             sec         = ec;
         };

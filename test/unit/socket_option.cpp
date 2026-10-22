@@ -220,10 +220,13 @@ struct socket_option_test
     // dual-stack case).
     void testMembershipTraits()
     {
-        socket_option::join_group join4(ip_address("239.1.2.3"));
-        socket_option::leave_group leave4(ip_address("239.1.2.3"));
-        socket_option::join_group join6(ip_address("ff02::1"));
-        socket_option::leave_group leave6(ipv6_address("ff02::1"), 0);
+        socket_option::join_group join4(
+            test::must(make_ip_address("239.1.2.3")));
+        socket_option::leave_group leave4(
+            test::must(make_ip_address("239.1.2.3")));
+        socket_option::join_group join6(test::must(make_ip_address("ff02::1")));
+        socket_option::leave_group leave6(
+            test::must(make_ipv6_address("ff02::1")), 0);
 
         // Group family decides; the argument does not
         BOOST_TEST_EQ(join4.level(family::v4), join4.level(family::v6));
@@ -255,29 +258,38 @@ struct socket_option_test
             }
         };
         same_bytes(
-            join4, native_socket_option::join_group(ip_address("239.1.2.3")));
+            join4,
+            native_socket_option::join_group(
+                test::must(make_ip_address("239.1.2.3"))));
         same_bytes(
-            leave4, native_socket_option::leave_group(ip_address("239.1.2.3")));
+            leave4,
+            native_socket_option::leave_group(
+                test::must(make_ip_address("239.1.2.3"))));
         same_bytes(
-            join6, native_socket_option::join_group(ip_address("ff02::1")));
+            join6,
+            native_socket_option::join_group(
+                test::must(make_ip_address("ff02::1"))));
         same_bytes(
             leave6,
-            native_socket_option::leave_group(ipv6_address("ff02::1"), 0));
+            native_socket_option::leave_group(
+                test::must(make_ipv6_address("ff02::1")), 0));
 
         // A v6 group's zone is the default interface index; an explicit
         // index outranks it
         {
-            native_socket_option::join_group zoned(ip_address("ff02::1%2"));
+            native_socket_option::join_group zoned(
+                test::must(make_ip_address("ff02::1%2")));
             auto const* m =
                 static_cast<struct ipv6_mreq const*>(zoned.data(family::v6));
             BOOST_TEST_EQ(m->ipv6mr_interface, 2u);
 
-            native_socket_option::join_group unzoned(ip_address("ff02::1"));
+            native_socket_option::join_group unzoned(
+                test::must(make_ip_address("ff02::1")));
             m = static_cast<struct ipv6_mreq const*>(unzoned.data(family::v6));
             BOOST_TEST_EQ(m->ipv6mr_interface, 0u);
 
             native_socket_option::join_group explicit_index(
-                ipv6_address("ff02::1%2"), 5);
+                test::must(make_ipv6_address("ff02::1%2")), 5);
             m = static_cast<struct ipv6_mreq const*>(
                 explicit_index.data(family::v6));
             BOOST_TEST_EQ(m->ipv6mr_interface, 5u);
@@ -288,7 +300,7 @@ struct socket_option_test
     // address so an empty marshal cannot pass
     void testMulticastInterfaceRendering()
     {
-        ipv4_address const iface("192.168.7.9");
+        auto const iface = test::must(make_ipv4_address("192.168.7.9"));
 
         socket_option::multicast_interface pub(iface);
         BOOST_TEST_EQ(pub.address(), iface);

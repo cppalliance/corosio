@@ -37,7 +37,10 @@ connect_and_read(corosio::io_context& ioc)
 {
     corosio::local_stream_socket s(ioc);
 
-    auto [ec] = co_await s.connect(corosio::local_endpoint("/tmp/my.sock"));
+    auto [pec, addr] = corosio::make_local_endpoint("/tmp/my.sock");
+    if (pec)
+        co_return;
+    auto [ec] = co_await s.connect(addr);
     if (ec)
         co_return;
 

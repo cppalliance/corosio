@@ -448,7 +448,7 @@ struct uring_budget_test
             throw std::system_error(ec, "connect_pair");
 
         test::temp_socket_dir tmp;
-        auto target = local_endpoint(tmp.path());
+        auto target = test::must(make_local_endpoint(tmp.path()));
 
         std::stop_source ss;
         ss.request_stop();
@@ -530,9 +530,9 @@ struct uring_budget_test
         local_datagram_socket s1(ioc), s2(ioc);
         BOOST_TEST(!s1.open());
         BOOST_TEST(!s2.open());
-        BOOST_TEST(!s1.bind(local_endpoint(tmp1.path())));
-        BOOST_TEST(!s2.bind(local_endpoint(tmp2.path())));
-        auto ep2 = local_endpoint(tmp2.path());
+        BOOST_TEST(!s1.bind(test::must(make_local_endpoint(tmp1.path()))));
+        BOOST_TEST(!s2.bind(test::must(make_local_endpoint(tmp2.path()))));
+        auto ep2 = test::must(make_local_endpoint(tmp2.path()));
 
         std::error_code cec;
         auto connecter = [&]() -> capy::task<> {
@@ -592,10 +592,10 @@ struct uring_budget_test
         local_datagram_socket s1(ioc), s2(ioc);
         BOOST_TEST(!s1.open());
         BOOST_TEST(!s2.open());
-        BOOST_TEST(!s1.bind(local_endpoint(tmp1.path())));
-        BOOST_TEST(!s2.bind(local_endpoint(tmp2.path())));
-        auto ep1 = local_endpoint(tmp1.path());
-        auto ep2 = local_endpoint(tmp2.path());
+        BOOST_TEST(!s1.bind(test::must(make_local_endpoint(tmp1.path()))));
+        BOOST_TEST(!s2.bind(test::must(make_local_endpoint(tmp2.path()))));
+        auto ep1 = test::must(make_local_endpoint(tmp1.path()));
+        auto ep2 = test::must(make_local_endpoint(tmp2.path()));
 
         // A datagram socket's queue depth is bounded by the unix
         // datagram limit, not SO_RCVBUF, so only a few can be held

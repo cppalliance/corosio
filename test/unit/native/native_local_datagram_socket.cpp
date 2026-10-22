@@ -31,6 +31,7 @@
 
 #include "context.hpp"
 #include "test_suite.hpp"
+#include "must.hpp"
 
 namespace boost::corosio {
 
@@ -131,8 +132,8 @@ struct native_local_datagram_socket_test
         BOOST_TEST(!sender.open());
         BOOST_TEST(!receiver.open());
 
-        auto ec1 = sender.bind(local_endpoint(path1));
-        auto ec2 = receiver.bind(local_endpoint(path2));
+        auto ec1 = sender.bind(test::must(make_local_endpoint(path1)));
+        auto ec2 = receiver.bind(test::must(make_local_endpoint(path2)));
         BOOST_TEST_EQ(ec1, std::error_code{});
         BOOST_TEST_EQ(ec2, std::error_code{});
 
@@ -155,7 +156,8 @@ struct native_local_datagram_socket_test
         };
 
         auto ex = ioc.get_executor();
-        capy::run_async(ex)(task(sender, receiver, local_endpoint(path2)));
+        capy::run_async(ex)(
+            task(sender, receiver, test::must(make_local_endpoint(path2))));
         ioc.run();
     }
 
@@ -172,8 +174,8 @@ struct native_local_datagram_socket_test
         BOOST_TEST(!a.open());
         BOOST_TEST(!b.open());
 
-        auto eca = a.bind(local_endpoint(path_a));
-        auto ecb = b.bind(local_endpoint(path_b));
+        auto eca = a.bind(test::must(make_local_endpoint(path_a)));
+        auto ecb = b.bind(test::must(make_local_endpoint(path_b)));
         BOOST_TEST_EQ(eca, std::error_code{});
         BOOST_TEST_EQ(ecb, std::error_code{});
 
@@ -201,8 +203,9 @@ struct native_local_datagram_socket_test
         };
 
         auto ex = ioc.get_executor();
-        capy::run_async(ex)(
-            task(a, b, local_endpoint(path_b), local_endpoint(path_a)));
+        capy::run_async(ex)(task(
+            a, b, test::must(make_local_endpoint(path_b)),
+            test::must(make_local_endpoint(path_a))));
         ioc.run();
     }
 
@@ -219,8 +222,8 @@ struct native_local_datagram_socket_test
         BOOST_TEST(!sender.open());
         BOOST_TEST(!receiver.open());
 
-        auto ec1 = sender.bind(local_endpoint(path1));
-        auto ec2 = receiver.bind(local_endpoint(path2));
+        auto ec1 = sender.bind(test::must(make_local_endpoint(path1)));
+        auto ec2 = receiver.bind(test::must(make_local_endpoint(path2)));
         BOOST_TEST_EQ(ec1, std::error_code{});
         BOOST_TEST_EQ(ec2, std::error_code{});
 
@@ -243,7 +246,8 @@ struct native_local_datagram_socket_test
         };
 
         auto ex = ioc.get_executor();
-        capy::run_async(ex)(task(s_ref, r_ref, local_endpoint(path2)));
+        capy::run_async(ex)(
+            task(s_ref, r_ref, test::must(make_local_endpoint(path2))));
         ioc.run();
     }
 
@@ -258,7 +262,7 @@ struct native_local_datagram_socket_test
 
         native_local_datagram_socket<Backend> recv(ioc);
         BOOST_TEST(!recv.open());
-        auto bec = recv.bind(local_endpoint(rx_path));
+        auto bec = recv.bind(test::must(make_local_endpoint(rx_path)));
         BOOST_TEST(!bec);
 
         native_local_datagram_socket<Backend> send(ioc);
@@ -275,7 +279,8 @@ struct native_local_datagram_socket_test
         auto sender = [&]() -> capy::task<> {
             char dg[1]                    = {'X'};
             [[maybe_unused]] auto [ec, n] = co_await send.send_to(
-                capy::const_buffer(dg, sizeof(dg)), local_endpoint(rx_path));
+                capy::const_buffer(dg, sizeof(dg)),
+                test::must(make_local_endpoint(rx_path)));
         };
 
         capy::run_async(ex)(waiter());
@@ -303,7 +308,8 @@ struct native_local_datagram_socket_test
             BOOST_TEST(e1 == std::errc::bad_file_descriptor);
 
             auto [e2, n2] = co_await s.send_to(
-                capy::const_buffer(m, 1), local_endpoint("/tmp/x"));
+                capy::const_buffer(m, 1),
+                test::must(make_local_endpoint("/tmp/x")));
             BOOST_TEST(e2 == std::errc::bad_file_descriptor);
 
             auto [e3, n3] = co_await s.recv(capy::mutable_buffer(buf, 1));
@@ -343,7 +349,7 @@ struct native_local_datagram_socket_test
                 auto [ec] = co_await sock.connect(ep);
                 ec_out    = ec;
                 d         = true;
-            }(s, local_endpoint(path), result_ec, done));
+            }(s, test::must(make_local_endpoint(path)), result_ec, done));
 
         ioc.run();
         BOOST_TEST(done);

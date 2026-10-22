@@ -71,7 +71,7 @@ make_local_pair(io_context& ioc, test::temp_socket_dir const& tmp)
     local_stream_acceptor acc(ioc);
     if (acc.open())
         throw std::runtime_error("acceptor open");
-    if (acc.bind(local_endpoint(tmp.path())))
+    if (acc.bind(test::must(make_local_endpoint(tmp.path()))))
         throw std::runtime_error("acceptor bind");
     if (acc.listen())
         throw std::runtime_error("acceptor listen");
@@ -91,7 +91,8 @@ make_local_pair(io_context& ioc, test::temp_socket_dir const& tmp)
         auto [ec] = co_await a.accept(s);
         BOOST_TEST(!ec);
     };
-    capy::run_async(ex)(connector(client, local_endpoint(tmp.path())));
+    capy::run_async(ex)(
+        connector(client, test::must(make_local_endpoint(tmp.path()))));
     capy::run_async(ex)(accepter(acc, server));
     ioc.run();
     ioc.restart();
@@ -168,7 +169,7 @@ struct iocp_paths_test
         test::temp_socket_dir tmp;
         local_stream_acceptor lacc(ioc);
         BOOST_TEST(!lacc.open());
-        BOOST_TEST(!lacc.bind(local_endpoint(tmp.path())));
+        BOOST_TEST(!lacc.bind(test::must(make_local_endpoint(tmp.path()))));
         BOOST_TEST(!lacc.listen());
 
         std::stop_source ss;
@@ -414,7 +415,7 @@ struct iocp_paths_test
         test::temp_socket_dir tmp;
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        BOOST_TEST(!acc.bind(local_endpoint(tmp.path())));
+        BOOST_TEST(!acc.bind(test::must(make_local_endpoint(tmp.path()))));
         BOOST_TEST(!acc.listen());
 
         auto [fd_ec, fd] = acc.release();
@@ -493,7 +494,7 @@ struct iocp_paths_test
         test::temp_socket_dir ltmp;
         local_stream_acceptor lacc(ioc);
         BOOST_TEST(!lacc.open());
-        BOOST_TEST(!lacc.bind(local_endpoint(ltmp.path())));
+        BOOST_TEST(!lacc.bind(test::must(make_local_endpoint(ltmp.path()))));
         BOOST_TEST(!lacc.listen());
         local_stream_socket lpeer(ioc);
 
@@ -635,7 +636,8 @@ struct iocp_paths_test
             test::temp_socket_dir tmp2;
             local_stream_acceptor lacc(ioc);
             std::ignore = lacc.open();
-            std::ignore = lacc.bind(local_endpoint(tmp2.path()));
+            std::ignore =
+                lacc.bind(test::must(make_local_endpoint(tmp2.path())));
             std::ignore = lacc.listen();
 
             auto reader = [](local_stream_socket s,

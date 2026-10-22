@@ -20,13 +20,13 @@ error code alongside any values produced by the operation.
 Every fallible operation reports through exactly one channel:
 
 * *Expected runtime conditions return the error.* Synchronous
-  operations return `std::error_code` (or `results<T>` when a
-  payload rides along — `seek()`, `size()`, `available()`,
-  `release()`, `get_option()`, the `make_*` factories), and
+  operations return `std::error_code`, or `results<T>` when a
+  payload rides along. That covers `seek()`, `size()`, `available()`,
+  `release()`, `get_option()`, and the `make_*` factories, and
   asynchronous operations complete with `results<...>`. Every
   error-returning function is `+[[nodiscard]]+`.
-* *Misuse of a documented precondition throws* `std::system_error` —
-  for example a `local_endpoint` path longer than its maximum.
+* *Misuse of a documented precondition throws* — for example an
+  `io_context` options constructor given a `thread_pool_size` of zero.
 * *Operations whose outcome nobody can act on report nothing.*
   `close()` and `cancel()` are `void noexcept`. Durability reporting
   belongs to `sync_data()`/`sync_all()`. Cancellation reports
@@ -53,18 +53,8 @@ cpp:tcp_acceptor[] also configures address reuse via `set_option()`
 between open and bind: `SO_REUSEADDR` on POSIX, `SO_EXCLUSIVEADDRUSE` on
 Windows. The constructor throws exactly the codes this path reports
 
-| `endpoint("host:port")`
-| `make_endpoint(s)`
-
-| `ipv4_address(s)` / `ipv6_address(s)`
-| `make_ipv4_address(s)` / `make_ipv6_address(s)`
-
 | cpp:signal_set[] constructed with a context and one or more signals
 | `signal_set(ctx)`, then `add()` per signal
-
-| `local_endpoint(path)`
-| check `path.size() <=` cpp:local_endpoint::max_path_length[] first —
-  the public constant is the entire precondition
 
 | cpp:io_context[]'s options constructor throwing `std::invalid_argument`
   (POSIX only)

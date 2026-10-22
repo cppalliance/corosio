@@ -12,6 +12,8 @@
 
 #include <boost/corosio/detail/config.hpp>
 
+#include <boost/capy/results.hpp>
+
 #include <algorithm>
 #include <compare>
 #include <cstddef>
@@ -38,9 +40,20 @@ namespace boost::corosio {
     @par Thread Safety
     Distinct objects: Safe.@n
     Shared objects: Safe.
+
+    @see @ref boost::corosio::make_local_endpoint
 */
 class BOOST_COROSIO_DECL local_endpoint
 {
+    struct from_path_t
+    {};
+
+    // Callers have already checked the length against max_path_length.
+    local_endpoint(from_path_t, std::string_view path) noexcept;
+
+    friend BOOST_COROSIO_DECL capy::results<local_endpoint>
+    make_local_endpoint(std::string_view path) noexcept;
+
     // sun_path is 108 on Linux, 104 on macOS/FreeBSD. Use the
     // minimum so local_endpoint is portable across all three.
     char path_[104]{};
@@ -52,21 +65,6 @@ public:
 
     /// Default constructor. Creates an empty (unbound) endpoint.
     local_endpoint() noexcept = default;
-
-    /** Construct from a path.
-
-        An over-long path causes the constructor to throw; the limit
-        is the public @ref max_path_length constant, so callers with
-        runtime-derived paths can check
-        `path.size() <= max_path_length` before constructing.
-
-        @param path The filesystem path for the socket.
-            Must not exceed @ref max_path_length bytes.
-
-        @throws std::system_error `errc::filename_too_long` if the
-            path is too long.
-    */
-    explicit local_endpoint(std::string_view path);
 
     /** Return the socket path.
 
@@ -130,6 +128,22 @@ public:
         return a.len_ <=> b.len_;
     }
 };
+
+/** Make a local endpoint from a filesystem path.
+
+    A path longer than @ref local_endpoint::max_path_length cannot be
+    represented in a socket address. Such a path reports
+    `errc::filename_too_long` with an empty endpoint.
+
+    @par Example
+    @par !example make_local_endpoint
+
+    @param path The socket path; an empty path yields an unbound endpoint.
+
+    @return The error code and the endpoint.
+*/
+[[nodiscard]] BOOST_COROSIO_DECL capy::results<local_endpoint>
+make_local_endpoint(std::string_view path) noexcept;
 
 } // namespace boost::corosio
 

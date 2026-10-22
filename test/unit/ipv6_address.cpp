@@ -24,6 +24,7 @@
 #endif
 
 #include "test_suite.hpp"
+#include "must.hpp"
 
 namespace boost::corosio {
 
@@ -55,23 +56,18 @@ struct ipv6_address_test
 
         // Construct from string
         {
-            ipv6_address a("::1");
+            auto a = test::must(make_ipv6_address("::1"));
             BOOST_TEST(a.is_loopback());
         }
 
-        // Invalid string throws system_error carrying the parse code
+        // Invalid string reports the parse code
         {
-            BOOST_TEST_THROWS(ipv6_address("invalid"), std::system_error);
-            BOOST_TEST_THROWS(ipv6_address(":::1"), std::system_error);
-            try
-            {
-                ipv6_address("invalid");
-                BOOST_TEST_FAIL();
-            }
-            catch (std::system_error const& e)
-            {
-                BOOST_TEST(e.code() == std::errc::invalid_argument);
-            }
+            auto [ec0, v0] = make_ipv6_address("invalid");
+            BOOST_TEST(ec0 == std::errc::invalid_argument);
+            BOOST_TEST(v0 == ipv6_address{});
+            auto [ec1, v1] = make_ipv6_address(":::1");
+            BOOST_TEST(ec1 == std::errc::invalid_argument);
+            BOOST_TEST(v1 == ipv6_address{});
         }
     }
 
@@ -264,11 +260,11 @@ struct ipv6_address_test
 
         // Multicast
         {
-            ipv6_address a("ff02::1");
+            auto a = test::must(make_ipv6_address("ff02::1"));
             BOOST_TEST(a.is_multicast());
         }
         {
-            ipv6_address a("ff05::1:3");
+            auto a = test::must(make_ipv6_address("ff05::1:3"));
             BOOST_TEST(a.is_multicast());
         }
         BOOST_TEST(!ipv6_address().is_multicast());
@@ -359,7 +355,8 @@ struct ipv6_address_test
         }
 
         // Zone 0 prints without a suffix
-        BOOST_TEST_EQ(ipv6_address("fe80::1").to_string(), "fe80::1");
+        BOOST_TEST_EQ(
+            test::must(make_ipv6_address("fe80::1")).to_string(), "fe80::1");
 
         // A zone is accepted on any v6 address, up to the uint32 max
         {
@@ -372,7 +369,7 @@ struct ipv6_address_test
         // Ostream agrees with to_string
         {
             std::ostringstream oss;
-            oss << ipv6_address("fe80::1%3");
+            oss << test::must(make_ipv6_address("fe80::1%3"));
             BOOST_TEST_EQ(oss.str(), "fe80::1%3");
         }
 
@@ -392,7 +389,9 @@ struct ipv6_address_test
 
             // The mapped form with a zone stays within bounds too
             ipv6_address m(
-                ipv6_address("::ffff:255.255.255.255").to_bytes(), 4294967295u);
+                test::must(make_ipv6_address("::ffff:255.255.255.255"))
+                    .to_bytes(),
+                4294967295u);
             auto sm = m.to_buffer(buf, sizeof(buf));
             BOOST_TEST_EQ(sm, "::ffff:255.255.255.255%4294967295");
             BOOST_TEST(sm.size() <= ipv6_address::max_str_len);

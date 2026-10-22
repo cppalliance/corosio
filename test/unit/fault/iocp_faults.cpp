@@ -1249,7 +1249,7 @@ struct iocp_faults
             close_native_socket(h);
         }
         temp_socket_dir dir;
-        auto const ep = corosio::local_endpoint(dir.path());
+        auto const ep = test::must(corosio::make_local_endpoint(dir.path()));
         {
             local_stream_acceptor acc(ioc);
             BOOST_TEST(!acc.open());
@@ -1291,7 +1291,8 @@ struct iocp_faults
             expect_system_error(
                 [&] {
                     local_stream_acceptor a(
-                        ioc, corosio::local_endpoint(odir.path()));
+                        ioc,
+                        test::must(corosio::make_local_endpoint(odir.path())));
                 },
                 std::errc::address_family_not_supported);
             BOOST_TEST(f.fired());
@@ -1302,7 +1303,8 @@ struct iocp_faults
             expect_system_error(
                 [&] {
                     local_stream_acceptor a(
-                        ioc, corosio::local_endpoint(ldir.path()));
+                        ioc,
+                        test::must(corosio::make_local_endpoint(ldir.path())));
                 },
                 std::errc::operation_not_supported);
             BOOST_TEST(f.fired());
@@ -1313,7 +1315,7 @@ struct iocp_faults
     {
         io_context ioc(iocp);
         temp_socket_dir dir;
-        auto const ep = corosio::local_endpoint(dir.path());
+        auto const ep = test::must(corosio::make_local_endpoint(dir.path()));
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
         BOOST_TEST(!acc.bind(ep, bind_option::unlink_existing));
@@ -1753,7 +1755,7 @@ struct iocp_faults
         io_context ioc(iocp);
 
         temp_socket_dir dir;
-        auto const ep = corosio::local_endpoint(dir.path());
+        auto const ep = test::must(corosio::make_local_endpoint(dir.path()));
         tcp_acceptor acc(ioc, loopback());
         BOOST_TEST(arm.fired());
         local_stream_acceptor lacc(ioc);
@@ -1886,7 +1888,7 @@ struct iocp_faults
     {
         io_context ioc(iocp);
         temp_socket_dir dir;
-        auto const ep = corosio::local_endpoint(dir.path());
+        auto const ep = test::must(corosio::make_local_endpoint(dir.path()));
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
         BOOST_TEST(!acc.bind(ep, bind_option::unlink_existing));

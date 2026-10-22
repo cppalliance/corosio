@@ -15,6 +15,7 @@
 #include <system_error>
 
 #include "test_suite.hpp"
+#include "must.hpp"
 
 namespace boost::corosio {
 
@@ -83,7 +84,7 @@ struct endpoint_parse_test
     {
         // IPv4 without port
         {
-            endpoint ep("192.168.1.1");
+            auto ep = test::must(make_endpoint("192.168.1.1"));
             BOOST_TEST(ep.is_v4());
             BOOST_TEST_EQ(ep.address().to_string(), "192.168.1.1");
             BOOST_TEST_EQ(ep.port(), 0);
@@ -91,7 +92,7 @@ struct endpoint_parse_test
 
         // IPv4 with port
         {
-            endpoint ep("192.168.1.1:8080");
+            auto ep = test::must(make_endpoint("192.168.1.1:8080"));
             BOOST_TEST(ep.is_v4());
             BOOST_TEST_EQ(ep.address().to_string(), "192.168.1.1");
             BOOST_TEST_EQ(ep.port(), 8080);
@@ -99,16 +100,16 @@ struct endpoint_parse_test
 
         // IPv4 port edge cases
         {
-            endpoint ep1("127.0.0.1:0");
+            auto ep1 = test::must(make_endpoint("127.0.0.1:0"));
             BOOST_TEST_EQ(ep1.port(), 0);
 
-            endpoint ep2("127.0.0.1:65535");
+            auto ep2 = test::must(make_endpoint("127.0.0.1:65535"));
             BOOST_TEST_EQ(ep2.port(), 65535);
         }
 
         // IPv6 without port
         {
-            endpoint ep("::1");
+            auto ep = test::must(make_endpoint("::1"));
             BOOST_TEST(ep.is_v6());
             BOOST_TEST(ep.address().is_loopback());
             BOOST_TEST_EQ(ep.port(), 0);
@@ -116,14 +117,14 @@ struct endpoint_parse_test
 
         // IPv6 without port (full form)
         {
-            endpoint ep("2001:db8::1");
+            auto ep = test::must(make_endpoint("2001:db8::1"));
             BOOST_TEST(ep.is_v6());
             BOOST_TEST_EQ(ep.port(), 0);
         }
 
         // IPv6 bracketed without port
         {
-            endpoint ep("[::1]");
+            auto ep = test::must(make_endpoint("[::1]"));
             BOOST_TEST(ep.is_v6());
             BOOST_TEST(ep.address().is_loopback());
             BOOST_TEST_EQ(ep.port(), 0);
@@ -131,7 +132,7 @@ struct endpoint_parse_test
 
         // IPv6 bracketed with port
         {
-            endpoint ep("[::1]:8080");
+            auto ep = test::must(make_endpoint("[::1]:8080"));
             BOOST_TEST(ep.is_v6());
             BOOST_TEST(ep.address().is_loopback());
             BOOST_TEST_EQ(ep.port(), 8080);
@@ -139,61 +140,45 @@ struct endpoint_parse_test
 
         // IPv6 with a zone, bracketed and bare
         {
-            endpoint ep("[fe80::1%2]:8080");
+            auto ep = test::must(make_endpoint("[fe80::1%2]:8080"));
             BOOST_TEST(ep.is_v6());
             BOOST_TEST_EQ(ep.address().to_v6().scope_id(), 2u);
             BOOST_TEST_EQ(ep.port(), 8080);
 
-            endpoint bare("fe80::1%2");
+            auto bare = test::must(make_endpoint("fe80::1%2"));
             BOOST_TEST_EQ(bare.address().to_v6().scope_id(), 2u);
             BOOST_TEST_EQ(bare.port(), 0);
         }
 
         // IPv6 full address bracketed with port
         {
-            endpoint ep("[2001:db8::1]:443");
+            auto ep = test::must(make_endpoint("[2001:db8::1]:443"));
             BOOST_TEST(ep.is_v6());
             BOOST_TEST_EQ(ep.port(), 443);
         }
     }
 
-    void testConstructFromStringThrows()
+    void testMakeEndpointInvalid()
     {
-        // The constructor throws the code make_endpoint returns.
-        std::error_code caught;
-        try
+        auto [ec, ep] = make_endpoint("not an endpoint");
+        BOOST_TEST(ec == std::errc::invalid_argument);
+        BOOST_TEST(ep == endpoint{});
+
+        for (std::string_view bad :
+             {// Empty string
+              "",
+              // Invalid IPv4
+              "256.0.0.1", "1.2.3", "1.2.3.4.5",
+              // Invalid port
+              "1.2.3.4:", "1.2.3.4:abc", "1.2.3.4:65536", "1.2.3.4:-1",
+              "1.2.3.4:01",
+              // Invalid IPv6
+              "[", "[]", "[::1", "[::1]:", "[::1]:abc", "[::1]:65536"})
         {
-            endpoint("not an endpoint");
-            BOOST_TEST_FAIL();
+            auto [bec, bep] = make_endpoint(bad);
+            BOOST_TEST(bec == std::errc::invalid_argument);
+            BOOST_TEST(bep == endpoint{});
         }
-        catch (std::system_error const& e)
-        {
-            caught = e.code();
-        }
-        BOOST_TEST(caught == std::errc::invalid_argument);
-
-        // Empty string
-        BOOST_TEST_THROWS(endpoint(""), std::system_error);
-
-        // Invalid IPv4
-        BOOST_TEST_THROWS(endpoint("256.0.0.1"), std::system_error);
-        BOOST_TEST_THROWS(endpoint("1.2.3"), std::system_error);
-        BOOST_TEST_THROWS(endpoint("1.2.3.4.5"), std::system_error);
-
-        // Invalid port
-        BOOST_TEST_THROWS(endpoint("1.2.3.4:"), std::system_error);
-        BOOST_TEST_THROWS(endpoint("1.2.3.4:abc"), std::system_error);
-        BOOST_TEST_THROWS(endpoint("1.2.3.4:65536"), std::system_error);
-        BOOST_TEST_THROWS(endpoint("1.2.3.4:-1"), std::system_error);
-        BOOST_TEST_THROWS(endpoint("1.2.3.4:01"), std::system_error);
-
-        // Invalid IPv6
-        BOOST_TEST_THROWS(endpoint("["), std::system_error);
-        BOOST_TEST_THROWS(endpoint("[]"), std::system_error);
-        BOOST_TEST_THROWS(endpoint("[::1"), std::system_error);
-        BOOST_TEST_THROWS(endpoint("[::1]:"), std::system_error);
-        BOOST_TEST_THROWS(endpoint("[::1]:abc"), std::system_error);
-        BOOST_TEST_THROWS(endpoint("[::1]:65536"), std::system_error);
     }
 
     void testDetectFormat()
@@ -425,7 +410,7 @@ struct endpoint_parse_test
         testAddress();
         testConstructFromEndpointAndPort();
         testConstructFromString();
-        testConstructFromStringThrows();
+        testMakeEndpointInvalid();
         testDetectFormat();
         testParseIPv4NoPort();
         testParseIPv4WithPort();

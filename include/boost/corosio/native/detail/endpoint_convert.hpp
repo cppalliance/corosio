@@ -35,6 +35,7 @@
 #endif
 
 #include <cstddef> // offsetof
+#include <tuple>
 
 #ifndef AF_UNIX
 #define AF_UNIX 1
@@ -364,11 +365,10 @@ from_sockaddr_local(sockaddr_storage const& storage, socklen_t len) noexcept
             path_len = static_cast<std::size_t>(end - sa.sun_path);
     }
 
-    // A foreign sun_path may exceed corosio's cap; the length
-    // pre-check keeps the throwing constructor unreachable.
-    if (path_len > local_endpoint::max_path_length)
-        return local_endpoint{};
-    return local_endpoint(std::string_view(sa.sun_path, path_len));
+    // A foreign sun_path may exceed corosio's cap; the factory then
+    // yields the empty endpoint, which is what we return.
+    return std::get<1>(
+        make_local_endpoint(std::string_view(sa.sun_path, path_len)));
 }
 
 //----------------------------------------------------------

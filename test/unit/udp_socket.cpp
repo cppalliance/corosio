@@ -356,7 +356,8 @@ struct udp_socket_test
         udp_socket sock(ioc);
         BOOST_TEST(!sock.open());
 
-        auto ec = sock.bind(endpoint(ipv4_address("1.2.3.4"), 0));
+        auto ec =
+            sock.bind(endpoint(test::must(make_ipv4_address("1.2.3.4")), 0));
         BOOST_TEST(ec);
 
         sock.close();
@@ -1200,7 +1201,8 @@ struct udp_socket_test
         // Join may fail with an environment-specific error in CI
         // without multicast routing; skip the rest of the test.
         if (receiver.set_option(
-                socket_option::join_group(ipv4_address("239.255.0.1"))))
+                socket_option::join_group(
+                    test::must(make_ipv4_address("239.255.0.1")))))
         {
             receiver.close();
             sender.close();
@@ -1211,7 +1213,7 @@ struct udp_socket_test
 
         auto task = [](udp_socket& s, udp_socket& r,
                        unsigned short port) -> capy::task<> {
-            endpoint dest(ipv4_address("239.255.0.1"), port);
+            endpoint dest(test::must(make_ipv4_address("239.255.0.1")), port);
             char const msg[] = "mcast";
             auto [ec1, n1] =
                 co_await s.send_to(capy::const_buffer(msg, sizeof(msg)), dest);
@@ -1251,10 +1253,12 @@ struct udp_socket_test
         BOOST_TEST(!sock.open());
 
         if (!sock.set_option(
-                socket_option::join_group(ipv4_address("239.255.0.2"))))
+                socket_option::join_group(
+                    test::must(make_ipv4_address("239.255.0.2")))))
         {
             std::ignore = sock.set_option(
-                socket_option::leave_group(ipv4_address("239.255.0.2")));
+                socket_option::leave_group(
+                    test::must(make_ipv4_address("239.255.0.2"))));
         }
         BOOST_TEST_PASS();
 
@@ -1268,10 +1272,12 @@ struct udp_socket_test
         BOOST_TEST(!sock.open(family::v6));
 
         if (!sock.set_option(
-                socket_option::join_group(ipv6_address("ff02::1"))))
+                socket_option::join_group(
+                    test::must(make_ipv6_address("ff02::1")))))
         {
             std::ignore = sock.set_option(
-                socket_option::leave_group(ipv6_address("ff02::1")));
+                socket_option::leave_group(
+                    test::must(make_ipv6_address("ff02::1"))));
         }
         BOOST_TEST_PASS();
 

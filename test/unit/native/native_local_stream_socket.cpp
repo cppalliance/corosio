@@ -26,6 +26,7 @@
 
 #include "context.hpp"
 #include "test_suite.hpp"
+#include "must.hpp"
 
 namespace boost::corosio {
 
@@ -122,7 +123,7 @@ struct native_local_stream_socket_test
 
         native_local_stream_acceptor<Backend> acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(path));
+        auto ec = acc.bind(test::must(make_local_endpoint(path)));
         BOOST_TEST_EQ(ec, std::error_code{});
         ec = acc.listen();
         BOOST_TEST_EQ(ec, std::error_code{});
@@ -157,7 +158,8 @@ struct native_local_stream_socket_test
 
         auto ex = ioc.get_executor();
         capy::run_async(ex)(acceptor_task(acc, server));
-        capy::run_async(ex)(client_task(client, local_endpoint(path)));
+        capy::run_async(ex)(
+            client_task(client, test::must(make_local_endpoint(path))));
         ioc.run();
     }
 
@@ -169,7 +171,7 @@ struct native_local_stream_socket_test
 
         native_local_stream_acceptor<Backend> acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(path));
+        auto ec = acc.bind(test::must(make_local_endpoint(path)));
         BOOST_TEST_EQ(ec, std::error_code{});
         ec = acc.listen();
         BOOST_TEST_EQ(ec, std::error_code{});
@@ -203,7 +205,8 @@ struct native_local_stream_socket_test
 
         auto ex = ioc.get_executor();
         capy::run_async(ex)(acceptor_task(acc));
-        capy::run_async(ex)(client_task(client, local_endpoint(path)));
+        capy::run_async(ex)(
+            client_task(client, test::must(make_local_endpoint(path))));
         ioc.run();
     }
 
@@ -215,7 +218,7 @@ struct native_local_stream_socket_test
 
         native_local_stream_acceptor<Backend> acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(path));
+        auto ec = acc.bind(test::must(make_local_endpoint(path)));
         BOOST_TEST_EQ(ec, std::error_code{});
         ec = acc.listen();
         BOOST_TEST_EQ(ec, std::error_code{});
@@ -251,7 +254,8 @@ struct native_local_stream_socket_test
 
         auto ex = ioc.get_executor();
         capy::run_async(ex)(acceptor_task(acc_ref, server_ref));
-        capy::run_async(ex)(client_task(client_ref, local_endpoint(path)));
+        capy::run_async(ex)(
+            client_task(client_ref, test::must(make_local_endpoint(path))));
         ioc.run();
     }
 
@@ -267,7 +271,7 @@ struct native_local_stream_socket_test
 
         native_local_stream_acceptor<Backend> acc(ioc);
         BOOST_TEST(!acc.open());
-        auto bec = acc.bind(local_endpoint(path));
+        auto bec = acc.bind(test::must(make_local_endpoint(path)));
         BOOST_TEST(!bec);
         auto lec = acc.listen();
         BOOST_TEST(!lec);
@@ -283,7 +287,7 @@ struct native_local_stream_socket_test
         };
         auto connect_task = [&]() -> capy::task<> {
             [[maybe_unused]] auto [ec] =
-                co_await client.connect(local_endpoint(path));
+                co_await client.connect(test::must(make_local_endpoint(path)));
         };
         capy::run_async(ex)(rendezvous());
         capy::run_async(ex)(connect_task());
@@ -313,7 +317,7 @@ struct native_local_stream_socket_test
 
         native_local_stream_acceptor<Backend> acc(ioc);
         BOOST_TEST(!acc.open());
-        auto bec = acc.bind(local_endpoint(path));
+        auto bec = acc.bind(test::must(make_local_endpoint(path)));
         BOOST_TEST(!bec);
         auto lec = acc.listen();
         BOOST_TEST(!lec);
@@ -330,7 +334,7 @@ struct native_local_stream_socket_test
         };
         auto connect_task = [&]() -> capy::task<> {
             [[maybe_unused]] auto [ec] =
-                co_await client.connect(local_endpoint(path));
+                co_await client.connect(test::must(make_local_endpoint(path)));
         };
         capy::run_async(ex)(waiter());
         capy::run_async(ex)(connect_task());
@@ -400,7 +404,7 @@ struct native_local_stream_socket_test
                 auto [ec] = co_await sock.connect(ep);
                 ec_out    = ec;
                 d         = true;
-            }(s, local_endpoint(path), result_ec, done));
+            }(s, test::must(make_local_endpoint(path)), result_ec, done));
 
         ioc.run();
         BOOST_TEST(done);

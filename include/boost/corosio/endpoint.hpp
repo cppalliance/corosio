@@ -12,7 +12,6 @@
 #define BOOST_COROSIO_ENDPOINT_HPP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/ip_address.hpp>
 
 #include <boost/capy/results.hpp>
@@ -82,24 +81,6 @@ public:
         , port_(p)
     {
     }
-
-    /** Construct from a string.
-
-        Parses an endpoint string in one of the following formats:
-        @li IPv4 without port: `192.168.1.1`
-        @li IPv4 with port: `192.168.1.1:8080`
-        @li IPv6 without port: `::1` or `2001:db8::1`
-        @li IPv6 with port (bracketed): `[::1]:8080`
-
-        @ref make_endpoint is the non-throwing form.
-
-        @param s The string to parse.
-
-        @throws std::system_error on parse failure.
-
-        @see @ref make_endpoint
-    */
-    explicit endpoint(std::string_view s);
 
     /** Check if this endpoint uses an IPv4 address.
 
@@ -217,14 +198,6 @@ endpoint_format detect_endpoint_format(std::string_view s) noexcept;
 */
 [[nodiscard]] BOOST_COROSIO_DECL capy::results<endpoint>
 make_endpoint(std::string_view s) noexcept;
-
-inline endpoint::endpoint(std::string_view s)
-{
-    auto [ec, ep] = make_endpoint(s);
-    if (ec)
-        detail::throw_system_error(ec);
-    *this = ep;
-}
 
 } // namespace boost::corosio
 

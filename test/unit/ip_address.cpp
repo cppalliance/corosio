@@ -15,6 +15,7 @@
 #include <system_error>
 
 #include "test_suite.hpp"
+#include "must.hpp"
 
 namespace boost::corosio {
 
@@ -47,27 +48,20 @@ struct ip_address_test
 
         // Construct from string, both families
         {
-            ip_address a("192.168.1.1");
+            auto a = test::must(make_ip_address("192.168.1.1"));
             BOOST_TEST(a.is_v4());
             BOOST_TEST_EQ(a.to_string(), "192.168.1.1");
 
-            ip_address b("2001:db8::1");
+            auto b = test::must(make_ip_address("2001:db8::1"));
             BOOST_TEST(b.is_v6());
             BOOST_TEST_EQ(b.to_string(), "2001:db8::1");
         }
 
-        // Invalid string throws system_error carrying the parse code
+        // Invalid string reports the parse code
         {
-            BOOST_TEST_THROWS(ip_address("invalid"), std::system_error);
-            try
-            {
-                ip_address("invalid");
-                BOOST_TEST_FAIL();
-            }
-            catch (std::system_error const& e)
-            {
-                BOOST_TEST(e.code() == std::errc::invalid_argument);
-            }
+            auto [ec0, v0] = make_ip_address("invalid");
+            BOOST_TEST(ec0 == std::errc::invalid_argument);
+            BOOST_TEST(v0 == ip_address{});
         }
     }
 
@@ -78,7 +72,8 @@ struct ip_address_test
         BOOST_TEST(ip_address().family() == family::v4);
         BOOST_TEST(ip_address(ipv4_address::loopback()).family() == family::v4);
         BOOST_TEST(ip_address(ipv6_address::loopback()).family() == family::v6);
-        BOOST_TEST(ip_address("fe80::1%2").family() == family::v6);
+        BOOST_TEST(
+            test::must(make_ip_address("fe80::1%2")).family() == family::v6);
     }
 
     void testPredicates()
@@ -97,7 +92,8 @@ struct ip_address_test
 
         // Multicast dispatches per family
         BOOST_TEST(ip_address(ipv4_address(0xE0000001)).is_multicast());
-        BOOST_TEST(ip_address(ipv6_address("ff02::1")).is_multicast());
+        BOOST_TEST(ip_address(test::must(make_ipv6_address("ff02::1")))
+                       .is_multicast());
         BOOST_TEST(!ip_address(ipv4_address::loopback()).is_multicast());
         BOOST_TEST(!ip_address(ipv6_address::loopback()).is_multicast());
 
@@ -300,18 +296,18 @@ struct ip_address_test
         // Equal values hash equal across construction paths
         BOOST_TEST_EQ(
             std::hash<ip_address>()(ip_address(ipv4_address::loopback())),
-            std::hash<ip_address>()(ip_address("127.0.0.1")));
+            std::hash<ip_address>()(test::must(make_ip_address("127.0.0.1"))));
 
         // Family, mapping, and zone all separate keys
         std::unordered_set<ip_address> set;
         set.insert(ip_address(ipv4_address::any()));
         set.insert(ip_address(ipv6_address::any()));
         set.insert(ip_address(ipv6_address(ipv4_address::any())));
-        set.insert(ip_address("fe80::1%2"));
-        set.insert(ip_address("fe80::1"));
+        set.insert(test::must(make_ip_address("fe80::1%2")));
+        set.insert(test::must(make_ip_address("fe80::1")));
         set.insert(ip_address(ipv4_address::any()));
         BOOST_TEST_EQ(set.size(), 5u);
-        BOOST_TEST(set.contains(ip_address("fe80::1%2")));
+        BOOST_TEST(set.contains(test::must(make_ip_address("fe80::1%2"))));
     }
 
     void testOstream()

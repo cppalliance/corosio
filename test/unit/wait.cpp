@@ -562,7 +562,7 @@ struct wait_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto bec = acc.bind(local_endpoint(path));
+        auto bec = acc.bind(test::must(make_local_endpoint(path)));
         BOOST_TEST(!bec);
         auto lec = acc.listen();
         BOOST_TEST(!lec);
@@ -576,7 +576,7 @@ struct wait_test
         };
         auto connect_task = [&]() -> capy::task<> {
             [[maybe_unused]] auto [ec] =
-                co_await client.connect(local_endpoint(path));
+                co_await client.connect(test::must(make_local_endpoint(path)));
         };
         capy::run_async(ex)(accept_task());
         capy::run_async(ex)(connect_task());
@@ -933,7 +933,7 @@ struct wait_test
             endpoint(ipv4_address::loopback(), 0));
         test::temp_socket_dir tmp;
         checkAcceptorErrorWaitCancel<local_stream_acceptor>(
-            local_endpoint(tmp.path()));
+            test::must(make_local_endpoint(tmp.path())));
     }
 
 #if BOOST_COROSIO_POSIX

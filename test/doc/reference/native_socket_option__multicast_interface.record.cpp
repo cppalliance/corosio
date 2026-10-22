@@ -33,9 +33,11 @@ choose_the_outgoing_interface_v4(corosio::udp_socket& sock)
     // same option takes an interface index for IPv6. The default,
     // 0.0.0.0, leaves the choice to the routing table -- which on a
     // multi-homed host is rarely the interface you meant.
+    auto [aec, iface] = corosio::make_ipv4_address("192.168.1.1");
+    if (aec)
+        return; // report the error
     if (auto ec = sock.set_option(
-            corosio::native_socket_option::multicast_interface(
-                corosio::ipv4_address("192.168.1.1"))))
+            corosio::native_socket_option::multicast_interface(iface)))
         return; // report the error
 }
 // end::multicast_interface[]

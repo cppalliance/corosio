@@ -18,6 +18,7 @@
 #include <system_error>
 
 #include "test_suite.hpp"
+#include "must.hpp"
 
 namespace boost::corosio {
 
@@ -30,7 +31,8 @@ struct local_endpoint_test
     {
         char buf[64] = {};
         std::memcpy(buf + 1, name.data(), name.size());
-        return local_endpoint(std::string_view(buf, name.size() + 1));
+        return test::must(
+            make_local_endpoint(std::string_view(buf, name.size() + 1)));
     }
 
     void testDefault()
@@ -43,10 +45,11 @@ struct local_endpoint_test
 
     void testEquality()
     {
-        local_endpoint a("/tmp/sock");
-        local_endpoint b("/tmp/sock");
-        local_endpoint c("/tmp/other");
-        local_endpoint d("/tmp/sock2"); // longer, shares prefix
+        auto a = test::must(make_local_endpoint("/tmp/sock"));
+        auto b = test::must(make_local_endpoint("/tmp/sock"));
+        auto c = test::must(make_local_endpoint("/tmp/other"));
+        auto d = test::must(
+            make_local_endpoint("/tmp/sock2")); // longer, shares prefix
 
         BOOST_TEST(a == b);
         BOOST_TEST(!(a != b));
@@ -58,22 +61,22 @@ struct local_endpoint_test
     {
         // Empty sorts before any non-empty path.
         local_endpoint empty;
-        local_endpoint a("a");
+        auto a = test::must(make_local_endpoint("a"));
         BOOST_TEST(empty < a);
         BOOST_TEST(a > empty);
 
         // A prefix sorts before the longer path that extends it.
-        local_endpoint ab("ab");
+        auto ab = test::must(make_local_endpoint("ab"));
         BOOST_TEST(a < ab);
         BOOST_TEST(ab > a);
 
         // Differing bytes order lexicographically.
-        local_endpoint b("b");
+        auto b = test::must(make_local_endpoint("b"));
         BOOST_TEST(a < b);
         BOOST_TEST(b > a);
 
         // Equal paths compare equivalent.
-        local_endpoint a2("a");
+        auto a2 = test::must(make_local_endpoint("a"));
         BOOST_TEST((a <=> a2) == std::strong_ordering::equal);
         BOOST_TEST(!(a < a2));
         BOOST_TEST(!(a > a2));
@@ -89,7 +92,7 @@ struct local_endpoint_test
 
         // The leading null byte sorts abstract paths before any
         // ordinary path (whose first byte is non-null).
-        local_endpoint ordinary("a");
+        auto ordinary = test::must(make_local_endpoint("a"));
         BOOST_TEST(abs < ordinary);
         BOOST_TEST(ordinary > abs);
 
@@ -100,42 +103,38 @@ struct local_endpoint_test
         BOOST_TEST(abs_a != abs_b);
     }
 
-    void testTooLongThrows()
+    void testMakeLocalEndpoint()
     {
-        std::string too_long(local_endpoint::max_path_length + 1, 'x');
-        BOOST_TEST_THROWS(local_endpoint(too_long), std::system_error);
+        std::string at_limit(local_endpoint::max_path_length, 'a');
+        auto [ec, ep] = make_local_endpoint(at_limit);
+        BOOST_TEST(!ec);
+        BOOST_TEST_EQ(ep.path(), at_limit);
 
-        std::error_code caught;
-        try
-        {
-            local_endpoint ep(too_long);
-        }
-        catch (std::system_error const& e)
-        {
-            caught = e.code();
-        }
-        BOOST_TEST(caught == std::errc::filename_too_long);
+        std::string over(local_endpoint::max_path_length + 1, 'a');
+        auto [oec, oep] = make_local_endpoint(over);
+        BOOST_TEST(oec == std::errc::filename_too_long);
+        BOOST_TEST(oep.empty());
 
-        // The documented pre-check pattern for runtime-derived paths
-        BOOST_TEST(too_long.size() > local_endpoint::max_path_length);
+        auto [eec, eep] = make_local_endpoint("");
+        BOOST_TEST(!eec);
+        BOOST_TEST(eep.empty());
 
-        // The maximum-length path is accepted.
-        std::string at_max(local_endpoint::max_path_length, 'x');
-        local_endpoint ok(at_max);
-        BOOST_TEST_EQ(ok.path().size(), local_endpoint::max_path_length);
+        auto [nec, nep] = make_local_endpoint(std::string_view{});
+        BOOST_TEST(!nec);
+        BOOST_TEST(nep.empty());
     }
 
     void testOrderedMapKey()
     {
         std::map<local_endpoint, int> sessions;
-        sessions[local_endpoint("/tmp/a")] = 1;
-        sessions[local_endpoint("/tmp/b")] = 2;
-        sessions[abstract("c")]            = 3;
+        sessions[test::must(make_local_endpoint("/tmp/a"))] = 1;
+        sessions[test::must(make_local_endpoint("/tmp/b"))] = 2;
+        sessions[abstract("c")]                             = 3;
 
         BOOST_TEST_EQ(sessions.size(), 3u);
-        BOOST_TEST_EQ(sessions[local_endpoint("/tmp/a")], 1);
+        BOOST_TEST_EQ(sessions[test::must(make_local_endpoint("/tmp/a"))], 1);
 
-        auto it = sessions.find(local_endpoint("/tmp/b"));
+        auto it = sessions.find(test::must(make_local_endpoint("/tmp/b")));
         BOOST_TEST(it != sessions.end());
         BOOST_TEST_EQ(it->second, 2);
 
@@ -149,7 +148,7 @@ struct local_endpoint_test
         testEquality();
         testOrdering();
         testAbstract();
-        testTooLongThrows();
+        testMakeLocalEndpoint();
         testOrderedMapKey();
     }
 };

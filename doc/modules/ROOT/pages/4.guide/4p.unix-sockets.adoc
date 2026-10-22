@@ -129,7 +129,7 @@ The maximum path length is 103 bytes. This is the portable minimum across
 platforms: the `sun_path` field in `sockaddr_un` is 108 bytes on Linux but
 only 104 on macOS and FreeBSD. Corosio uses a 104-byte buffer with a 103-char
 limit (one byte reserved for the null terminator) so a cpp:local_endpoint[] is
-portable across all three. Paths longer than this throw
+portable across all three. For a longer path `make_local_endpoint()` returns
 `std::errc::filename_too_long`.
 
 === Abstract Sockets (Linux Only)
