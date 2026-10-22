@@ -202,11 +202,7 @@ struct tcp_socket_test
         io_context ioc(Backend);
         tcp_socket sock(ioc);
 
-#if BOOST_COROSIO_HAS_IOCP
-        auto const invalid = static_cast<native_handle_type>(~0ull);
-#else
-        auto const invalid = static_cast<native_handle_type>(-1);
-#endif
+        auto const invalid = detail::invalid_native_handle;
         // Closed: returns the platform sentinel.
         BOOST_TEST(sock.native_handle() == invalid);
 
@@ -2020,7 +2016,7 @@ struct tcp_socket_test
         testCrossContextCompletionOutlivesItsTarget();
         testReadStopRacingTeardown();
         testRelease();
-        testReleaseClosedThrows();
+        testReleaseClosedFails();
         testAssignV6();
 
         testDestroyWithQueuedWrite();
@@ -2702,7 +2698,9 @@ struct tcp_socket_test
             read_done = true;
         };
         auto releaser = [&]() -> capy::task<> {
-            released = s1.release();
+            auto [rel_ec, rel_h] = s1.release();
+            BOOST_TEST(!rel_ec);
+            released = rel_h;
             co_return;
         };
 
@@ -2734,21 +2732,14 @@ struct tcp_socket_test
         close_native_socket(released);
     }
 
-    void testReleaseClosedThrows()
+    void testReleaseClosedFails()
     {
         io_context ioc(Backend);
         tcp_socket sock(ioc);
 
-        std::error_code caught;
-        try
-        {
-            std::ignore = sock.release();
-        }
-        catch (std::system_error const& e)
-        {
-            caught = e.code();
-        }
-        BOOST_TEST(caught == std::errc::bad_file_descriptor);
+        auto [ec, h] = sock.release();
+        BOOST_TEST(ec == std::errc::bad_file_descriptor);
+        BOOST_TEST(h == detail::invalid_native_handle);
     }
 
     // v6 adoption: the cached endpoints must report v6.

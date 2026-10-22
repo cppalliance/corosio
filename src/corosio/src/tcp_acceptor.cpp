@@ -138,14 +138,14 @@ tcp_acceptor::assign(native_handle_type fd) noexcept
     return ec;
 }
 
-native_handle_type
-tcp_acceptor::release()
+capy::results<native_handle_type>
+tcp_acceptor::release() noexcept
 {
     if (!is_open())
-        detail::throw_system_error(
+        return {
             make_error_code(std::errc::bad_file_descriptor),
-            "tcp_acceptor::release");
-    return get().release_socket();
+            detail::invalid_native_handle};
+    return {std::error_code{}, get().release_socket()};
 }
 
 native_handle_type

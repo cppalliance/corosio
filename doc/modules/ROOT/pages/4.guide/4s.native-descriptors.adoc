@@ -492,10 +492,11 @@ like `SIGPIPE` to suppress.
 `release()` cancels pending operations and hands the handle back
 without closing it. On the overlapped types, it also detaches the
 handle from the context's completion port. If an operation is still in
-flight, or Windows refuses the detach, `release()` throws and the object
-keeps the handle. Call it again once the cancelled operations have
-completed. Detaching requires Windows 8.1 or later; on earlier versions
-`release()` on these types always throws `errc::operation_not_supported`.
+flight, or Windows refuses the detach, `release()` reports an error.
+The object then keeps the handle. Call it again
+once the cancelled operations have completed. Detaching requires
+Windows 8.1 or later; on earlier versions `release()` on these types
+always reports `errc::operation_not_supported`.
 
 === Waiting on Kernel Objects
 

@@ -59,7 +59,9 @@ struct iocp_dissociate_faults
             // Armed immediately before the call because nothing else
             // on this thread asks for a module handle in between.
             fault_scope f(sys::GetModuleHandleW, ERROR_MOD_NOT_FOUND);
-            h = s.release();
+            auto [rel_ec, rel_h] = s.release();
+            BOOST_TEST(!rel_ec);
+            h = rel_h;
             BOOST_TEST(f.fired());
         }
         // Severing the association is best effort: the caller gets a
@@ -72,7 +74,8 @@ struct iocp_dissociate_faults
         // asks nothing and still hands back its socket.
         tcp_socket t(ioc);
         BOOST_TEST(!t.open(family::v4));
-        auto const h2 = t.release();
+        auto [rel2_ec, h2] = t.release();
+        BOOST_TEST(!rel2_ec);
         BOOST_TEST(!t.is_open());
         BOOST_TEST(native_socket_valid(h2));
         close_native_socket(h2);
@@ -82,8 +85,8 @@ struct iocp_dissociate_faults
 
        Runs after testReleaseWithoutNtEntryPoint, which left the
        process without the entry point, so the detach cannot happen.
-       Asio fails its release() here, and so does this one: it throws
-       and the object keeps its handle.
+       release() fails here with operation_not_supported and the
+       object keeps its handle.
     */
     void testHandleReleaseWithoutNtEntryPoint()
     {
@@ -100,16 +103,9 @@ struct iocp_dissociate_faults
         BOOST_TEST(!h.assign(raw));
         p.server.release();
 
-        std::error_code ec;
-        try
-        {
-            (void)h.release();
-        }
-        catch (std::system_error const& e)
-        {
-            ec = e.code();
-        }
+        auto [ec, rel_h] = h.release();
         BOOST_TEST(ec == std::errc::operation_not_supported);
+        BOOST_TEST(rel_h == corosio::detail::invalid_native_handle);
         BOOST_TEST(h.is_open());
         BOOST_TEST_EQ(h.native_handle(), raw);
     }

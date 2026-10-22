@@ -488,20 +488,21 @@ public:
         operations without closing the descriptor. The caller takes
         ownership of the returned handle.
 
+        A closed object reports `errc::bad_file_descriptor` and the
+        returned handle is the invalid sentinel ( -1, or
+        `INVALID_SOCKET` on Windows ), never zero.
+
         @note With the IOCP backend, a socket released while operations
         on it are in flight stays bound to this context's completion
         port for good. Windows refuses to unbind a handle with I/O
         outstanding, so no context, this one included, can assign it
         afterwards. Its cancelled operations still complete normally.
 
-        @return The native handle.
-
-        @throws std::system_error `errc::bad_file_descriptor` if the
-            socket is not open.
+        @return The error code and the native handle.
 
         @post is_open() == false
     */
-    native_handle_type release();
+    [[nodiscard]] capy::results<native_handle_type> release() noexcept;
 
     /** Disable sends or receives on the socket.
 

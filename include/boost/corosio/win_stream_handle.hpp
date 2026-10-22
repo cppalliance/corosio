@@ -18,6 +18,7 @@
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
 #include <boost/corosio/io/io_stream.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
@@ -49,7 +50,7 @@ namespace boost::corosio {
     @par Ownership
     `assign()` takes ownership and `close()` closes the handle.
     `release()` detaches it from this context's completion port and
-    hands it back. It throws and keeps the handle while an operation
+    hands it back. It fails and keeps the handle while an operation
     is still in flight, or if Windows refuses the detach.
 
     While the handle is bound to a completion port, every overlapped
@@ -106,14 +107,14 @@ public:
             the completion port without closing it. The caller takes
             ownership.
 
-            @return The native handle.
+            The error is `errc::device_or_resource_busy` if an
+            operation is still in flight, or
+            `errc::operation_not_supported` if the handle cannot be
+            detached. The handle stays owned on failure.
 
-            @throws std::system_error `errc::device_or_resource_busy` if
-                an operation is still in flight, or
-                `errc::operation_not_supported` if the handle cannot be
-                detached. The handle stays owned on throw.
+            @return The error code and the native handle.
         */
-        virtual native_handle_type release_handle() = 0;
+        virtual capy::results<native_handle_type> release_handle() noexcept = 0;
 
         /** Request cancellation of pending asynchronous operations.
 
@@ -205,22 +206,22 @@ public:
     /** Release ownership of the native handle.
 
         Pending operations are cancelled first. If one is still in
-        flight, the object keeps the handle and this throws. The same
-        happens when Windows refuses to detach the handle from the
-        execution context's completion port. Call `release()` again
-        once the cancelled operations have completed. Detaching
-        requires Windows 8.1 or later. On success the object becomes
-        not-open and the caller is responsible for closing the
-        result.
+        flight, the object keeps the handle and this reports
+        `errc::device_or_resource_busy`. The same happens, with
+        `errc::operation_not_supported`, when Windows refuses to
+        detach the handle from the execution context's completion
+        port. Call `release()` again once the cancelled operations
+        have completed. Detaching requires Windows 8.1 or later. On
+        success the object becomes not-open and the caller is
+        responsible for closing the result.
 
-        @return The native handle.
+        A closed object reports `errc::bad_file_descriptor`. On
+        failure the returned handle is the invalid sentinel
+        ( `INVALID_HANDLE_VALUE` ), never zero.
 
-        @throws std::system_error `errc::bad_file_descriptor` if the
-            object is not open; `errc::device_or_resource_busy` if an
-            operation is still in flight; `errc::operation_not_supported`
-            if the handle cannot be detached.
+        @return The error code and the native handle.
     */
-    native_handle_type release();
+    [[nodiscard]] capy::results<native_handle_type> release() noexcept;
 
     /** Close the handle.
 

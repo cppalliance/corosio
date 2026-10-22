@@ -229,14 +229,15 @@ public:
         kernel already satisfied it, in which case it reports success.
         The caller is responsible for closing the result.
 
-        @return The native handle.
+        A closed object reports `errc::bad_file_descriptor` and the
+        returned handle is the invalid sentinel
+        ( `INVALID_HANDLE_VALUE` ), never zero.
 
-        @throws std::system_error `errc::bad_file_descriptor` if the
-            object is not open.
+        @return The error code and the native handle.
 
         @post `is_open() == false`
     */
-    native_handle_type release();
+    [[nodiscard]] capy::results<native_handle_type> release() noexcept;
 
     /** Close the handle.
 

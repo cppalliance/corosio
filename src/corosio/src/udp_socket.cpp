@@ -11,7 +11,6 @@
 #include <boost/corosio/udp_socket.hpp>
 #include <boost/corosio/error.hpp>
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
 #include <boost/corosio/detail/udp_service.hpp>
@@ -63,14 +62,14 @@ udp_socket::assign(native_handle_type fd) noexcept
     return ec;
 }
 
-native_handle_type
-udp_socket::release()
+capy::results<native_handle_type>
+udp_socket::release() noexcept
 {
     if (!is_open())
-        detail::throw_system_error(
+        return {
             make_error_code(std::errc::bad_file_descriptor),
-            "udp_socket::release");
-    return get().release_socket();
+            detail::invalid_native_handle};
+    return {std::error_code{}, get().release_socket()};
 }
 
 void

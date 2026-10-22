@@ -34,6 +34,7 @@
 #include <thread>
 #include <type_traits>
 #include <typeinfo>
+#include <tuple>
 
 #include <fcntl.h>
 #include <sys/socket.h>
@@ -415,10 +416,12 @@ struct posix_stream_descriptor_test
                 co_await d.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             ec   = rec;
             done = true;
-            (void)rn;
+            std::ignore = rn;
         };
         auto releaser = [&]() -> capy::task<> {
-            released = d.release();
+            auto [rel_ec, rel_h] = d.release();
+            BOOST_TEST(!rel_ec);
+            released = rel_h;
             co_return;
         };
 
@@ -470,7 +473,11 @@ struct posix_stream_descriptor_test
         else if (how == 1)
             a.close();
         else
-            released = a.release();
+        {
+            auto [rel_ec, rel_h] = a.release();
+            BOOST_TEST(!rel_ec);
+            released = rel_h;
+        }
         BOOST_TEST_EQ(::write(fds[1], "x", 1), 1);
         ioc.restart();
         ioc.run();
@@ -1171,11 +1178,13 @@ struct posix_stream_descriptor_test
         ::close(fds[1]);
     }
 
-    void testReleaseWhenClosedThrows()
+    void testReleaseWhenClosedFails()
     {
         io_context ioc(Backend);
         posix_stream_descriptor d(ioc);
-        BOOST_TEST_THROWS(d.release(), std::system_error);
+        auto [ec, h] = d.release();
+        BOOST_TEST(ec == std::errc::bad_file_descriptor);
+        BOOST_TEST(h == detail::invalid_native_handle);
     }
 
     void testReleaseThenReadoptElsewhere()
@@ -1187,7 +1196,8 @@ struct posix_stream_descriptor_test
         posix_stream_descriptor da(a);
         posix_stream_descriptor db(b);
         BOOST_TEST(!da.assign(fds[0]));
-        int const fd = da.release();
+        auto [rel_ec, fd] = da.release();
+        BOOST_TEST(!rel_ec);
         BOOST_TEST(!db.assign(fd));
 
         BOOST_TEST_EQ(::write(fds[1], "k", 1), 1);
@@ -1196,7 +1206,7 @@ struct posix_stream_descriptor_test
         auto t = [&]() -> capy::task<> {
             auto [e, n] = co_await db.read_some(capy::mutable_buffer(&c, 1));
             ec          = e;
-            (void)n;
+            std::ignore = n;
         };
         capy::run_async(b.get_executor())(t());
         b.run();
@@ -1491,7 +1501,7 @@ struct posix_stream_descriptor_test
         testWriteSomeArmsNonblocking();
         testStopTokenCancelsRead();
         testZeroLength();
-        testReleaseWhenClosedThrows();
+        testReleaseWhenClosedFails();
         testReleaseThenReadoptElsewhere();
         testComposedRead();
         testAdoptPipeWhosePeerIsGone();

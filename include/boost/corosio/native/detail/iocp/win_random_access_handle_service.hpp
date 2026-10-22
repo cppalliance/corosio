@@ -89,7 +89,7 @@ public:
         return reinterpret_cast<native_handle_type>(internal_.native_handle());
     }
 
-    native_handle_type release_handle() override
+    capy::results<native_handle_type> release_handle() noexcept override
     {
         return internal_.release();
     }

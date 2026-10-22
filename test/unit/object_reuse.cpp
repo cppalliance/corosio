@@ -305,6 +305,8 @@ struct object_reuse_test
         // the strand's turn, so the strand holds the reuse first and the
         // reader behind it. The byte written first lets the reuse's read
         // complete without waiting.
+        auto [q1_ec, q1_handle] = q1.release();
+        BOOST_TEST(!q1_ec);
         capy::run_async(ioc.get_executor())(
             [](capy::strand<io_context::executor_type> st,
                std::unique_ptr<tcp_socket>& sock, tcp_socket& peer,
@@ -315,7 +317,7 @@ struct object_reuse_test
                 BOOST_TEST_EQ(k, 1u);
                 sock.reset();
                 capy::run_async(st)(std::move(reuse));
-            }(st, sock, q2, reuse(ioc, fresh, q1.release(), pbuf, reused_done)));
+            }(st, sock, q2, reuse(ioc, fresh, q1_handle, pbuf, reused_done)));
 
         ioc.run();
         BOOST_TEST_EQ(resumed, 1);

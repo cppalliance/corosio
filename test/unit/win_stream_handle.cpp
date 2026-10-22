@@ -28,6 +28,7 @@
 #include <stop_token>
 #include <system_error>
 #include <type_traits>
+#include <tuple>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -60,7 +61,7 @@ struct win_stream_handle_test
         io_context ioc(Backend);
         win_stream_handle h(ioc);
         BOOST_TEST(!h.is_open());
-        BOOST_TEST_EQ(h.native_handle(), ~native_handle_type{});
+        BOOST_TEST_EQ(h.native_handle(), detail::invalid_native_handle);
     }
 
     void testAssignRejectsAnonymousPipe()
@@ -382,18 +383,13 @@ struct win_stream_handle_test
             auto [e, n] =
                 co_await h.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             ec = e;
-            (void)n;
+            std::ignore = n;
         };
         auto releaser = [&]() -> capy::task<> {
-            // The read is in flight, so release() cancels it and throws.
-            try
-            {
-                (void)h.release();
-            }
-            catch (std::system_error const& e)
-            {
-                release_ec = e.code();
-            }
+            // The read is in flight, so release() cancels it and fails.
+            auto [rec, rh] = h.release();
+            release_ec     = rec;
+            BOOST_TEST(rh == detail::invalid_native_handle);
             co_return;
         };
         capy::run_async(ioc.get_executor())(reader());
@@ -403,7 +399,8 @@ struct win_stream_handle_test
         BOOST_TEST(ec == capy::cond::canceled);
         BOOST_TEST(h.is_open());
 
-        native_handle_type const raw = h.release();
+        auto [raw_ec, raw] = h.release();
+        BOOST_TEST(!raw_ec);
         BOOST_TEST(!h.is_open());
 
         // The caller owns the released handle.
@@ -421,7 +418,9 @@ struct win_stream_handle_test
             io_context ioc(Backend);
             win_stream_handle h(ioc);
             adopt(h, p);
-            raw = h.release();
+            auto [rel_ec, rel_h] = h.release();
+            BOOST_TEST(!rel_ec);
+            raw = rel_h;
             BOOST_TEST(!h.is_open());
         }
 
@@ -461,12 +460,14 @@ struct win_stream_handle_test
                 auto [e, n] =
                     co_await h.read_some(capy::mutable_buffer(buf, sizeof(buf)));
                 ec = e;
-                (void)n;
+                std::ignore = n;
             };
             capy::run_async(ioc.get_executor())(reader());
             ioc.run();
             BOOST_TEST(!ec);
-            raw = h.release();
+            auto [rel_ec, rel_h] = h.release();
+            BOOST_TEST(!rel_ec);
+            raw = rel_h;
         }
 
         io_context ioc2(Backend);
@@ -488,11 +489,13 @@ struct win_stream_handle_test
         BOOST_TEST_EQ(n, 2u);
     }
 
-    void testReleaseWhenClosedThrows()
+    void testReleaseWhenClosedFails()
     {
         io_context ioc(Backend);
         win_stream_handle h(ioc);
-        BOOST_TEST_THROWS(h.release(), std::system_error);
+        auto [ec, rh] = h.release();
+        BOOST_TEST(ec == std::errc::bad_file_descriptor);
+        BOOST_TEST(rh == detail::invalid_native_handle);
     }
 
     void testComposedRead()
@@ -520,7 +523,7 @@ struct win_stream_handle_test
         BOOST_TEST(std::memcmp(buf, "abcdef", 6) == 0);
     }
 
-    void testReleaseWithPendingThrowsAndKeeps()
+    void testReleaseWithPendingFailsAndKeeps()
     {
         io_context a(Backend);
         io_context b(Backend);
@@ -536,29 +539,22 @@ struct win_stream_handle_test
             auto [e, n] =
                 co_await ha.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             rec = e;
-            (void)n;
+            std::ignore = n;
         };
         capy::run_async(a.get_executor())(reader());
         a.poll(); // the read is now issued and pending
 
-        bool threw = false;
-        try
-        {
-            (void)ha.release();
-        }
-        catch (std::system_error const& e)
-        {
-            threw = true;
-            BOOST_TEST(e.code() == std::errc::device_or_resource_busy);
-        }
-        BOOST_TEST(threw);
+        auto [bec, bh] = ha.release();
+        BOOST_TEST(bec == std::errc::device_or_resource_busy);
+        BOOST_TEST(bh == detail::invalid_native_handle);
         BOOST_TEST(ha.is_open());
         BOOST_TEST_EQ(ha.native_handle(), held);
 
         a.run(); // the cancelled read drains
         BOOST_TEST(rec == capy::cond::canceled);
 
-        native_handle_type const released = ha.release(); // idle now
+        auto [rel_ec, released] = ha.release(); // idle now
+        BOOST_TEST(!rel_ec);
         BOOST_TEST_EQ(released, held);
         BOOST_TEST(!ha.is_open());
         BOOST_TEST(!hb.assign(released)); // detached: another context adopts it
@@ -625,10 +621,10 @@ struct win_stream_handle_test
         testStopTokenCancelsRead();
         testReleaseCancelsPendingRead();
         testReleaseIdleReadopts();
-        testReleaseWhenClosedThrows();
+        testReleaseWhenClosedFails();
         testReleaseAfterCompletedReadReadopts();
         testComposedRead();
-        testReleaseWithPendingThrowsAndKeeps();
+        testReleaseWithPendingFailsAndKeeps();
         testServerDisconnectIsEof();
         testAssignRejectsSocket();
     }

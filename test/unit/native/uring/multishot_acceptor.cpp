@@ -294,7 +294,8 @@ struct multishot_acceptor_test
         BOOST_TEST(!acc.open());
         BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
         BOOST_TEST(!acc.listen());
-        int released = static_cast<int>(acc.release());
+        auto [rel_ec, released] = acc.release();
+        BOOST_TEST(!rel_ec);
         BOOST_TEST_GE(released, 0);
 
         BOOST_TEST(!acc.open());

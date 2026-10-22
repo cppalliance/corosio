@@ -630,38 +630,24 @@ struct local_datagram_socket_test
             std::errc::bad_file_descriptor);
     }
 
-    void testReleaseClosedThrows()
+    void testReleaseClosedFails()
     {
         io_context ioc(Backend);
         local_datagram_socket sock(ioc);
 
-        std::error_code caught;
-        try
-        {
-            std::ignore = sock.release();
-        }
-        catch (std::system_error const& e)
-        {
-            caught = e.code();
-        }
-        BOOST_TEST(caught == std::errc::bad_file_descriptor);
+        auto [ec, h] = sock.release();
+        BOOST_TEST(ec == std::errc::bad_file_descriptor);
+        BOOST_TEST(h == detail::invalid_native_handle);
     }
 
-    void testAvailableClosedThrows()
+    void testAvailableClosedFails()
     {
         io_context ioc(Backend);
         local_datagram_socket sock(ioc);
 
-        std::error_code caught;
-        try
-        {
-            std::ignore = sock.available();
-        }
-        catch (std::system_error const& e)
-        {
-            caught = e.code();
-        }
-        BOOST_TEST(caught == std::errc::bad_file_descriptor);
+        auto [ec, n] = sock.available();
+        BOOST_TEST(ec == std::errc::bad_file_descriptor);
+        BOOST_TEST_EQ(n, 0u);
     }
 
     void testAvailable()
@@ -686,7 +672,9 @@ struct local_datagram_socket_test
         ioc.restart();
 
         BOOST_TEST(done);
-        BOOST_TEST(s2.available() >= std::strlen(msg));
+        auto [avail_ec, avail] = s2.available();
+        BOOST_TEST(!avail_ec);
+        BOOST_TEST(avail >= std::strlen(msg));
     }
 
     // assign() over an open socket is refused and leaves its pending
@@ -772,7 +760,8 @@ struct local_datagram_socket_test
             throw std::system_error(ec, "connect_pair");
         BOOST_TEST(s1.is_open());
 
-        int fd = s1.release();
+        auto [rec, fd] = s1.release();
+        BOOST_TEST(!rec);
         BOOST_TEST(fd >= 0);
         BOOST_TEST_EQ(s1.is_open(), false);
         ::close(fd);
@@ -1009,8 +998,8 @@ struct local_datagram_socket_test
         testEndpointsBound();
         testShutdown();
         testBindClosed();
-        testReleaseClosedThrows();
-        testAvailableClosedThrows();
+        testReleaseClosedFails();
+        testAvailableClosedFails();
         testAvailable();
         testAssignOverOpenKeepsPending();
         testAssignBadFdThrows();

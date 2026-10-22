@@ -140,7 +140,8 @@ struct claim_paths_test
     void testReleaseClaimsParkedOps()
     {
         checkStreamClaims([](tcp_socket& s) {
-            auto fd = s.release();
+            auto [ec, fd] = s.release();
+            BOOST_TEST(!ec);
             if (fd >= 0)
                 ::close(fd);
         });
@@ -229,7 +230,8 @@ struct claim_paths_test
     void testAcceptorReleaseClaims()
     {
         checkAcceptorClaims([](tcp_acceptor& a) {
-            auto fd = a.release();
+            auto [ec, fd] = a.release();
+            BOOST_TEST(!ec);
             if (fd >= 0)
                 ::close(fd);
         });
@@ -361,7 +363,8 @@ struct claim_paths_test
                 capy::mutable_buffer(buf, sizeof(buf)), src);
             std::ignore = n;
             rec         = ec;
-            auto fd     = acc.release();
+            auto [rel_ec, fd] = acc.release();
+            BOOST_TEST(!rel_ec);
             if (fd >= 0)
                 ::close(fd);
             ++done;

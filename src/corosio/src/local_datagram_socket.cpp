@@ -13,7 +13,6 @@
 
 #include <boost/corosio/local_datagram_socket.hpp>
 #include <boost/corosio/error.hpp>
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/local_datagram_service.hpp>
 
 #include "src/detail/use_backend_service.hpp"
@@ -110,28 +109,25 @@ local_datagram_socket::native_handle() const noexcept
     return get().native_handle();
 }
 
-native_handle_type
-local_datagram_socket::release()
+capy::results<native_handle_type>
+local_datagram_socket::release() noexcept
 {
     if (!is_open())
-        detail::throw_system_error(
+        return {
             make_error_code(std::errc::bad_file_descriptor),
-            "local_datagram_socket::release");
-    return get().release_socket();
+            detail::invalid_native_handle};
+    return {std::error_code{}, get().release_socket()};
 }
 
-std::size_t
-local_datagram_socket::available() const
+capy::results<std::size_t>
+local_datagram_socket::available() const noexcept
 {
     if (!is_open())
-        detail::throw_system_error(
-            make_error_code(std::errc::bad_file_descriptor),
-            "local_datagram_socket::available");
+        return {make_error_code(std::errc::bad_file_descriptor), 0};
     int value = 0;
     if (::ioctl(native_handle(), FIONREAD, &value) < 0)
-        detail::throw_system_error(
-            detail::make_err(errno), "local_datagram_socket::available");
-    return static_cast<std::size_t>(value);
+        return {detail::make_err(errno), 0};
+    return {std::error_code{}, static_cast<std::size_t>(value)};
 }
 
 local_endpoint

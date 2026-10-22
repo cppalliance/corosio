@@ -15,7 +15,6 @@
 #if BOOST_COROSIO_POSIX
 
 #include <boost/corosio/detail/descriptor_service.hpp>
-#include <boost/corosio/detail/except.hpp>
 
 #include "src/detail/use_backend_service.hpp"
 
@@ -44,14 +43,14 @@ posix_stream_descriptor::assign(native_handle_type fd) noexcept
     return svc.assign_descriptor(get(), fd);
 }
 
-native_handle_type
-posix_stream_descriptor::release()
+capy::results<native_handle_type>
+posix_stream_descriptor::release() noexcept
 {
     if (!is_open())
-        detail::throw_system_error(
+        return {
             make_error_code(std::errc::bad_file_descriptor),
-            "posix_stream_descriptor::release");
-    return get().release_descriptor();
+            detail::invalid_native_handle};
+    return {std::error_code{}, get().release_descriptor()};
 }
 
 void

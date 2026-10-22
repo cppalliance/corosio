@@ -409,12 +409,13 @@ public:
 
     /** Query the number of bytes available for reading.
 
-        @return The number of bytes that can be read without blocking.
+        A closed socket reports `errc::bad_file_descriptor`. Other
+        failures carry the error code from the operating system. On
+        failure the count is zero.
 
-        @throws std::system_error `errc::bad_file_descriptor` if the
-            socket is not open; otherwise thrown on ioctl failure.
+        @return The error code and the number of readable bytes.
     */
-    std::size_t available() const;
+    [[nodiscard]] capy::results<std::size_t> available() const noexcept;
 
     /** Release ownership of the native socket handle.
 
@@ -422,20 +423,21 @@ public:
         operations without closing the descriptor. The caller takes
         ownership of the returned handle.
 
+        A closed object reports `errc::bad_file_descriptor` and the
+        returned handle is the invalid sentinel ( -1, or
+        `INVALID_SOCKET` on Windows ), never zero.
+
         @note With the IOCP backend, a socket released while operations
         on it are in flight stays bound to this context's completion
         port for good. Windows refuses to unbind a handle with I/O
         outstanding, so no context, this one included, can assign it
         afterwards. Its cancelled operations still complete normally.
 
-        @return The native handle.
-
-        @throws std::system_error `errc::bad_file_descriptor` if the
-            socket is not open.
+        @return The error code and the native handle.
 
         @post is_open() == false
     */
-    native_handle_type release();
+    [[nodiscard]] capy::results<native_handle_type> release() noexcept;
 
     /** Disable sends or receives on the socket.
 

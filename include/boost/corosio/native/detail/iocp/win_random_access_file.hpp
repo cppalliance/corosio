@@ -44,7 +44,7 @@ public:
     {
     }
 
-    std::uint64_t size() const;
+    capy::results<std::uint64_t> size() const noexcept;
     std::error_code resize(std::uint64_t new_size) noexcept;
     std::error_code sync_data() noexcept;
     std::error_code sync_all() noexcept;
@@ -100,11 +100,11 @@ public:
 
     native_handle_type native_handle() const noexcept override;
     void cancel() noexcept override;
-    std::uint64_t size() const override;
+    capy::results<std::uint64_t> size() const noexcept override;
     std::error_code resize(std::uint64_t new_size) noexcept override;
     std::error_code sync_data() noexcept override;
     std::error_code sync_all() noexcept override;
-    native_handle_type release() override;
+    capy::results<native_handle_type> release() noexcept override;
     std::error_code assign(native_handle_type handle) noexcept override;
 
     win_random_access_file_internal* get_internal() noexcept;

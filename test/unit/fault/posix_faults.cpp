@@ -253,15 +253,15 @@ struct posix_common_faults
         BOOST_TEST_EQ(open_fds(), before);
     }
 
-    void testDatagramAvailableThrows()
+    void testDatagramAvailableFails()
     {
         io_context ioc(Backend);
         local_datagram_socket a(ioc), b(ioc);
         BOOST_TEST(!connect_pair(a, b));
         fault_scope f(sys::ioctl, EBADF);
-        expect_system_error(
-            [&] { std::ignore = a.available(); },
-            std::errc::bad_file_descriptor);
+        auto [ec, n] = a.available();
+        BOOST_TEST(ec == std::errc::bad_file_descriptor);
+        BOOST_TEST_EQ(n, 0u);
         BOOST_TEST(f.fired());
         BOOST_TEST(a.is_open());
     }
@@ -341,15 +341,15 @@ struct posix_common_faults
         ::unlink(path.c_str());
     }
 
-    void testAvailableThrows()
+    void testAvailableFails()
     {
         io_context ioc(Backend);
         local_stream_socket a(ioc), b(ioc);
         BOOST_TEST(!connect_pair(a, b));
         fault_scope f(sys::ioctl, ENOTTY);
-        expect_system_error(
-            [&] { std::ignore = a.available(); },
-            std::errc::inappropriate_io_control_operation);
+        auto [ec, n] = a.available();
+        BOOST_TEST(ec == std::errc::inappropriate_io_control_operation);
+        BOOST_TEST_EQ(n, 0u);
         BOOST_TEST(f.fired());
         BOOST_TEST(a.is_open());
     }
@@ -427,8 +427,9 @@ struct posix_common_faults
         else
         {
             fault_scope f(sys::fstat, EIO);
-            expect_system_error(
-                [&] { std::ignore = sf.size(); }, std::errc::io_error);
+            auto [ec, n] = sf.size();
+            BOOST_TEST(ec == std::errc::io_error);
+            BOOST_TEST_EQ(n, 0u);
             BOOST_TEST(f.fired());
         }
         {
@@ -548,8 +549,9 @@ struct posix_common_faults
         else
         {
             fault_scope f(sys::fstat, EIO);
-            expect_system_error(
-                [&] { std::ignore = rf.size(); }, std::errc::io_error);
+            auto [ec, n] = rf.size();
+            BOOST_TEST(ec == std::errc::io_error);
+            BOOST_TEST_EQ(n, 0u);
             BOOST_TEST(f.fired());
         }
         {
@@ -783,6 +785,64 @@ struct posix_common_faults
         closeDuringPoolWrite<random_access_file>("raf_reuse");
     }
 
+    // A worker inside preadv still holds the descriptor, so release()
+    // must refuse and leave the file open and usable.
+    template<class File>
+    void releaseDuringPoolRead(char const* tag)
+    {
+        if constexpr (ring_files)
+            return;
+        if (!hook_is_live(sys::preadv))
+        {
+            skip_dead_hook("preadv");
+            return;
+        }
+        auto path = temp_path(tag);
+        std::ofstream(path) << std::string(64, 'a');
+
+        io_context ioc(Backend);
+        File f(ioc);
+        BOOST_TEST(!f.open(path, file_base::read_only));
+        auto const held_handle = f.native_handle();
+
+        preadv_hold hold;
+        char buf[64];
+        auto reader = [&]() -> capy::task<> {
+            if constexpr (std::is_same_v<File, stream_file>)
+                std::ignore = co_await f.read_some(
+                    capy::mutable_buffer(buf, sizeof(buf)));
+            else
+                std::ignore = co_await f.read_some_at(
+                    0, capy::mutable_buffer(buf, sizeof(buf)));
+        };
+        auto releaser = [&]() -> capy::task<> {
+            hold.wait_held();
+            auto [ec, h] = f.release();
+            BOOST_TEST(ec == std::errc::device_or_resource_busy);
+            BOOST_TEST(h == corosio::detail::invalid_native_handle);
+            BOOST_TEST(f.is_open());
+            BOOST_TEST_EQ(f.native_handle(), held_handle);
+            hold.release();
+            co_return;
+        };
+        capy::run_async(ioc.get_executor())(reader());
+        capy::run_async(ioc.get_executor())(releaser());
+        ioc.run();
+
+        auto [rec, rh] = f.release();
+        BOOST_TEST(!rec);
+        BOOST_TEST(!f.is_open());
+        BOOST_TEST_EQ(rh, held_handle);
+        ::close(rh);
+        ::unlink(path.c_str());
+    }
+
+    void testReleaseDuringPoolReadIsBusy()
+    {
+        releaseDuringPoolRead<stream_file>("sf_busy");
+        releaseDuringPoolRead<random_access_file>("raf_busy");
+    }
+
     void run()
     {
         if (skip_under_valgrind())
@@ -795,10 +855,10 @@ struct posix_common_faults
         testGetOptionFails();
         testAssignValidateFails();
         testConnectPairFails();
-        testDatagramAvailableThrows();
+        testDatagramAvailableFails();
         testDatagramBindFails();
         testAcceptorConstructorThrows();
-        testAvailableThrows();
+        testAvailableFails();
         testHostNameFails();
         testHostNameTruncated();
         testStreamFileOpenFails();
@@ -806,6 +866,7 @@ struct posix_common_faults
         testStreamFileIoFails();
         testAssignDuringFinishedReadKeepsNewOffset();
         testCloseDuringPoolWriteSparesReusedDescriptor();
+        testReleaseDuringPoolReadIsBusy();
         testRandomAccessFileFails();
         testResolverFails();
         testSignalTeardownWalk();

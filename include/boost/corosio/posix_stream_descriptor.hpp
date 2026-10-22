@@ -17,6 +17,7 @@
 
 #include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/corosio/detail/op_base.hpp>
 #include <boost/corosio/error.hpp>
 #include <boost/corosio/io/io_stream.hpp>
@@ -301,14 +302,14 @@ public:
         The object becomes not-open and pending operations are
         cancelled. The caller is responsible for closing the result.
 
-        @return The native descriptor.
+        A closed object reports `errc::bad_file_descriptor` and the
+        returned handle is the invalid sentinel ( -1 ), never zero.
 
-        @throws std::system_error `errc::bad_file_descriptor` if the
-            object is not open.
+        @return The error code and the native handle.
 
         @post `is_open() == false`
     */
-    native_handle_type release();
+    [[nodiscard]] capy::results<native_handle_type> release() noexcept;
 
     /** Close the descriptor.
 
