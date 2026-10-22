@@ -39,18 +39,18 @@ ready_is_continuation(void* e) noexcept
 inline scheduler_op*
 ready_as_op(void* e) noexcept
 {
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
     return reinterpret_cast<scheduler_op*>(
-        reinterpret_cast<std::uintptr_t>(e) &
-        ~ready_cont_bit); // NOLINT(performance-no-int-to-ptr)
+        reinterpret_cast<std::uintptr_t>(e) & ~ready_cont_bit);
 }
 
 /// Recover the continuation from a continuation-tagged entry.
 inline capy::continuation*
 ready_as_cont(void* e) noexcept
 {
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
     return reinterpret_cast<capy::continuation*>(
-        reinterpret_cast<std::uintptr_t>(e) &
-        ~ready_cont_bit); // NOLINT(performance-no-int-to-ptr)
+        reinterpret_cast<std::uintptr_t>(e) & ~ready_cont_bit);
 }
 
 /** A unified intrusive FIFO of scheduler_ops and continuations.
@@ -132,10 +132,10 @@ public:
     /// Append a continuation to the back of the queue.
     void push(capy::continuation& c) noexcept
     {
+        // NOLINTNEXTLINE(performance-no-int-to-ptr)
         push_entry(
             reinterpret_cast<void*>(
-                reinterpret_cast<std::uintptr_t>(&c) |
-                ready_cont_bit)); // NOLINT(performance-no-int-to-ptr)
+                reinterpret_cast<std::uintptr_t>(&c) | ready_cont_bit));
     }
 
     /// Move all entries of @p other to the back in O(1); @p other is emptied.
