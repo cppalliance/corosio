@@ -228,9 +228,10 @@ multicast_join(corosio::io_context& ioc)
             sock.bind(corosio::endpoint(corosio::ipv4_address::any(), 30001)))
         co_return;
 
-    if (auto ec = sock.set_option(
-            corosio::socket_option::join_group(
-                corosio::ipv4_address("239.255.0.1"))))
+    auto [aec, group] = corosio::make_ipv4_address("239.255.0.1");
+    if (aec)
+        co_return;
+    if (auto ec = sock.set_option(corosio::socket_option::join_group(group)))
         co_return;
     // end::multicast[]
 }

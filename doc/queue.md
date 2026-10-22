@@ -178,7 +178,8 @@ With eager allocation, the fd is created at construction time — before the use
 tcp_acceptor acc(ctx);  // internally: socket(AF_INET, ...)
 
 // User tries to bind to IPv6 — fails
-acc.bind(endpoint("[::]:8080"));  // Can't bind IPv6 address to AF_INET socket
+auto [ec, ep] = make_endpoint("[::]:8080");
+ec = acc.bind(ep);  // Can't bind IPv6 address to AF_INET socket
 ```
 
 The acceptor cannot know the correct address family until `bind()` is called.

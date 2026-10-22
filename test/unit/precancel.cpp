@@ -304,7 +304,7 @@ struct precancel_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        BOOST_TEST(!acc.bind(local_endpoint(path)));
+        BOOST_TEST(!acc.bind(test::must(make_local_endpoint(path))));
         BOOST_TEST(!acc.listen());
 
         std::stop_source ss;
@@ -318,7 +318,8 @@ struct precancel_test
         int done = 0;
 
         auto connector = [&]() -> capy::task<> {
-            auto [ec] = co_await client.connect(local_endpoint(path));
+            auto [ec] =
+                co_await client.connect(test::must(make_local_endpoint(path)));
             conn_ec   = ec;
             ++done;
         };
@@ -394,8 +395,8 @@ struct precancel_test
         local_datagram_socket s1(ioc), s2(ioc);
         BOOST_TEST(!s1.open());
         BOOST_TEST(!s2.open());
-        BOOST_TEST(!s1.bind(local_endpoint(tmp1.path())));
-        BOOST_TEST(!s2.bind(local_endpoint(tmp2.path())));
+        BOOST_TEST(!s1.bind(test::must(make_local_endpoint(tmp1.path()))));
+        BOOST_TEST(!s2.bind(test::must(make_local_endpoint(tmp2.path()))));
 
         std::stop_source ss;
         ss.request_stop();
@@ -407,7 +408,8 @@ struct precancel_test
 
         auto send_to_task = [&]() -> capy::task<> {
             [[maybe_unused]] auto [ec, n] = co_await s1.send_to(
-                capy::const_buffer("x", 1), local_endpoint(tmp2.path()));
+                capy::const_buffer("x", 1),
+                test::must(make_local_endpoint(tmp2.path())));
             send_to_ec = ec;
             ++done;
         };

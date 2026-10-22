@@ -39,9 +39,10 @@ bind_listen_accept(corosio::io_context& ioc)
     corosio::local_stream_acceptor acc(ioc);
     if (auto ec = acc.open())
         co_return;
-    if (auto ec = acc.bind(
-            corosio::local_endpoint("/tmp/my_app.sock"),
-            corosio::bind_option::unlink_existing))
+    auto [pec, addr] = corosio::make_local_endpoint("/tmp/my_app.sock");
+    if (pec)
+        co_return;
+    if (auto ec = acc.bind(addr, corosio::bind_option::unlink_existing))
         co_return;
     if (auto ec = acc.listen())
         co_return;

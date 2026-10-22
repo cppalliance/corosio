@@ -51,6 +51,7 @@
 
 #include "context.hpp"
 #include "test_suite.hpp"
+#include "must.hpp"
 
 namespace boost::corosio {
 
@@ -513,7 +514,8 @@ struct uring_teardown_test
                 test::temp_socket_dir tmp;
                 local_stream_acceptor acc(ioc);
                 std::ignore = acc.open();
-                std::ignore = acc.bind(local_endpoint(tmp.path()));
+                std::ignore =
+                    acc.bind(test::must(make_local_endpoint(tmp.path())));
                 std::ignore = acc.listen();
                 local_stream_socket peer(ioc);
                 std::ignore = co_await acc.accept(peer);

@@ -690,7 +690,7 @@ struct local_socket_churn_then_exercise_test
     void exerciseStreamAndAcceptor(io_context& ioc, capy::executor_ref ex)
     {
         test::temp_socket_dir dir;
-        local_endpoint ep(dir.path());
+        auto ep = test::must(make_local_endpoint(dir.path()));
 
         local_stream_acceptor acc(ioc, ep);
         BOOST_TEST(acc.is_open());

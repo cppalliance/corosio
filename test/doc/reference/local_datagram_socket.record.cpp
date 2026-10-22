@@ -44,18 +44,25 @@ connectionless_and_connected(corosio::io_context& ioc)
     corosio::local_datagram_socket sender(ioc);
     if (auto ec = sender.open())
         co_return;
-    if (auto ec = sender.bind(corosio::local_endpoint("/tmp/sender.sock")))
+    auto [sec, self] = corosio::make_local_endpoint("/tmp/sender.sock");
+    if (sec)
         co_return;
-    auto [ec, n] = co_await sender.send_to(
-        capy::const_buffer("hello", 5),
-        corosio::local_endpoint("/tmp/receiver.sock"));
+    auto [rec, receiver] = corosio::make_local_endpoint("/tmp/receiver.sock");
+    if (rec)
+        co_return;
+    if (auto ec = sender.bind(self))
+        co_return;
+    auto [ec, n] =
+        co_await sender.send_to(capy::const_buffer("hello", 5), receiver);
     if (ec)
         co_return;
 
     // Connected
     corosio::local_datagram_socket sock(ioc);
-    auto [cec] =
-        co_await sock.connect(corosio::local_endpoint("/tmp/peer.sock"));
+    auto [pec, peer] = corosio::make_local_endpoint("/tmp/peer.sock");
+    if (pec)
+        co_return;
+    auto [cec] = co_await sock.connect(peer);
     if (cec)
         co_return;
     auto [ec2, n2] = co_await sock.send(capy::const_buffer("hi", 2));

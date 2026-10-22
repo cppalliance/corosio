@@ -441,10 +441,12 @@ struct native_udp_socket_test
         BOOST_TEST(!sock.open());
 
         if (!sock.set_option(
-                native_socket_option::join_group(ipv4_address("239.255.0.3"))))
+                native_socket_option::join_group(
+                    test::must(make_ipv4_address("239.255.0.3")))))
         {
             std::ignore = sock.set_option(
-                native_socket_option::leave_group(ipv4_address("239.255.0.3")));
+                native_socket_option::leave_group(
+                    test::must(make_ipv4_address("239.255.0.3"))));
         }
         BOOST_TEST_PASS();
 
@@ -484,22 +486,26 @@ struct native_udp_socket_test
         BOOST_TEST_PASS();
 
         if (!sock.set_option(
-                native_socket_option::join_group(ipv6_address("ff02::1"))))
+                native_socket_option::join_group(
+                    test::must(make_ipv6_address("ff02::1")))))
         {
             std::ignore = sock.set_option(
-                native_socket_option::leave_group(ipv6_address("ff02::1")));
+                native_socket_option::leave_group(
+                    test::must(make_ipv6_address("ff02::1"))));
         }
         BOOST_TEST_PASS();
 
         // v6-group forms carry v6 traits regardless of the family
         // argument; membership dispatches on the group's family.
-        native_socket_option::join_group jg(ipv6_address("ff02::1"));
+        native_socket_option::join_group jg(
+            test::must(make_ipv6_address("ff02::1")));
         BOOST_TEST_EQ(jg.size(family::v4), sizeof(struct ipv6_mreq));
         BOOST_TEST(jg.data(family::v4) != nullptr);
         BOOST_TEST_EQ(jg.level(family::v4), IPPROTO_IPV6);
         BOOST_TEST_EQ(jg.name(family::v4), IPV6_JOIN_GROUP);
 
-        native_socket_option::leave_group lg(ipv6_address("ff02::1"));
+        native_socket_option::leave_group lg(
+            test::must(make_ipv6_address("ff02::1")));
         BOOST_TEST_EQ(lg.size(family::v4), sizeof(struct ipv6_mreq));
         BOOST_TEST(lg.data(family::v4) != nullptr);
         BOOST_TEST_EQ(lg.level(family::v4), IPPROTO_IPV6);

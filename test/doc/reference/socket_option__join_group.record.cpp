@@ -48,9 +48,10 @@ receive_an_ipv4_multicast_group(corosio::io_context& ioc)
     // of a private address range. The optional second argument names the
     // local interface to receive on; the default, 0.0.0.0, lets the kernel
     // choose one.
-    if (auto ec = sock.set_option(
-            corosio::socket_option::join_group(
-                corosio::ipv4_address("239.255.0.1"))))
+    auto [aec, group] = corosio::make_ipv4_address("239.255.0.1");
+    if (aec)
+        return; // report the error
+    if (auto ec = sock.set_option(corosio::socket_option::join_group(group)))
         return; // report the error
 }
 // end::join_group[]

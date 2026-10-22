@@ -275,8 +275,8 @@ struct datagram_paths_test
         local_datagram_socket s1(ioc), s2(ioc);
         BOOST_TEST(!s1.open());
         BOOST_TEST(!s2.open());
-        auto ec1 = s1.bind(local_endpoint(tmp1.path()));
-        auto ec2 = s2.bind(local_endpoint(tmp2.path()));
+        auto ec1 = s1.bind(test::must(make_local_endpoint(tmp1.path())));
+        auto ec2 = s2.bind(test::must(make_local_endpoint(tmp2.path())));
         BOOST_TEST(!ec1);
         BOOST_TEST(!ec2);
 
@@ -295,7 +295,7 @@ struct datagram_paths_test
         auto sender = [&]() -> capy::task<> {
             [[maybe_unused]] auto [ec, n] = co_await s2.send_to(
                 capy::const_buffer(payload.data(), payload.size()),
-                local_endpoint(tmp1.path()));
+                test::must(make_local_endpoint(tmp1.path())));
             send_ec = ec;
         };
 
@@ -397,8 +397,8 @@ struct datagram_paths_test
         local_datagram_socket s1(ioc), s2(ioc);
         BOOST_TEST(!s1.open());
         BOOST_TEST(!s2.open());
-        auto ec1 = s1.bind(local_endpoint(tmp1.path()));
-        auto ec2 = s2.bind(local_endpoint(tmp2.path()));
+        auto ec1 = s1.bind(test::must(make_local_endpoint(tmp1.path())));
+        auto ec2 = s2.bind(test::must(make_local_endpoint(tmp2.path())));
         BOOST_TEST(!ec1);
         BOOST_TEST(!ec2);
 
@@ -411,7 +411,7 @@ struct datagram_paths_test
 
         std::error_code send_ec, recv_ec;
         std::size_t sent = 0, received = 0;
-        local_endpoint dest(tmp2.path());
+        auto dest = test::must(make_local_endpoint(tmp2.path()));
 
         bool writer_done = false;
 
@@ -513,7 +513,7 @@ struct datagram_paths_test
 
         local_datagram_socket sock(ioc);
         BOOST_TEST(!sock.open());
-        auto bec = sock.bind(local_endpoint(tmp.path()));
+        auto bec = sock.bind(test::must(make_local_endpoint(tmp.path())));
         BOOST_TEST(!bec);
 
         std::stop_source ss;
@@ -615,8 +615,8 @@ struct datagram_paths_test
         local_datagram_socket s1(ioc), s2(ioc);
         BOOST_TEST(!s1.open());
         BOOST_TEST(!s2.open());
-        auto ec1 = s1.bind(local_endpoint(tmp1.path()));
-        auto ec2 = s2.bind(local_endpoint(tmp2.path()));
+        auto ec1 = s1.bind(test::must(make_local_endpoint(tmp1.path())));
+        auto ec2 = s2.bind(test::must(make_local_endpoint(tmp2.path())));
         BOOST_TEST(!ec1);
         BOOST_TEST(!ec2);
 
@@ -629,7 +629,7 @@ struct datagram_paths_test
         std::stop_source ss;
         std::error_code send_ec;
         bool send_done = false;
-        local_endpoint dest(tmp2.path());
+        auto dest      = test::must(make_local_endpoint(tmp2.path()));
 
         auto writer = [&]() -> capy::task<> {
             for (int i = 0; i < 64; ++i)

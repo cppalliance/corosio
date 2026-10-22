@@ -1119,7 +1119,8 @@ struct tcp_acceptor_test
         BOOST_TEST(!acc.open());
 
         // Bind to an address not assigned to any local interface
-        auto ec = acc.bind(endpoint(ipv4_address("1.2.3.4"), 0));
+        auto ec =
+            acc.bind(endpoint(test::must(make_ipv4_address("1.2.3.4")), 0));
         BOOST_TEST(ec == std::errc::address_not_available);
 
         acc.close();

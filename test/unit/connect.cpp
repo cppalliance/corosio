@@ -404,9 +404,9 @@ struct connect_test
         // documentation and will not route; connect attempts hang
         // until timeout, giving us a window to cancel.
         std::vector<endpoint> endpoints{
-            endpoint(ipv4_address("192.0.2.1"), 80),
-            endpoint(ipv4_address("192.0.2.2"), 80),
-            endpoint(ipv4_address("192.0.2.3"), 80)};
+            endpoint(test::must(make_ipv4_address("192.0.2.1")), 80),
+            endpoint(test::must(make_ipv4_address("192.0.2.2")), 80),
+            endpoint(test::must(make_ipv4_address("192.0.2.3")), 80)};
 
         std::error_code connect_ec{};
         bool connect_done = false;

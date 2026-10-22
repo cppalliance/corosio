@@ -47,7 +47,9 @@ namespace boost::corosio {
 
     @par Example
     @code
-    ip_address addr("2001:db8::1");
+    auto [ec, addr] = make_ip_address("2001:db8::1");
+    if (ec)
+        return ec;  // not a valid address string
     if (addr.is_loopback())
     {
         // family-generic query, no branching
@@ -101,28 +103,6 @@ public:
         , family_(corosio::family::v6)
     {
     }
-
-    /** Construct from a string.
-
-        This function constructs an address from the string `s`,
-        which must contain a valid IPv4 or IPv6 address string
-        or else an exception is thrown.
-
-        @par Exception Safety
-        Strong guarantee.
-
-        @throws std::system_error `errc::invalid_argument` if the input
-        failed to parse correctly.
-
-        @note For a non-throwing parse function,
-        use @ref make_ip_address.
-
-        @param s The string to parse.
-
-        @see
-            @ref make_ip_address
-    */
-    explicit ip_address(std::string_view s);
 
     /** Return the address family.
 
@@ -329,14 +309,6 @@ public:
 */
 [[nodiscard]] BOOST_COROSIO_DECL capy::results<ip_address>
 make_ip_address(std::string_view s) noexcept;
-
-inline ip_address::ip_address(std::string_view s)
-{
-    auto [ec, addr] = make_ip_address(s);
-    if (ec)
-        detail::throw_system_error(ec, "invalid IP address");
-    *this = addr;
-}
 
 } // namespace boost::corosio
 

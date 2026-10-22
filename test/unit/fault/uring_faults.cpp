@@ -12,6 +12,7 @@
 #include "context.hpp"
 #include "test_suite.hpp"
 #include "test_utils.hpp"
+#include "must.hpp"
 
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/io_context.hpp>
@@ -130,7 +131,8 @@ struct uring_faults
             local_stream_acceptor acc(ioc);
             expect_open(acc, [&] { return acc.open(); });
             BOOST_TEST(!acc.open());
-            BOOST_TEST(!acc.bind(corosio::local_endpoint(path)));
+            BOOST_TEST(
+                !acc.bind(test::must(corosio::make_local_endpoint(path))));
             fault_scope f(sys::listen, EADDRINUSE);
             BOOST_TEST(acc.listen() == std::errc::address_in_use);
             BOOST_TEST(f.fired());
@@ -141,7 +143,7 @@ struct uring_faults
             BOOST_TEST(!ld.open());
             fault_scope f(sys::bind, EACCES);
             BOOST_TEST(
-                ld.bind(corosio::local_endpoint(path)) ==
+                ld.bind(test::must(corosio::make_local_endpoint(path))) ==
                 std::errc::permission_denied);
             BOOST_TEST(f.fired());
             BOOST_TEST(ld.is_open());

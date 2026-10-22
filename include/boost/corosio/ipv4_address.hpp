@@ -107,33 +107,6 @@ public:
     */
     explicit ipv4_address(bytes_type const& bytes) noexcept;
 
-    /** Construct from a string.
-
-        This function constructs an address from
-        the string `s`, which must contain a valid
-        IPv4 address string or else an exception
-        is thrown.
-
-        @par Exception Safety
-        Strong guarantee.
-
-        @throws std::system_error `errc::invalid_argument` if the input
-        failed to parse correctly.
-
-        @note For a non-throwing parse function,
-        use @ref make_ipv4_address.
-
-        @param s The string to parse.
-
-        @par Specification
-        @li <a href="https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.2"
-            >3.2.2. Host (rfc3986)</a>
-
-        @see
-            @ref make_ipv4_address
-    */
-    explicit ipv4_address(std::string_view s);
-
     /** Return the address as bytes, in network byte order.
 
         @return The address as an array of bytes.
@@ -259,6 +232,10 @@ private:
 };
 
 /** Create an IPv4 address from an IP address string in dotted decimal form.
+
+    @par Specification
+    @li <a href="https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.2"
+        >3.2.2. Host (rfc3986)</a>
 
     @param s The string to parse.
     @return The error code, empty on success, and the parsed

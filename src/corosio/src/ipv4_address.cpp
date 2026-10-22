@@ -9,8 +9,6 @@
 
 #include <boost/corosio/ipv4_address.hpp>
 
-#include <boost/corosio/detail/except.hpp>
-
 #include <ostream>
 #include <stdexcept>
 
@@ -24,14 +22,6 @@ ipv4_address::ipv4_address(bytes_type const& bytes) noexcept
         (static_cast<std::uint32_t>(bytes[1]) << 16) |
         (static_cast<std::uint32_t>(bytes[2]) << 8) |
         (static_cast<std::uint32_t>(bytes[3]));
-}
-
-ipv4_address::ipv4_address(std::string_view s)
-{
-    auto [ec, addr] = make_ipv4_address(s);
-    if (ec)
-        detail::throw_system_error(ec, "invalid IPv4 address");
-    *this = addr;
 }
 
 auto

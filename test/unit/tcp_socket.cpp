@@ -335,7 +335,8 @@ struct tcp_socket_test
         tcp_socket sock(ioc);
         BOOST_TEST(!sock.open());
 
-        auto ec = sock.bind(endpoint(ipv4_address("1.2.3.4"), 0));
+        auto ec =
+            sock.bind(endpoint(test::must(make_ipv4_address("1.2.3.4")), 0));
         BOOST_TEST(ec);
 
         sock.close();

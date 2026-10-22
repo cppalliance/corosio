@@ -46,7 +46,10 @@ open_bind_recv()
     corosio::native_local_datagram_socket<corosio::epoll> s(ctx);
     if (auto ec = s.open())
         co_return;
-    if (auto ec = s.bind(corosio::local_endpoint("/tmp/recv.sock")))
+    auto [pec, addr] = corosio::make_local_endpoint("/tmp/recv.sock");
+    if (pec)
+        co_return;
+    if (auto ec = s.bind(addr))
         co_return;
 
     char buf[1024];

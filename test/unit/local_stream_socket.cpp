@@ -102,7 +102,7 @@ struct local_stream_socket_test
     {
         io_context ioc(Backend);
         test::temp_socket_dir tmp;
-        local_endpoint ep(tmp.path());
+        auto ep = test::must(make_local_endpoint(tmp.path()));
 
         local_stream_acceptor acc(ioc, ep);
         BOOST_TEST(acc.is_open());
@@ -138,7 +138,8 @@ struct local_stream_socket_test
     {
         io_context a(Backend);
         test::temp_socket_dir tmp;
-        local_stream_acceptor acc(a, local_endpoint(tmp.path()));
+        local_stream_acceptor acc(
+            a, test::must(make_local_endpoint(tmp.path())));
         local_stream_socket peer(a);
 
         int client = ::socket(AF_UNIX, SOCK_STREAM, 0);
@@ -192,7 +193,7 @@ struct local_stream_socket_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(path));
+        auto ec = acc.bind(test::must(make_local_endpoint(path)));
         BOOST_TEST_EQ(!ec, true);
         ec = acc.listen();
         BOOST_TEST_EQ(!ec, true);
@@ -218,7 +219,8 @@ struct local_stream_socket_test
                 auto [ec] = co_await s.connect(ep);
                 ec_out    = ec;
                 done      = true;
-            }(client, local_endpoint(path), connect_ec, connect_done));
+            }(client, test::must(make_local_endpoint(path)), connect_ec,
+                                                    connect_done));
 
         ioc.run();
         ioc.restart();
@@ -240,7 +242,7 @@ struct local_stream_socket_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(path));
+        auto ec = acc.bind(test::must(make_local_endpoint(path)));
         BOOST_TEST_EQ(!ec, true);
         ec = acc.listen();
         BOOST_TEST_EQ(!ec, true);
@@ -267,7 +269,8 @@ struct local_stream_socket_test
                 auto [ec] = co_await s.connect(ep);
                 ec_out    = ec;
                 done      = true;
-            }(client, local_endpoint(path), connect_ec, connect_done));
+            }(client, test::must(make_local_endpoint(path)), connect_ec,
+                                                    connect_done));
 
         ioc.run();
         ioc.restart();
@@ -349,7 +352,7 @@ struct local_stream_socket_test
         {
             local_stream_acceptor acc(ioc);
             BOOST_TEST(!acc.open());
-            auto ec = acc.bind(local_endpoint(path));
+            auto ec = acc.bind(test::must(make_local_endpoint(path)));
             BOOST_TEST_EQ(!ec, true);
         }
 
@@ -357,7 +360,7 @@ struct local_stream_socket_test
         {
             local_stream_acceptor acc(ioc);
             BOOST_TEST(!acc.open());
-            auto ec = acc.bind(local_endpoint(path));
+            auto ec = acc.bind(test::must(make_local_endpoint(path)));
             BOOST_TEST_EQ(!!ec, true);
         }
 
@@ -365,8 +368,9 @@ struct local_stream_socket_test
         {
             local_stream_acceptor acc(ioc);
             BOOST_TEST(!acc.open());
-            auto ec =
-                acc.bind(local_endpoint(path), bind_option::unlink_existing);
+            auto ec = acc.bind(
+                test::must(make_local_endpoint(path)),
+                bind_option::unlink_existing);
             BOOST_TEST_EQ(!ec, true);
         }
     }
@@ -381,16 +385,18 @@ struct local_stream_socket_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(path), bind_option::unlink_existing);
+        auto ec = acc.bind(
+            test::must(make_local_endpoint(path)),
+            bind_option::unlink_existing);
         BOOST_TEST_EQ(!ec, true);
     }
 
     void testEndpointOrdering()
     {
-        local_endpoint a("/tmp/a");
-        local_endpoint b("/tmp/b");
-        local_endpoint a2("/tmp/a");
-        local_endpoint prefix("/tmp");
+        auto a      = test::must(make_local_endpoint("/tmp/a"));
+        auto b      = test::must(make_local_endpoint("/tmp/b"));
+        auto a2     = test::must(make_local_endpoint("/tmp/a"));
+        auto prefix = test::must(make_local_endpoint("/tmp"));
         local_endpoint empty;
 
         // Equality
@@ -475,7 +481,7 @@ struct local_stream_socket_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(path));
+        auto ec = acc.bind(test::must(make_local_endpoint(path)));
         BOOST_TEST_EQ(!ec, true);
         ec = acc.listen();
         BOOST_TEST_EQ(!ec, true);
@@ -493,7 +499,7 @@ struct local_stream_socket_test
         capy::run_async(ex)(
             [](local_stream_socket& s, local_endpoint ep) -> capy::task<> {
                 std::ignore = co_await s.connect(ep);
-            }(client, local_endpoint(path)));
+            }(client, test::must(make_local_endpoint(path))));
 
         ioc.run();
         ioc.restart();
@@ -772,7 +778,7 @@ struct local_stream_socket_test
                 auto [ec] = co_await s.connect(ep);
                 ec_out    = ec;
                 d         = true;
-            }(client, local_endpoint(path), result_ec, done));
+            }(client, test::must(make_local_endpoint(path)), result_ec, done));
 
         // Watchdog: if the platform parks the doomed connect instead
         // of failing it, retract it so the test reports the miss
@@ -800,7 +806,7 @@ struct local_stream_socket_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(path));
+        auto ec = acc.bind(test::must(make_local_endpoint(path)));
         BOOST_TEST_EQ(!ec, true);
         ec = acc.listen();
         BOOST_TEST_EQ(!ec, true);
@@ -842,7 +848,7 @@ struct local_stream_socket_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(tmp.path()));
+        auto ec = acc.bind(test::must(make_local_endpoint(tmp.path())));
         BOOST_TEST(!ec);
         ec = acc.listen();
         BOOST_TEST(!ec);
@@ -881,7 +887,7 @@ struct local_stream_socket_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(tmp.path()));
+        auto ec = acc.bind(test::must(make_local_endpoint(tmp.path())));
         BOOST_TEST(!ec);
         ec = acc.listen();
         BOOST_TEST(!ec);
@@ -1112,7 +1118,7 @@ struct local_stream_socket_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(tmp.path()));
+        auto ec = acc.bind(test::must(make_local_endpoint(tmp.path())));
         BOOST_TEST(!ec);
         ec = acc.listen();
         BOOST_TEST(!ec);
@@ -1142,7 +1148,7 @@ struct local_stream_socket_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(tmp.path()));
+        auto ec = acc.bind(test::must(make_local_endpoint(tmp.path())));
         BOOST_TEST(!ec);
         ec = acc.listen();
         BOOST_TEST(!ec);
@@ -1183,7 +1189,7 @@ struct local_stream_socket_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(path));
+        auto ec = acc.bind(test::must(make_local_endpoint(path)));
         BOOST_TEST(!ec);
         ec = acc.listen();
         BOOST_TEST(!ec);
@@ -1228,7 +1234,7 @@ struct local_stream_socket_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(tmp.path()));
+        auto ec = acc.bind(test::must(make_local_endpoint(tmp.path())));
         BOOST_TEST(!ec);
 
         local_stream_socket server(ioc);
@@ -1272,7 +1278,7 @@ struct local_stream_socket_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(tmp.path()));
+        auto ec = acc.bind(test::must(make_local_endpoint(tmp.path())));
         BOOST_TEST(!ec);
         ec = acc.listen();
         BOOST_TEST(!ec);
@@ -1364,7 +1370,7 @@ struct local_stream_socket_test
 
             local_stream_acceptor acc(ioc);
             BOOST_TEST(!acc.open());
-            auto const ep = local_endpoint(tmp.path());
+            auto const ep = test::must(make_local_endpoint(tmp.path()));
             BOOST_TEST(!acc.bind(ep));
             BOOST_TEST(!acc.listen());
 
@@ -1470,7 +1476,7 @@ struct local_stream_socket_test
         io_context ioc(Backend);
         local_stream_acceptor acc(ioc);
         BOOST_TEST(
-            acc.bind(local_endpoint("/tmp/never")) ==
+            acc.bind(test::must(make_local_endpoint("/tmp/never"))) ==
             std::errc::bad_file_descriptor);
     }
 
@@ -1570,7 +1576,7 @@ struct local_stream_socket_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(path));
+        auto ec = acc.bind(test::must(make_local_endpoint(path)));
         BOOST_TEST_EQ(!ec, true);
         ec = acc.listen();
         BOOST_TEST_EQ(!ec, true);
@@ -1623,7 +1629,8 @@ struct local_stream_socket_test
             done = (rn == 4);
         };
         auto sender = [&]() -> capy::task<> {
-            auto [cec] = co_await client.connect(local_endpoint(path));
+            auto [cec] =
+                co_await client.connect(test::must(make_local_endpoint(path)));
             BOOST_TEST(!cec);
             char const out[] = "ping";
             [[maybe_unused]] auto [wec, wn] =
@@ -1648,7 +1655,7 @@ struct local_stream_socket_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(held_dir.path()));
+        auto ec = acc.bind(test::must(make_local_endpoint(held_dir.path())));
         BOOST_TEST_EQ(!ec, true);
         ec = acc.listen();
         BOOST_TEST_EQ(!ec, true);
@@ -1656,7 +1663,7 @@ struct local_stream_socket_test
         // Source the replacement descriptor from a second acceptor.
         local_stream_acceptor donor(ioc);
         BOOST_TEST(!donor.open());
-        ec = donor.bind(local_endpoint(adopted_dir.path()));
+        ec = donor.bind(test::must(make_local_endpoint(adopted_dir.path())));
         BOOST_TEST_EQ(!ec, true);
         ec = donor.listen();
         BOOST_TEST_EQ(!ec, true);
@@ -1680,7 +1687,7 @@ struct local_stream_socket_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(first_dir.path()));
+        auto ec = acc.bind(test::must(make_local_endpoint(first_dir.path())));
         BOOST_TEST_EQ(!ec, true);
         ec = acc.listen();
         BOOST_TEST_EQ(!ec, true);
@@ -1697,7 +1704,7 @@ struct local_stream_socket_test
 
         local_stream_acceptor donor(ioc);
         BOOST_TEST(!donor.open());
-        ec = donor.bind(local_endpoint(second_dir.path()));
+        ec = donor.bind(test::must(make_local_endpoint(second_dir.path())));
         BOOST_TEST_EQ(!ec, true);
         ec = donor.listen();
         BOOST_TEST_EQ(!ec, true);
@@ -1721,7 +1728,7 @@ struct local_stream_socket_test
 
         local_stream_acceptor first(ioc);
         BOOST_TEST(!first.open());
-        auto ec = first.bind(local_endpoint(path));
+        auto ec = first.bind(test::must(make_local_endpoint(path)));
         BOOST_TEST_EQ(!ec, true);
         ec = first.listen();
         BOOST_TEST_EQ(!ec, true);
@@ -1751,7 +1758,8 @@ struct local_stream_socket_test
             done = (rn == 4);
         };
         auto sender = [&]() -> capy::task<> {
-            auto [cec] = co_await client.connect(local_endpoint(path));
+            auto [cec] =
+                co_await client.connect(test::must(make_local_endpoint(path)));
             BOOST_TEST(!cec);
             char const out[] = "ping";
             [[maybe_unused]] auto [wec, wn] =
@@ -1773,44 +1781,26 @@ struct local_stream_socket_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(path));
+        auto ec = acc.bind(test::must(make_local_endpoint(path)));
         BOOST_TEST_EQ(!ec, true);
 
         auto ep = acc.local_endpoint();
         BOOST_TEST_EQ(ep.path(), path);
     }
 
-    void testEndpointTooLongThrows()
+    void testEndpointTooLong()
     {
         std::string too_long(local_endpoint::max_path_length + 1, 'x');
-        bool caught = false;
-        try
-        {
-            [[maybe_unused]] local_endpoint ep(too_long);
-        }
-        catch (std::system_error const&)
-        {
-            caught = true;
-        }
-        BOOST_TEST(caught);
-    }
-
-    void testEndpointTooLongPrecheck()
-    {
-        // Runtime-derived paths use the documented pre-check
-        // instead of a non-throwing parse.
-        std::string too_long(local_endpoint::max_path_length + 1, 'x');
-        BOOST_TEST(too_long.size() > local_endpoint::max_path_length);
-
-        local_endpoint ok("/tmp/ok");
-        BOOST_TEST_EQ(ok.path(), std::string_view("/tmp/ok"));
+        auto [ec, ep] = make_local_endpoint(too_long);
+        BOOST_TEST(ec == std::errc::filename_too_long);
+        BOOST_TEST(ep.empty());
     }
 
     void testEndpointMaxPathLength()
     {
         // Exactly at the limit should succeed.
         std::string at_limit(local_endpoint::max_path_length, 'a');
-        local_endpoint ep(at_limit);
+        auto ep = test::must(make_local_endpoint(at_limit));
         BOOST_TEST_EQ(ep.path().size(), local_endpoint::max_path_length);
     }
 
@@ -1821,7 +1811,7 @@ struct local_stream_socket_test
     {
         std::string abs_path(1, '\0');
         abs_path += "corosio_test_abstract_endpoint";
-        local_endpoint ep(abs_path);
+        auto ep = test::must(make_local_endpoint(abs_path));
         BOOST_TEST(ep.is_abstract());
         BOOST_TEST_EQ(ep.empty(), false);
     }
@@ -1837,7 +1827,7 @@ struct local_stream_socket_test
 
         local_stream_acceptor acc(ioc);
         BOOST_TEST(!acc.open());
-        auto ec = acc.bind(local_endpoint(abs_path));
+        auto ec = acc.bind(test::must(make_local_endpoint(abs_path)));
         BOOST_TEST(ec == std::errc::operation_not_supported);
     }
 #endif
@@ -2020,8 +2010,7 @@ struct local_stream_socket_test
         testAcceptorAssignOverListening();
         testAcceptorAssignAfterRelease();
         testAcceptorLocalEndpoint();
-        testEndpointTooLongThrows();
-        testEndpointTooLongPrecheck();
+        testEndpointTooLong();
         testEndpointMaxPathLength();
         testAbstractEndpoint();
 #ifdef _WIN32
@@ -2154,7 +2143,7 @@ struct local_stream_socket_test
         // Non-abstract path
         {
             std::ostringstream os;
-            os << local_endpoint("/tmp/sock");
+            os << test::must(make_local_endpoint("/tmp/sock"));
             BOOST_TEST_EQ(os.str(), std::string("/tmp/sock"));
         }
 
@@ -2171,7 +2160,7 @@ struct local_stream_socket_test
             std::string abs_path(1, '\0');
             abs_path += "test_name";
             std::ostringstream os;
-            os << local_endpoint(abs_path);
+            os << test::must(make_local_endpoint(abs_path));
             BOOST_TEST_EQ(os.str(), std::string("[abstract:test_name]"));
         }
     }

@@ -51,6 +51,7 @@
 #include "context.hpp"
 #include "temp_path.hpp"
 #include "test_suite.hpp"
+#include "must.hpp"
 
 namespace boost::corosio {
 
@@ -378,7 +379,7 @@ struct native_resume_cancel_test
             throw std::system_error(ec, "connect_pair");
 
         test::temp_socket_dir tmp;
-        auto target = local_endpoint(tmp.path());
+        auto target = test::must(make_local_endpoint(tmp.path()));
 
         std::stop_source ss;
         ss.request_stop();
@@ -503,7 +504,7 @@ struct native_resume_cancel_test
         test::temp_socket_dir tmp;
         native_local_stream_acceptor<Backend> acc(ioc);
         BOOST_TEST(!acc.open());
-        BOOST_TEST(!acc.bind(local_endpoint(tmp.path())));
+        BOOST_TEST(!acc.bind(test::must(make_local_endpoint(tmp.path()))));
         BOOST_TEST(!acc.listen());
 
         std::stop_source ss;
@@ -538,9 +539,9 @@ struct native_resume_cancel_test
         native_local_datagram_socket<Backend> s1(ioc), s2(ioc);
         BOOST_TEST(!s1.open());
         BOOST_TEST(!s2.open());
-        BOOST_TEST(!s1.bind(local_endpoint(tmp1.path())));
-        BOOST_TEST(!s2.bind(local_endpoint(tmp2.path())));
-        auto peer = local_endpoint(tmp2.path());
+        BOOST_TEST(!s1.bind(test::must(make_local_endpoint(tmp1.path()))));
+        BOOST_TEST(!s2.bind(test::must(make_local_endpoint(tmp2.path()))));
+        auto peer = test::must(make_local_endpoint(tmp2.path()));
 
         std::error_code cec0;
         auto connecter = [&]() -> capy::task<> {

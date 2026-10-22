@@ -37,14 +37,6 @@ ipv6_address::ipv6_address(ipv4_address const& addr) noexcept
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, v[0], v[1], v[2], v[3]}};
 }
 
-ipv6_address::ipv6_address(std::string_view s)
-{
-    auto [ec, addr] = make_ipv6_address(s);
-    if (ec)
-        detail::throw_system_error(ec, "invalid IPv6 address");
-    *this = addr;
-}
-
 std::string
 ipv6_address::to_string() const
 {

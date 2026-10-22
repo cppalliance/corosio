@@ -280,12 +280,12 @@ struct posix_common_faults
         {
             fault_scope f(sys::bind, EACCES);
             BOOST_TEST(
-                s.bind(corosio::local_endpoint(path)) ==
+                s.bind(test::must(corosio::make_local_endpoint(path))) ==
                 std::errc::permission_denied);
             BOOST_TEST(f.fired());
             BOOST_TEST(s.is_open());
         }
-        BOOST_TEST(!s.bind(corosio::local_endpoint(path)));
+        BOOST_TEST(!s.bind(test::must(corosio::make_local_endpoint(path))));
         s.close();
         ::unlink(path.c_str());
     }
@@ -318,7 +318,7 @@ struct posix_common_faults
             expect_system_error(
                 [&] {
                     local_stream_acceptor acc(
-                        ioc, corosio::local_endpoint(path));
+                        ioc, test::must(corosio::make_local_endpoint(path)));
                 },
                 std::errc::too_many_files_open);
             BOOST_TEST(f.fired());
@@ -333,7 +333,7 @@ struct posix_common_faults
             expect_system_error(
                 [&] {
                     local_stream_acceptor acc(
-                        ioc, corosio::local_endpoint(path));
+                        ioc, test::must(corosio::make_local_endpoint(path)));
                 },
                 std::errc::address_in_use);
             BOOST_TEST(f.fired());

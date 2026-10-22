@@ -15,6 +15,7 @@
 #include <system_error>
 
 #include "test_suite.hpp"
+#include "must.hpp"
 
 namespace boost::corosio {
 
@@ -45,24 +46,21 @@ struct ipv4_address_test
 
         // Construct from string
         {
-            ipv4_address a("10.0.0.1");
+            auto a = test::must(make_ipv4_address("10.0.0.1"));
             BOOST_TEST_EQ(a.to_string(), "10.0.0.1");
         }
 
-        // Invalid string throws system_error carrying the parse code
+        // Invalid string reports the parse code
         {
-            BOOST_TEST_THROWS(ipv4_address("invalid"), std::system_error);
-            BOOST_TEST_THROWS(ipv4_address("256.0.0.1"), std::system_error);
-            BOOST_TEST_THROWS(ipv4_address("1.2.3"), std::system_error);
-            try
-            {
-                ipv4_address("invalid");
-                BOOST_TEST_FAIL();
-            }
-            catch (std::system_error const& e)
-            {
-                BOOST_TEST(e.code() == std::errc::invalid_argument);
-            }
+            auto [ec0, v0] = make_ipv4_address("invalid");
+            BOOST_TEST(ec0 == std::errc::invalid_argument);
+            BOOST_TEST(v0 == ipv4_address{});
+            auto [ec1, v1] = make_ipv4_address("256.0.0.1");
+            BOOST_TEST(ec1 == std::errc::invalid_argument);
+            BOOST_TEST(v1 == ipv4_address{});
+            auto [ec2, v2] = make_ipv4_address("1.2.3");
+            BOOST_TEST(ec2 == std::errc::invalid_argument);
+            BOOST_TEST(v2 == ipv4_address{});
         }
     }
 
