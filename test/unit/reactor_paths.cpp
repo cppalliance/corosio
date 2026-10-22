@@ -35,6 +35,7 @@
 #include <array>
 #include <chrono>
 #include <cstring>
+#include <stdexcept>
 #include <string_view>
 #include <system_error>
 #include <tuple>
@@ -1325,7 +1326,7 @@ struct reactor_paths_test
         }
     }
 
-    // configure_reactor with max_events == 0 throws std::out_of_range.
+    // io_context rejects max_events == 0 before the reactor sees it.
     // IOCP ignores max_events_per_poll (no batch poll), so this is
     // meaningful only on the reactor backends.
     void testIoContextOptionsMaxEventsZero()
@@ -1337,7 +1338,7 @@ struct reactor_paths_test
         {
             [[maybe_unused]] io_context ioc(Backend, opts);
         }
-        catch (std::out_of_range const&)
+        catch (std::invalid_argument const&)
         {
             threw = true;
         }

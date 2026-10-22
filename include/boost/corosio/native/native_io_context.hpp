@@ -72,10 +72,17 @@ class native_io_context : public io_context
     }
 
 public:
-    /** Construct with default concurrency. */
+    /** Construct with default concurrency.
+
+        @throws std::system_error If the backend's infrastructure
+            could not be created.
+    */
     native_io_context() : io_context(Backend) {}
 
     /** Construct with a concurrency hint.
+
+        @throws std::system_error If the backend's infrastructure
+            could not be created.
 
         @param concurrency_hint Hint for the number of threads that
             call `run()`.
@@ -86,6 +93,14 @@ public:
     }
 
     /** Construct with runtime tuning options.
+
+        @throws std::invalid_argument If `opts.thread_pool_size` is
+            less than 1 (POSIX), `opts.max_events_per_poll` is outside
+            the range its member documents, or `opts.inline_budget_max`
+            exceeds `INT_MAX` (platforms with a reactor backend).
+
+        @throws std::system_error If the backend's infrastructure
+            could not be created.
 
         @param opts Runtime options controlling scheduler and
             service behavior.

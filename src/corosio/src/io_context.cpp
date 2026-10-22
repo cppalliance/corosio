@@ -13,11 +13,13 @@
 #include <boost/corosio/detail/thread_pool.hpp>
 
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <thread>
 
 #if BOOST_COROSIO_HAS_EPOLL
 #include <boost/corosio/native/detail/epoll/epoll_scheduler.hpp>
+#include <sys/epoll.h>
 #endif
 
 #if BOOST_COROSIO_HAS_SELECT
@@ -97,6 +99,28 @@ check_options([[maybe_unused]] io_context_options const& opts)
 #if BOOST_COROSIO_POSIX
     if (opts.thread_pool_size < 1)
         throw std::invalid_argument("thread_pool_size must be at least 1");
+#endif
+#if BOOST_COROSIO_HAS_EPOLL || BOOST_COROSIO_HAS_KQUEUE || \
+    BOOST_COROSIO_HAS_SELECT
+    // The reactor narrows these to int.
+    constexpr auto int_max =
+        static_cast<unsigned>((std::numeric_limits<int>::max)());
+#if BOOST_COROSIO_HAS_EPOLL
+    // Larger than epoll_wait accepts, which would fail every wait.
+    constexpr auto max_events =
+        static_cast<unsigned>(int_max / sizeof(epoll_event));
+    if (opts.max_events_per_poll < 1 || opts.max_events_per_poll > max_events)
+        throw std::invalid_argument(
+            "max_events_per_poll must be in "
+            "[1, INT_MAX / sizeof(epoll_event)]");
+#else
+    if (opts.max_events_per_poll < 1 || opts.max_events_per_poll > int_max)
+        throw std::invalid_argument(
+            "max_events_per_poll must be in [1, INT_MAX]");
+#endif
+    if (opts.inline_budget_max > int_max)
+        throw std::invalid_argument(
+            "inline_budget_max must be in [0, INT_MAX]");
 #endif
 }
 

@@ -71,8 +71,10 @@ enum class locking_mode
     values, so constructing a default `io_context_options` produces
     identical behavior to an unconfigured context.
 
-    Options that apply only to a specific backend family are
-    silently ignored when the active backend does not support them.
+    Options that apply only to a specific backend family are ignored
+    when the active backend does not use them. The exceptions are
+    `max_events_per_poll` and `inline_budget_max`, which are
+    range-checked on every platform with a reactor backend.
 
     @par Example
     @par !example configure
@@ -86,7 +88,12 @@ struct io_context_options
         Controls the buffer size passed to `epoll_wait()` or
         `kevent()`. Larger values reduce syscall frequency under
         high load. Smaller values improve fairness between
-        connections. Ignored on IOCP and select backends.
+        connections. Must be in [ 1, `INT_MAX` ]. Where epoll is
+        available, it must also not exceed
+        `INT_MAX / sizeof(epoll_event)`, the most events one epoll wait
+        accepts. Validated on platforms with a reactor backend,
+        whichever backend is active, but only the epoll and kqueue
+        backends use it.
     */
     unsigned max_events_per_poll = 128;
 
@@ -108,7 +115,9 @@ struct io_context_options
     /** Hard ceiling on adaptive inline budget ramp-up.
 
         The budget doubles each cycle it is fully consumed, up to
-        this limit. Applies to reactor backends only.
+        this limit. Must be in [ 0, `INT_MAX` ]; validated on
+        platforms with a reactor backend, whichever backend is
+        active. Applies to reactor backends only.
     */
     unsigned inline_budget_max = 16;
 
@@ -315,7 +324,9 @@ public:
             that calls `run()`.
 
         @throws std::invalid_argument If `opts.thread_pool_size` is
-            less than 1 (POSIX).
+            less than 1 (POSIX), `opts.max_events_per_poll` is outside
+            the range its member documents, or `opts.inline_budget_max`
+            exceeds `INT_MAX` (platforms with a reactor backend).
 
         @throws std::system_error If the backend's infrastructure
             could not be created.
@@ -366,7 +377,9 @@ public:
             that calls `run()`.
 
         @throws std::invalid_argument If `opts.thread_pool_size` is
-            less than 1 (POSIX).
+            less than 1 (POSIX), `opts.max_events_per_poll` is outside
+            the range its member documents, or `opts.inline_budget_max`
+            exceeds `INT_MAX` (platforms with a reactor backend).
 
         @throws std::system_error If the backend's infrastructure
             could not be created.

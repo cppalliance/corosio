@@ -28,7 +28,6 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
-#include <stdexcept>
 
 #include <boost/corosio/detail/conditionally_enabled_mutex.hpp>
 #include <boost/corosio/detail/conditionally_enabled_event.hpp>
@@ -259,6 +258,9 @@ public:
         Called by `io_context` after construction. Values that do
         not apply to this backend are silently ignored.
 
+        @pre `max_events` is in [ 1, `INT_MAX` ] and `budget_max` is at
+            most `INT_MAX`; `io_context` validates both.
+
         @param max_events  Event buffer size for epoll/kqueue.
         @param budget_init Starting inline completion budget.
         @param budget_max  Hard ceiling on adaptive budget ramp-up.
@@ -457,11 +459,11 @@ reactor_scheduler::configure_reactor(
     unsigned budget_max,
     unsigned unassisted)
 {
-    if (max_events < 1 ||
-        max_events > static_cast<unsigned>(std::numeric_limits<int>::max()))
-        throw std::out_of_range("max_events_per_poll must be in [1, INT_MAX]");
-    if (budget_max > static_cast<unsigned>(std::numeric_limits<int>::max()))
-        throw std::out_of_range("inline_budget_max must be in [0, INT_MAX]");
+    BOOST_COROSIO_ASSERT(
+        max_events >= 1 &&
+        max_events <= static_cast<unsigned>((std::numeric_limits<int>::max)()));
+    BOOST_COROSIO_ASSERT(
+        budget_max <= static_cast<unsigned>((std::numeric_limits<int>::max)()));
 
     // Clamp initial and unassisted to budget_max.
     if (budget_init > budget_max)
@@ -493,12 +495,18 @@ reactor_scheduler::reset_inline_budget() const noexcept
         }
         // Ramp up when previous cycle fully consumed budget.
         // max(1, ...) ensures the doubling escapes zero.
+        // Doubled in a wider type: the cap may be as large as INT_MAX.
         if (ctx->inline_budget == 0)
-            ctx->inline_budget_max =
-                (std::min)((std::max)(1, ctx->inline_budget_max) * 2,
-                           static_cast<int>(inline_budget_max_));
+        {
+            long long const doubled =
+                2LL * (std::max)(1, ctx->inline_budget_max);
+            long long const cap    = inline_budget_max_;
+            ctx->inline_budget_max = static_cast<int>((std::min)(doubled, cap));
+        }
         else if (ctx->inline_budget < ctx->inline_budget_max)
+        {
             ctx->inline_budget_max = static_cast<int>(inline_budget_initial_);
+        }
         ctx->inline_budget = ctx->inline_budget_max;
     }
 }
