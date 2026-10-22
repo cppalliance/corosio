@@ -412,7 +412,8 @@ struct iocp_faults
         // Severing the port association is best effort: the caller
         // gets a working socket either way.
         fault_scope f(sys::NtSetInformationFile, ERROR_INVALID_PARAMETER);
-        auto h = s.release();
+        auto [rel_ec, h] = s.release();
+        BOOST_TEST(!rel_ec);
         BOOST_TEST(f.fired());
         BOOST_TEST(!s.is_open());
         BOOST_TEST(native_socket_valid(h));

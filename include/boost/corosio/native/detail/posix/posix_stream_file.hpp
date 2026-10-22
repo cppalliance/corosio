@@ -206,11 +206,11 @@ public:
         write_op_.request_cancel();
     }
 
-    std::uint64_t size() const override;
+    capy::results<std::uint64_t> size() const noexcept override;
     std::error_code resize(std::uint64_t new_size) noexcept override;
     std::error_code sync_data() noexcept override;
     std::error_code sync_all() noexcept override;
-    native_handle_type release() override;
+    capy::results<native_handle_type> release() noexcept override;
     std::error_code assign(native_handle_type handle) noexcept override;
     capy::results<std::uint64_t>
     seek(std::int64_t offset, file_base::seek_basis origin) noexcept override;
@@ -334,13 +334,13 @@ posix_stream_file::close_file() noexcept
     fd_ = -1;
 }
 
-inline std::uint64_t
-posix_stream_file::size() const
+inline capy::results<std::uint64_t>
+posix_stream_file::size() const noexcept
 {
     file_stat_t st;
     if (file_fstat(fd_, &st) < 0)
-        throw_system_error(make_err(errno), "stream_file::size");
-    return static_cast<std::uint64_t>(st.st_size);
+        return {make_err(errno), 0};
+    return {std::error_code{}, static_cast<std::uint64_t>(st.st_size)};
 }
 
 inline std::error_code
@@ -374,21 +374,21 @@ posix_stream_file::sync_all() noexcept
     return {};
 }
 
-inline native_handle_type
-posix_stream_file::release()
+inline capy::results<native_handle_type>
+posix_stream_file::release() noexcept
 {
     // A queued op has already copied the fd number; it must not run
     // after the caller closes it and the number is recycled.
     cancel();
     if (!gate_.release())
-        throw_system_error(
+        return {
             std::make_error_code(std::errc::device_or_resource_busy),
-            "stream_file::release");
+            invalid_native_handle};
     bump_generation();
     int fd  = fd_;
     fd_     = -1;
     offset_ = 0;
-    return fd;
+    return {std::error_code{}, fd};
 }
 
 inline capy::results<std::uint64_t>

@@ -15,7 +15,6 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/file_service.hpp>
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -113,13 +112,13 @@ get_stream_file_service(capy::execution_context& ctx, win_scheduler&)
 // win_stream_file_internal
 // ---------------------------------------------------------------------------
 
-inline std::uint64_t
-win_stream_file_internal::size() const
+inline capy::results<std::uint64_t>
+win_stream_file_internal::size() const noexcept
 {
     LARGE_INTEGER li;
     if (!::GetFileSizeEx(handle_, &li))
-        throw_system_error(make_err(::GetLastError()), "stream_file::size");
-    return static_cast<std::uint64_t>(li.QuadPart);
+        return {make_err(::GetLastError()), 0};
+    return {std::error_code{}, static_cast<std::uint64_t>(li.QuadPart)};
 }
 
 inline std::error_code
@@ -244,8 +243,8 @@ win_stream_file::cancel() noexcept
     internal_.cancel();
 }
 
-inline std::uint64_t
-win_stream_file::size() const
+inline capy::results<std::uint64_t>
+win_stream_file::size() const noexcept
 {
     return internal_.size();
 }
@@ -268,8 +267,8 @@ win_stream_file::sync_all() noexcept
     return internal_.sync_all();
 }
 
-inline native_handle_type
-win_stream_file::release()
+inline capy::results<native_handle_type>
+win_stream_file::release() noexcept
 {
     return internal_.release();
 }

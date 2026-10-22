@@ -13,7 +13,6 @@
 
 #if BOOST_COROSIO_HAS_IOCP
 
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/win_handle_service.hpp>
 #include <boost/corosio/error.hpp>
 
@@ -44,13 +43,13 @@ win_stream_handle::assign(native_handle_type h) noexcept
     return svc.assign_stream_handle(get(), h);
 }
 
-native_handle_type
-win_stream_handle::release()
+capy::results<native_handle_type>
+win_stream_handle::release() noexcept
 {
     if (!is_open())
-        detail::throw_system_error(
+        return {
             make_error_code(std::errc::bad_file_descriptor),
-            "win_stream_handle::release");
+            detail::invalid_native_handle};
     return get().release_handle();
 }
 

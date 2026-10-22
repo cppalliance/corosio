@@ -16,7 +16,6 @@
 
 #include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/corosio/detail/dispatch_coro.hpp>
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
 #include <boost/corosio/detail/object_ref.hpp>
@@ -31,6 +30,7 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/results.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -153,23 +153,25 @@ protected:
 
     /** Unbind the handle from the port and give it up.
 
-        Called after the ops were cancelled. Throws, leaving the object
-        holding the handle, when an op is still in flight or Windows
-        refuses the detach: detaching under a queued completion would
-        lose it or deliver it to the next adopter's port. Asio fails
-        its release() the same way.
+        Called after the ops were cancelled. Returns an error, leaving
+        the object holding the handle, when an op is still in flight or
+        Windows refuses the detach: detaching under a queued completion
+        would lose it or deliver it to the next adopter's port.
 
         @param idle True when no op of this handle is in flight.
     */
-    HANDLE detach_or_throw(bool idle, char const* what)
+    capy::results<HANDLE> detach_or_error(bool idle) noexcept
     {
         if (!idle)
-            detail::throw_system_error(
-                std::make_error_code(std::errc::device_or_resource_busy), what);
+            return {
+                std::make_error_code(std::errc::device_or_resource_busy),
+                INVALID_HANDLE_VALUE};
         if (!dissociate_from_iocp(handle_))
-            detail::throw_system_error(
-                std::make_error_code(std::errc::operation_not_supported), what);
-        return std::exchange(handle_, INVALID_HANDLE_VALUE);
+            return {
+                std::make_error_code(std::errc::operation_not_supported),
+                INVALID_HANDLE_VALUE};
+        return {
+            std::error_code{}, std::exchange(handle_, INVALID_HANDLE_VALUE)};
     }
 
     /** Issue ReadFile/WriteFile for an op the caller has set up.
@@ -306,19 +308,21 @@ public:
         return {};
     }
 
-    native_handle_type release()
+    capy::results<native_handle_type> release() noexcept
     {
-        // Cancel first, as asio does: a release that then fails still
-        // aborts the in-flight I/O, and a retry once it drains succeeds.
+        // A release that fails still aborts the in-flight I/O, and a
+        // retry once it drains succeeds.
         rd_.request_cancel();
         wr_.request_cancel();
         ::CancelIoEx(handle_, nullptr);
         bool const idle = !rd_.in_flight.load(std::memory_order_acquire) &&
             !wr_.in_flight.load(std::memory_order_acquire);
-        HANDLE h = detach_or_throw(idle, "release");
+        auto [ec, h] = detach_or_error(idle);
+        if (ec)
+            return {ec, invalid_native_handle};
         generation_.fetch_add(1, std::memory_order_acq_rel);
         offset_.store(0, std::memory_order_release);
-        return reinterpret_cast<native_handle_type>(h);
+        return {std::error_code{}, reinterpret_cast<native_handle_type>(h)};
     }
 
     /// Close the handle; completions still queued no longer move the position.
@@ -459,7 +463,7 @@ public:
         return {};
     }
 
-    native_handle_type release()
+    capy::results<native_handle_type> release() noexcept
     {
         request_cancel_all();
         ::CancelIoEx(handle_, nullptr);
@@ -468,8 +472,10 @@ public:
             std::lock_guard<win_mutex> lock(ops_mutex_);
             idle = outstanding_ops_.empty();
         }
-        return reinterpret_cast<native_handle_type>(
-            detach_or_throw(idle, "release"));
+        auto [ec, h] = detach_or_error(idle);
+        if (ec)
+            return {ec, invalid_native_handle};
+        return {std::error_code{}, reinterpret_cast<native_handle_type>(h)};
     }
 
 protected:

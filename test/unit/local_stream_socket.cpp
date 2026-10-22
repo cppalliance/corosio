@@ -448,11 +448,7 @@ struct local_stream_socket_test
         io_context ioc(Backend);
         local_stream_socket sock(ioc);
 
-#if BOOST_COROSIO_HAS_IOCP
-        auto const invalid = static_cast<native_handle_type>(~0ull);
-#else
-        auto const invalid = static_cast<native_handle_type>(-1);
-#endif
+        auto const invalid = detail::invalid_native_handle;
         BOOST_TEST(sock.native_handle() == invalid);
 
         BOOST_TEST(!sock.open());
@@ -564,7 +560,11 @@ struct local_stream_socket_test
         else if (how == 1)
             a.close();
         else
-            released = a.release();
+        {
+            auto [rel_ec, rel_h] = a.release();
+            BOOST_TEST(!rel_ec);
+            released = rel_h;
+        }
         BOOST_TEST_EQ(::write(fds[1], "x", 1), 1);
         ioc.restart();
         ioc.run();
@@ -731,38 +731,24 @@ struct local_stream_socket_test
     }
 #endif
 
-    void testReleaseClosedThrows()
+    void testReleaseClosedFails()
     {
         io_context ioc(Backend);
         local_stream_socket sock(ioc);
 
-        std::error_code caught;
-        try
-        {
-            std::ignore = sock.release();
-        }
-        catch (std::system_error const& e)
-        {
-            caught = e.code();
-        }
-        BOOST_TEST(caught == std::errc::bad_file_descriptor);
+        auto [ec, h] = sock.release();
+        BOOST_TEST(ec == std::errc::bad_file_descriptor);
+        BOOST_TEST(h == detail::invalid_native_handle);
     }
 
-    void testAvailableClosedThrows()
+    void testAvailableClosedFails()
     {
         io_context ioc(Backend);
         local_stream_socket sock(ioc);
 
-        std::error_code caught;
-        try
-        {
-            std::ignore = sock.available();
-        }
-        catch (std::system_error const& e)
-        {
-            caught = e.code();
-        }
-        BOOST_TEST(caught == std::errc::bad_file_descriptor);
+        auto [ec, n] = sock.available();
+        BOOST_TEST(ec == std::errc::bad_file_descriptor);
+        BOOST_TEST_EQ(n, 0u);
     }
 
     void testConnectToNonexistent()
@@ -1622,21 +1608,14 @@ struct local_stream_socket_test
         BOOST_TEST(done);
     }
 
-    void testAcceptorReleaseClosedThrows()
+    void testAcceptorReleaseClosedFails()
     {
         io_context ioc(Backend);
         local_stream_acceptor acc(ioc);
 
-        bool caught = false;
-        try
-        {
-            std::ignore = acc.release();
-        }
-        catch (std::system_error const&)
-        {
-            caught = true;
-        }
-        BOOST_TEST(caught);
+        auto [ec, h] = acc.release();
+        BOOST_TEST(ec == std::errc::bad_file_descriptor);
+        BOOST_TEST(h == detail::invalid_native_handle);
     }
 
     void testAcceptorReleaseOpen()
@@ -1654,7 +1633,8 @@ struct local_stream_socket_test
         BOOST_TEST_EQ(!ec, true);
 
         BOOST_TEST_EQ(acc.is_open(), true);
-        auto h = acc.release();
+        auto [rel_ec, h] = acc.release();
+        BOOST_TEST(!rel_ec);
         BOOST_TEST_EQ(acc.is_open(), false);
 
 #if BOOST_COROSIO_HAS_IOCP
@@ -1670,11 +1650,7 @@ struct local_stream_socket_test
         io_context ioc(Backend);
         local_stream_acceptor acc(ioc);
 
-#if BOOST_COROSIO_HAS_IOCP
-        auto const invalid = static_cast<native_handle_type>(~0ull);
-#else
-        auto const invalid = static_cast<native_handle_type>(-1);
-#endif
+        auto const invalid = detail::invalid_native_handle;
         BOOST_TEST(acc.native_handle() == invalid);
 
         BOOST_TEST(!acc.open());
@@ -1766,7 +1742,8 @@ struct local_stream_socket_test
         ec = acc.listen();
         BOOST_TEST_EQ(!ec, true);
 
-        auto released = acc.release();
+        auto [rel_ec, released] = acc.release();
+        BOOST_TEST(!rel_ec);
         BOOST_TEST_EQ(acc.is_open(), false);
 #if BOOST_COROSIO_HAS_IOCP
         ::closesocket(static_cast<SOCKET>(released));
@@ -1782,7 +1759,9 @@ struct local_stream_socket_test
         ec = donor.listen();
         BOOST_TEST_EQ(!ec, true);
 
-        BOOST_TEST(!acc.assign(donor.release()));
+        auto [donor_ec, donor_h] = donor.release();
+        BOOST_TEST(!donor_ec);
+        BOOST_TEST(!acc.assign(donor_h));
         BOOST_TEST_EQ(acc.is_open(), true);
         BOOST_TEST_EQ(acc.local_endpoint().path(), second_dir.path());
 
@@ -1804,7 +1783,8 @@ struct local_stream_socket_test
         ec = first.listen();
         BOOST_TEST_EQ(!ec, true);
 
-        auto h = first.release();
+        auto [rel_ec, h] = first.release();
+        BOOST_TEST(!rel_ec);
         BOOST_TEST_EQ(first.is_open(), false);
 
         local_stream_acceptor acc(ioc);
@@ -1932,7 +1912,8 @@ struct local_stream_socket_test
         // AF_UNIX has no datagram sockets, so the probe is POSIX-only.
         local_datagram_socket d(ioc);
         BOOST_TEST(!d.open());
-        auto dfd = d.release();
+        auto [rel_ec, dfd] = d.release();
+        BOOST_TEST(!rel_ec);
         acc.close();
         BOOST_TEST(!!acc.assign(dfd));
         BOOST_TEST(!acc.is_open());
@@ -2059,8 +2040,8 @@ struct local_stream_socket_test
 #if BOOST_COROSIO_HAS_EPOLL
         testAssignDuplicateFdErrors();
 #endif
-        testReleaseClosedThrows();
-        testAvailableClosedThrows();
+        testReleaseClosedFails();
+        testAvailableClosedFails();
         testConnectToNonexistent();
         testCancelPendingAccept();
         testStopTokenAccept();
@@ -2089,7 +2070,7 @@ struct local_stream_socket_test
         testOptionFailureThrows();
         testAcceptorClosedWaitCompletes();
         testAcceptorAcceptClosedThrows();
-        testAcceptorReleaseClosedThrows();
+        testAcceptorReleaseClosedFails();
         testAcceptorReleaseOpen();
         testAcceptorNativeHandle();
         testAcceptorAssignFromRelease();
@@ -2120,7 +2101,9 @@ struct local_stream_socket_test
             throw std::system_error(ec, "connect_pair");
 
         // Nothing written yet
-        BOOST_TEST_EQ(s2.available(), std::size_t(0));
+        auto [avail0_ec, avail0] = s2.available();
+        BOOST_TEST(!avail0_ec);
+        BOOST_TEST_EQ(avail0, std::size_t(0));
 
         // Write some data synchronously through the pair
         char const msg[] = "available test";
@@ -2139,7 +2122,9 @@ struct local_stream_socket_test
         ioc.restart();
 
         BOOST_TEST_EQ(done, true);
-        BOOST_TEST_EQ(s2.available(), std::strlen(msg));
+        auto [avail_ec, avail] = s2.available();
+        BOOST_TEST(!avail_ec);
+        BOOST_TEST_EQ(avail, std::strlen(msg));
     }
 
     // Writes through the released handle with raw platform calls to
@@ -2153,7 +2138,8 @@ struct local_stream_socket_test
 
         BOOST_TEST_EQ(s1.is_open(), true);
 
-        auto handle = s1.release();
+        auto [rel_ec, handle] = s1.release();
+        BOOST_TEST(!rel_ec);
         BOOST_TEST_EQ(s1.is_open(), false);
 
         // The released handle is still valid -- write through it
@@ -2186,11 +2172,7 @@ struct local_stream_socket_test
         std::error_code read_ec;
         bool read_done = false;
         char buf[16];
-#if BOOST_COROSIO_HAS_IOCP
-        auto released = static_cast<native_handle_type>(~0ull);
-#else
-        auto released = static_cast<native_handle_type>(-1);
-#endif
+        auto released = detail::invalid_native_handle;
 
         auto reader = [&]() -> capy::task<> {
             [[maybe_unused]] auto [ec, n] =
@@ -2199,7 +2181,9 @@ struct local_stream_socket_test
             read_done = true;
         };
         auto releaser = [&]() -> capy::task<> {
-            released = s1.release();
+            auto [rel_ec, rel_h] = s1.release();
+            BOOST_TEST(!rel_ec);
+            released = rel_h;
             co_return;
         };
 

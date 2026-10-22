@@ -137,7 +137,9 @@ struct random_access_file_test
         random_access_file f(ioc);
 
         BOOST_TEST(!f.open(tmp.path, file_base::read_only));
-        BOOST_TEST_EQ(f.size(), static_cast<std::uint64_t>(data.size()));
+        auto [size_ec, size_n] = f.size();
+        BOOST_TEST(!size_ec);
+        BOOST_TEST_EQ(size_n, static_cast<std::uint64_t>(data.size()));
     }
 
     void testResize()
@@ -148,7 +150,9 @@ struct random_access_file_test
 
         BOOST_TEST(!f.open(tmp.path, file_base::read_write));
         BOOST_TEST(!f.resize(5));
-        BOOST_TEST_EQ(f.size(), 5u);
+        auto [size_ec, size_n] = f.size();
+        BOOST_TEST(!size_ec);
+        BOOST_TEST_EQ(size_n, 5u);
 
 #if BOOST_COROSIO_POSIX
         // Larger than off_t can represent: rejected with EOVERFLOW.
@@ -400,11 +404,7 @@ struct random_access_file_test
         io_context ioc(Backend);
         random_access_file f(ioc);
 
-#if BOOST_COROSIO_HAS_IOCP
-        auto const invalid = static_cast<native_handle_type>(~0ull);
-#else
-        auto const invalid = static_cast<native_handle_type>(-1);
-#endif
+        auto const invalid = detail::invalid_native_handle;
         BOOST_TEST(f.native_handle() == invalid);
 
         BOOST_TEST(!f.open(tmp.path, file_base::read_only));
@@ -825,7 +825,9 @@ struct random_access_file_test
         std::ignore = ioc.poll_one();
 
         // Recycle the released number onto the other file.
-        int raw = static_cast<int>(f.release());
+        auto [rel_ec, rel_h] = f.release();
+        BOOST_TEST(!rel_ec);
+        int raw = static_cast<int>(rel_h);
         int fd2 = ::open(tmp2.path.c_str(), O_RDWR);
         BOOST_TEST(fd2 >= 0);
         BOOST_TEST_EQ(::dup2(fd2, raw), raw);
@@ -1122,7 +1124,7 @@ struct random_access_file_test
         testAssignRejectsSynchronousHandle();
         testFailedAssignKeepsHeldFileIocp();
         testReleaseDetachesForReadoption();
-        testFileReleaseWithPendingThrowsAndKeeps();
+        testFileReleaseWithPendingFailsAndKeeps();
         testStopTokenCancelsReadAt();
 #endif
         testWrongDirectionIoFails();
@@ -1186,7 +1188,9 @@ struct random_access_file_test
 
         BOOST_TEST(!f.open(tmp.path, file_base::read_only));
         BOOST_TEST(f.resize(4));
-        BOOST_TEST_EQ(f.size(), 10u);
+        auto [size_ec, size_n] = f.size();
+        BOOST_TEST(!size_ec);
+        BOOST_TEST_EQ(size_n, 10u);
     }
 
     void testAssignRejectsBadHandle()
@@ -1274,7 +1278,9 @@ struct random_access_file_test
             io_context ioc1(Backend);
             random_access_file f1(ioc1);
             BOOST_TEST(!f1.open(tmp.path, file_base::read_only));
-            raw = f1.release();
+            auto [rel_ec, rel_h] = f1.release();
+            BOOST_TEST(!rel_ec);
+            raw = rel_h;
         }
         io_context ioc2(Backend);
         random_access_file f2(ioc2);
@@ -1295,7 +1301,7 @@ struct random_access_file_test
         BOOST_TEST_EQ(n, 5u);
     }
 
-    void testFileReleaseWithPendingThrowsAndKeeps()
+    void testFileReleaseWithPendingFailsAndKeeps()
     {
         // A read is in flight until the run loop dequeues its packet,
         // even when the disk finished it at once. poll_one() starts the
@@ -1314,22 +1320,14 @@ struct random_access_file_test
             auto [e, n] = co_await fa.read_some_at(
                 0, capy::mutable_buffer(buf, sizeof(buf)));
             rec = e;
-            (void)n;
+            std::ignore = n;
         };
         capy::run_async(a.get_executor())(reader());
         BOOST_TEST_EQ(a.poll_one(), 1u);
 
-        bool threw = false;
-        try
-        {
-            (void)fa.release();
-        }
-        catch (std::system_error const& e)
-        {
-            threw = true;
-            BOOST_TEST(e.code() == std::errc::device_or_resource_busy);
-        }
-        BOOST_TEST(threw);
+        auto [bec, bh] = fa.release();
+        BOOST_TEST(bec == std::errc::device_or_resource_busy);
+        BOOST_TEST(bh == detail::invalid_native_handle);
         BOOST_TEST(fa.is_open());
         BOOST_TEST_EQ(fa.native_handle(), held);
 
@@ -1337,7 +1335,9 @@ struct random_access_file_test
         // The disk may have finished the read before the cancel reached
         // it; a decided result is reported as is.
         BOOST_TEST(!rec || rec == capy::cond::canceled);
-        BOOST_TEST(!fb.assign(fa.release()));
+        auto [fa_ec, fa_h] = fa.release();
+        BOOST_TEST(!fa_ec);
+        BOOST_TEST(!fb.assign(fa_h));
         BOOST_TEST(!fa.is_open());
         BOOST_TEST(fb.is_open());
     }
@@ -1403,22 +1403,13 @@ struct random_access_file_test
         random_access_file f(ioc);
         BOOST_TEST(!f.is_open());
 
-        // Exceptional-only operations throw bad_file_descriptor
-        auto expect_throw = [](auto fn) {
-            std::error_code caught;
-            try
-            {
-                fn();
-            }
-            catch (std::system_error const& e)
-            {
-                caught = e.code();
-            }
-            BOOST_TEST(caught == std::errc::bad_file_descriptor);
-        };
-
-        expect_throw([&] { f.size(); });
-        expect_throw([&] { f.release(); });
+        // Sync operations on a closed file report bad_file_descriptor
+        auto [sec, sz] = f.size();
+        BOOST_TEST(sec == std::errc::bad_file_descriptor);
+        BOOST_TEST_EQ(sz, 0u);
+        auto [rec, rh] = f.release();
+        BOOST_TEST(rec == std::errc::bad_file_descriptor);
+        BOOST_TEST(rh == detail::invalid_native_handle);
 
         // Error-returning operations report bad_file_descriptor
         BOOST_TEST(f.resize(0) == std::errc::bad_file_descriptor);
@@ -1690,7 +1681,8 @@ struct random_access_file_test
         BOOST_TEST(!f.open(tmp.path, file_base::read_only));
         BOOST_TEST(f.is_open());
 
-        auto handle = f.release();
+        auto [rel_ec, handle] = f.release();
+        BOOST_TEST(!rel_ec);
         BOOST_TEST(!f.is_open());
 
         // The handle is still valid — we can read from it

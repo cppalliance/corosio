@@ -9,7 +9,6 @@
 
 #include <boost/corosio/stream_file.hpp>
 #include <boost/corosio/error.hpp>
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_IOCP
@@ -81,13 +80,11 @@ stream_file::native_handle() const noexcept
     return get().native_handle();
 }
 
-std::uint64_t
-stream_file::size() const
+capy::results<std::uint64_t>
+stream_file::size() const noexcept
 {
     if (!is_open())
-        detail::throw_system_error(
-            make_error_code(std::errc::bad_file_descriptor),
-            "stream_file::size");
+        return {make_error_code(std::errc::bad_file_descriptor), 0};
     return get().size();
 }
 
@@ -115,13 +112,13 @@ stream_file::sync_all() noexcept
     return get().sync_all();
 }
 
-native_handle_type
-stream_file::release()
+capy::results<native_handle_type>
+stream_file::release() noexcept
 {
     if (!is_open())
-        detail::throw_system_error(
+        return {
             make_error_code(std::errc::bad_file_descriptor),
-            "stream_file::release");
+            detail::invalid_native_handle};
     return get().release();
 }
 

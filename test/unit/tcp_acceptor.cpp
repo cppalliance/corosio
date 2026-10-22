@@ -1721,7 +1721,8 @@ struct tcp_acceptor_test
         ec = acc.listen();
         BOOST_TEST(!ec);
 
-        auto released = acc.release();
+        auto [rel_ec, released] = acc.release();
+        BOOST_TEST(!rel_ec);
         BOOST_TEST(!acc.is_open());
         BOOST_TEST(released != invalid_native_socket);
         close_native_socket(released);
@@ -1759,7 +1760,8 @@ struct tcp_acceptor_test
         std::ignore = ioc.poll();
         ioc.restart();
 
-        auto released = acc.release();
+        auto [rel_ec, released] = acc.release();
+        BOOST_TEST(!rel_ec);
         BOOST_TEST(!acc.is_open());
         BOOST_TEST(released != invalid_native_socket);
         close_native_socket(released);
@@ -1849,7 +1851,8 @@ struct tcp_acceptor_test
         std::ignore = ioc.poll();
         ioc.restart();
 
-        auto released = acc.release();
+        auto [rel_ec, released] = acc.release();
+        BOOST_TEST(!rel_ec);
         BOOST_TEST(released != invalid_native_socket);
         close_native_socket(released);
         close_native_socket(stale);
@@ -1868,7 +1871,11 @@ struct tcp_acceptor_test
             BOOST_TEST(!ec);
             port_b = acc.local_endpoint().port();
             if (port_b == port_a)
-                close_native_socket(acc.release());
+            {
+                auto [retry_ec, retry_h] = acc.release();
+                BOOST_TEST(!retry_ec);
+                close_native_socket(retry_h);
+            }
         }
         BOOST_TEST(port_b != port_a);
 
@@ -1947,7 +1954,8 @@ struct tcp_acceptor_test
         BOOST_TEST(!ec);
         auto port = acc.local_endpoint().port();
 
-        auto released = acc.release();
+        auto [rel_ec, released] = acc.release();
+        BOOST_TEST(!rel_ec);
         BOOST_TEST(!acc.is_open());
         BOOST_TEST(released != invalid_native_socket);
 
@@ -1963,21 +1971,14 @@ struct tcp_acceptor_test
         close_native_socket(released);
     }
 
-    void testReleaseClosedThrows()
+    void testReleaseClosedFails()
     {
         io_context ioc(Backend);
         tcp_acceptor acc(ioc);
 
-        std::error_code caught;
-        try
-        {
-            std::ignore = acc.release();
-        }
-        catch (std::system_error const& e)
-        {
-            caught = e.code();
-        }
-        BOOST_TEST(caught == std::errc::bad_file_descriptor);
+        auto [ec, h] = acc.release();
+        BOOST_TEST(ec == std::errc::bad_file_descriptor);
+        BOOST_TEST(h == detail::invalid_native_handle);
     }
 
     // Adopting a v6 listener must seed the endpoint cache as v6: the
@@ -2299,7 +2300,7 @@ struct tcp_acceptor_test
         testReleaseDropsPreacceptedConnections();
         testAssignRejections();
         testRelease();
-        testReleaseClosedThrows();
+        testReleaseClosedFails();
         testAssignV6Listener();
     }
 };

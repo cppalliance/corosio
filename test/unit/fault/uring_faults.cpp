@@ -361,7 +361,8 @@ struct uring_faults
         }
         BOOST_TEST(started);
 
-        int released = static_cast<int>(s.release());
+        auto [rel_ec, released] = s.release();
+        BOOST_TEST(!rel_ec);
         // The reopened socket must not inherit the old connect's
         // endpoints when its completion runs.
         BOOST_TEST(!s.open(family::v4));
@@ -484,7 +485,9 @@ struct uring_faults
             // testCancelSqFullBestEffort.
             fault_scope f(sys::uring_sq_fill, 0);
             std::ignore = co_await corosio::delay(std::chrono::milliseconds(1));
-            ::close(static_cast<int>(s.release()));
+            auto [rel_ec, rel_fd] = s.release();
+            BOOST_TEST(!rel_ec);
+            ::close(rel_fd);
             fired = f.fired();
         };
         capy::run_async(ioc.get_executor())(releaser());
@@ -535,7 +538,9 @@ struct uring_faults
                 fault_scope f(sys::uring_sq_fill, 0);
                 std::ignore =
                     co_await corosio::delay(std::chrono::milliseconds(1));
-                released = static_cast<int>(s.release());
+                auto [rel_ec, rel_fd] = s.release();
+                BOOST_TEST(!rel_ec);
+                released = rel_fd;
                 fired    = f.fired();
             }
             BOOST_TEST(!s2.assign(released));

@@ -68,7 +68,7 @@ struct win_object_handle_test
         io_context ioc(Backend);
         win_object_handle o(ioc);
         BOOST_TEST(!o.is_open());
-        BOOST_TEST_EQ(o.native_handle(), ~native_handle_type{});
+        BOOST_TEST_EQ(o.native_handle(), detail::invalid_native_handle);
     }
 
     void testWaitOnClosed()
@@ -411,7 +411,9 @@ struct win_object_handle_test
             ec = e;
         };
         auto releaser = [&]() -> capy::task<> {
-            raw = o.release();
+            auto [rel_ec, rel_h] = o.release();
+            BOOST_TEST(!rel_ec);
+            raw = rel_h;
             co_return;
         };
         capy::run_async(ioc.get_executor())(waiter());
@@ -515,7 +517,7 @@ struct win_object_handle_test
             std::optional<win_object_handle> o(std::in_place, ioc);
             HANDLE ev          = adopt_event(*o, false, false);
             std::error_code ec = std::make_error_code(std::errc::io_error);
-            native_handle_type released = ~native_handle_type{};
+            native_handle_type released = detail::invalid_native_handle;
             auto waiter = [&]() -> capy::task<> {
                 auto [e] = co_await o->wait();
                 ec       = e;
@@ -530,7 +532,7 @@ struct win_object_handle_test
             ioc.run();
             if (ec)
                 ++lost;
-            if (released != ~native_handle_type{})
+            if (released != detail::invalid_native_handle)
                 ::CloseHandle(reinterpret_cast<HANDLE>(released));
         }
         return lost;
@@ -547,8 +549,11 @@ struct win_object_handle_test
     void testSignalBeforeReleaseReportsSuccess()
     {
         BOOST_TEST_EQ(
-            signal_then_rundown_losses(
-                [](auto& o, native_handle_type& r) { r = o->release(); }),
+            signal_then_rundown_losses([](auto& o, native_handle_type& r) {
+                auto [rel_ec, rel_h] = o->release();
+                BOOST_TEST(!rel_ec);
+                r = rel_h;
+            }),
             0);
     }
 
@@ -590,9 +595,19 @@ struct win_object_handle_test
         BOOST_TEST(!ec);
     }
 
+    void testReleaseWhenClosedFails()
+    {
+        io_context ioc(Backend);
+        win_object_handle h(ioc);
+        auto [ec, rh] = h.release();
+        BOOST_TEST(ec == std::errc::bad_file_descriptor);
+        BOOST_TEST(rh == detail::invalid_native_handle);
+    }
+
     void run()
     {
         testConstruction();
+        testReleaseWhenClosedFails();
         testWaitOnClosed();
         testRejections();
         testAssignRejectsSelf();

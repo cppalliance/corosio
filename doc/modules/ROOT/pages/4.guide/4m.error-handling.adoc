@@ -21,12 +21,12 @@ Every fallible operation reports through exactly one channel:
 
 * *Expected runtime conditions return the error.* Synchronous
   operations return `std::error_code` (or `results<T>` when a
-  payload rides along — `seek()`, the `make_*` factories), and
+  payload rides along — `seek()`, `size()`, `available()`,
+  `release()`, the `make_*` factories), and
   asynchronous operations complete with `results<...>`. Every
   error-returning function is `+[[nodiscard]]+`.
 * *Misuse of a documented precondition throws* `std::system_error` —
-  for example `release()`, `set_option()`, or `get_option()` on a
-  closed object.
+  for example `set_option()` or `get_option()` on a closed object.
 * *Operations whose outcome nobody can act on report nothing.*
   `close()` and `cancel()` are `void noexcept`. Durability reporting
   belongs to `sync_data()`/`sync_all()`. Cancellation reports
@@ -70,8 +70,7 @@ Windows. The constructor throws exactly the codes this path reports
   (POSIX only)
 | ensure `opts.thread_pool_size >= 1`
 
-| `release()`, `size()`, `available()`, `set_option()`,
-  `get_option()` on a closed object
+| `set_option()`, `get_option()` on a closed object
 | check `is_open()` first — closed-ness is the documented precondition
 |===
 
@@ -86,13 +85,19 @@ platform rejects the option itself, such as an unsupported option on
 that protocol or OS. An open check therefore removes the closed-object
 throw but not that environmental arm. Probe an option once at startup if
 it must not throw later.
-The same row has a Windows caveat for `release()`. On
+`release()`, `size()`, and `available()` never throw. A closed object
+reports `errc::bad_file_descriptor` through the returned code. On
 cpp:win_stream_handle[], cpp:win_random_access_handle[],
-cpp:stream_file[], and cpp:random_access_file[], it can throw while
-open. It throws `errc::device_or_resource_busy` if an operation is
-still in flight. Call it again once the canceled operations complete.
-It throws `errc::operation_not_supported` if Windows cannot detach the
-handle from the completion port.
+cpp:stream_file[], and cpp:random_access_file[], `release()` can also
+fail while open. It reports `errc::device_or_resource_busy` if an
+operation is still in flight on Windows. Where file I/O runs on a
+thread pool, it reports the same while a worker thread is performing
+one. Call it again
+once the canceled operations complete. It reports
+`errc::operation_not_supported` if Windows cannot detach the handle
+from the completion port. A failed
+`release()` leaves the object owning the handle and returns the invalid
+sentinel, never descriptor 0.
 Startup construction failing by exception is the intended shape.
 
 [NOTE]

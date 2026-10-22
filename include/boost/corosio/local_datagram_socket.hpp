@@ -822,21 +822,22 @@ public:
         operations without closing the fd. The caller takes ownership
         of the returned descriptor.
 
-        @return The native handle.
+        A closed object reports `errc::bad_file_descriptor` and the
+        returned handle is the invalid sentinel ( -1 ), never zero.
 
-        @throws std::system_error `errc::bad_file_descriptor` if the
-            socket is not open.
+        @return The error code and the native handle.
     */
-    native_handle_type release();
+    [[nodiscard]] capy::results<native_handle_type> release() noexcept;
 
     /** Query the number of bytes available for reading.
 
-        @return The number of bytes that can be read without blocking.
+        A closed socket reports `errc::bad_file_descriptor`. Other
+        failures carry the error code from the operating system. On
+        failure the count is zero.
 
-        @throws std::system_error `errc::bad_file_descriptor` if the
-            socket is not open; otherwise thrown on ioctl failure.
+        @return The error code and the number of readable bytes.
     */
-    std::size_t available() const;
+    [[nodiscard]] capy::results<std::size_t> available() const noexcept;
 
     /** Shut down part or all of the socket.
 

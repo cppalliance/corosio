@@ -214,9 +214,9 @@ struct win_common_faults
         BOOST_TEST(!sf.open(path, file_base::read_write | file_base::create));
         {
             fault_scope f(sys::GetFileSizeEx, ERROR_INVALID_HANDLE);
-            expect_system_error(
-                [&] { std::ignore = sf.size(); },
-                win_err(ERROR_INVALID_HANDLE));
+            auto [ec, n] = sf.size();
+            BOOST_TEST(ec == win_err(ERROR_INVALID_HANDLE));
+            BOOST_TEST_EQ(n, 0u);
             BOOST_TEST(f.fired());
         }
         {
@@ -368,9 +368,9 @@ struct win_common_faults
         BOOST_TEST(!rf.open(path, file_base::read_write | file_base::create));
         {
             fault_scope f(sys::GetFileSizeEx, ERROR_INVALID_HANDLE);
-            expect_system_error(
-                [&] { std::ignore = rf.size(); },
-                win_err(ERROR_INVALID_HANDLE));
+            auto [ec, n] = rf.size();
+            BOOST_TEST(ec == win_err(ERROR_INVALID_HANDLE));
+            BOOST_TEST_EQ(n, 0u);
             BOOST_TEST(f.fired());
         }
         {
@@ -586,7 +586,7 @@ struct win_common_faults
         BOOST_TEST(!connect_pair_bounded(a, b));
     }
 
-    void testAvailableThrows()
+    void testAvailableFails()
     {
         io_context ioc(iocp);
         local_stream_socket a(ioc), b(ioc);
@@ -594,8 +594,9 @@ struct win_common_faults
         // WSAEINVAL is one of the codes make_err passes through, so
         // available() reports it as the raw Winsock code either way.
         fault_scope f(sys::ioctlsocket, WSAEINVAL);
-        expect_system_error(
-            [&] { std::ignore = a.available(); }, win_err(WSAEINVAL));
+        auto [ec, n] = a.available();
+        BOOST_TEST(ec == win_err(WSAEINVAL));
+        BOOST_TEST_EQ(n, 0u);
         BOOST_TEST(f.fired());
         BOOST_TEST(a.is_open());
     }
@@ -817,7 +818,7 @@ struct win_common_faults
         testRandomAccessFileFails();
         testFileAssignFails();
         testConnectPairFails();
-        testAvailableThrows();
+        testAvailableFails();
         testResolverFails();
         testResolverPostFallbackRuns();
         testResolverWideConversionFails();

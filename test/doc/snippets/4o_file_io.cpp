@@ -178,7 +178,9 @@ void
 inspect_metadata(corosio::stream_file& f)
 {
     // tag::metadata[]
-    auto bytes = f.size();        // file size in bytes
+    auto [size_ec, bytes] = f.size(); // file size in bytes
+    if (size_ec)
+        return;
     if (auto ec = f.resize(1024)) // truncate or extend
         return;
     if (auto ec = f.sync_data()) // flush data to stable storage
@@ -217,7 +219,9 @@ release_handle(corosio::random_access_file& f)
 {
     // tag::native_release[]
     // Release ownership — caller must close the handle
-    auto handle = f.release();
+    auto [ec, handle] = f.release();
+    if (ec)
+        return;
     assert(!f.is_open());
     // end::native_release[]
     close_platform_handle(handle);
@@ -333,7 +337,9 @@ struct file_io_test
         open_log(f);
         BOOST_TEST(f.is_open());
         inspect_metadata(f);
-        BOOST_TEST_EQ(f.size(), 1024u);
+        auto [size_ec, size_n] = f.size();
+        BOOST_TEST(!size_ec);
+        BOOST_TEST_EQ(size_n, 1024u);
     }
 
     void testNativeHandle()
@@ -342,6 +348,7 @@ struct file_io_test
         corosio::random_access_file f(ioc);
         BOOST_TEST(!f.open("data.bin", corosio::file_base::read_only));
         release_handle(f);
+        BOOST_TEST(!f.is_open());
 
         bool adopted = false;
         adopt_handle(ioc, open_platform_handle("data.bin"), adopted);

@@ -27,6 +27,7 @@
 #include <stop_token>
 #include <system_error>
 #include <type_traits>
+#include <tuple>
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -59,7 +60,7 @@ struct win_random_access_handle_test
         io_context ioc(Backend);
         win_random_access_handle h(ioc);
         BOOST_TEST(!h.is_open());
-        BOOST_TEST_EQ(h.native_handle(), ~native_handle_type{});
+        BOOST_TEST_EQ(h.native_handle(), detail::invalid_native_handle);
     }
 
     void testAcceptsOverlappedPipe()
@@ -208,7 +209,9 @@ struct win_random_access_handle_test
             win_random_access_handle h(ioc);
             auto f = test::open_file(t.path, true);
             BOOST_TEST(!h.assign(test::as_native(f.release())));
-            raw = h.release();
+            auto [rel_ec, rel_h] = h.release();
+            BOOST_TEST(!rel_ec);
+            raw = rel_h;
             BOOST_TEST(!h.is_open());
         }
         io_context ioc2(Backend);
@@ -237,12 +240,14 @@ struct win_random_access_handle_test
                 auto [e, n] = co_await h.read_some_at(
                     0, capy::mutable_buffer(buf, sizeof(buf)));
                 ec = e;
-                (void)n;
+                std::ignore = n;
             };
             capy::run_async(ioc.get_executor())(reader());
             ioc.run();
             BOOST_TEST(!ec);
-            raw = h.release();
+            auto [rel_ec, rel_h] = h.release();
+            BOOST_TEST(!rel_ec);
+            raw = rel_h;
         }
 
         io_context ioc2(Backend);
@@ -296,7 +301,7 @@ struct win_random_access_handle_test
         BOOST_TEST(on_strand);
     }
 
-    void testReleaseWithPendingThrowsAndKeeps()
+    void testReleaseWithPendingFailsAndKeeps()
     {
         io_context a(Backend);
         io_context b(Backend);
@@ -312,29 +317,22 @@ struct win_random_access_handle_test
             auto [e, n] = co_await ha.read_some_at(
                 0, capy::mutable_buffer(buf, sizeof(buf)));
             rec = e;
-            (void)n;
+            std::ignore = n;
         };
         capy::run_async(a.get_executor())(reader());
         a.poll(); // the read is now issued and pending
 
-        bool threw = false;
-        try
-        {
-            (void)ha.release();
-        }
-        catch (std::system_error const& e)
-        {
-            threw = true;
-            BOOST_TEST(e.code() == std::errc::device_or_resource_busy);
-        }
-        BOOST_TEST(threw);
+        auto [bec, bh] = ha.release();
+        BOOST_TEST(bec == std::errc::device_or_resource_busy);
+        BOOST_TEST(bh == detail::invalid_native_handle);
         BOOST_TEST(ha.is_open());
         BOOST_TEST_EQ(ha.native_handle(), held);
 
         a.run(); // the cancelled read drains
         BOOST_TEST(rec == capy::cond::canceled);
 
-        native_handle_type const released = ha.release(); // idle now
+        auto [rel_ec, released] = ha.release(); // idle now
+        BOOST_TEST(!rel_ec);
         BOOST_TEST_EQ(released, held);
         BOOST_TEST(!ha.is_open());
         BOOST_TEST(!hb.assign(released)); // detached: another context adopts it
@@ -386,9 +384,19 @@ struct win_random_access_handle_test
         BOOST_TEST(ec == capy::cond::canceled);
     }
 
+    void testReleaseWhenClosedFails()
+    {
+        io_context ioc(Backend);
+        win_random_access_handle h(ioc);
+        auto [ec, rh] = h.release();
+        BOOST_TEST(ec == std::errc::bad_file_descriptor);
+        BOOST_TEST(rh == detail::invalid_native_handle);
+    }
+
     void run()
     {
         testConstruction();
+        testReleaseWhenClosedFails();
         testAcceptsOverlappedPipe();
         testRejections();
         testPositionalWriteThenRead();
@@ -399,7 +407,7 @@ struct win_random_access_handle_test
         testReleaseAndReadopt();
         testResumesOnAwaitingExecutor();
         testReleaseAfterCompletedReadReadopts();
-        testReleaseWithPendingThrowsAndKeeps();
+        testReleaseWithPendingFailsAndKeeps();
         testAssignRejectsInvalid();
         testAssignRejectsSelf();
         testStopTokenCancelsRead();

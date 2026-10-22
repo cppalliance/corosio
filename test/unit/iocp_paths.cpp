@@ -200,7 +200,7 @@ struct iocp_paths_test
     void testAssignValidation()
     {
         io_context ioc(iocp);
-        auto const invalid = static_cast<native_handle_type>(~0ull);
+        auto const invalid = detail::invalid_native_handle;
 
         // Validation runs only on a closed object; an open one reports
         // already_open first.
@@ -211,7 +211,8 @@ struct iocp_paths_test
         // A datagram socket is the wrong type for a TCP stream slot.
         udp_socket u(ioc);
         BOOST_TEST(!u.open(family::v4));
-        auto ufd = u.release();
+        auto [ufd_ec, ufd] = u.release();
+        BOOST_TEST(!ufd_ec);
         BOOST_TEST(!!t.assign(ufd));
         BOOST_TEST(!t.is_open());
         ::closesocket(static_cast<SOCKET>(ufd));
@@ -231,7 +232,8 @@ struct iocp_paths_test
         local_stream_acceptor lacc(ioc);
         tcp_socket t2(ioc);
         BOOST_TEST(!t2.open(family::v4));
-        auto tfd = t2.release();
+        auto [tfd_ec, tfd] = t2.release();
+        BOOST_TEST(!tfd_ec);
         BOOST_TEST(!!lacc.assign(tfd));
         BOOST_TEST(!lacc.is_open());
         ::closesocket(static_cast<SOCKET>(tfd));
@@ -406,7 +408,7 @@ struct iocp_paths_test
     void testReleasedAcceptorAccessors()
     {
         io_context ioc(iocp);
-        auto const invalid = static_cast<native_handle_type>(~0ull);
+        auto const invalid = detail::invalid_native_handle;
 
         test::temp_socket_dir tmp;
         local_stream_acceptor acc(ioc);
@@ -414,7 +416,8 @@ struct iocp_paths_test
         BOOST_TEST(!acc.bind(local_endpoint(tmp.path())));
         BOOST_TEST(!acc.listen());
 
-        auto fd = acc.release();
+        auto [fd_ec, fd] = acc.release();
+        BOOST_TEST(!fd_ec);
         BOOST_TEST(fd != invalid);
         ::closesocket(static_cast<SOCKET>(fd));
 
@@ -434,7 +437,9 @@ struct iocp_paths_test
         random_access_file f(ioc);
         BOOST_TEST(
             !f.open(tmp.path, file_base::write_only | file_base::truncate));
-        BOOST_TEST_EQ(f.size(), 0u);
+        auto [size_ec, size_n] = f.size();
+        BOOST_TEST(!size_ec);
+        BOOST_TEST_EQ(size_n, 0u);
         f.close();
     }
 
@@ -557,9 +562,14 @@ struct iocp_paths_test
         ioc.restart();
         BOOST_TEST_EQ(done, 0);
 
-        native_handle_type released[] = {
-            r1.release(), acc.release(), conn.release(),
-            u.release(),  l1.release(),  lacc.release()};
+        auto release_of = [](auto& obj) {
+            auto [rel_ec, rel_h] = obj.release();
+            BOOST_TEST(!rel_ec);
+            return rel_h;
+        };
+        native_handle_type released[] = {release_of(r1),   release_of(acc),
+                                         release_of(conn), release_of(u),
+                                         release_of(l1),   release_of(lacc)};
 
         std::ignore = ioc.run_for(std::chrono::seconds(30));
         BOOST_TEST_EQ(done, 6);

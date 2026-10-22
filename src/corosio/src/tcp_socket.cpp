@@ -12,7 +12,6 @@
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/error.hpp>
 #include <boost/corosio/native/detail/endpoint_convert.hpp>
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/platform.hpp>
 
 #include "src/detail/use_backend_service.hpp"
@@ -89,14 +88,14 @@ tcp_socket::assign(native_handle_type fd) noexcept
     return ec;
 }
 
-native_handle_type
-tcp_socket::release()
+capy::results<native_handle_type>
+tcp_socket::release() noexcept
 {
     if (!is_open())
-        detail::throw_system_error(
+        return {
             make_error_code(std::errc::bad_file_descriptor),
-            "tcp_socket::release");
-    return get().release_socket();
+            detail::invalid_native_handle};
+    return {std::error_code{}, get().release_socket()};
 }
 
 std::error_code

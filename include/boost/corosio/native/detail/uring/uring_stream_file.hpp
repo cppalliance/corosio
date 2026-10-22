@@ -143,12 +143,12 @@ public:
             sched_->cancel_ops({&rd_, &wr_});
     }
 
-    std::uint64_t size() const override
+    capy::results<std::uint64_t> size() const noexcept override
     {
         file_stat_t st;
         if (file_fstat(fd_, &st) < 0)
-            throw_system_error(make_err(errno), "stream_file::size");
-        return static_cast<std::uint64_t>(st.st_size);
+            return {make_err(errno), 0};
+        return {std::error_code{}, static_cast<std::uint64_t>(st.st_size)};
     }
 
     std::error_code resize(std::uint64_t new_size) noexcept override
@@ -179,7 +179,7 @@ public:
         return {};
     }
 
-    native_handle_type release() override
+    capy::results<native_handle_type> release() noexcept override
     {
         // Flush while the fd is still open, so no queued SQE can name
         // a number the caller closes and recycles.
@@ -187,7 +187,7 @@ public:
             sched_->flush_after_cancel(fd_, {&rd_, &wr_});
         int fd = fd_;
         fd_    = -1;
-        return fd;
+        return {std::error_code{}, fd};
     }
 
     std::error_code assign(native_handle_type handle) noexcept override

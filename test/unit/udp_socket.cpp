@@ -331,11 +331,7 @@ struct udp_socket_test
         udp_socket sock(ioc);
 
         BOOST_TEST_EQ(sock.is_open(), false);
-#if BOOST_COROSIO_HAS_IOCP
-        auto const invalid = static_cast<native_handle_type>(~0ull);
-#else
-        auto const invalid = static_cast<native_handle_type>(-1);
-#endif
+        auto const invalid = detail::invalid_native_handle;
         BOOST_TEST_EQ(sock.native_handle(), invalid);
         BOOST_TEST(sock.local_endpoint() == endpoint{});
         BOOST_TEST(sock.remote_endpoint() == endpoint{});
@@ -1661,7 +1657,9 @@ struct udp_socket_test
             recv_done = true;
         };
         auto releaser = [&]() -> capy::task<> {
-            released = sock.release();
+            auto [rel_ec, rel_h] = sock.release();
+            BOOST_TEST(!rel_ec);
+            released = rel_h;
             co_return;
         };
 
@@ -1695,21 +1693,14 @@ struct udp_socket_test
         close_native_socket(released);
     }
 
-    void testReleaseClosedThrows()
+    void testReleaseClosedFails()
     {
         io_context ioc(Backend);
         udp_socket sock(ioc);
 
-        bool caught = false;
-        try
-        {
-            std::ignore = sock.release();
-        }
-        catch (std::system_error const&)
-        {
-            caught = true;
-        }
-        BOOST_TEST(caught);
+        auto [ec, h] = sock.release();
+        BOOST_TEST(ec == std::errc::bad_file_descriptor);
+        BOOST_TEST(h == detail::invalid_native_handle);
     }
 
     // v6 adoption: the cached endpoint must report v6.
@@ -2003,7 +1994,8 @@ struct udp_socket_test
             auto [cec] = co_await s2.connect(target);
             if (cec)
                 co_return;
-            auto fd = s2.release();
+            auto [rel_ec, fd] = s2.release();
+            BOOST_TEST(!rel_ec);
             if (!s3.assign(fd) && s3.remote_endpoint() == target)
                 ok = true;
         };
@@ -2089,7 +2081,7 @@ struct udp_socket_test
         testAssignFailureKeepsSocket();
         testAssignOverOpenKeepsPending();
         testRelease();
-        testReleaseClosedThrows();
+        testReleaseClosedFails();
         testAssignV6();
 
         testDestroyWithQueuedDatagrams();

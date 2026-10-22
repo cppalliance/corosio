@@ -139,10 +139,10 @@ include::example$snippets/4o_file_io.cpp[tag=native_adopt,indent=0]
 On Windows, `assign` requires a handle that is not associated with an
 I/O completion port. `release()` detaches the handle from the context's
 port, so a handle released from another Corosio file object can be
-adopted again. While an operation is still in flight, `release()` throws
+adopted again. While an operation is still in flight, `release()` reports
 `errc::device_or_resource_busy` and keeps the handle; call it again once
 the cancelled operations have completed. Detaching requires Windows 8.1
-or later. On earlier versions, the detach fails and `release()` throws
+or later. On earlier versions, the detach fails and `release()` reports
 `errc::operation_not_supported`. The handles Windows rejects are listed in
 xref:4.guide/4s.native-descriptors.adoc#windows-handles[Native
 Descriptors and Handles].
@@ -176,13 +176,16 @@ include::example$snippets/4o_file_io.cpp[tag=error_handling,indent=0]
 
 Synchronous operations that can fail in normal use return a
 `std::error_code`. Those are `open`, `resize`, `sync_data`, `sync_all`,
-and `assign`. `seek` returns the code together with the new position.
+and `assign`. `seek` returns the code together with the new position,
+`size` with the file size, and `release` with the native handle.
 Opening a nonexistent file with `read_only` reports
 `no_such_file_or_directory`. Use `create` to create files that may
-not exist. Of the synchronous operations, only `size()` and `release()`
-throw `std::system_error`. Both throw on a closed file, and `size()` also
-throws when the size query fails. On Windows, `release()` also throws on an
-open file in the cases the note above describes.
+not exist. `size()` and `release()` report a closed file as
+`errc::bad_file_descriptor`, and `size()` also reports a failed size
+query. Where file I/O runs on a thread pool, `release()` also fails
+on an open file with `errc::device_or_resource_busy` while a worker
+thread is performing a transfer. On Windows it fails in the cases the
+note above describes.
 
 == Thread Safety
 
