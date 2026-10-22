@@ -332,7 +332,10 @@ struct buffers_test
     void testSingleBuffer()
     {
         corosio::io_context ioc;
-        auto [a, b]   = corosio::test::make_socket_pair(ioc);
+        auto [ec, a, b] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         char data[64] = {};
         capy::run_async(ioc.get_executor())(
             [](corosio::tcp_socket& peer) -> capy::task<> {
@@ -347,7 +350,10 @@ struct buffers_test
     void testMultipleBuffers()
     {
         corosio::io_context ioc;
-        auto [a, b] = corosio::test::make_socket_pair(ioc);
+        auto [ec, a, b] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
 
         // Scatter read: 8 bytes split across a 2-byte header and the
         // body.
@@ -399,7 +405,10 @@ struct buffers_test
     void testBufferSlice()
     {
         corosio::io_context ioc;
-        auto [a, b] = corosio::test::make_socket_pair(ioc);
+        auto [ec, a, b] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         std::string part1(16, 'x');
         std::string part2(16, 'y');
         std::array<capy::const_buffer, 2> bufs = {
@@ -433,7 +442,10 @@ struct buffers_test
     void testConsumingBuffers()
     {
         corosio::io_context ioc;
-        auto [a, b]  = corosio::test::make_socket_pair(ioc);
+        auto [ec, a, b] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         char head[4] = {};
         char tail[8] = {};
         std::array<capy::mutable_buffer, 2> bufs = {
@@ -467,7 +479,10 @@ struct buffers_test
     void testLifetime()
     {
         corosio::io_context ioc;
-        auto [a, b]       = corosio::test::make_socket_pair(ioc);
+        auto [ec, a, b] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         char got[8]       = {};
         std::size_t got_n = 0;
         capy::run_async(ioc.get_executor())(good_example(a));
@@ -499,7 +514,10 @@ struct buffers_test
     void testScatterRead()
     {
         corosio::io_context ioc;
-        auto [a, b]   = corosio::test::make_socket_pair(ioc);
+        auto [ec, a, b] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         std::size_t n = 0;
         capy::run_async(ioc.get_executor())(
             [](corosio::tcp_socket& peer) -> capy::task<> {
@@ -514,7 +532,10 @@ struct buffers_test
     void testGatherWrite()
     {
         corosio::io_context ioc;
-        auto [a, b]         = corosio::test::make_socket_pair(ioc);
+        auto [ec, a, b] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         std::size_t written = 0;
         std::string got;
         capy::run_async(ioc.get_executor())(gather_write(a, written));
@@ -538,7 +559,10 @@ struct buffers_test
     void testReadHeader()
     {
         corosio::io_context ioc;
-        auto [a, b] = corosio::test::make_socket_pair(ioc);
+        auto [ec, a, b] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         packet_header sent{0xC0FFEE42, 1234};
         packet_header received{};
         capy::run_async(ioc.get_executor())(

@@ -37,6 +37,7 @@
 #include <system_error>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -48,8 +49,8 @@ struct bounded_run_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         char buf[8];
         std::error_code rec;
@@ -77,8 +78,8 @@ struct bounded_run_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         char buf[8];
         bool resumed = false;
@@ -126,8 +127,8 @@ struct bounded_run_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         char buf[8];
         bool resumed = false;
@@ -179,8 +180,8 @@ struct bounded_run_test
         // asserts elapsed time.
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         char buf[8];
         bool resumed = false;

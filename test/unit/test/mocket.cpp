@@ -21,9 +21,8 @@
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/fuse.hpp>
 
-#include <stdexcept>
-
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio::test {
@@ -38,7 +37,7 @@ struct mocket_test
         capy::test::fuse f;
 
         // Create mocket paired with a socket
-        auto [m, peer] = make_mocket_pair(ioc, f);
+        auto [m, peer] = must(make_mocket_pair(ioc, f));
         BOOST_TEST(m.is_open());
         BOOST_TEST(peer.is_open());
 
@@ -78,7 +77,7 @@ struct mocket_test
         io_context ioc;
         capy::test::fuse f;
 
-        auto [m, peer] = make_mocket_pair(ioc, f);
+        auto [m, peer] = must(make_mocket_pair(ioc, f));
 
         // Set expectation that won't be fulfilled
         m.expect("never_written");
@@ -96,7 +95,7 @@ struct mocket_test
         io_context ioc;
         capy::test::fuse f;
 
-        auto [m, peer] = make_mocket_pair(ioc, f);
+        auto [m, peer] = must(make_mocket_pair(ioc, f));
 
         // Stage data that won't be consumed
         m.provide("never_read");
@@ -114,7 +113,7 @@ struct mocket_test
         io_context ioc;
         capy::test::fuse f;
 
-        auto [m, peer] = make_mocket_pair(ioc, f);
+        auto [m, peer] = must(make_mocket_pair(ioc, f));
 
         // Test passthrough when provide/expect buffers are empty
         auto task = [](mocket& m_ref, tcp_socket& peer_ref) -> capy::task<> {
@@ -161,7 +160,7 @@ struct mocket_test
         io_context ioc;
         capy::test::fuse f;
 
-        auto [m, peer] = make_mocket_pair(ioc, f);
+        auto [m, peer] = must(make_mocket_pair(ioc, f));
         m.expect("ab");
 
         auto task = [](mocket& m_ref) -> capy::task<> {
@@ -188,7 +187,7 @@ struct mocket_test
         io_context ioc;
         capy::test::fuse f;
 
-        auto [m, peer] = make_mocket_pair(ioc, f);
+        auto [m, peer] = must(make_mocket_pair(ioc, f));
         m.provide("data");
         m.expect("xx");
 
@@ -232,16 +231,12 @@ struct mocket_test
         capy::test::fuse f;
         ioc.stop();
 
-        bool made = false;
-        try
-        {
-            auto [m, peer] = make_mocket_pair(ioc, f);
-            made = m.is_open() && peer.is_open();
-        }
-        catch (std::runtime_error const&)
-        {
-        }
-        BOOST_TEST(made);
+        auto [ec, m, peer] = make_mocket_pair(ioc, f);
+        BOOST_TEST(!ec);
+        BOOST_TEST(m.is_open());
+        BOOST_TEST(peer.is_open());
+        m.close();
+        peer.close();
 
         ioc.restart();
         ioc.run();
@@ -273,7 +268,8 @@ struct native_mocket_test
         io_context ioc(Backend);
         capy::test::fuse f;
 
-        auto [m, peer] = make_mocket_pair<socket_type, acceptor_type>(ioc, f);
+        auto [m, peer] =
+            must(make_mocket_pair<socket_type, acceptor_type>(ioc, f));
         BOOST_TEST(m.is_open());
         BOOST_TEST(peer.is_open());
 

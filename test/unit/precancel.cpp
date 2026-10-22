@@ -56,8 +56,8 @@ struct precancel_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         std::stop_source ss;
         ss.request_stop();

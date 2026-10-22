@@ -51,6 +51,7 @@
 
 #include <boost/corosio/backend.hpp>
 
+#include "must.hpp"
 #include "test_suite.hpp"
 
 #if !defined(_WIN32)
@@ -214,8 +215,8 @@ struct alloc_fault_test
             io_context ioc(select);
             auto ex = ioc.get_executor();
             // Warm the context and registry machinery before arming.
-            auto [w1, w2] =
-                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+            auto [w1, w2] = test::must(
+                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
             // Registration happens inside open(): the registry's node
             // allocation is one of the few in this window, and its

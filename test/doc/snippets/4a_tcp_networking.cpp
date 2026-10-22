@@ -106,7 +106,10 @@ struct tcp_networking_test
     void testNoDelay()
     {
         corosio::io_context ioc;
-        auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+        auto [pair_ec, s1, s2] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!pair_ec);
+        if (pair_ec)
+            return;
         set_no_delay(s1);
         auto [ec, nd] = s1.get_option<corosio::socket_option::no_delay>();
         BOOST_TEST(!ec);
@@ -116,7 +119,10 @@ struct tcp_networking_test
     void testPartialReads()
     {
         corosio::io_context ioc;
-        auto [s1, s2]   = corosio::test::make_socket_pair(ioc);
+        auto [ec, s1, s2] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         std::size_t got = 0;
         capy::run_async(ioc.get_executor())(
             [](corosio::tcp_socket& r, corosio::tcp_socket& w,

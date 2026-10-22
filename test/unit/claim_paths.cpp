@@ -73,8 +73,8 @@ struct claim_paths_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         test::must_ok(s1.set_option(socket_option::send_buffer_size(4096)));
         fill_send_buffer(s1.native_handle());
@@ -151,8 +151,8 @@ struct claim_paths_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         std::stop_source ss;
         char buf[8];

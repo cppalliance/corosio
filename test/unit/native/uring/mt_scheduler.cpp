@@ -12,6 +12,7 @@
 // leadership, woken by work posted from a foreign thread. Durations only
 // bound blocking; nothing asserts elapsed time.
 
+#include "must.hpp"
 #include "test_suite.hpp"
 
 #include <boost/corosio/detail/platform.hpp>
@@ -99,8 +100,8 @@ struct uring_mt_scheduler_test
     {
         native_io_context<uring> ioc;
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         // A parked read keeps outstanding work alive so both runner threads
         // stay inside the scheduler: one leads the ring, the other parks in

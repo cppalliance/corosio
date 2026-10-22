@@ -81,7 +81,7 @@ struct object_reuse_test
         bool resumed = false;
 
         {
-            auto [s1, s2] = test::make_socket_pair(ioc);
+            auto [s1, s2] = test::must(test::make_socket_pair(ioc));
             std::ignore   = s2; // keeps the peer fd open; never written to
 
             capy::run_async(ex)(
@@ -107,7 +107,7 @@ struct object_reuse_test
         BOOST_TEST(!probe.open());
         BOOST_TEST(probe.is_open());
 
-        auto [p1, p2] = test::make_socket_pair(ioc);
+        auto [p1, p2]   = test::must(test::make_socket_pair(ioc));
         char const out = 'x';
         char in         = 0;
         bool wrote = false, read_ok = false;
@@ -269,11 +269,11 @@ struct object_reuse_test
     {
         io_context ioc(Backend);
         capy::strand st(ioc.get_executor());
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
         auto sock = std::make_unique<tcp_socket>(std::move(s1));
-        auto [q1, q2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [q1, q2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
         ioc.restart();
 
         int resumed = 0;

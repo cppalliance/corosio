@@ -33,6 +33,7 @@
 #endif
 
 #include "../common/native_includes.hpp"
+#include "../common/must.hpp"
 
 namespace corosio = boost::corosio;
 namespace capy    = boost::capy;
@@ -64,8 +65,9 @@ bench_throughput(bench::state& state)
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     corosio::native_io_context<Backend> ioc;
-    auto [writer, reader] = corosio::test::make_socket_pair<
-        socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+    auto [writer, reader] = bench::must(
+        corosio::test::make_socket_pair<
+            socket_type, corosio::native_tcp_acceptor<Backend>>(ioc));
 
     set_nodelay(writer);
     set_nodelay(reader);
@@ -128,8 +130,9 @@ bench_bidirectional_throughput(bench::state& state)
     state.counters["chunk_size"] = static_cast<double>(chunk_size);
 
     corosio::native_io_context<Backend> ioc;
-    auto [sock1, sock2] = corosio::test::make_socket_pair<
-        socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+    auto [sock1, sock2] = bench::must(
+        corosio::test::make_socket_pair<
+            socket_type, corosio::native_tcp_acceptor<Backend>>(ioc));
 
     set_nodelay(sock1);
     set_nodelay(sock2);
@@ -257,8 +260,9 @@ bench_throughput_lockless(bench::state& state)
     corosio::io_context_options opts;
     opts.locking = corosio::locking_mode::unsafe;
     corosio::native_io_context<Backend> ioc(opts, 1);
-    auto [writer, reader] = corosio::test::make_socket_pair<
-        socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+    auto [writer, reader] = bench::must(
+        corosio::test::make_socket_pair<
+            socket_type, corosio::native_tcp_acceptor<Backend>>(ioc));
 
     set_nodelay(writer);
     set_nodelay(reader);
@@ -323,8 +327,9 @@ bench_bidirectional_throughput_lockless(bench::state& state)
     corosio::io_context_options opts;
     opts.locking = corosio::locking_mode::unsafe;
     corosio::native_io_context<Backend> ioc(opts, 1);
-    auto [sock1, sock2] = corosio::test::make_socket_pair<
-        socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+    auto [sock1, sock2] = bench::must(
+        corosio::test::make_socket_pair<
+            socket_type, corosio::native_tcp_acceptor<Backend>>(ioc));
 
     set_nodelay(sock1);
     set_nodelay(sock2);
@@ -436,8 +441,9 @@ bench_multithread_throughput(bench::state& state)
 
     for (int i = 0; i < num_connections; ++i)
     {
-        auto [s1, s2] = corosio::test::make_socket_pair<
-            socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+        auto [s1, s2] = bench::must(
+            corosio::test::make_socket_pair<
+                socket_type, corosio::native_tcp_acceptor<Backend>>(ioc));
         set_nodelay(s1);
         set_nodelay(s2);
         sock1s.push_back(std::move(s1));

@@ -51,6 +51,7 @@
 #include <unistd.h>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -62,8 +63,8 @@ struct mt_reactor_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         // A read and a readiness wait park on the same descriptor, so
         // one readable event dispatches both in a single batch. Two
@@ -104,8 +105,8 @@ struct mt_reactor_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         // The parked read keeps outstanding work alive so both runner
         // threads stay inside the scheduler: one leads in the reactor,
@@ -163,8 +164,8 @@ struct mt_reactor_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         tcp_acceptor acc(ioc);
         BOOST_TEST(!acc.open());

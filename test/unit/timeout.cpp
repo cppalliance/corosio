@@ -40,6 +40,7 @@
 #include <vector>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -485,7 +486,8 @@ struct timeout_test
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
         // s2 is held open but silent.
-        [[maybe_unused]] auto [s1, s2] = test::make_socket_pair(ioc);
+        [[maybe_unused]] auto [s1, s2] =
+            test::must(test::make_socket_pair(ioc));
         bool timed_out                 = false;
         std::array<char, 32> buf{};
 
@@ -537,7 +539,8 @@ struct timeout_test
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
         // s2 is held open but silent.
-        [[maybe_unused]] auto [s1, s2] = test::make_socket_pair(ioc);
+        [[maybe_unused]] auto [s1, s2] =
+            test::must(test::make_socket_pair(ioc));
         bool timed_out                 = false;
         std::array<char, 32> buf{};
 

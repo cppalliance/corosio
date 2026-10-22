@@ -263,7 +263,10 @@ struct composed_operations_test
     void testPrimitives()
     {
         corosio::io_context ioc;
-        auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+        auto [ec, s1, s2] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         capy::run_async(ioc.get_executor())(
             [](corosio::tcp_socket& a, corosio::tcp_socket& b) -> capy::task<> {
                 std::string_view text = "hi";
@@ -277,7 +280,10 @@ struct composed_operations_test
     void testReadFull()
     {
         corosio::io_context ioc;
-        auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+        auto [ec, s1, s2] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         capy::run_async(ioc.get_executor())(
             [](corosio::tcp_socket& a, corosio::tcp_socket& b) -> capy::task<> {
                 std::string big(1024, 'x');
@@ -291,7 +297,10 @@ struct composed_operations_test
     void testReadUntilEof()
     {
         corosio::io_context ioc;
-        auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+        auto [ec, s1, s2] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         std::string content;
         capy::run_async(ioc.get_executor())(
             send_and_close(s2, "the whole stream"));
@@ -303,7 +312,10 @@ struct composed_operations_test
     void testWriteFull()
     {
         corosio::io_context ioc;
-        auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+        auto [ec, s1, s2] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         capy::run_async(ioc.get_executor())(write_full_frag(s1));
         ioc.run();
     }
@@ -327,7 +339,10 @@ struct composed_operations_test
     void testErrorBindings()
     {
         corosio::io_context ioc;
-        auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+        auto [pair_ec, s1, s2] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!pair_ec);
+        if (pair_ec)
+            return;
         char storage[64];
         std::error_code ec;
         capy::run_async(ioc.get_executor())(send_and_close(s2, "hello"));
@@ -340,7 +355,10 @@ struct composed_operations_test
     void testErrorExceptions()
     {
         corosio::io_context ioc;
-        auto [s1, s2]    = corosio::test::make_socket_pair(ioc);
+        auto [ec, s1, s2] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         char storage[16] = {};
         capy::run_async(ioc.get_executor())(
             send_and_close(s2, std::string_view("0123456789abcdef", 16)));
@@ -352,7 +370,10 @@ struct composed_operations_test
     void testCancellation()
     {
         corosio::io_context ioc;
-        auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+        auto [pair_ec, s1, s2] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!pair_ec);
+        if (pair_ec)
+            return;
         std::error_code ec;
         std::stop_source source;
         source.request_stop();
@@ -365,7 +386,10 @@ struct composed_operations_test
     void testHttpResponse()
     {
         corosio::io_context ioc;
-        auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+        auto [ec, s1, s2] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        if (ec)
+            return;
         std::string response;
         capy::run_async(ioc.get_executor())(
             send_and_close(s2, "HTTP/1.1 200 OK\r\n\r\n"));

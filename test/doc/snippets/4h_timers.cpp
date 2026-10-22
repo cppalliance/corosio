@@ -233,7 +233,10 @@ struct timers_test
     void testTimeoutRead()
     {
         corosio::io_context ioc;
-        auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+        auto [pair_ec, s1, s2] = corosio::test::make_socket_pair(ioc);
+        BOOST_TEST(!pair_ec);
+        if (pair_ec)
+            return;
         char data[128];
         std::error_code ec;
         capy::run_async(ioc.get_executor())(timeout_read_frag(

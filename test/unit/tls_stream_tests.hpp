@@ -12,6 +12,7 @@
 #ifndef BOOST_COROSIO_TEST_TLS_STREAM_TESTS_HPP
 #define BOOST_COROSIO_TEST_TLS_STREAM_TESTS_HPP
 
+#include "must.hpp"
 #include "test_utils.hpp"
 #include "stream_tests.hpp"
 #include <boost/corosio/delay.hpp>
@@ -68,8 +69,8 @@ testHandshakeFuse(StreamFactory make_stream)
         capy::test::fuse f;
         f.armed([&](capy::test::fuse&) -> capy::task<> {
             io_context ioc;
-            auto [m1, m2] =
-                corosio::test::make_mocket_pair(ioc, f, max_size, max_size);
+            auto [m1, m2] = must(
+                corosio::test::make_mocket_pair(ioc, f, max_size, max_size));
 
             auto client_ctx = make_client_context();
             auto server_ctx = make_server_context();
@@ -130,8 +131,8 @@ testReadWriteFuse(StreamFactory make_stream)
         capy::test::fuse f;
         f.armed([&](capy::test::fuse&) -> capy::task<> {
             io_context ioc;
-            auto [m1, m2] =
-                corosio::test::make_mocket_pair(ioc, f, max_size, max_size);
+            auto [m1, m2] = must(
+                corosio::test::make_mocket_pair(ioc, f, max_size, max_size));
 
             auto client_ctx = make_client_context();
             auto server_ctx = make_server_context();
@@ -218,8 +219,8 @@ testShutdownFuse(StreamFactory make_stream)
         capy::test::fuse f;
         f.armed([&](capy::test::fuse&) -> capy::task<> {
             io_context ioc;
-            auto [m1, m2] =
-                corosio::test::make_mocket_pair(ioc, f, max_size, max_size);
+            auto [m1, m2] = must(
+                corosio::test::make_mocket_pair(ioc, f, max_size, max_size));
 
             auto client_ctx = make_client_context();
             auto server_ctx = make_server_context();
@@ -447,7 +448,7 @@ void
 testIoBeforeHandshake(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m, peer] = corosio::test::make_mocket_pair(ioc);
+    auto [m, peer] = must(corosio::test::make_mocket_pair(ioc));
 
     auto ctx    = make_client_context();
     auto stream = make_stream(m, ctx);
@@ -706,7 +707,7 @@ void
 testHostnamePersistence(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
@@ -743,7 +744,7 @@ void
 testHostnameRedirect(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
@@ -792,7 +793,7 @@ void
 testHostnameClear(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
@@ -831,7 +832,7 @@ void
 testHostnameRetryAfterFailure(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
@@ -913,7 +914,7 @@ void
 testHostnameIpLiteral(StreamFactory make_stream, bool ip_supported)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     // NOLINTBEGIN(bugprone-unused-return-value)
     tls_context client_ctx;
@@ -993,7 +994,7 @@ void
 testAlpnAccessorEmpty(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
     auto ctx      = make_client_context();
     auto stream   = make_stream(m1, ctx);
     BOOST_TEST(stream.alpn_protocol().empty());
@@ -1374,7 +1375,7 @@ void
 testAlpn(StreamFactory make_stream, bool alpn_supported)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
     require_ok(client_ctx.set_alpn({"h2", "http/1.1"}));
@@ -1496,7 +1497,7 @@ testVerifyCallback(StreamFactory make_stream, bool callback_supported = true)
         {
             io_context ioc;
             [[maybe_unused]] auto [m1, m2] =
-                corosio::test::make_mocket_pair(ioc);
+                must(corosio::test::make_mocket_pair(ioc));
             auto client_ctx = make_client_context();
             client_ctx.set_verify_callback(
                 [](bool preverified, verify_context&) -> bool {
@@ -1673,7 +1674,7 @@ void
 testDestroyWithPendingRead(StreamFactory make_stream, bool owning)
 {
     io_context ioc;
-    auto [m1, m2]   = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2]   = must(corosio::test::make_mocket_pair(ioc));
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
     using stream_t  = decltype(make_stream(m1, client_ctx));
@@ -1724,7 +1725,7 @@ testUnawaitedReadOutlivesContext(StreamFactory make_stream)
     std::optional<capy::task<capy::results<std::size_t>>> op;
     {
         io_context ioc;
-        auto [m1, m2]  = corosio::test::make_mocket_pair(ioc);
+        auto [m1, m2]  = must(corosio::test::make_mocket_pair(ioc));
         using stream_t = decltype(make_stream(m1, client_ctx));
         auto client = std::make_unique<stream_t>(std::move(m1), client_ctx);
         op.emplace(client->read_some(capy::mutable_buffer(buf, sizeof(buf))));
@@ -1750,7 +1751,7 @@ testUnawaitedReadOutlivesUnwoundOwner(StreamFactory make_stream)
     std::optional<capy::task<capy::results<std::size_t>>> op;
     {
         io_context ioc;
-        auto [m1, m2]  = corosio::test::make_mocket_pair(ioc);
+        auto [m1, m2]  = must(corosio::test::make_mocket_pair(ioc));
         using stream_t = decltype(make_stream(m1, client_ctx));
         auto client = std::make_unique<stream_t>(std::move(m1), client_ctx);
         auto server = make_stream(m2, server_ctx);
@@ -1780,7 +1781,7 @@ void
 testDestroyNestedOwnerWithPendingRead()
 {
     io_context ioc;
-    auto [m1, m2]   = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2]   = must(corosio::test::make_mocket_pair(ioc));
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
 
@@ -1838,7 +1839,7 @@ void
 testCancelPendingRead(StreamFactory make_stream, bool owning)
 {
     io_context ioc;
-    auto [m1, m2]   = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2]   = must(corosio::test::make_mocket_pair(ioc));
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
     using stream_t  = decltype(make_stream(m1, client_ctx));
@@ -1939,7 +1940,7 @@ void
 testDestroyWithPartialWriteInFlight(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2]   = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2]   = must(corosio::test::make_mocket_pair(ioc));
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
     using stream_t  = decltype(make_stream(m1, client_ctx));
@@ -1974,7 +1975,7 @@ void
 testDestroyTypeErasedOwnerWithPendingRead(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2]   = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2]   = must(corosio::test::make_mocket_pair(ioc));
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
     using stream_t  = decltype(make_stream(m1, client_ctx));
@@ -2018,7 +2019,7 @@ void
 testMoveWithPendingRead(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2]   = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2]   = must(corosio::test::make_mocket_pair(ioc));
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
     using stream_t  = decltype(make_stream(m1, client_ctx));
@@ -2061,7 +2062,7 @@ void
 testMoveSemantics(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
@@ -2124,7 +2125,7 @@ void
 testAbruptClose(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
@@ -2193,7 +2194,7 @@ void
 testEncryptedKey(StreamFactory make_stream, bool expect_success = true)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx       = make_client_context();
     bool callback_invoked = false;
@@ -2259,7 +2260,7 @@ void
 testInvalidContextHandshake(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
 
@@ -2349,7 +2350,7 @@ testReset(StreamFactory make_stream, std::array<context_mode, N> const& modes)
     for (auto mode : modes)
     {
         io_context ioc;
-        auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+        auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
         auto [client_ctx, server_ctx] = make_contexts(mode);
         auto client                   = make_stream(m1, client_ctx);
@@ -2446,7 +2447,7 @@ testResetViaHandshake(
     for (auto mode : modes)
     {
         io_context ioc;
-        auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+        auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
         auto [client_ctx, server_ctx] = make_contexts(mode);
         auto client                   = make_stream(m1, client_ctx);
@@ -2544,8 +2545,8 @@ testResetFuse(StreamFactory make_stream)
         capy::test::fuse f;
         f.armed([&](capy::test::fuse&) {
             io_context ioc;
-            auto [m1, m2] =
-                corosio::test::make_mocket_pair(ioc, f, max_size, max_size);
+            auto [m1, m2] = must(
+                corosio::test::make_mocket_pair(ioc, f, max_size, max_size));
 
             auto client_ctx = make_client_context();
             auto server_ctx = make_server_context();
@@ -2659,7 +2660,7 @@ void
 testFullDuplex(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
@@ -2785,7 +2786,7 @@ testFullDuplexBulk(StreamFactory make_stream)
     constexpr std::size_t total       = chunk_size * chunk_count;
 
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
@@ -2896,7 +2897,7 @@ void
 testRecordBoundaryTransfer(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
@@ -2999,7 +3000,7 @@ void
 testShutdownOverRead(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
@@ -3142,7 +3143,7 @@ void
 testShutdownSimultaneousClose(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
@@ -3258,7 +3259,7 @@ void
 testShutdownWithUnreadRecordAhead(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
@@ -3390,7 +3391,7 @@ void
 testPartialReadWithError(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
@@ -3494,7 +3495,7 @@ void
 testCancelParkedReader(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
@@ -3620,7 +3621,7 @@ void
 testFullDuplexMtStrand(StreamFactory make_stream)
 {
     io_context ioc(2);
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();
@@ -3775,7 +3776,7 @@ testDeferredFlushError(StreamFactory make_stream)
     // then surfaces on the next write with nothing transferred.
     {
         io_context ioc;
-        auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+        auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
         auto client_ctx = make_client_context();
         auto server_ctx = make_server_context();
@@ -3859,7 +3860,7 @@ testDeferredFlushError(StreamFactory make_stream)
     // instead of replaying it.
     {
         io_context ioc;
-        auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+        auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
         auto client_ctx = make_client_context();
         auto server_ctx = make_server_context();
@@ -3980,7 +3981,7 @@ testDeferredFlushError(StreamFactory make_stream)
     // shutdown() surfaces a stash left by an earlier deferred flush.
     {
         io_context ioc;
-        auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+        auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
         auto client_ctx = make_client_context();
         auto server_ctx = make_server_context();
@@ -4089,7 +4090,7 @@ testTlsLifecycleEdges(StreamFactory make_stream)
     // (a) shutdown() called twice.
     {
         io_context ioc;
-        auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+        auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
         auto client_ctx = make_client_context();
         auto server_ctx = make_server_context();
@@ -4146,7 +4147,7 @@ testTlsLifecycleEdges(StreamFactory make_stream)
     // (b) read_some after a completed shutdown.
     {
         io_context ioc;
-        auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+        auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
         auto client_ctx = make_client_context();
         auto server_ctx = make_server_context();
@@ -4207,7 +4208,7 @@ testTlsLifecycleEdges(StreamFactory make_stream)
     // outcome cannot be contaminated by the read above.
     {
         io_context ioc;
-        auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+        auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
         auto client_ctx = make_client_context();
         auto server_ctx = make_server_context();
@@ -4291,7 +4292,7 @@ testTlsLifecycleEdges(StreamFactory make_stream)
     // matching the plain-socket contract (no transport I/O needed).
     {
         io_context ioc;
-        auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+        auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
         auto client_ctx = make_client_context();
         auto server_ctx = make_server_context();
@@ -4351,7 +4352,7 @@ void
 testShutdownTruncation(StreamFactory make_stream)
 {
     io_context ioc;
-    auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
     auto client_ctx = make_client_context();
     auto server_ctx = make_server_context();

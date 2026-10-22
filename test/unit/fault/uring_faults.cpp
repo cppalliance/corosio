@@ -150,7 +150,7 @@ struct uring_faults
         }
         ::unlink(path.c_str());
         {
-            auto [a, b] = test::make_socket_pair(ioc);
+            auto [a, b] = must(test::make_socket_pair(ioc));
             std::ignore = b;
             fault_scope f(sys::shutdown, ENOTCONN);
             BOOST_TEST(a.shutdown(shutdown_both) == std::errc::not_connected);
@@ -845,7 +845,7 @@ struct uring_faults
     void testStreamCqeRewrites()
     {
         io_context ioc(uring);
-        auto [a, b] = test::make_socket_pair(ioc);
+        auto [a, b] = must(test::make_socket_pair(ioc));
         char buf[8] = "1234567";
         std::error_code sec, rec, pec, smec, rvec;
         bool sfired = false, rfired = false, pfired = false;
@@ -1155,7 +1155,7 @@ struct uring_faults
         io_context ioc(uring);
         auto ex = ioc.get_executor();
         auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+            must(test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         std::stop_source ss;
         char buf[8];

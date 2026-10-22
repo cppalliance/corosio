@@ -17,6 +17,7 @@
 
 #include <boost/capy/read.hpp>
 
+#include "must.hpp"
 #include "tls_stream_tests.hpp"
 
 #ifdef BOOST_COROSIO_HAS_OPENSSL
@@ -174,7 +175,7 @@ struct openssl_stream_test
     bool serverHandshakeFails(tls_context const& server_ctx)
     {
         io_context ioc;
-        auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+        auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
 
         auto client_ctx = test::make_client_context();
         auto client     = make_stream(m1, client_ctx);
@@ -287,7 +288,7 @@ struct openssl_stream_test
     static void runWrappedSession(Wrapper& w, Scenario scenario)
     {
         io_context ioc;
-        auto [m1, m2] = corosio::test::make_mocket_pair(ioc);
+        auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
         w.m_          = &m1;
 
         auto client_ctx = test::make_client_context();

@@ -34,6 +34,7 @@
 #include <system_error>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -55,8 +56,8 @@ struct cancel_race_test
     {
         auto ioc = make_deferring_ioc();
         auto ex  = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         std::stop_source ss;
         std::error_code wec = capy::error::eof;
@@ -88,8 +89,8 @@ struct cancel_race_test
     {
         auto ioc = make_deferring_ioc();
         auto ex  = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         // Prime s2's receive buffer so the read completes at initiation.
         bool primed = false;
@@ -139,8 +140,8 @@ struct cancel_race_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         std::stop_source ss;
         ss.request_stop();
@@ -194,8 +195,8 @@ struct cancel_race_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         // Prime s2's receive buffer so a speculative read would find data.
         bool primed = false;

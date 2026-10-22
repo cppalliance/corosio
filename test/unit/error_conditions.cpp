@@ -23,6 +23,7 @@
 #include <tuple>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 /*
@@ -62,8 +63,8 @@ struct error_conditions_test
     {
         io_context ioc(Backend);
         // Linger=false => graceful FIN on close.
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         std::error_code read_ec;
         bool read_done = false;
@@ -97,7 +98,7 @@ struct error_conditions_test
     {
         io_context ioc(Backend);
         // Linger=true (default) => SO_LINGER{on,0}; close() aborts with a RST.
-        auto [s1, s2] = test::make_socket_pair(ioc);
+        auto [s1, s2] = test::must(test::make_socket_pair(ioc));
 
         std::error_code read_ec;
         bool read_done = false;
@@ -135,7 +136,7 @@ struct error_conditions_test
     {
         io_context ioc(Backend);
         // Linger=true (default): the closed peer sends a RST.
-        auto [s1, s2] = test::make_socket_pair(ioc);
+        auto [s1, s2] = test::must(test::make_socket_pair(ioc));
 
         std::error_code write_ec;
         bool write_failed = false;

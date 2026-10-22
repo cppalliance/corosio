@@ -33,6 +33,7 @@
 #include <utility>
 
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio {
@@ -460,7 +461,7 @@ struct io_context_test
         opts.locking = locking_mode::unsafe_io;
         auto ioc     = std::make_unique<io_context>(Backend, opts, 1);
         {
-            auto [a, b] = test::make_socket_pair(*ioc);
+            auto [a, b] = test::must(test::make_socket_pair(*ioc));
             capy::run_async(ioc->get_executor())(
                 [](tcp_socket s, tcp_socket, counted) -> capy::task<> {
                     char c;

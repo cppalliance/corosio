@@ -71,8 +71,8 @@ struct reactor_paths_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         constexpr std::string_view payload = "concurrent";
         char read_buf[64]                  = {};
@@ -193,8 +193,8 @@ struct reactor_paths_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         std::error_code wait_ec;
         bool wait_done = false;
@@ -230,8 +230,8 @@ struct reactor_paths_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         std::error_code wait_ec;
         bool wait_done = false;
@@ -261,8 +261,8 @@ struct reactor_paths_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         constexpr std::string_view payload = "scatter-gather-payload-data";
         char buf1[8]                       = {};
@@ -304,8 +304,8 @@ struct reactor_paths_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         // Shrink kernel buffers as much as possible.
         test::must_ok(s1.set_option(socket_option::send_buffer_size(1024)));
@@ -368,8 +368,8 @@ struct reactor_paths_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         constexpr std::string_view part1 = "hello-";
         constexpr std::string_view part2 = "scatter-";
@@ -718,8 +718,8 @@ struct reactor_paths_test
     void testShutdownBoth()
     {
         io_context ioc(Backend);
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         bool ok   = false;
         auto task = [&]() -> capy::task<> {
@@ -736,8 +736,8 @@ struct reactor_paths_test
     void testShutdownReceive()
     {
         io_context ioc(Backend);
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         bool ok   = false;
         auto task = [&]() -> capy::task<> {
@@ -850,8 +850,8 @@ struct reactor_paths_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         std::stop_source ss;
         std::error_code wait_ec;
@@ -881,8 +881,8 @@ struct reactor_paths_test
     {
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
-        auto [s1, s2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         std::stop_source ss;
         std::error_code wait_ec;
@@ -1121,7 +1121,7 @@ struct reactor_paths_test
         tcp_socket sock(ioc);
         BOOST_TEST(!sock.open());
 
-        auto [t1, t2] = test::make_socket_pair(ioc);
+        auto [t1, t2] = test::must(test::make_socket_pair(ioc));
 
         std::error_code conn_ec;
         bool conn_done   = false;
@@ -1225,7 +1225,7 @@ struct reactor_paths_test
         auto ex = ioc.get_executor();
         // Default pair sets linger(true, 0) so close() sends RST,
         // leaving a persistent error condition on the peer.
-        auto [s1, s2] = test::make_socket_pair(ioc);
+        auto [s1, s2] = test::must(test::make_socket_pair(ioc));
 
         std::error_code read_ec;
         std::error_code wait_ec;
@@ -1770,8 +1770,8 @@ struct reactor_paths_test
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
-        auto [t1, t2] =
-            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc);
+        auto [t1, t2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
 
         udp_socket u1(ioc);
         BOOST_TEST(!u1.open(family::v4));

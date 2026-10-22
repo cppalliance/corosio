@@ -41,6 +41,7 @@
 #include <cstring>
 #include <stop_token>
 
+#include "must.hpp"
 #include "test_utils.hpp"
 #include "test_suite.hpp"
 
@@ -87,7 +88,7 @@ struct tls_session_cycle_stress_impl
 
         while (std::chrono::steady_clock::now() < stop_time)
         {
-            auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+            auto [s1, s2] = test::must(corosio::test::make_socket_pair(ioc));
 
             auto client_ctx = test::make_client_context();
             auto server_ctx = test::make_server_context();
@@ -176,8 +177,8 @@ struct tls_concurrent_io_stress_impl
         auto ex = ioc.get_executor();
 
         // Create two socket pairs
-        auto [sa1, sa2] = corosio::test::make_socket_pair(ioc);
-        auto [sb1, sb2] = corosio::test::make_socket_pair(ioc);
+        auto [sa1, sa2] = test::must(corosio::test::make_socket_pair(ioc));
+        auto [sb1, sb2] = test::must(corosio::test::make_socket_pair(ioc));
 
         auto ca_ctx = test::make_client_context();
         auto sa_ctx = test::make_server_context();
@@ -329,7 +330,7 @@ struct tls_cancel_handshake_stress_impl
 
         while (std::chrono::steady_clock::now() < stop_time)
         {
-            auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+            auto [s1, s2] = test::must(corosio::test::make_socket_pair(ioc));
 
             auto client_ctx = test::make_client_context();
             auto server_ctx = test::make_server_context();

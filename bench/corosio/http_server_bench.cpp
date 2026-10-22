@@ -148,8 +148,9 @@ bench_single_connection(bench::state& state)
     using socket_type = corosio::native_tcp_socket<Backend>;
 
     corosio::native_io_context<Backend> ioc;
-    auto [client, server] = corosio::test::make_socket_pair<
-        socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+    auto [client, server] = bench::must(
+        corosio::test::make_socket_pair<
+            socket_type, corosio::native_tcp_acceptor<Backend>>(ioc));
 
     bench::must_ok(
         client.set_option(corosio::native_socket_option::no_delay(true)));
@@ -183,8 +184,9 @@ bench_single_connection_lockless(bench::state& state)
     corosio::io_context_options opts;
     opts.locking = corosio::locking_mode::unsafe;
     corosio::native_io_context<Backend> ioc(opts, 1);
-    auto [client, server] = corosio::test::make_socket_pair<
-        socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+    auto [client, server] = bench::must(
+        corosio::test::make_socket_pair<
+            socket_type, corosio::native_tcp_acceptor<Backend>>(ioc));
 
     bench::must_ok(
         client.set_option(corosio::native_socket_option::no_delay(true)));
@@ -228,8 +230,9 @@ bench_concurrent_connections(bench::state& state)
 
     for (int i = 0; i < num_connections; ++i)
     {
-        auto [c, s] = corosio::test::make_socket_pair<
-            socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+        auto [c, s] = bench::must(
+            corosio::test::make_socket_pair<
+                socket_type, corosio::native_tcp_acceptor<Backend>>(ioc));
         bench::must_ok(
             c.set_option(corosio::native_socket_option::no_delay(true)));
         bench::must_ok(
@@ -285,8 +288,9 @@ bench_multithread(bench::state& state)
 
     for (int i = 0; i < num_connections; ++i)
     {
-        auto [c, s] = corosio::test::make_socket_pair<
-            socket_type, corosio::native_tcp_acceptor<Backend>>(ioc);
+        auto [c, s] = bench::must(
+            corosio::test::make_socket_pair<
+                socket_type, corosio::native_tcp_acceptor<Backend>>(ioc));
         bench::must_ok(
             c.set_option(corosio::native_socket_option::no_delay(true)));
         bench::must_ok(

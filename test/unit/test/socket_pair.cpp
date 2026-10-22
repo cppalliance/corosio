@@ -19,9 +19,8 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
-#include <stdexcept>
-
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 
 namespace boost::corosio::test {
@@ -32,7 +31,8 @@ struct socket_pair_test
     {
         io_context ioc;
 
-        auto [s1, s2] = make_socket_pair(ioc);
+        auto [ec, s1, s2] = make_socket_pair(ioc);
+        BOOST_TEST(!ec);
         BOOST_TEST(s1.is_open());
         BOOST_TEST(s2.is_open());
 
@@ -44,7 +44,7 @@ struct socket_pair_test
     {
         io_context ioc;
 
-        auto [s1, s2] = make_socket_pair(ioc);
+        auto [s1, s2] = must(make_socket_pair(ioc));
 
         auto task = [](tcp_socket& a, tcp_socket& b) -> capy::task<> {
             char buf[32] = {};
@@ -86,16 +86,12 @@ struct socket_pair_test
         io_context ioc;
         ioc.stop();
 
-        bool made = false;
-        try
-        {
-            auto [s1, s2] = make_socket_pair(ioc);
-            made = s1.is_open() && s2.is_open();
-        }
-        catch (std::runtime_error const&)
-        {
-        }
-        BOOST_TEST(made);
+        auto [ec, s1, s2] = make_socket_pair(ioc);
+        BOOST_TEST(!ec);
+        BOOST_TEST(s1.is_open());
+        BOOST_TEST(s2.is_open());
+        s1.close();
+        s2.close();
 
         ioc.restart();
         ioc.run();
@@ -121,7 +117,7 @@ struct native_socket_pair_test
 
         io_context ioc(Backend);
 
-        auto [s1, s2] = make_socket_pair<socket_type, acceptor_type>(ioc);
+        auto [s1, s2] = must(make_socket_pair<socket_type, acceptor_type>(ioc));
         BOOST_TEST(s1.is_open());
         BOOST_TEST(s2.is_open());
 

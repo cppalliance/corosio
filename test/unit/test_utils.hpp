@@ -24,6 +24,7 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
+#include "must.hpp"
 #include "test_suite.hpp"
 
 #include <chrono>
@@ -1570,7 +1571,7 @@ run_tls_test(
     ClientStreamFactory make_client,
     ServerStreamFactory make_server)
 {
-    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+    auto [s1, s2] = must(corosio::test::make_socket_pair(ioc));
 
     auto client = make_client(s1, client_ctx);
     auto server = make_server(s2, server_ctx);
@@ -1629,7 +1630,7 @@ run_tls_test_no_shutdown(
     ClientStreamFactory make_client,
     ServerStreamFactory make_server)
 {
-    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+    auto [s1, s2] = must(corosio::test::make_socket_pair(ioc));
 
     auto client = make_client(s1, client_ctx);
     auto server = make_server(s2, server_ctx);
@@ -1687,7 +1688,7 @@ run_tls_test_fail(
     ServerStreamFactory make_server,
     std::error_code* client_ec_out = nullptr)
 {
-    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+    auto [s1, s2] = must(corosio::test::make_socket_pair(ioc));
 
     auto client = make_client(s1, client_ctx);
     auto server = make_server(s2, server_ctx);
@@ -1812,7 +1813,7 @@ run_tls_shutdown_test(
     ClientStreamFactory make_client,
     ServerStreamFactory make_server)
 {
-    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+    auto [s1, s2] = must(corosio::test::make_socket_pair(ioc));
 
     auto client = make_client(s1, client_ctx);
     auto server = make_server(s2, server_ctx);
@@ -1923,7 +1924,7 @@ run_tls_truncation_test(
     ClientStreamFactory make_client,
     ServerStreamFactory make_server)
 {
-    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+    auto [s1, s2] = must(corosio::test::make_socket_pair(ioc));
 
     auto client = make_client(s1, client_ctx);
     auto server = make_server(s2, server_ctx);
@@ -2184,7 +2185,7 @@ run_connection_reset_test(
     ClientStreamFactory make_client,
     ServerStreamFactory make_server)
 {
-    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+    auto [s1, s2] = must(corosio::test::make_socket_pair(ioc));
 
     auto client = make_client(s1, client_ctx);
     auto server = make_server(s2, server_ctx);
@@ -2265,7 +2266,7 @@ run_stop_token_handshake_test(
     ClientStreamFactory make_client,
     ServerStreamFactory make_server)
 {
-    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+    auto [s1, s2] = must(corosio::test::make_socket_pair(ioc));
 
     auto client = make_client(s1, client_ctx);
     auto server = make_server(s2, server_ctx);
@@ -2346,7 +2347,7 @@ run_stop_token_read_test(
     ClientStreamFactory make_client,
     ServerStreamFactory make_server)
 {
-    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+    auto [s1, s2] = must(corosio::test::make_socket_pair(ioc));
 
     auto client = make_client(s1, client_ctx);
     auto server = make_server(s2, server_ctx);
@@ -2467,7 +2468,7 @@ run_shutdown_cancel_test(
     ServerStreamFactory make_server,
     shutdown_cancel_mode mode)
 {
-    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+    auto [s1, s2] = must(corosio::test::make_socket_pair(ioc));
 
     auto client = make_client(s1, client_ctx);
     auto server = make_server(s2, server_ctx);
@@ -2577,7 +2578,7 @@ run_stop_token_write_test(
     ClientStreamFactory make_client,
     ServerStreamFactory make_server)
 {
-    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+    auto [s1, s2] = must(corosio::test::make_socket_pair(ioc));
 
     auto client = make_client(s1, client_ctx);
     auto server = make_server(s2, server_ctx);
@@ -2689,7 +2690,7 @@ run_socket_cancel_test(
     ClientStreamFactory make_client,
     ServerStreamFactory make_server)
 {
-    auto [s1, s2] = corosio::test::make_socket_pair(ioc);
+    auto [s1, s2] = must(corosio::test::make_socket_pair(ioc));
 
     auto client = make_client(s1, client_ctx);
     auto server = make_server(s2, server_ctx);
