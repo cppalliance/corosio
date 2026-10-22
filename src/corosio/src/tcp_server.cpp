@@ -14,6 +14,8 @@
 #include <mutex>
 #include <utility>
 
+#include "src/detail/open_listener.hpp"
+
 namespace boost::corosio {
 
 tcp_server::worker_base::worker_base()  = default;
@@ -135,15 +137,11 @@ tcp_server::do_accept(state_ref st, tcp_acceptor& acc)
 std::error_code
 tcp_server::bind(endpoint ep)
 {
-    try
-    {
-        st_->impl_->ports.emplace_back(st_->impl_->ctx, ep);
-        return {};
-    }
-    catch (std::system_error const& e)
-    {
-        return e.code();
-    }
+    tcp_acceptor acc(st_->impl_->ctx);
+    if (auto ec = detail::open_listener(acc, ep, 128))
+        return ec;
+    st_->impl_->ports.push_back(std::move(acc));
+    return {};
 }
 
 endpoint
