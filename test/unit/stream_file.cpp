@@ -910,10 +910,9 @@ struct stream_file_test
         std::error_code rec;
         char buf[8]{};
         auto reader = [&]() -> capy::task<> {
-            auto [e, n] =
+            [[maybe_unused]] auto [e, n] =
                 co_await fa.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             rec = e;
-            std::ignore = n;
         };
         capy::run_async(a.get_executor())(reader());
         BOOST_TEST_EQ(a.poll_one(), 1u);
@@ -960,10 +959,8 @@ struct stream_file_test
 
         char old_buf[8]{};
         auto old_reader = [&]() -> capy::task<> {
-            auto [e, n] = co_await f.read_some(
+            [[maybe_unused]] auto [e, n] = co_await f.read_some(
                 capy::mutable_buffer(old_buf, sizeof(old_buf)));
-            std::ignore = e;
-            std::ignore = n;
         };
         capy::run_async(ioc.get_executor())(old_reader());
         BOOST_TEST_EQ(ioc.poll_one(), 1u);
@@ -1370,10 +1367,8 @@ struct stream_file_test
 
             char buf[4096];
             auto reader = [&]() -> capy::task<> {
-                auto [e, n] = co_await f.read_some(
+                [[maybe_unused]] auto [e, n] = co_await f.read_some(
                     capy::mutable_buffer(buf, sizeof(buf)));
-                (void)e;
-                (void)n;
             };
             auto swapper = [&]() -> capy::task<> {
 #if BOOST_COROSIO_HAS_IOCP

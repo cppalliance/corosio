@@ -1554,11 +1554,10 @@ struct udp_socket_test
             BOOST_TEST(sock.assign(nfd) == error::already_open);
             BOOST_TEST_EQ(recv_done, false);
             BOOST_TEST(sock.native_handle() == held);
-            char const msg[] = "after";
-            auto [ec1, n1]   = co_await peer.send_to(
+            char const msg[]                = "after";
+            [[maybe_unused]] auto [ec1, n1] = co_await peer.send_to(
                 capy::const_buffer(msg, sizeof(msg)), sock_ep);
             BOOST_TEST(!ec1);
-            (void)n1;
         };
 
         // run_async runs inline to the first suspend, so spawning the

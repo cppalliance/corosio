@@ -134,10 +134,9 @@ struct win_random_access_handle_test
 
         char buf[count]{};
         std::size_t n = 0;
-        auto reader = [&]() -> capy::task<> {
-            auto [e, rn] =
+        auto reader   = [&]() -> capy::task<> {
+            [[maybe_unused]] auto [e, rn] =
                 co_await fx.h.read_some_at(0, capy::mutable_buffer(buf, count));
-            (void)e;
             n = rn;
         };
         capy::run_async(fx.ioc.get_executor())(reader());
@@ -154,10 +153,9 @@ struct win_random_access_handle_test
         std::error_code ec;
         auto task = [&]() -> capy::task<> {
             char buf[4];
-            auto [e, n] =
+            [[maybe_unused]] auto [e, n] =
                 co_await fx.h.read_some_at(4096, capy::mutable_buffer(buf, 4));
             ec = e;
-            (void)n;
         };
         capy::run_async(fx.ioc.get_executor())(task());
         fx.ioc.run();
@@ -173,8 +171,8 @@ struct win_random_access_handle_test
         int canceled = 0;
         auto reader = [&]() -> capy::task<> {
             char buf[4];
-            auto [e, n] = co_await h.read_some_at(0, capy::mutable_buffer(buf, 4));
-            (void)n;
+            [[maybe_unused]] auto [e, n] =
+                co_await h.read_some_at(0, capy::mutable_buffer(buf, 4));
             if (e == capy::cond::canceled)
                 ++canceled;
         };
@@ -237,10 +235,9 @@ struct win_random_access_handle_test
             std::error_code ec;
             auto reader = [&]() -> capy::task<> {
                 char buf[4];
-                auto [e, n] = co_await h.read_some_at(
+                [[maybe_unused]] auto [e, n] = co_await h.read_some_at(
                     0, capy::mutable_buffer(buf, sizeof(buf)));
                 ec = e;
-                std::ignore = n;
             };
             capy::run_async(ioc.get_executor())(reader());
             ioc.run();
@@ -288,10 +285,9 @@ struct win_random_access_handle_test
         std::error_code ec;
         char buf[4];
         auto t = [&]() -> capy::task<> {
-            auto [e, n] = co_await h.read_some_at(
+            [[maybe_unused]] auto [e, n] = co_await h.read_some_at(
                 2, capy::mutable_buffer(buf, sizeof(buf)));
-            ec = e;
-            (void)n;
+            ec        = e;
             on_strand = s.running_in_this_thread();
         };
         capy::run_async(s)(t());
@@ -314,10 +310,9 @@ struct win_random_access_handle_test
         std::error_code rec;
         char buf[4];
         auto reader = [&]() -> capy::task<> {
-            auto [e, n] = co_await ha.read_some_at(
+            [[maybe_unused]] auto [e, n] = co_await ha.read_some_at(
                 0, capy::mutable_buffer(buf, sizeof(buf)));
             rec = e;
-            std::ignore = n;
         };
         capy::run_async(a.get_executor())(reader());
         a.poll(); // the read is now issued and pending
@@ -369,10 +364,9 @@ struct win_random_access_handle_test
         std::error_code ec;
         char buf[8]{};
         auto reader = [&]() -> capy::task<> {
-            auto [e, n] = co_await h.read_some_at(
+            [[maybe_unused]] auto [e, n] = co_await h.read_some_at(
                 0, capy::mutable_buffer(buf, sizeof(buf)));
             ec = e;
-            (void)n;
         };
         auto stopper = [&]() -> capy::task<> {
             ss.request_stop();

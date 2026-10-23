@@ -712,9 +712,9 @@ struct local_datagram_socket_test
                 error::already_open);
             BOOST_TEST_EQ(recv_done, false);
             BOOST_TEST(d1.native_handle() == held);
-            auto [ec, n] = co_await d2.send(capy::const_buffer("go", 2));
+            [[maybe_unused]] auto [ec, n] =
+                co_await d2.send(capy::const_buffer("go", 2));
             BOOST_TEST(!ec);
-            (void)n;
         };
         capy::run_async(ex)(reader());
         capy::run_async(ex)(assigner());
