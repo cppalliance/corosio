@@ -412,8 +412,9 @@ public:
             results<`local_stream_socket`>.
 
         A closed acceptor reports `errc::bad_file_descriptor`.
-        On failure the returned socket is default-constructed and
-        may only be destroyed or assigned.
+        On failure the returned socket is default-constructed and not
+        open. It has no context, so it may only be destroyed, assigned,
+        or checked with `is_open()`.
     */
     [[nodiscard]] auto accept()
     {
@@ -700,6 +701,10 @@ protected:
             peer.h_.reset(impl);
     }
 
+    /// Close and release a non-null accepted peer no socket took over.
+    static void discard_peer(
+        local_stream_acceptor& acc, io_object::implementation* impl) noexcept;
+
 private:
     capy::execution_context& ctx_;
 
@@ -707,10 +712,6 @@ private:
     {
         return *static_cast<implementation*>(h_.get());
     }
-
-    /// Close and release a non-null accepted peer no socket took over.
-    static void discard_peer(
-        local_stream_acceptor& acc, io_object::implementation* impl) noexcept;
 };
 
 } // namespace boost::corosio

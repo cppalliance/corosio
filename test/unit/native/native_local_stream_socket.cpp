@@ -18,11 +18,20 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
-#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+
+#include <boost/corosio/detail/platform.hpp>
+#if BOOST_COROSIO_POSIX
+#include <cstring>
+#include <fcntl.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+#endif
 
 #include "context.hpp"
 #include "test_suite.hpp"
@@ -344,22 +353,78 @@ struct native_local_stream_socket_test
         BOOST_TEST(!wait_ec);
     }
 
-    void testMovedFromValueAcceptThrows()
+#if BOOST_COROSIO_POSIX
+    // An accept that completed but whose awaiter is destroyed before it
+    // resumes must not strand the accepted connection.
+    void testAcceptedPeerClosedWhenAwaiterDestroyed(bool by_value)
+    {
+        native_io_context<Backend> a;
+        test::temp_socket_dir tmp;
+        native_local_stream_acceptor<Backend> acc(a);
+        BOOST_TEST(!acc.open());
+        BOOST_TEST(!acc.bind(test::must(make_local_endpoint(tmp.path()))));
+        BOOST_TEST(!acc.listen());
+        local_stream_socket peer(a);
+
+        int client = ::socket(AF_UNIX, SOCK_STREAM, 0);
+        BOOST_TEST(client >= 0);
+        {
+            native_io_context<Backend> b;
+            if (by_value)
+                capy::run_async(b.get_executor())(
+                    [](native_local_stream_acceptor<Backend>& acc)
+                        -> capy::task<> {
+                        std::ignore = co_await acc.accept();
+                    }(acc));
+            else
+                capy::run_async(b.get_executor())(
+                    [](native_local_stream_acceptor<Backend>& acc,
+                       local_stream_socket& p) -> capy::task<> {
+                        std::ignore = co_await acc.accept(p);
+                    }(acc, peer));
+            std::ignore = b.poll(); // parks the accept on a's acceptor
+
+            sockaddr_un addr{};
+            addr.sun_family = AF_UNIX;
+            std::strncpy(
+                addr.sun_path, std::string(tmp.path()).c_str(),
+                sizeof(addr.sun_path) - 1);
+            BOOST_TEST(
+                ::connect(
+                    client, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) ==
+                0);
+            a.run(); // completes the accept into b's queue
+        }
+
+        // With the accepted socket closed, the client reads end of file;
+        // a stranded one never becomes readable. Some stacks deliver the
+        // close asynchronously, so readability is awaited, bounded only
+        // to fail rather than hang.
+        pollfd pfd{client, POLLIN, 0};
+        BOOST_TEST_EQ(::poll(&pfd, 1, 5000), 1);
+        ::fcntl(client, F_SETFL, ::fcntl(client, F_GETFL) | O_NONBLOCK);
+        char c;
+        BOOST_TEST_EQ(::recv(client, &c, 1, 0), 0);
+        ::close(client);
+    }
+#endif
+
+    void testMovedFromValueAccept()
     {
         native_io_context<Backend> ioc;
         native_local_stream_acceptor<Backend> a(ioc);
         native_local_stream_acceptor<Backend> b(std::move(a));
 
-        bool threw = false;
-        try
-        {
-            std::ignore = a.accept();
-        }
-        catch (std::logic_error const&)
-        {
-            threw = true;
-        }
-        BOOST_TEST(threw);
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            auto [ec, peer] = co_await a.accept();
+            BOOST_TEST(ec == std::errc::bad_file_descriptor);
+            BOOST_TEST(!peer.is_open());
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
     }
 
     void testAcceptOnClosedCompletes()
@@ -476,7 +541,11 @@ struct native_local_stream_socket_test
         testAcceptorWait();
         testAcceptorWaitOnClosed();
         testAcceptOnClosedCompletes();
-        testMovedFromValueAcceptThrows();
+#if BOOST_COROSIO_POSIX
+        testAcceptedPeerClosedWhenAwaiterDestroyed(false);
+        testAcceptedPeerClosedWhenAwaiterDestroyed(true);
+#endif
+        testMovedFromValueAccept();
         testConnectAutoOpens();
     }
 };

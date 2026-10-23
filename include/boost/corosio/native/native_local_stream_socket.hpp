@@ -165,6 +165,13 @@ class native_local_stream_socket : public local_stream_socket
         }
     };
 
+    // The peer a failed accept returns: it must not touch the
+    // acceptor's context, which a moved-from acceptor lacks.
+    template<auto>
+    friend class native_local_stream_acceptor;
+
+    native_local_stream_socket() noexcept = default;
+
 public:
     /** Construct a native socket from an execution context.
 
