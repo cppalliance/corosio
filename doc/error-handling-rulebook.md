@@ -92,14 +92,16 @@ workers, which start on the first blocking operation: a thread the
 system refuses there is reported through that operation's own channel,
 never thrown.
 
-The run loop is the other exception. `run()`, `poll()` and their
+The run loop is the other exception. `run()`, `poll()`, and their
 siblings throw `std::system_error` when waiting on the event
 demultiplexer fails with anything other than an interruption or a
 transient condition the next wait clears: no completion can carry
 that error, and the context cannot dispatch work past it. On Windows,
 `stop()` belongs to the same exception: it throws `std::system_error`
-when the wakeup cannot be queued, and so does a run or poll call made
-with no outstanding work, which stops the context itself.
+when the wakeup cannot be queued, and so do `run()` and `poll()` when
+a wakeup they need to stop the context cannot be queued. When work
+runs out on a thread not running the context, no run call is left to
+retry that wakeup, so its failure terminates.
 
 ## 3. The Classification Test
 
