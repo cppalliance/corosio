@@ -68,12 +68,13 @@ Windows. The constructor throws exactly the codes this path reports
 What cannot be spelled exception-free: root construction and the run
 loop. cpp:io_context[] itself throws if I/O backend setup fails, because
 there is no code-returning way to construct it. Any constructor can
-throw `std::bad_alloc`. `run()`, `poll()` and their siblings throw
-`std::system_error` if waiting on the OS demultiplexer fails — a
-condition with no per-operation channel to carry it, after which the
-context cannot dispatch work. On Windows `stop()` throws if it cannot
-queue the wakeup, and so does a run or poll call made with no
-outstanding work, which stops the context itself.
+throw `std::bad_alloc`. `run()`, `poll()`, and their siblings throw
+`std::system_error` if waiting on the OS demultiplexer fails other than
+by interruption or another transient condition. No per-operation
+channel can carry that, and the context cannot dispatch work after it.
+On Windows `stop()` throws if it cannot queue the wakeup. `run()` and
+`poll()` also throw on Windows when a wakeup they need to stop the
+context cannot be queued.
 `set_option()`, `get_option()`, `release()`, `size()`, and `available()`
 never throw. `set_option()` and `get_option()` report a platform that
 rejects the option, such as an unsupported option on that protocol or OS,
