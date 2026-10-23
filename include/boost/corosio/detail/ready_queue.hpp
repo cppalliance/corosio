@@ -132,8 +132,8 @@ public:
     /// Append a continuation to the back of the queue.
     void push(capy::continuation& c) noexcept
     {
-        // NOLINTNEXTLINE(performance-no-int-to-ptr)
         push_entry(
+            // NOLINTNEXTLINE(performance-no-int-to-ptr)
             reinterpret_cast<void*>(
                 reinterpret_cast<std::uintptr_t>(&c) | ready_cont_bit));
     }
