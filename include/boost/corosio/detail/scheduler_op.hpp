@@ -118,7 +118,7 @@ public:
     // the former 8-byte padding word, so size/alignment are unchanged. Used
     // only while this op is in the ready queue; node.next_ is used while it
     // is pending in an op_queue. An op is in one or the other, never both.
-    std::uintptr_t q_next_ = 0;
+    void* q_next_ = nullptr;
 };
 
 using op_queue = intrusive_queue<scheduler_op>;

@@ -44,7 +44,7 @@ struct ready_queue_test
         auto e2 = q.pop();
         BOOST_TEST(ready_as_op(e2) == &b);
 
-        BOOST_TEST(q.pop() == 0u);
+        BOOST_TEST(q.pop() == nullptr);
         BOOST_TEST(q.empty());
     }
 
@@ -80,7 +80,7 @@ struct ready_queue_test
         BOOST_TEST(q2.empty());
         BOOST_TEST(ready_as_op(q1.pop()) == &a);
         BOOST_TEST(ready_as_op(q1.pop()) == &b);
-        BOOST_TEST(q1.pop() == 0u);
+        BOOST_TEST(q1.pop() == nullptr);
     }
 
     void run()
