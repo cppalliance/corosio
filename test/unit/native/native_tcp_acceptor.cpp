@@ -20,6 +20,16 @@
 #include <utility>
 #include <tuple>
 
+#include <boost/corosio/detail/platform.hpp>
+#if BOOST_COROSIO_POSIX
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
+
 #include "context.hpp"
 #include "must.hpp"
 #include "test_suite.hpp"
@@ -212,22 +222,76 @@ struct native_tcp_acceptor_test
         BOOST_TEST(done);
     }
 
-    void testMovedFromValueAcceptThrows()
+#if BOOST_COROSIO_POSIX
+    // An accept that completed but whose awaiter is destroyed before it
+    // resumes must not strand the accepted connection.
+    void testAcceptedPeerClosedWhenAwaiterDestroyed(bool by_value)
+    {
+        native_io_context<Backend> a;
+        native_tcp_acceptor<Backend> acc(a);
+        BOOST_TEST(!acc.open());
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!acc.listen());
+        auto const port = acc.local_endpoint().port();
+
+        tcp_socket peer(a);
+        int client = ::socket(AF_INET, SOCK_STREAM, 0);
+        BOOST_TEST(client >= 0);
+        {
+            native_io_context<Backend> b;
+            if (by_value)
+                capy::run_async(b.get_executor())(
+                    [](native_tcp_acceptor<Backend>& acc) -> capy::task<> {
+                        std::ignore = co_await acc.accept();
+                    }(acc));
+            else
+                capy::run_async(b.get_executor())(
+                    [](native_tcp_acceptor<Backend>& acc,
+                       tcp_socket& p) -> capy::task<> {
+                        std::ignore = co_await acc.accept(p);
+                    }(acc, peer));
+            std::ignore = b.poll(); // parks the accept on a's acceptor
+
+            sockaddr_in addr{};
+            addr.sin_family      = AF_INET;
+            addr.sin_port        = htons(port);
+            addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+            BOOST_TEST(
+                ::connect(
+                    client, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) ==
+                0);
+            a.run(); // completes the accept into b's queue
+        }
+
+        // With the accepted socket closed, the client reads end of file;
+        // a stranded one never becomes readable. Some stacks deliver the
+        // close asynchronously, so readability is awaited, bounded only
+        // to fail rather than hang.
+        pollfd pfd{client, POLLIN, 0};
+        BOOST_TEST_EQ(::poll(&pfd, 1, 5000), 1);
+        ::fcntl(client, F_SETFL, ::fcntl(client, F_GETFL) | O_NONBLOCK);
+        char c;
+        BOOST_TEST_EQ(::recv(client, &c, 1, 0), 0);
+        ::close(client);
+    }
+#endif
+
+    void testMovedFromValueAccept()
     {
         native_io_context<Backend> ioc;
         native_tcp_acceptor<Backend> a(ioc);
         native_tcp_acceptor<Backend> b(std::move(a));
 
-        bool threw = false;
-        try
-        {
-            std::ignore = a.accept();
-        }
-        catch (std::logic_error const&)
-        {
-            threw = true;
-        }
-        BOOST_TEST(threw);
+        bool done = false;
+        auto task = [&]() -> capy::task<> {
+            auto [ec, peer] = co_await a.accept();
+            BOOST_TEST(ec == std::errc::bad_file_descriptor);
+            BOOST_TEST(!peer.is_open());
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+        ioc.run();
+        BOOST_TEST(done);
     }
 
     // A closed acceptor's wait completes with bad_file_descriptor,
@@ -262,9 +326,13 @@ struct native_tcp_acceptor_test
         testNativeAcceptReturning();
 #ifdef SO_REUSEPORT
         testNativeReusePort();
-        testMovedFromValueAcceptThrows();
-        testClosedAcceptCompletes();
 #endif
+#if BOOST_COROSIO_POSIX
+        testAcceptedPeerClosedWhenAwaiterDestroyed(false);
+        testAcceptedPeerClosedWhenAwaiterDestroyed(true);
+#endif
+        testMovedFromValueAccept();
+        testClosedAcceptCompletes();
     }
 };
 
