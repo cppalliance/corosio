@@ -2542,10 +2542,9 @@ struct tcp_socket_test
             BOOST_TEST(s1.assign(nfd) == error::already_open);
             BOOST_TEST_EQ(read_done, false);
             BOOST_TEST(s1.native_handle() == held);
-            auto [wec, wn] =
+            [[maybe_unused]] auto [wec, wn] =
                 co_await s2.write_some(capy::const_buffer("ping", 4));
             BOOST_TEST(!wec);
-            (void)wn;
         };
 
         // run_async runs inline to the first suspend, so spawning the

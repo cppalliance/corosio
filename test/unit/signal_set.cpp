@@ -426,10 +426,9 @@ struct signal_set_test
         std::error_code first_ec = capy::error::canceled;
 
         auto wait_task = [&]() -> capy::task<> {
-            auto [ec, signum] = co_await s.wait();
-            (void)signum;
-            first_ec   = ec;
-            first_done = true;
+            [[maybe_unused]] auto [ec, signum] = co_await s.wait();
+            first_ec                           = ec;
+            first_done                         = true;
         };
         capy::run_async(ioc.get_executor(), src.get_token())(wait_task());
 
@@ -457,10 +456,9 @@ struct signal_set_test
         bool second_done          = false;
 
         auto second = [&]() -> capy::task<> {
-            auto [ec, signum] = co_await s.wait();
-            (void)signum;
-            second_ec   = ec;
-            second_done = true;
+            [[maybe_unused]] auto [ec, signum] = co_await s.wait();
+            second_ec                          = ec;
+            second_done                        = true;
         };
         capy::run_async(ioc.get_executor())(second());
 
@@ -556,10 +554,9 @@ struct signal_set_test
         bool first_done = false;
 
         auto first = [&]() -> capy::task<> {
-            auto [ec, signum] = co_await s.wait();
-            (void)signum;
-            first_ec   = ec;
-            first_done = true;
+            [[maybe_unused]] auto [ec, signum] = co_await s.wait();
+            first_ec                           = ec;
+            first_done                         = true;
         };
         capy::run_async(ioc.get_executor(), src.get_token())(first());
 
@@ -580,10 +577,9 @@ struct signal_set_test
         bool second_done          = false;
 
         auto second = [&]() -> capy::task<> {
-            auto [ec, signum] = co_await s.wait();
-            (void)signum;
-            second_ec   = ec;
-            second_done = true;
+            [[maybe_unused]] auto [ec, signum] = co_await s.wait();
+            second_ec                          = ec;
+            second_done                        = true;
         };
         capy::run_async(ioc.get_executor())(second());
 
@@ -754,7 +750,7 @@ struct signal_set_test
                 // Walk the offset across iterations: a fixed delay would
                 // sit on the same side of the window every time.
                 for (int spin = i % 256; spin > 0; --spin)
-                    (void)arming.load(std::memory_order_relaxed);
+                    std::ignore = arming.load(std::memory_order_relaxed);
                 src.request_stop();
             });
 

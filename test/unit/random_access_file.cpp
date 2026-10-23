@@ -862,10 +862,9 @@ struct random_access_file_test
         std::error_code ec;
         char buf[16];
         auto t = [&]() -> capy::task<> {
-            auto [e, n] = co_await f.read_some_at(
+            [[maybe_unused]] auto [e, n] = co_await f.read_some_at(
                 0, capy::mutable_buffer(buf, sizeof(buf)));
-            ec = e;
-            (void)n;
+            ec        = e;
             on_strand = s.running_in_this_thread();
         };
         capy::run_async(s)(t());
@@ -902,14 +901,12 @@ struct random_access_file_test
         char out[4] = {'w', 'x', 'y', 'z'};
         char in[4]  = {};
         auto t      = [&]() -> capy::task<> {
-            auto [e1, n1] =
+            [[maybe_unused]] auto [e1, n1] =
                 co_await f.write_some_at(off, capy::const_buffer(out, 4));
             wec = e1;
-            (void)n1;
-            auto [e2, n2] =
+            [[maybe_unused]] auto [e2, n2] =
                 co_await f.read_some_at(off, capy::mutable_buffer(in, 4));
             rec = e2;
-            (void)n2;
         };
         capy::run_async(ioc.get_executor())(t());
         ioc.run();
@@ -933,10 +930,9 @@ struct random_access_file_test
         std::error_code ec;
         char buf[8]{};
         auto reader = [&]() -> capy::task<> {
-            auto [e, n] = co_await h.read_some_at(
+            [[maybe_unused]] auto [e, n] = co_await h.read_some_at(
                 0, capy::mutable_buffer(buf, sizeof(buf)));
             ec = e;
-            (void)n;
         };
         auto stopper = [&]() -> capy::task<> {
             ss.request_stop();
@@ -1317,10 +1313,9 @@ struct random_access_file_test
         std::error_code rec;
         char buf[8]{};
         auto reader = [&]() -> capy::task<> {
-            auto [e, n] = co_await fa.read_some_at(
+            [[maybe_unused]] auto [e, n] = co_await fa.read_some_at(
                 0, capy::mutable_buffer(buf, sizeof(buf)));
             rec = e;
-            std::ignore = n;
         };
         capy::run_async(a.get_executor())(reader());
         BOOST_TEST_EQ(a.poll_one(), 1u);

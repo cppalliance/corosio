@@ -623,9 +623,9 @@ struct local_stream_socket_test
                 error::already_open);
             BOOST_TEST_EQ(read_done, false);
             BOOST_TEST(s1.native_handle() == held);
-            auto [ec, n] = co_await s2.write_some(capy::const_buffer("go", 2));
+            [[maybe_unused]] auto [ec, n] =
+                co_await s2.write_some(capy::const_buffer("go", 2));
             BOOST_TEST(!ec);
-            (void)n;
         };
         capy::run_async(ex)(reader());
         capy::run_async(ex)(assigner());
@@ -1906,11 +1906,10 @@ struct local_stream_socket_test
         std::error_code wec;
         bool write_done = false;
         auto writer     = [&]() -> capy::task<> {
-            auto [e, n] = co_await s1.write_some(
+            [[maybe_unused]] auto [e, n] = co_await s1.write_some(
                 capy::const_buffer(block, sizeof(block)));
             wec        = e;
             write_done = true;
-            (void)n;
             s1.close(); // ends the drainer with EOF
         };
         auto drainer = [&]() -> capy::task<> {
@@ -1920,9 +1919,8 @@ struct local_stream_socket_test
             char buf[65536];
             for (;;)
             {
-                auto [rec, rn] = co_await s2.read_some(
+                [[maybe_unused]] auto [rec, rn] = co_await s2.read_some(
                     capy::mutable_buffer(buf, sizeof(buf)));
-                (void)rn;
                 if (rec)
                     break;
             }

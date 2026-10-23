@@ -999,21 +999,20 @@ struct wait_test
             if (!parked)
             {
                 s2.close();
-                auto [e] = co_await delay(std::chrono::milliseconds(10));
-                std::ignore = e;
+                [[maybe_unused]] auto [e] =
+                    co_await delay(std::chrono::milliseconds(10));
             }
             auto [e] = co_await s1.wait(wait_type::read);
             wec      = e;
             char buf[8];
-            auto [re, n] =
+            [[maybe_unused]] auto [re, n] =
                 co_await s1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
-            rec = re;
-            (void)n;
+            rec  = re;
             done = true;
         };
         auto resetter = [&]() -> capy::task<> {
-            auto [e] = co_await delay(std::chrono::milliseconds(10));
-            (void)e;
+            [[maybe_unused]] auto [e] =
+                co_await delay(std::chrono::milliseconds(10));
             if (parked)
                 s2.close();
         };
@@ -1041,14 +1040,13 @@ struct wait_test
         std::error_code wec, xec;
         auto t = [&]() -> capy::task<> {
             s2.close();
-            auto [e0] = co_await delay(std::chrono::milliseconds(10));
-            std::ignore = e0;
+            [[maybe_unused]] auto [e0] =
+                co_await delay(std::chrono::milliseconds(10));
             auto [e] = co_await s1.wait(wait_type::write);
             wec      = e;
-            auto [we, n] =
+            [[maybe_unused]] auto [we, n] =
                 co_await s1.write_some(capy::const_buffer("x", 1));
             xec = we;
-            (void)n;
         };
         capy::run_async(ioc.get_executor())(t());
         ioc.run();

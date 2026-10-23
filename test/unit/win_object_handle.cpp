@@ -27,6 +27,7 @@
 #include <optional>
 #include <stop_token>
 #include <thread>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -276,10 +277,9 @@ struct win_object_handle_test
     // Busy-waits about @p n iterations; volatile keeps the loop.
     static void spin(int n) noexcept
     {
-        volatile int sink = 0;
+        [[maybe_unused]] volatile int sink = 0;
         for (int k = 0; k < n; ++k)
             sink = k;
-        (void)sink;
     }
 
     // SetEvent satisfies the pending wait before it returns: the kernel
@@ -580,8 +580,8 @@ struct win_object_handle_test
             done     = true;
         };
         auto poker = [&]() -> capy::task<> {
-            auto [d] = co_await delay(std::chrono::milliseconds(10));
-            (void)d;
+            [[maybe_unused]] auto [d] =
+                co_await delay(std::chrono::milliseconds(10));
             BOOST_TEST(
                 o.assign(test::as_native(other.get())) == error::already_open);
             BOOST_TEST_EQ(done, false); // the pending wait is undisturbed

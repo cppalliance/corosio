@@ -44,6 +44,7 @@
 
 #include <cerrno>
 #include <system_error>
+#include <tuple>
 
 #include <unistd.h>
 
@@ -141,7 +142,7 @@ watch_directory(corosio::io_context& ioc, char const* path)
 
     auto const* ev = reinterpret_cast<struct inotify_event const*>(buf);
     // end::adopt_inotify[]
-    (void)ev;
+    std::ignore = ev;
     co_return ec;
 }
 

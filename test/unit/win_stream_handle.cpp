@@ -255,9 +255,9 @@ struct win_stream_handle_test
 
         std::error_code ec;
         auto writer = [&]() -> capy::task<> {
-            auto [e, n] = co_await h.write_some(capy::const_buffer("x", 1));
+            [[maybe_unused]] auto [e, n] =
+                co_await h.write_some(capy::const_buffer("x", 1));
             ec = e;
-            (void)n;
         };
         capy::run_async(ioc.get_executor())(writer());
         ioc.run();
@@ -328,10 +328,9 @@ struct win_stream_handle_test
         std::error_code ec;
         char buf[8]{};
         auto reader = [&]() -> capy::task<> {
-            auto [e, n] =
+            [[maybe_unused]] auto [e, n] =
                 co_await h.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             ec = e;
-            (void)n;
         };
         auto canceller = [&]() -> capy::task<> {
             h.cancel();
@@ -354,10 +353,9 @@ struct win_stream_handle_test
         std::error_code ec;
         char buf[8]{};
         auto reader = [&]() -> capy::task<> {
-            auto [e, n] =
+            [[maybe_unused]] auto [e, n] =
                 co_await h.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             ec = e;
-            (void)n;
         };
         auto stopper = [&]() -> capy::task<> {
             ss.request_stop();
@@ -380,10 +378,9 @@ struct win_stream_handle_test
         std::error_code release_ec;
         char buf[8]{};
         auto reader = [&]() -> capy::task<> {
-            auto [e, n] =
+            [[maybe_unused]] auto [e, n] =
                 co_await h.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             ec = e;
-            std::ignore = n;
         };
         auto releaser = [&]() -> capy::task<> {
             // The read is in flight, so release() cancels it and fails.
@@ -457,10 +454,9 @@ struct win_stream_handle_test
             std::error_code ec;
             auto reader = [&]() -> capy::task<> {
                 char buf[8];
-                auto [e, n] =
-                    co_await h.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+                [[maybe_unused]] auto [e, n] = co_await h.read_some(
+                    capy::mutable_buffer(buf, sizeof(buf)));
                 ec = e;
-                std::ignore = n;
             };
             capy::run_async(ioc.get_executor())(reader());
             ioc.run();
@@ -536,10 +532,9 @@ struct win_stream_handle_test
         std::error_code rec;
         char buf[4];
         auto reader = [&]() -> capy::task<> {
-            auto [e, n] =
+            [[maybe_unused]] auto [e, n] =
                 co_await ha.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             rec = e;
-            std::ignore = n;
         };
         capy::run_async(a.get_executor())(reader());
         a.poll(); // the read is now issued and pending
@@ -573,13 +568,12 @@ struct win_stream_handle_test
         auto t = [&]() -> capy::task<> {
             ::FlushFileBuffers(p.server.get());
             ::DisconnectNamedPipe(p.server.get());
-            auto [e1, n1] =
+            [[maybe_unused]] auto [e1, n1] =
                 co_await h.read_some(capy::mutable_buffer(buf, sizeof(buf)));
             rec = e1;
-            (void)n1;
-            auto [e2, n2] = co_await h.write_some(capy::const_buffer("x", 1));
+            [[maybe_unused]] auto [e2, n2] =
+                co_await h.write_some(capy::const_buffer("x", 1));
             wec = e2;
-            (void)n2;
         };
         capy::run_async(ioc.get_executor())(t());
         ioc.run();
