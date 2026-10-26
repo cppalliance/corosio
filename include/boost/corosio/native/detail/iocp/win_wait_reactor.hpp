@@ -24,6 +24,7 @@
 instead of including this header directly."
 #endif
 
+#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/wait_type.hpp>
 #include <boost/corosio/native/detail/iocp/win_overlapped_op.hpp>
 #include <boost/corosio/native/detail/iocp/win_scheduler.hpp>

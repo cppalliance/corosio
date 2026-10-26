@@ -15,7 +15,6 @@
 #if BOOST_COROSIO_HAS_IOCP
 
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/local_stream_acceptor_service.hpp>
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -32,6 +31,8 @@
 #include <boost/corosio/detail/dispatch_coro.hpp>
 
 #include <ws2tcpip.h>
+
+#include <system_error>
 
 namespace boost::corosio::detail {
 

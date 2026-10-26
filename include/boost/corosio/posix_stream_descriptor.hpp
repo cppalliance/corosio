@@ -15,7 +15,6 @@
 
 #if BOOST_COROSIO_POSIX || defined(BOOST_COROSIO_MRDOCS)
 
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
 #include <boost/capy/results.hpp>
 #include <boost/corosio/detail/op_base.hpp>
