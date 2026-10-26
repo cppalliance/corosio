@@ -15,7 +15,6 @@
 
 #if BOOST_COROSIO_HAS_IOCP || defined(BOOST_COROSIO_MRDOCS)
 
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/corosio/detail/op_base.hpp>

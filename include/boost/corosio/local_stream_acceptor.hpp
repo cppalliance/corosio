@@ -12,7 +12,6 @@
 
 #include <boost/corosio/family.hpp>
 #include <boost/corosio/detail/config.hpp>
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/op_base.hpp>
 #include <boost/corosio/error.hpp>
 #include <boost/corosio/wait_type.hpp>

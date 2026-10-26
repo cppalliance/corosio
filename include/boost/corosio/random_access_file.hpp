@@ -12,7 +12,6 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/corosio/detail/platform.hpp>
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
 #include <boost/corosio/detail/buffer_param.hpp>
 #include <boost/corosio/detail/op_base.hpp>

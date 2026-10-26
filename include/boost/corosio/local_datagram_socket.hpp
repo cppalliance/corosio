@@ -16,7 +16,6 @@
 
 #if BOOST_COROSIO_POSIX
 
-#include <boost/corosio/detail/except.hpp>
 #include <boost/corosio/detail/native_handle.hpp>
 #include <boost/corosio/detail/op_base.hpp>
 #include <boost/corosio/io/io_object.hpp>
