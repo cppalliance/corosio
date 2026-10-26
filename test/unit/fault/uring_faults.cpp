@@ -44,6 +44,7 @@
 #include <optional>
 #include <system_error>
 #include <tuple>
+#include <utility>
 
 #if BOOST_COROSIO_HAS_URING
 
@@ -270,14 +271,32 @@ struct uring_faults
         }
         {
             io_context ioc(uring);
-            fault_scope f(sys::io_uring_wait_cqe_timeout, EBADF);
+            fault_scope f(sys::io_uring_wait_cqe_timeout, EBUSY);
+            bool done = false;
+            auto body = [&]() -> capy::task<> {
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(1));
+                done = true;
+            };
+            capy::run_async(ioc.get_executor())(body());
+            ioc.run();
+            BOOST_TEST(f.fired());
+            BOOST_TEST(done);
+        }
+        // The wait submits nothing, so EAGAIN is not the transient
+        // overflow case and must not be retried into a spin.
+        for (auto const& [err, cond] :
+             {std::pair{EBADF, std::errc::bad_file_descriptor},
+              std::pair{EAGAIN, std::errc::resource_unavailable_try_again}})
+        {
+            io_context ioc(uring);
+            fault_scope f(sys::io_uring_wait_cqe_timeout, err);
             auto body = [&]() -> capy::task<> {
                 std::ignore =
                     co_await corosio::delay(std::chrono::milliseconds(1));
             };
             capy::run_async(ioc.get_executor())(body());
-            expect_system_error(
-                [&] { ioc.run(); }, std::errc::bad_file_descriptor);
+            expect_system_error([&] { ioc.run(); }, cond);
             BOOST_TEST(f.fired());
         }
     }
