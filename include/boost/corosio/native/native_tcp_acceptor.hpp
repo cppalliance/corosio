@@ -185,6 +185,47 @@ public:
     {
     }
 
+    /** Construct a native acceptor that is open, bound, and listening.
+
+        Creates a fully bound listening acceptor in a single
+        expression, throwing the codes the piecewise `open()` +
+        `set_option()` + `bind()` + `listen()` path reports. The
+        address family is deduced from @p ep, and address reuse is
+        configured as by the @ref tcp_acceptor convenience
+        constructor.
+
+        @param ctx The execution context that owns this acceptor.
+        @param ep The local endpoint to bind to.
+        @param backlog The maximum pending connection queue length.
+
+        @throws std::system_error on open, configuration, bind, or
+            listen failure.
+    */
+    native_tcp_acceptor(
+        capy::execution_context& ctx, endpoint ep, int backlog = 128)
+        : tcp_acceptor(
+              handle(ctx, ctx.use_service<service_type>()), ep, backlog)
+    {
+    }
+
+    /** Construct a native acceptor that is open, bound, and listening.
+
+        @param ex The executor whose context owns the acceptor.
+        @param ep The local endpoint to bind to.
+        @param backlog The maximum pending connection queue length.
+
+        @tparam Ex A type satisfying @ref capy::Executor.
+
+        @throws std::system_error on open, configuration, bind, or
+            listen failure.
+    */
+    template<class Ex>
+        requires capy::Executor<Ex>
+    native_tcp_acceptor(Ex const& ex, endpoint ep, int backlog = 128)
+        : native_tcp_acceptor(ex.context(), ep, backlog)
+    {
+    }
+
     /** Move construct.
 
         @param other The acceptor to move from.

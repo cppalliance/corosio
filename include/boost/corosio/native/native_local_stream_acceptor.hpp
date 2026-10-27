@@ -197,6 +197,48 @@ public:
     {
     }
 
+    /** Construct a native acceptor that is open, bound, and listening.
+
+        Creates a fully bound listening acceptor in a single
+        expression, throwing the codes the piecewise `open()` +
+        `bind()` + `listen()` path returns.
+
+        @param ctx The execution context that owns this acceptor.
+        @param ep The local endpoint to bind to.
+        @param backlog The maximum pending connection queue length.
+
+        @throws std::system_error on open, bind, or listen failure.
+    */
+    native_local_stream_acceptor(
+        capy::execution_context& ctx,
+        corosio::local_endpoint ep,
+        int backlog = 128)
+        : local_stream_acceptor(
+              handle(ctx, ctx.use_service<service_type>()),
+              ctx,
+              std::move(ep),
+              backlog)
+    {
+    }
+
+    /** Construct a native acceptor that is open, bound, and listening.
+
+        @param ex The executor whose context owns the acceptor.
+        @param ep The local endpoint to bind to.
+        @param backlog The maximum pending connection queue length.
+
+        @tparam Ex A type satisfying @ref capy::Executor.
+
+        @throws std::system_error on open, bind, or listen failure.
+    */
+    template<class Ex>
+        requires capy::Executor<Ex>
+    native_local_stream_acceptor(
+        Ex const& ex, corosio::local_endpoint ep, int backlog = 128)
+        : native_local_stream_acceptor(ex.context(), std::move(ep), backlog)
+    {
+    }
+
     /// Move construct.
     native_local_stream_acceptor(native_local_stream_acceptor&&) noexcept =
         default;
