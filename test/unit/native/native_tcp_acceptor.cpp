@@ -65,6 +65,40 @@ struct native_tcp_acceptor_test
         BOOST_TEST_PASS();
     }
 
+    void testConvenienceConstructor()
+    {
+        native_io_context<Backend> ctx;
+        native_tcp_acceptor<Backend> acc(
+            ctx, endpoint(ipv4_address::loopback(), 0));
+        BOOST_TEST(acc.is_open());
+        BOOST_TEST(acc.local_endpoint().port() != 0);
+
+        native_tcp_acceptor<Backend> acc_ex(
+            ctx.get_executor(), endpoint(ipv4_address::loopback(), 0), 16);
+        BOOST_TEST(acc_ex.is_open());
+        BOOST_TEST(acc_ex.local_endpoint().port() != 0);
+    }
+
+    void testConvenienceCtorBindFailureThrows()
+    {
+        native_io_context<Backend> ctx;
+        native_tcp_acceptor<Backend> holder(
+            ctx, endpoint(ipv4_address::loopback(), 0));
+        auto ep = holder.local_endpoint();
+
+        std::error_code caught;
+        try
+        {
+            native_tcp_acceptor<Backend> dup(ctx, ep);
+            BOOST_TEST_FAIL();
+        }
+        catch (std::system_error const& e)
+        {
+            caught = e.code();
+        }
+        BOOST_TEST(caught == std::errc::address_in_use);
+    }
+
     void testAcceptorMoveConstruct()
     {
         native_io_context<Backend> ctx;
@@ -319,6 +353,8 @@ struct native_tcp_acceptor_test
     void run()
     {
         testAcceptorConstruct();
+        testConvenienceConstructor();
+        testConvenienceCtorBindFailureThrows();
         testAcceptorMoveConstruct();
         testAcceptorPolymorphicSlice();
         testWait();

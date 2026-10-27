@@ -36,6 +36,13 @@ using tcp_peer_service = detail::win_tcp_service;
 using tcp_peer_service = detail::tcp_service;
 #endif
 
+void
+open_listener_or_throw(tcp_acceptor& acc, endpoint ep, int backlog)
+{
+    if (auto ec = detail::open_listener(acc, ep, backlog))
+        detail::throw_system_error(ec, "tcp_acceptor");
+}
+
 } // namespace
 
 tcp_acceptor::~tcp_acceptor()
@@ -61,8 +68,13 @@ tcp_acceptor::tcp_acceptor(
     capy::execution_context& ctx, endpoint ep, int backlog)
     : tcp_acceptor(ctx)
 {
-    if (auto ec = detail::open_listener(*this, ep, backlog))
-        detail::throw_system_error(ec, "tcp_acceptor");
+    open_listener_or_throw(*this, ep, backlog);
+}
+
+tcp_acceptor::tcp_acceptor(handle h, endpoint ep, int backlog)
+    : tcp_acceptor(std::move(h))
+{
+    open_listener_or_throw(*this, ep, backlog);
 }
 
 std::error_code

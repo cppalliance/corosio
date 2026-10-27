@@ -42,6 +42,17 @@ struct native_signal_set_test
         BOOST_TEST_PASS();
     }
 
+    void testSignalSetConstructFromExecutor()
+    {
+        native_io_context<Backend> ctx;
+        native_signal_set<Backend> ss(ctx.get_executor());
+        BOOST_TEST(!ss.add(SIGINT));
+
+        native_signal_set<Backend> ss_signals(
+            ctx.get_executor(), SIGINT, SIGTERM);
+        BOOST_TEST_PASS();
+    }
+
     void testSignalSetPolymorphicSlice()
     {
         native_io_context<Backend> ctx;
@@ -58,6 +69,7 @@ struct native_signal_set_test
     {
         testSignalSetConstruct();
         testSignalSetConstructWithSignals();
+        testSignalSetConstructFromExecutor();
         testSignalSetPolymorphicSlice();
     }
 };

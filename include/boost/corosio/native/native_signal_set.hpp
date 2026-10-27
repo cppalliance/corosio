@@ -106,6 +106,43 @@ public:
     {
     }
 
+    /** Construct a native signal set from an executor.
+
+        @param ex The executor whose context owns the signal set.
+
+        @tparam Ex A type satisfying @ref capy::Executor. Must not
+            be `native_signal_set` itself (disables implicit
+            conversion from move).
+    */
+    template<class Ex>
+        requires(!std::same_as<std::remove_cvref_t<Ex>, native_signal_set>) &&
+        capy::Executor<Ex>
+    explicit native_signal_set(Ex const& ex) : native_signal_set(ex.context())
+    {
+    }
+
+    /** Construct a native signal set from an executor with initial signals.
+
+        For the non-throwing form, construct with the executor alone,
+        then call @ref signal_set::add for each signal.
+
+        @param ex The executor whose context owns the signal set.
+        @param signal First signal number to add.
+        @param signals Additional signal numbers to add.
+
+        @tparam Ex A type satisfying @ref capy::Executor.
+
+        @throws std::system_error on failure.
+
+        @see @ref signal_set::add
+    */
+    template<class Ex, std::convertible_to<int>... Signals>
+        requires capy::Executor<Ex>
+    native_signal_set(Ex const& ex, int signal, Signals... signals)
+        : native_signal_set(ex.context(), signal, signals...)
+    {
+    }
+
     /** Move construct.
 
         @pre No awaitables returned by the source's methods exist.

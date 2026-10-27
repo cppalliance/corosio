@@ -19,6 +19,7 @@
 #include <boost/capy/task.hpp>
 
 #include <string>
+#include <system_error>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -122,6 +123,29 @@ struct native_local_stream_socket_test
         BOOST_TEST(!s.open());
         local_stream_socket& base = s;
         BOOST_TEST(base.is_open());
+    }
+
+    void testAcceptorConvenienceConstructor()
+    {
+        native_io_context<Backend> ioc;
+        test::temp_socket_dir tmp;
+        auto ep = test::must(make_local_endpoint(tmp.path()));
+
+        native_local_stream_acceptor<Backend> acc(ioc, ep);
+        BOOST_TEST(acc.is_open());
+        BOOST_TEST_EQ(acc.local_endpoint().path(), tmp.path());
+
+        std::error_code caught;
+        try
+        {
+            native_local_stream_acceptor<Backend> dup(ioc.get_executor(), ep);
+            BOOST_TEST_FAIL();
+        }
+        catch (std::system_error const& e)
+        {
+            caught = e.code();
+        }
+        BOOST_TEST(caught == std::errc::address_in_use);
     }
 
     void testConnectAcceptReadWrite()
@@ -533,6 +557,7 @@ struct native_local_stream_socket_test
         testConstruct();
         testOpen();
         testPolymorphicSlice();
+        testAcceptorConvenienceConstructor();
         testConnectAcceptReadWrite();
         testMoveAccept();
         testVirtualDispatchFallback();

@@ -739,6 +739,20 @@ protected:
     */
     explicit tcp_acceptor(handle h) noexcept : io_object(std::move(h)) {}
 
+    /** Adopt an existing handle, then open, configure, bind, and listen.
+
+        Lets a derived acceptor offer the convenience constructor while
+        supplying its own service.
+
+        @param h The handle the acceptor takes ownership of.
+        @param ep The local endpoint to bind to.
+        @param backlog The maximum pending connection queue length.
+
+        @throws std::system_error on open, configuration, bind, or
+            listen failure.
+    */
+    tcp_acceptor(handle h, endpoint ep, int backlog);
+
     /** Transfer the accepted peer implementation to the peer socket.
 
         @param peer The socket that receives the transferred implementation.

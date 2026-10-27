@@ -670,6 +670,24 @@ protected:
     {
     }
 
+    /** Adopt an existing handle, then open, bind, and listen.
+
+        Lets a derived acceptor offer the convenience constructor while
+        supplying its own service.
+
+        @param h The handle the acceptor takes ownership of.
+        @param ctx The context the acceptor draws its service from.
+        @param ep The local endpoint to bind to.
+        @param backlog The maximum pending connection queue length.
+
+        @throws std::system_error on open, bind, or listen failure.
+    */
+    local_stream_acceptor(
+        handle h,
+        capy::execution_context& ctx,
+        corosio::local_endpoint ep,
+        int backlog);
+
     /** Move construct, rebinding to a context.
 
         @param ctx The context the acceptor draws its service from.

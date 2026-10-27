@@ -36,6 +36,22 @@
 
 namespace boost::corosio {
 
+namespace {
+
+void
+open_listener_or_throw(
+    local_stream_acceptor& acc, corosio::local_endpoint ep, int backlog)
+{
+    if (auto ec = acc.open())
+        detail::throw_system_error(ec, "local_stream_acceptor");
+    if (auto ec = acc.bind(ep))
+        detail::throw_system_error(ec, "local_stream_acceptor");
+    if (auto ec = acc.listen(backlog))
+        detail::throw_system_error(ec, "local_stream_acceptor");
+}
+
+} // namespace
+
 local_stream_acceptor::~local_stream_acceptor()
 {
     close();
@@ -55,12 +71,17 @@ local_stream_acceptor::local_stream_acceptor(
     capy::execution_context& ctx, corosio::local_endpoint ep, int backlog)
     : local_stream_acceptor(ctx)
 {
-    if (auto ec = open())
-        detail::throw_system_error(ec, "local_stream_acceptor");
-    if (auto ec = bind(ep))
-        detail::throw_system_error(ec, "local_stream_acceptor");
-    if (auto ec = listen(backlog))
-        detail::throw_system_error(ec, "local_stream_acceptor");
+    open_listener_or_throw(*this, ep, backlog);
+}
+
+local_stream_acceptor::local_stream_acceptor(
+    handle h,
+    capy::execution_context& ctx,
+    corosio::local_endpoint ep,
+    int backlog)
+    : local_stream_acceptor(std::move(h), ctx)
+{
+    open_listener_or_throw(*this, ep, backlog);
 }
 
 std::error_code
