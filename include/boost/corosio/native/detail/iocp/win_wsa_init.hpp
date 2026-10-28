@@ -53,29 +53,17 @@ win_wsa_init_count() noexcept
     return count;
 }
 
-// Hold Winsock for the life of the process, so the count never falls back
-// to zero between one io_context and the next. An asynchronous
-// GetAddrInfoExW keeps settling inside ws2_32 past its completion
-// routine, with no way to observe when, and a WSACleanup under it faults
-// on a system DNS thread.
+// Hold Winsock for the life of the process and never release it, so the
+// count never falls to zero. An asynchronous GetAddrInfoExW keeps
+// settling inside ws2_32 past its completion routine, with no way to
+// observe when, and a WSACleanup under it faults on a system DNS thread.
+// That includes one run from a static destructor at exit; process
+// teardown reclaims Winsock without it.
 inline void
 win_wsa_hold_process() noexcept
 {
-    struct holder
-    {
-        holder() noexcept
-        {
-            ::InterlockedIncrement(&win_wsa_init_count());
-        }
-
-        ~holder()
-        {
-            if (::InterlockedDecrement(&win_wsa_init_count()) == 0)
-                ::WSACleanup();
-        }
-    };
-
-    static holder const instance;
+    [[maybe_unused]] static bool const held =
+        (::InterlockedIncrement(&win_wsa_init_count()), true);
 }
 
 inline win_wsa_init::win_wsa_init()
