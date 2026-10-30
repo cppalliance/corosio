@@ -26,10 +26,6 @@ Affinity::
 The binding of a coroutine to a specific executor. A coroutine with affinity
 to executor `ex` has all its resumptions dispatched through `ex`.
 
-buffer_param::
-A type-erased buffer sequence parameter, allowing non-template code to
-work with any buffer type.
-
 any_executor::
 A type-erased wrapper for executors, enabling runtime polymorphism for
 executor types. See `capy::any_executor`.

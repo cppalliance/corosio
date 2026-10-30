@@ -83,30 +83,6 @@ include::example$snippets/4g_composed_operations.cpp[tag=write_full,indent=0]
 2. If an error occurs, returns immediately with bytes written so far
 3. On success, returns total bytes (equals `buffer_size(buffers)`)
 
-== buffer_slice Helper
-
-Both `read()` and `write()` use `capy::consuming_buffers` internally to
-track progress through a buffer sequence. A related helper,
-`capy::buffer_slice`, returns a view over a byte range of the underlying
-sequence. The result is itself a buffer sequence covering only that
-range, so it can be passed directly to any I/O operation:
-
-[source,cpp]
-----
-include::example$snippets/4g_composed_operations.cpp[tag=slice_helper,indent=0]
-----
-
-The returned `slice_type` models the same buffer-sequence concept as
-`seq`, and is mutable when `seq` is a mutable buffer sequence. Slicing a
-single buffer yields an adjusted buffer of the same kind. Any other
-sequence yields a borrowed view. `offset` is clamped to the total
-size, and `length` defaults to the end of the sequence.
-
-NOTE: Except for the single-buffer case, the result borrows `seq`: it
-stores iterators into the sequence, not a copy, so `seq` must outlive
-it. Passing a temporary buffer sequence is rejected at compile time;
-hoist it into a named variable first.
-
 == Error Handling Patterns
 
 === Structured Bindings with EOF Check

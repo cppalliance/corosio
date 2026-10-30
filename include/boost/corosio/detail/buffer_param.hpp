@@ -16,7 +16,7 @@
 
 #include <cstddef>
 
-namespace boost::corosio {
+namespace boost::corosio::detail {
 
 /** Erases a buffer sequence to the pointer and length a system call takes.
 
@@ -362,8 +362,8 @@ private:
     copy_impl(void const* p, capy::mutable_buffer* dest, std::size_t n)
     {
         auto const& bs    = *static_cast<BS const*>(p);
-        auto it           = capy::begin(bs);
-        auto const end_it = capy::end(bs);
+        auto it           = capy::buffer_sequence_begin(bs);
+        auto const end_it = capy::buffer_sequence_end(bs);
 
         std::size_t i = 0;
         if constexpr (capy::MutableBufferSequence<BS>)
@@ -398,6 +398,6 @@ private:
     fn_t fn_;
 };
 
-} // namespace boost::corosio
+} // namespace boost::corosio::detail
 
 #endif

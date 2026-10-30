@@ -21,7 +21,7 @@ struct buffer_param_test
 {
     // Helper to reduce repeated copy_to assertion pattern
     static void check_copy(
-        buffer_param p,
+        detail::buffer_param p,
         std::initializer_list<std::pair<void const*, std::size_t>> expected)
     {
         capy::mutable_buffer dest[8];
@@ -37,7 +37,7 @@ struct buffer_param_test
     }
 
     // Helper for checking empty/zero-byte sequences
-    static void check_empty(buffer_param p)
+    static void check_empty(detail::buffer_param p)
     {
         capy::mutable_buffer dest[8];
         BOOST_TEST_EQ(p.copy_to(dest, 8), 0);
@@ -118,7 +118,7 @@ struct buffer_param_test
             capy::const_buffer(data1, 3), capy::const_buffer(data2, 3),
             capy::const_buffer(data3, 5)};
 
-        buffer_param ref(arr);
+        detail::buffer_param ref(arr);
 
         // copy only 2 buffers
         capy::mutable_buffer dest[2];
@@ -222,14 +222,14 @@ struct buffer_param_test
     }
 
     // Helper function that accepts buffer_param by value
-    static std::size_t acceptByValue(buffer_param p)
+    static std::size_t acceptByValue(detail::buffer_param p)
     {
         capy::mutable_buffer dest[8];
         return p.copy_to(dest, 8);
     }
 
     // Helper function that accepts buffer_param by const reference
-    static std::size_t acceptByConstRef(buffer_param const& p)
+    static std::size_t acceptByConstRef(detail::buffer_param const& p)
     {
         capy::mutable_buffer dest[8];
         return p.copy_to(dest, 8);
@@ -246,7 +246,7 @@ struct buffer_param_test
         BOOST_TEST_EQ(n, 1);
 
         // Pass buffer_param object
-        buffer_param p(cb);
+        detail::buffer_param p(cb);
         n = acceptByValue(p);
         BOOST_TEST_EQ(n, 1);
 
@@ -264,7 +264,7 @@ struct buffer_param_test
         capy::const_buffer cb(data, 5);
 
         // Pass buffer_param object by const ref
-        buffer_param p(cb);
+        detail::buffer_param p(cb);
         auto n = acceptByConstRef(p);
         BOOST_TEST_EQ(n, 1);
 
