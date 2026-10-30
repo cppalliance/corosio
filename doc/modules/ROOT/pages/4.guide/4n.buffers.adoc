@@ -107,51 +107,6 @@ Get the total size of a buffer sequence:
 include::example$snippets/4n_buffers.cpp[tag=buffer_size,indent=0]
 ----
 
-== buffer_slice
-
-`capy::buffer_slice` returns a byte sub-range of a buffer sequence, as a
-value. The result is itself a buffer sequence, so it can be passed directly
-to any I/O operation:
-
-[source,cpp]
-----
-include::example$snippets/4n_buffers.cpp[tag=buffer_slice_include]
-include::example$snippets/4n_buffers.cpp[tag=buffer_slice,indent=0]
-----
-
-Except for the single-buffer case, the result borrows the underlying
-sequence, which must outlive the slice.
-
-== consuming_buffers
-
-When transferring data incrementally, `capy::consuming_buffers` is a cursor
-that tracks progress through a sequence. It exposes the bytes not yet
-transferred via `data()` and advances past completed bytes with
-`consume(n)`:
-
-[source,cpp]
-----
-include::example$snippets/4n_buffers.cpp[tag=consuming_buffers_include]
-include::example$snippets/4n_buffers.cpp[tag=consuming_buffers,indent=0]
-----
-
-This is used internally by `read()` and `write()` but can be used directly.
-The underlying sequence must outlive the cursor and any view obtained from
-its `data()`.
-
-== buffer_param
-
-The cpp:buffer_param[] class type-erases buffer sequences:
-
-[source,cpp]
-----
-include::example$snippets/4n_buffers.cpp[tag=buffer_param_include]
-include::example$snippets/4n_buffers.cpp[tag=buffer_param]
-include::example$snippets/4n_buffers.cpp[tag=buffer_param_call,indent=0]
-----
-
-This enables non-templated code to work with any buffer type.
-
 == Memory Safety
 
 === Lifetime

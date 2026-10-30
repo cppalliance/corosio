@@ -189,7 +189,7 @@
 # pages that named an English/technical term rather than a documented entity. Names
 # that DO have a generated reference page are deliberately absent -- they are B1
 # defects and must keep alerting until they become `cpp:` links (io_stream,
-# signal_set, buffer_param, worker_base and friends).
+# signal_set, worker_base and friends).
 (?i)hostnames?
 (?i)loopback
 (?i)multicast
@@ -255,8 +255,6 @@
 (?i)results
 (?i)const_buffer
 (?i)mutable_buffer
-(?i)buffer_slice
-(?i)consuming_buffers
 (?i)execution_context
 (?i)any_executor
 (?i)stop_tokens?

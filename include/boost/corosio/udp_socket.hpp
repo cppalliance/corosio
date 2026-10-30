@@ -102,7 +102,7 @@ public:
         virtual std::coroutine_handle<> send_to(
             capy::continuation& cont,
             capy::executor_ref ex,
-            buffer_param buf,
+            detail::buffer_param buf,
             endpoint dest,
             int flags,
             std::stop_token token,
@@ -128,7 +128,7 @@ public:
         virtual std::coroutine_handle<> recv_from(
             capy::continuation& cont,
             capy::executor_ref ex,
-            buffer_param buf,
+            detail::buffer_param buf,
             endpoint* source,
             int flags,
             std::stop_token token,
@@ -241,7 +241,7 @@ public:
         virtual std::coroutine_handle<> send(
             capy::continuation& cont,
             capy::executor_ref ex,
-            buffer_param buf,
+            detail::buffer_param buf,
             int flags,
             std::stop_token token,
             std::error_code* ec,
@@ -265,7 +265,7 @@ public:
         virtual std::coroutine_handle<> recv(
             capy::continuation& cont,
             capy::executor_ref ex,
-            buffer_param buf,
+            detail::buffer_param buf,
             int flags,
             std::stop_token token,
             std::error_code* ec,
@@ -306,7 +306,7 @@ public:
 
         send_to_awaitable(
             udp_socket& s,
-            buffer_param buf,
+            detail::buffer_param buf,
             endpoint dest,
             int flags = 0) noexcept
             : s_(s)
@@ -319,7 +319,7 @@ public:
         friend detail::bytes_op_base<send_to_awaitable>;
 
         udp_socket& s_;
-        buffer_param buf_;
+        detail::buffer_param buf_;
         endpoint dest_;
         int flags_;
 
@@ -343,7 +343,7 @@ public:
 
         recv_from_awaitable(
             udp_socket& s,
-            buffer_param buf,
+            detail::buffer_param buf,
             endpoint& source,
             int flags = 0) noexcept
             : s_(s)
@@ -356,7 +356,7 @@ public:
         friend detail::bytes_op_base<recv_from_awaitable>;
 
         udp_socket& s_;
-        buffer_param buf_;
+        detail::buffer_param buf_;
         endpoint& source_;
         int flags_;
 
@@ -418,7 +418,8 @@ public:
     private:
         friend udp_socket;
 
-        send_awaitable(udp_socket& s, buffer_param buf, int flags = 0) noexcept
+        send_awaitable(
+            udp_socket& s, detail::buffer_param buf, int flags = 0) noexcept
             : s_(s)
             , buf_(buf)
             , flags_(flags)
@@ -428,7 +429,7 @@ public:
         friend detail::bytes_op_base<send_awaitable>;
 
         udp_socket& s_;
-        buffer_param buf_;
+        detail::buffer_param buf_;
         int flags_;
 
         std::coroutine_handle<>
@@ -444,7 +445,8 @@ public:
     private:
         friend udp_socket;
 
-        recv_awaitable(udp_socket& s, buffer_param buf, int flags = 0) noexcept
+        recv_awaitable(
+            udp_socket& s, detail::buffer_param buf, int flags = 0) noexcept
             : s_(s)
             , buf_(buf)
             , flags_(flags)
@@ -454,7 +456,7 @@ public:
         friend detail::bytes_op_base<recv_awaitable>;
 
         udp_socket& s_;
-        buffer_param buf_;
+        detail::buffer_param buf_;
         int flags_;
 
         std::coroutine_handle<>

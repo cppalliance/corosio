@@ -87,7 +87,7 @@ public:
             std::uint64_t offset,
             capy::continuation& cont,
             capy::executor_ref ex,
-            buffer_param buf,
+            detail::buffer_param buf,
             std::stop_token token,
             std::error_code* ec,
             std::size_t* bytes_out) = 0;
@@ -108,7 +108,7 @@ public:
             std::uint64_t offset,
             capy::continuation& cont,
             capy::executor_ref ex,
-            buffer_param buf,
+            detail::buffer_param buf,
             std::stop_token token,
             std::error_code* ec,
             std::size_t* bytes_out) = 0;

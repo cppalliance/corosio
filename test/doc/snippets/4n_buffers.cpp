@@ -45,19 +45,6 @@ namespace corosio = boost::corosio;
 namespace capy    = boost::capy;
 // end::assume[]
 
-// tag::buffer_slice_include[]
-#include <boost/capy/buffers/buffer_slice.hpp>
-
-// end::buffer_slice_include[]
-// tag::consuming_buffers_include[]
-#include <boost/capy/buffers/consuming_buffers.hpp>
-
-// end::consuming_buffers_include[]
-// tag::buffer_param_include[]
-#include <boost/corosio/detail/buffer_param.hpp>
-
-// end::buffer_param_include[]
-
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/ex/run_async.hpp>
 
@@ -131,52 +118,6 @@ multi_buffer_write(
     auto [ec, n] = co_await sock.write_some(send_bufs);
     // end::multi_buffer[]
 }
-
-capy::task<>
-slice_writes(
-    corosio::tcp_socket& sock, std::array<capy::const_buffer, 2> const& bufs)
-{
-    // tag::buffer_slice[]
-    // Send only the first 16 bytes of the sequence
-    auto [ec, n] = co_await capy::write(sock, capy::buffer_slice(bufs, 0, 16));
-    if (ec)
-        co_return;
-
-    // Everything after the first 16 bytes, as a value
-    auto rest       = capy::buffer_slice(bufs, 16);
-    std::tie(ec, n) = co_await capy::write(sock, rest);
-    // end::buffer_slice[]
-    sock.shutdown(corosio::shutdown_send);
-}
-
-capy::task<>
-consume_reads(
-    corosio::tcp_socket& sock,
-    std::array<capy::mutable_buffer, 2> const& bufs,
-    std::size_t& out_n)
-{
-    // tag::consuming_buffers[]
-    capy::consuming_buffers consuming(bufs);
-
-    // After reading n bytes:
-    auto [ec, n] = co_await sock.read_some(consuming.data());
-    consuming.consume(n); // Advance past the bytes read
-
-    // consuming.data() now spans the remaining unread bytes
-    // end::consuming_buffers[]
-    out_n = n;
-}
-
-// tag::buffer_param[]
-void
-accept_any_buffer(corosio::buffer_param buffers)
-{
-    capy::mutable_buffer temp[8];
-    std::size_t n = buffers.copy_to(temp, 8);
-    // Use temp[0..n-1]
-}
-
-// end::buffer_param[]
 
 // tag::lifetime[]
 // WRONG: buffer outlives string
@@ -402,80 +343,6 @@ struct buffers_test
         BOOST_TEST(total == 1040);
     }
 
-    void testBufferSlice()
-    {
-        corosio::io_context ioc;
-        auto [ec, a, b] = corosio::test::make_socket_pair(ioc);
-        BOOST_TEST(!ec);
-        if (ec)
-            return;
-        std::string part1(16, 'x');
-        std::string part2(16, 'y');
-        std::array<capy::const_buffer, 2> bufs = {
-            capy::const_buffer(part1.data(), part1.size()),
-            capy::const_buffer(part2.data(), part2.size())};
-
-        std::string got;
-        bool eof = false;
-        capy::run_async(ioc.get_executor())(slice_writes(a, bufs));
-        capy::run_async(ioc.get_executor())(
-            [](corosio::tcp_socket& peer, std::string& out,
-               bool& eof_out) -> capy::task<> {
-                char chunk[64];
-                for (;;)
-                {
-                    auto [ec, n] = co_await peer.read_some(
-                        capy::mutable_buffer(chunk, sizeof(chunk)));
-                    out.append(chunk, n);
-                    if (ec)
-                    {
-                        eof_out = ec == capy::cond::eof;
-                        co_return;
-                    }
-                }
-            }(b, got, eof));
-        ioc.run();
-        BOOST_TEST(eof);
-        BOOST_TEST(got == part1 + part2);
-    }
-
-    void testConsumingBuffers()
-    {
-        corosio::io_context ioc;
-        auto [ec, a, b] = corosio::test::make_socket_pair(ioc);
-        BOOST_TEST(!ec);
-        if (ec)
-            return;
-        char head[4] = {};
-        char tail[8] = {};
-        std::array<capy::mutable_buffer, 2> bufs = {
-            capy::mutable_buffer(head, sizeof(head)),
-            capy::mutable_buffer(tail, sizeof(tail))};
-        std::size_t n = 0;
-        capy::run_async(ioc.get_executor())(
-            [](corosio::tcp_socket& peer) -> capy::task<> {
-                co_await peer.write_some(capy::const_buffer("0123456789", 10));
-            }(b));
-        capy::run_async(ioc.get_executor())(consume_reads(a, bufs, n));
-        ioc.run();
-        BOOST_TEST(n > 0);
-        BOOST_TEST(std::memcmp(head, "0123", 4) == 0);
-    }
-
-    void testBufferParam()
-    {
-        char header[16];
-        char body[64];
-        // tag::buffer_param_call[]
-        // Works with any buffer sequence (implicit conversion)
-        std::array<capy::mutable_buffer, 2> bufs = {
-            capy::mutable_buffer(header, sizeof(header)),
-            capy::mutable_buffer(body, sizeof(body))};
-        accept_any_buffer(bufs);
-        // end::buffer_param_call[]
-        BOOST_TEST(capy::buffer_size(bufs) == 80);
-    }
-
     void testLifetime()
     {
         corosio::io_context ioc;
@@ -588,9 +455,6 @@ struct buffers_test
         testSingleBuffer();
         testMultipleBuffers();
         testBufferSize();
-        testBufferSlice();
-        testConsumingBuffers();
-        testBufferParam();
         testLifetime();
         testStringInvalidation();
         testScatterRead();

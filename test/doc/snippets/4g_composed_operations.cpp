@@ -47,10 +47,6 @@ namespace corosio = boost::corosio;
 namespace capy    = boost::capy;
 // end::assume[]
 
-// tag::slice_helper[]
-#include <boost/capy/buffers/buffer_slice.hpp>
-// end::slice_helper[]
-
 #include <boost/capy/detail/except.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
@@ -82,16 +78,6 @@ auto
 write(capy::WriteStream auto& stream, capy::ConstBufferSequence auto buffers)
     -> capy::task<capy::results<std::size_t>>;
 // end::write_signature[]
-
-// tag::slice_interface[]
-template<class BufferSequence>
-    requires capy::MutableBufferSequence<BufferSequence> ||
-    capy::ConstBufferSequence<BufferSequence>
-capy::slice_type<BufferSequence> buffer_slice(
-    BufferSequence const& seq,
-    std::size_t offset = 0,
-    std::size_t length = (std::numeric_limits<std::size_t>::max)());
-// end::slice_interface[]
 
 } // namespace synopsis
 
@@ -320,22 +306,6 @@ struct composed_operations_test
         ioc.run();
     }
 
-    void testBufferSlice()
-    {
-        char header[16];
-        char body[1024];
-        // tag::slice_helper[]
-
-        std::array<capy::mutable_buffer, 2> bufs = {
-            capy::mutable_buffer(header, 16), capy::mutable_buffer(body, 1024)};
-
-        // After reading 20 bytes, slice off what was consumed:
-        auto rest = capy::buffer_slice(bufs, 20);
-        // rest covers: 4 bytes of header remaining + full body
-        // end::slice_helper[]
-        BOOST_TEST_EQ(capy::buffer_size(rest), 1020u);
-    }
-
     void testErrorBindings()
     {
         corosio::io_context ioc;
@@ -407,7 +377,6 @@ struct composed_operations_test
         testReadFull();
         testReadUntilEof();
         testWriteFull();
-        testBufferSlice();
         testErrorBindings();
         testErrorExceptions();
         testCancellation();

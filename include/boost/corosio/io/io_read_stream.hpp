@@ -90,7 +90,7 @@ protected:
     virtual std::coroutine_handle<> do_read_some(
         capy::continuation& cont,
         capy::executor_ref ex,
-        buffer_param buffers,
+        detail::buffer_param buffers,
         std::stop_token token,
         std::error_code* ec,
         std::size_t* bytes) = 0;
