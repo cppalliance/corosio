@@ -68,7 +68,7 @@ do_open_socket(
         return ec;
     }
 
-    if (auto ec = socket_impl->init_and_register(fd))
+    if (auto ec = socket_impl->init_and_register(fd, family))
     {
         ::close(fd);
         return ec;
@@ -91,9 +91,6 @@ do_assign_fd(
     if (auto ec = Traits::validate_assigned_fd(fd))
         return ec;
 
-    if (auto ec = socket_impl->init_and_register(fd))
-        return ec;
-
     // Best-effort: refresh endpoint caches.
     using endpoint_type =
         std::remove_cvref_t<decltype(socket_impl->local_endpoint())>;
@@ -104,6 +101,11 @@ do_assign_fd(
     if (::getsockname(
             fd, reinterpret_cast<sockaddr*>(&local_storage), &local_len) == 0)
         local_ep = from_sockaddr_as(local_storage, local_len, endpoint_type{});
+
+    // Zero-initialised storage leaves AF_UNSPEC, so a failed lookup
+    // defers to the first use.
+    if (auto ec = socket_impl->init_and_register(fd, local_storage.ss_family))
+        return ec;
 
     endpoint_type remote_ep{};
     sockaddr_storage peer_storage{};

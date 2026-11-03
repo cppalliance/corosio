@@ -82,7 +82,9 @@ reactor_acceptor_impl<
             {
                 auto& impl =
                     static_cast<SocketFinal&>(*socket_svc->construct());
-                impl.set_socket(accepted);
+                impl.set_socket(
+                    accepted,
+                    peer_addrlen > 0 ? peer_storage.ss_family : AF_UNSPEC);
 
                 impl.desc_state_.fd = accepted;
                 {

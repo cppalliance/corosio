@@ -1479,9 +1479,30 @@ struct uring_faults
         BOOST_TEST_LT(writes.count(), unsigned(arms / 10));
     }
 
+    // Opened sockets know their family, so option calls never ask the
+    // kernel for it, local sockets included.
+    void testOpenedSocketsKnowFamily()
+    {
+        io_context ioc(uring);
+        tcp_socket t(ioc);
+        BOOST_TEST(!t.open(family::v6));
+        local_stream_socket l(ioc);
+        BOOST_TEST(!l.open());
+        // Counts this thread's calls; the one it would fail is never
+        // reached.
+        fault_scope f(sys::getsockname, EBADF, 1u << 30);
+        test::must_ok(t.set_option(socket_option::no_delay(true)));
+        test::must_ok(t.set_option(socket_option::send_buffer_size(4096)));
+        test::must_ok(t.set_option(socket_option::linger(true, 0)));
+        test::must_ok(l.set_option(socket_option::send_buffer_size(4096)));
+        test::must_ok(l.set_option(socket_option::linger(true, 0)));
+        BOOST_TEST_EQ(f.count(), 0u);
+    }
+
     void run()
     {
         testRingInitSqExhaustion();
+        testOpenedSocketsKnowFamily();
         testCancelSqFullBestEffort();
         testMultishotArmFailure();
         testMultishotRearmKeepsAccepting();

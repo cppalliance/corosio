@@ -92,6 +92,7 @@ protected:
     // references below (two-phase lookup).
     using native_socket_base<Derived, ImplBase, Endpoint>::fd_;
     using native_socket_base<Derived, ImplBase, Endpoint>::local_endpoint_;
+    using native_socket_base<Derived, ImplBase, Endpoint>::family_;
 
 public:
     ~reactor_basic_socket() override = default;
@@ -100,18 +101,22 @@ public:
         the reactor.
 
         @param fd The descriptor to adopt.
+        @param family The descriptor's address family, or `AF_UNSPEC`
+            to look it up when first needed.
 
         @return The error if the reactor rejects the descriptor, in
         which case the implementation is left closed and the caller
         retains ownership of @a fd; otherwise a default constructed
         error code.
     */
-    std::error_code init_and_register(int fd) noexcept
+    std::error_code init_and_register(int fd, int family = AF_UNSPEC) noexcept
     {
-        fd_ = fd;
+        fd_     = fd;
+        family_ = family;
         if (auto ec = this->register_fd(fd))
         {
-            fd_ = -1;
+            fd_     = -1;
+            family_ = AF_UNSPEC;
             return ec;
         }
         return {};
@@ -137,6 +142,7 @@ public:
             ::close(fd_);
             fd_ = -1;
         }
+        family_         = AF_UNSPEC;
         local_endpoint_ = Endpoint{};
     }
 
@@ -150,6 +156,7 @@ public:
         this->abandon_all();
         native_handle_type released = fd_;
         fd_                         = -1;
+        family_                     = AF_UNSPEC;
         local_endpoint_             = Endpoint{};
         return released;
     }
@@ -171,6 +178,7 @@ public:
     void reuse() noexcept
     {
         fd_             = -1;
+        family_         = AF_UNSPEC;
         local_endpoint_ = Endpoint{};
         this->reset_desc_state();
     }
@@ -194,6 +202,7 @@ public:
             std::memset(static_cast<void*>(&field), 0xDB, sizeof(field));
         };
         smash(fd_);
+        smash(family_);
         smash(local_endpoint_);
         this->poison_desc_state();
     }
