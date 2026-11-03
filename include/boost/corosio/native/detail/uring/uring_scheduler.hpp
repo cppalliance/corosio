@@ -342,6 +342,15 @@ public:
     void
     flush_after_cancel(int fd, std::initializer_list<uring_op*> ops) noexcept
     {
+        // An op clears sqe_set only once the kernel is done with its
+        // entry, so with none set nothing names `fd`. Closing an idle
+        // socket then skips the flush's kernel entries and the wake.
+        bool armed = false;
+        for (auto* op : ops)
+            armed = armed || op->sqe_set.load(std::memory_order_acquire);
+        if (!armed)
+            return;
+
         flush_after_cancel(fd, [&]() noexcept {
             for (auto* op : ops)
                 cancel_op_locked(op);

@@ -1499,10 +1499,27 @@ struct uring_faults
         BOOST_TEST_EQ(f.count(), 0u);
     }
 
+    // A socket with nothing armed leaves the ring nothing to flush, so
+    // closing it costs neither a submit nor a wake.
+    void testIdleCloseSkipsRing()
+    {
+        io_context ioc(uring);
+        auto [a, b] = test::must(test::make_socket_pair(ioc));
+        // Count this thread's calls; the ones they would fail are never
+        // reached.
+        fault_scope submits(sys::io_uring_submit, EIO, 1u << 30);
+        fault_scope writes(sys::write, EIO, 1u << 30);
+        a.close();
+        b.close();
+        BOOST_TEST_EQ(submits.count(), 0u);
+        BOOST_TEST_EQ(writes.count(), 0u);
+    }
+
     void run()
     {
         testRingInitSqExhaustion();
         testOpenedSocketsKnowFamily();
+        testIdleCloseSkipsRing();
         testCancelSqFullBestEffort();
         testMultishotArmFailure();
         testMultishotRearmKeepsAccepting();
