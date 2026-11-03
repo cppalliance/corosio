@@ -332,3 +332,20 @@ io_uring_wait_cqe_timeout(
     rewrite_visible_cqes(ring);
     return rc;
 }
+
+// The scheduler's non-blocking pass reaps through this peek, with no
+// other entry point in between.
+extern "C" unsigned
+io_uring_peek_batch_cqe(io_uring* ring, io_uring_cqe** cqes, unsigned count)
+    LIBURING_NOEXCEPT
+{
+    COROSIO_FAULT_REAL(
+        io_uring_peek_batch_cqe,
+        unsigned (*)(io_uring*, io_uring_cqe**, unsigned));
+    int rc;
+    if (uring_fail(sys::io_uring_peek_batch_cqe, rc))
+        return 0;
+    unsigned const n = real(ring, cqes, count);
+    rewrite_visible_cqes(ring);
+    return n;
+}

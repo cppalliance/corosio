@@ -1387,6 +1387,7 @@ namespace {
     COROSIO_FAULT_CENSUS(io_uring_submit_and_wait_timeout),
     COROSIO_FAULT_CENSUS(io_uring_submit_and_get_events),
     COROSIO_FAULT_CENSUS(io_uring_wait_cqe_timeout),
+    COROSIO_FAULT_CENSUS(io_uring_peek_batch_cqe),
 #endif
 };
 

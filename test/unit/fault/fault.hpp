@@ -104,6 +104,7 @@ enum class sys
     io_uring_submit_and_wait_timeout,
     io_uring_submit_and_get_events,
     io_uring_wait_cqe_timeout,
+    io_uring_peek_batch_cqe,
     uring_sqe_full,
     uring_sq_fill,
     cpp_new,
