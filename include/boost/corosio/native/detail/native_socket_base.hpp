@@ -27,10 +27,10 @@
     Holds the part of a socket impl that does not care whether the backend
     is readiness-based (epoll/kqueue/select, which park ops on a
     descriptor_state) or completion-based (io_uring, which submits SQEs):
-    the file descriptor, the cached local endpoint, and the synchronous
-    accessors (native_handle / options / bind). The impl lifecycle (the
-    intrusive refcount + the owning service's recycling pool) is carried
-    by `io_object::implementation`, not by this base.
+    the file descriptor, the cached family and local endpoint, and the
+    synchronous accessors (native_handle / options / bind). The impl
+    lifecycle (the intrusive refcount + the owning service's recycling
+    pool) is carried by `io_object::implementation`, not by this base.
 
     reactor_basic_socket derives from this and adds the readiness machinery
     (descriptor_state, register_op, the cancel/close that deregister from
@@ -63,6 +63,10 @@ protected:
     native_socket_base() = default;
 
     int fd_ = -1;
+    // Option calls, connects and datagram sends all need the family.
+    // Backends seed it where they know it and clear it whenever the
+    // descriptor goes; otherwise it is looked up once, on first use.
+    mutable int family_ = AF_UNSPEC;
     // mutable so a derived const local_endpoint() override can lazily fill
     // it via getsockname() on first read (io_uring's lazy_pending state).
     mutable Endpoint local_endpoint_;
@@ -76,9 +80,25 @@ public:
         return fd_;
     }
 
+    /// Return the socket's address family.
     corosio::family family() const noexcept override
     {
-        return to_family(socket_family(fd_));
+        return to_family(native_family());
+    }
+
+    /** Return the descriptor's native address family.
+
+        @return `AF_INET`, `AF_INET6`, `AF_UNIX`, or `AF_UNSPEC` if the
+            socket is closed or the lookup fails.
+    */
+    int native_family() const noexcept
+    {
+        if (fd_ < 0)
+            return AF_UNSPEC;
+        // A failed lookup stays uncached, so the next call retries.
+        if (family_ == AF_UNSPEC)
+            family_ = socket_family(fd_);
+        return family_;
     }
 
     /// Return the cached local endpoint.
@@ -118,10 +138,11 @@ public:
         return {};
     }
 
-    /// Assign the file descriptor.
-    void set_socket(int fd) noexcept
+    /// Assign the file descriptor and, when known, its family.
+    void set_socket(int fd, int family = AF_UNSPEC) noexcept
     {
-        fd_ = fd;
+        fd_     = fd;
+        family_ = family;
     }
 
     /// Cache the local endpoint.
@@ -141,7 +162,7 @@ public:
     std::error_code do_bind(Endpoint const& ep) noexcept
     {
         sockaddr_storage storage{};
-        socklen_t addrlen = to_sockaddr(ep, socket_family(fd_), storage);
+        socklen_t addrlen = to_sockaddr(ep, native_family(), storage);
         if (::bind(fd_, reinterpret_cast<sockaddr*>(&storage), addrlen) != 0)
             return make_err(errno);
 

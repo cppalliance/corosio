@@ -397,7 +397,7 @@ reactor_stream_socket<
     auto& op = conn_;
 
     sockaddr_storage storage{};
-    socklen_t addrlen = to_sockaddr(ep, socket_family(this->fd_), storage);
+    socklen_t addrlen = to_sockaddr(ep, this->native_family(), storage);
     int result =
         ::connect(this->fd_, reinterpret_cast<sockaddr*>(&storage), addrlen);
 

@@ -88,7 +88,6 @@ class BOOST_COROSIO_DECL uring_tcp_socket final
 {
     friend uring_tcp_service;
 
-    int family_             = AF_UNSPEC; // cached at open_socket
     uring_scheduler* sched_ = nullptr;
     uring_tcp_service* svc_ = nullptr;
 
@@ -334,7 +333,7 @@ public:
                     *ec = capy::error::canceled;
                 return dispatch_coro(ex, cont);
             }
-            conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
+            conn_.addrlen = to_sockaddr(ep, this->native_family(), conn_.addr);
             conn_.prepare(
                 cont, ex, ec, fd_, sched_, detail::object_ref(this), ep,
                 &remote_endpoint_, &local_endpoint_, token);
@@ -349,7 +348,7 @@ public:
 
         // A speculative ::connect would leave the fd in EINPROGRESS and
         // a subsequent IORING_OP_CONNECT would see EALREADY — avoid.
-        conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
+        conn_.addrlen = to_sockaddr(ep, this->native_family(), conn_.addr);
         conn_.prepare(
             cont, ex, ec, fd_, sched_, detail::object_ref(this), ep,
             &remote_endpoint_, &local_endpoint_, token);
@@ -421,6 +420,7 @@ public:
             sched_->flush_after_cancel(fd_, {&rd_, &wr_, &conn_, &wait_op_});
         int fd           = fd_;
         fd_              = -1;
+        family_          = AF_UNSPEC;
         local_endpoint_  = endpoint{};
         remote_endpoint_ = endpoint{};
         local_endpoint_state_.store(
@@ -449,6 +449,7 @@ public:
             ::close(fd_);
             fd_ = -1;
         }
+        family_          = AF_UNSPEC;
         local_endpoint_  = endpoint{};
         remote_endpoint_ = endpoint{};
         local_endpoint_state_.store(
@@ -472,11 +473,9 @@ public:
         zero; each op's own `prepare()` overwrites its iovec/addr scratch
         before the next use. What is left: the endpoints and their
         resolution state (a connect completing on another thread can
-        write them after close), `family_`
-        (cached by `open_socket()`, but never touched by the accepted-
-        connection `adopt_fd()` path, so a socket recycled through
-        `adopt_fd()` would otherwise keep the prior session's family),
-        the speculation hint (a per-connection performance heuristic
+        write them after close), `family_` (a recycled socket must not
+        report the prior session's family before it is set again), the
+        speculation hint (a per-connection performance heuristic
         that must not leak into the next logical connection), and the
         `stop_cb` invariant on every op slot.
 
@@ -688,12 +687,14 @@ public:
 
         @param fd   Accepted file descriptor (must be non-blocking).
         @param peer Peer endpoint from `accept(2)`.
+        @param family Address family of the accepted socket.
         @return Raw pointer to the registered impl.
     */
-    uring_tcp_socket* adopt_fd(int fd, endpoint const& peer)
+    uring_tcp_socket* adopt_fd(int fd, endpoint const& peer, int family)
     {
         auto* p = this->acquire_impl();
         p->fd_ = fd;
+        p->family_          = family;
         p->remote_endpoint_ = peer;
         // Mark the local endpoint as authoritative-but-unresolved.
         // The accessor will fetch it via getsockname on first call.
@@ -842,7 +843,7 @@ public:
         socklen_t /*peer_len*/) noexcept
     {
         auto* svc = static_cast<uring_tcp_service*>(peer_service);
-        return svc->adopt_fd(fd, sockaddr_to_endpoint(peer));
+        return svc->adopt_fd(fd, sockaddr_to_endpoint(peer), peer.ss_family);
     }
 };
 
@@ -1393,6 +1394,7 @@ public:
             sched_->flush_after_cancel(fd_, {&rd_, &wr_, &conn_, &wait_op_});
         int fd           = fd_;
         fd_              = -1;
+        family_          = AF_UNSPEC;
         local_endpoint_  = corosio::local_endpoint{};
         remote_endpoint_ = corosio::local_endpoint{};
         return fd;
@@ -1418,6 +1420,7 @@ public:
             ::close(fd_);
             fd_ = -1;
         }
+        family_          = AF_UNSPEC;
         local_endpoint_  = corosio::local_endpoint{};
         remote_endpoint_ = corosio::local_endpoint{};
     }
@@ -1522,6 +1525,7 @@ public:
             sock.close_socket();
         // LCOV_EXCL_STOP
         sock.fd_ = fd;
+        sock.family_ = AF_UNIX;
         return {};
     }
 
@@ -1545,6 +1549,7 @@ public:
             return ec;
 
         sock.fd_ = nfd;
+        sock.family_ = AF_UNIX;
 
         sockaddr_storage local{};
         socklen_t local_len = sizeof(local);
@@ -1578,6 +1583,7 @@ public:
     {
         auto* p = this->acquire_impl();
         p->fd_ = fd;
+        p->family_          = AF_UNIX;
         p->remote_endpoint_ = peer;
 
         sockaddr_storage local{};
@@ -1955,7 +1961,6 @@ class BOOST_COROSIO_DECL uring_udp_socket final
 {
     friend uring_udp_service;
 
-    int family_             = AF_UNSPEC; // cached at open_socket
     uring_scheduler* sched_ = nullptr;
     uring_udp_service* svc_ = nullptr;
 
@@ -2072,7 +2077,7 @@ public:
                     *ec = capy::error::canceled;
                 return dispatch_coro(ex, cont);
             }
-            conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
+            conn_.addrlen = to_sockaddr(ep, this->native_family(), conn_.addr);
             conn_.prepare(
                 cont, ex, ec, fd_, sched_, detail::object_ref(this), ep,
                 &remote_endpoint_, &local_endpoint_, token);
@@ -2087,7 +2092,7 @@ public:
 
         // io_uring's IORING_OP_CONNECT re-invokes connect(2) internally;
         // a prior speculative ::connect would leave EINPROGRESS → EALREADY.
-        conn_.addrlen = to_sockaddr(ep, family_, conn_.addr);
+        conn_.addrlen = to_sockaddr(ep, this->native_family(), conn_.addr);
         conn_.prepare(
             cont, ex, ec, fd_, sched_, detail::object_ref(this), ep,
             &remote_endpoint_, &local_endpoint_, token);
@@ -2160,6 +2165,7 @@ public:
                 fd_, {&conn_, &send_, &recv_, &wait_op_});
         int fd           = fd_;
         fd_              = -1;
+        family_          = AF_UNSPEC;
         local_endpoint_  = endpoint{};
         remote_endpoint_ = endpoint{};
         return fd;
@@ -2186,6 +2192,7 @@ public:
             ::close(fd_);
             fd_ = -1;
         }
+        family_          = AF_UNSPEC;
         local_endpoint_  = endpoint{};
         remote_endpoint_ = endpoint{};
     }
@@ -2199,8 +2206,7 @@ public:
         `assign_socket()`, not by this reset, so resetting it to
         `AF_UNSPEC` here is defensive — it guards any future entry
         path that constructs a usable socket without going through
-        either of those, the same hazard `uring_tcp_socket::reuse()`
-        documents for its `adopt_fd()` path.
+        either of those.
 
         @pre refs_ == 0, fd closed, no op in flight.
     */
@@ -2808,6 +2814,7 @@ public:
                 fd_, {&conn_, &send_, &recv_, &wait_op_});
         int fd           = fd_;
         fd_              = -1;
+        family_          = AF_UNSPEC;
         local_endpoint_  = corosio::local_endpoint{};
         remote_endpoint_ = corosio::local_endpoint{};
         return fd;
@@ -2834,6 +2841,7 @@ public:
             ::close(fd_);
             fd_ = -1;
         }
+        family_          = AF_UNSPEC;
         local_endpoint_  = corosio::local_endpoint{};
         remote_endpoint_ = corosio::local_endpoint{};
     }
@@ -3161,6 +3169,7 @@ public:
             sock.close_socket();
         // LCOV_EXCL_STOP
         sock.fd_ = fd;
+        sock.family_ = AF_UNIX;
         return {};
     }
 
@@ -3184,6 +3193,7 @@ public:
             return ec;
 
         sock.fd_ = nfd;
+        sock.family_ = AF_UNIX;
 
         sockaddr_storage local{};
         socklen_t local_len = sizeof(local);

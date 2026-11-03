@@ -495,7 +495,7 @@ reactor_datagram_socket<
     }
 
     // Set up destination address
-    op.dest_len  = to_sockaddr(dest, socket_family(this->fd_), op.dest_storage);
+    op.dest_len  = to_sockaddr(dest, this->native_family(), op.dest_storage);
     op.fd        = this->fd_;
     op.msg_flags = to_native_msg_flags(flags);
 
@@ -712,7 +712,7 @@ reactor_datagram_socket<
     auto& op = conn_;
 
     sockaddr_storage storage{};
-    socklen_t addrlen = to_sockaddr(ep, socket_family(this->fd_), storage);
+    socklen_t addrlen = to_sockaddr(ep, this->native_family(), storage);
     int result =
         ::connect(this->fd_, reinterpret_cast<sockaddr*>(&storage), addrlen);
 

@@ -13,6 +13,7 @@
 
 #include "fault.hpp"
 #include "fault_test_utils.hpp"
+#include "test_utils.hpp"
 #include "context.hpp"
 #include "must.hpp"
 #include "test_suite.hpp"
@@ -41,6 +42,7 @@
 
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 namespace boost::corosio::test::fault {
 
@@ -916,24 +918,39 @@ struct reactor_common_faults
         }
     }
 
-    /* The address family a socket was created with is read back from
-       the kernel, not remembered, and a v4 destination on a v6 socket
-       is the one case where the answer changes the sockaddr handed to
-       connect(). A failed probe reports AF_UNSPEC, which yields the
-       v4 shape and an address the v6 socket cannot use.
+    /* An adopted descriptor's family is read back from the kernel on
+       first use, and a v4 destination on a v6 socket is the one case
+       where the answer changes the sockaddr handed to connect(). A
+       failed probe reports AF_UNSPEC, which yields the v4 shape and an
+       address the v6 socket cannot use.
     */
     void testSocketFamilyProbeFails()
     {
         io_context ioc(Backend);
         tcp_acceptor acc(ioc, loopback());
         tcp_socket s(ioc);
-        if (s.open(family::v6))
+        int const raw = ::socket(AF_INET6, SOCK_STREAM, 0);
+        if (raw < 0)
         {
             std::fprintf(
                 stderr,
                 "fault harness: no IPv6 socket on this host; skipping "
                 "testSocketFamilyProbeFails\n");
             return;
+        }
+        make_native_adoptable(raw);
+        {
+            // Assign validates the descriptor with the first lookup and
+            // learns the family from the second; failing that one leaves
+            // the family for connect to find.
+            fault_scope f(sys::getsockname, EBADF, 2);
+            if (s.assign(raw))
+            {
+                ::close(raw);
+                BOOST_TEST(false);
+                return;
+            }
+            BOOST_TEST(f.fired());
         }
         std::error_code cec;
         unsigned probes = 0;
@@ -956,6 +973,107 @@ struct reactor_common_faults
         BOOST_TEST(cec == std::errc::address_family_not_supported);
 #endif
         BOOST_TEST(s.is_open());
+    }
+
+    // An opened socket knows its family: option calls never ask the
+    // kernel for it, and neither does a connect, which needs it to
+    // shape a v4 destination for a v6 socket.
+    void testOpenedSocketKnowsFamily()
+    {
+        io_context ioc(Backend);
+        {
+            tcp_socket s(ioc);
+            BOOST_TEST(!s.open(family::v4));
+            // Counts this thread's calls; the one it would fail is
+            // never reached.
+            fault_scope f(sys::getsockname, EBADF, 1u << 30);
+            test::must_ok(s.set_option(socket_option::no_delay(true)));
+            test::must_ok(s.set_option(socket_option::send_buffer_size(4096)));
+            test::must_ok(s.set_option(socket_option::linger(true, 0)));
+            BOOST_TEST_EQ(f.count(), 0u);
+        }
+#if defined(__linux__)
+        // A v4 destination on a v6 socket is shaped as a mapped address
+        // only when the family is known; v6-only sockets then report the
+        // network unreachable. A failed lookup would yield the v4 shape
+        // and EINVAL instead (see testSocketFamilyProbeFails).
+        tcp_acceptor acc(ioc, loopback());
+        tcp_socket s(ioc);
+        if (s.open(family::v6))
+        {
+            std::fprintf(
+                stderr,
+                "fault harness: no IPv6 socket on this host; skipping "
+                "testOpenedSocketKnowsFamily\n");
+            return;
+        }
+        std::error_code cec;
+        auto body = [&]() -> capy::task<> {
+            fault_scope f(sys::getsockname, EBADF);
+            auto [ec] = co_await s.connect(acc.local_endpoint());
+            cec       = ec;
+        };
+        capy::run_async(ioc.get_executor())(body());
+        ioc.run();
+        BOOST_TEST(cec == std::errc::network_unreachable);
+#endif
+    }
+
+    // Accepted and assigned sockets learn their family from the
+    // addresses the library already reads, so option calls never ask.
+    void testAdoptedSocketsKnowFamily()
+    {
+        io_context ioc(Backend);
+        tcp_acceptor acc(ioc, loopback());
+        unsigned parked = 1, inline_ = 1;
+        tcp_socket pc(ioc), ps(ioc);
+        auto accept_parked = [&]() -> capy::task<> {
+            auto [ec] = co_await acc.accept(ps);
+            BOOST_TEST(!ec);
+            fault_scope f(sys::getsockname, EBADF, 1u << 30);
+            test::must_ok(ps.set_option(socket_option::no_delay(true)));
+            parked = f.count();
+        };
+        auto connect_parked = [&]() -> capy::task<> {
+            auto [ec] = co_await pc.connect(acc.local_endpoint());
+            BOOST_TEST(!ec);
+        };
+        capy::run_async(ioc.get_executor())(accept_parked());
+        capy::run_async(ioc.get_executor())(connect_parked());
+        ioc.run();
+        ioc.restart();
+
+        // One accept at a time: the connection is already queued.
+        auto accept_inline = [&]() -> capy::task<> {
+            tcp_socket c(ioc), s(ioc);
+            auto [cec] = co_await c.connect(acc.local_endpoint());
+            BOOST_TEST(!cec);
+            auto [aec] = co_await acc.accept(s);
+            BOOST_TEST(!aec);
+            fault_scope f(sys::getsockname, EBADF, 1u << 30);
+            test::must_ok(s.set_option(socket_option::no_delay(true)));
+            inline_ = f.count();
+        };
+        capy::run_async(ioc.get_executor())(accept_inline());
+        ioc.run();
+        BOOST_TEST_EQ(parked, 0u);
+        BOOST_TEST_EQ(inline_, 0u);
+
+        int const raw = ::socket(AF_INET, SOCK_STREAM, 0);
+        BOOST_TEST(raw >= 0);
+        if (raw < 0)
+            return;
+        make_native_adoptable(raw);
+        tcp_socket s(ioc);
+        if (s.assign(raw))
+        {
+            ::close(raw);
+            BOOST_TEST(false);
+            return;
+        }
+        fault_scope f(sys::getsockname, EBADF, 1u << 30);
+        test::must_ok(s.set_option(socket_option::no_delay(true)));
+        BOOST_TEST_EQ(f.count(), 0u);
     }
 
     void testErrorEventSoError()
@@ -1217,6 +1335,8 @@ struct reactor_common_faults
         testErrorEventOnWritableWrite();
         testErrorEventOnWritableWaitWrite();
         testSocketFamilyProbeFails();
+        testOpenedSocketKnowsFamily();
+        testAdoptedSocketsKnowFamily();
         testDatagramFails();
     }
 };

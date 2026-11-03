@@ -17,7 +17,9 @@
 
 #include <boost/corosio/backend.hpp>
 #include <boost/corosio/delay.hpp>
+#include <boost/corosio/ipv6_address.hpp>
 #include <boost/corosio/native/native_io_context.hpp>
+#include <boost/corosio/native/detail/uring/uring_types.hpp>
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
@@ -104,6 +106,21 @@ local_port(int fd)
     ::getsockname(fd, reinterpret_cast<sockaddr*>(&sa), &len);
     return ntohs(sa.sin_port);
 }
+
+// Exposes the family the socket renders its options with. As the most
+// derived class it initializes the virtual io_object base itself.
+struct family_probe_socket : tcp_socket
+{
+    explicit family_probe_socket(capy::execution_context& ctx)
+        : io_object(handle(ctx, ctx.use_service<detail::uring_tcp_service>()))
+    {
+    }
+
+    corosio::family impl_family() const noexcept
+    {
+        return static_cast<tcp_socket::implementation*>(h_.get())->family();
+    }
+};
 
 struct multishot_acceptor_test
 {
@@ -390,9 +407,60 @@ struct multishot_acceptor_test
         runner.join();
     }
 
+    // A dual-stack listener takes an IPv4 client on an IPv6 socket, so
+    // the accepted socket's family is the listener's, not the peer's.
+    void testAcceptedSocketTakesListenerFamily()
+    {
+        native_io_context<uring> ioc;
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.open(family::v6));
+        test::must_ok(acc.set_option(socket_option::v6_only(false)));
+        BOOST_TEST(!acc.bind(endpoint(ipv6_address::any(), 0)));
+        BOOST_TEST(!acc.listen());
+        int client = raw_connect(acc.local_endpoint().port());
+        BOOST_TEST_GE(client, 0);
+
+        family_probe_socket server(ioc);
+        bool accepted = false;
+        capy::run_async(ioc.get_executor())(
+            [](tcp_acceptor& a, tcp_socket& s, bool& done) -> capy::task<> {
+                auto [ec] = co_await a.accept(s);
+                done      = !ec;
+            }(acc, server, accepted));
+        ioc.run();
+        BOOST_TEST(accepted);
+        BOOST_TEST(server.impl_family() == family::v6);
+
+        server.close();
+        if (client >= 0)
+            ::close(client);
+        acc.close();
+    }
+
+    // The family follows each open, and a closed socket reports what
+    // one never opened does.
+    void testSocketFamilyFollowsOpen()
+    {
+        native_io_context<uring> ioc;
+        family_probe_socket never(ioc);
+        family_probe_socket s(ioc);
+
+        BOOST_TEST(!s.open(family::v4));
+        BOOST_TEST(s.impl_family() == family::v4);
+        s.close();
+        BOOST_TEST(s.impl_family() == never.impl_family());
+
+        BOOST_TEST(!s.open(family::v6));
+        BOOST_TEST(s.impl_family() == family::v6);
+        s.close();
+        BOOST_TEST(s.impl_family() == never.impl_family());
+    }
+
     void run()
     {
         testContextConstructs();
+        testAcceptedSocketTakesListenerFamily();
+        testSocketFamilyFollowsOpen();
         testCloseReapsArming();
         testAcceptBufferedConnection();
         testAcceptParkedThenDelivered();

@@ -292,6 +292,46 @@ struct tcp_socket_test
             std::errc::bad_file_descriptor);
     }
 
+    // A socket reopened in another family connects in the new one.
+    // An IPv4 destination is the case where the family decides the
+    // address handed to the kernel.
+    void testReopenInOtherFamilyConnects()
+    {
+        io_context ioc(Backend);
+
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.open());
+        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!acc.listen());
+        auto const ep = acc.local_endpoint();
+
+        tcp_socket client(ioc);
+        tcp_socket server(ioc);
+        BOOST_TEST(!client.open(family::v6));
+        client.close();
+        BOOST_TEST(!client.open(family::v4));
+
+        std::error_code cec, aec;
+        auto connect_task = [&]() -> capy::task<> {
+            auto [ec] = co_await client.connect(ep);
+            cec       = ec;
+        };
+        auto accept_task = [&]() -> capy::task<> {
+            auto [ec] = co_await acc.accept(server);
+            aec       = ec;
+        };
+        capy::run_async(ioc.get_executor())(connect_task());
+        capy::run_async(ioc.get_executor())(accept_task());
+        ioc.run();
+
+        BOOST_TEST(!cec);
+        BOOST_TEST(!aec);
+        client.close();
+        server.close();
+        acc.close();
+    }
+
     void testBindV6()
     {
         io_context ioc(Backend);
@@ -1936,6 +1976,7 @@ struct tcp_socket_test
         testConstruction();
         testOpen();
         testOpenWhenAlreadyOpen();
+        testReopenInOtherFamilyConnects();
         testCancelOnClosedSocket();
         testNativeHandleClosedAndOpen();
         testBind();

@@ -171,7 +171,8 @@ setup_accepted_socket(
     }
 
     auto& impl = static_cast<SocketImpl&>(*socket_svc->construct());
-    impl.set_socket(accepted_fd);
+    impl.set_socket(
+        accepted_fd, peer_addrlen > 0 ? peer_storage.ss_family : AF_UNSPEC);
 
     impl.desc_state_.fd = accepted_fd;
     {
