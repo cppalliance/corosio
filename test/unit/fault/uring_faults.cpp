@@ -1515,11 +1515,42 @@ struct uring_faults
         BOOST_TEST_EQ(writes.count(), 0u);
     }
 
+    // A live arming takes each connection as it lands, so an accept
+    // never finds one for accept4 to take.
+    void testArmedAcceptSkipsDirectAccept()
+    {
+        io_context ioc(uring);
+        tcp_acceptor acc(ioc, uring_loopback());
+        endpoint const ep = acc.local_endpoint();
+        tcp_socket client(ioc);
+        tcp_socket server(ioc);
+        bool connected = false;
+        bool accepted  = false;
+        // Counts this thread's accept4 calls; the one it would fail is
+        // never reached.
+        fault_scope accepts(sys::accept4, EIO, 1u << 30);
+        capy::run_async(ioc.get_executor())(
+            [](tcp_socket& c, endpoint ep, bool& done) -> capy::task<> {
+                auto [ec] = co_await c.connect(ep);
+                done      = !ec;
+            }(client, ep, connected));
+        capy::run_async(ioc.get_executor())(
+            [](tcp_acceptor& a, tcp_socket& s, bool& done) -> capy::task<> {
+                auto [ec] = co_await a.accept(s);
+                done      = !ec;
+            }(acc, server, accepted));
+        ioc.run();
+        BOOST_TEST(connected);
+        BOOST_TEST(accepted);
+        BOOST_TEST_EQ(accepts.count(), 0u);
+    }
+
     void run()
     {
         testRingInitSqExhaustion();
         testOpenedSocketsKnowFamily();
         testIdleCloseSkipsRing();
+        testArmedAcceptSkipsDirectAccept();
         testCancelSqFullBestEffort();
         testMultishotArmFailure();
         testMultishotRearmKeepsAccepting();

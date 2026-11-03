@@ -757,31 +757,41 @@ public:
         w->ec_out   = ec;
         w->impl_out = impl_out;
 
-        sockaddr_storage peer_storage{};
-        socklen_t peer_len = sizeof(peer_storage);
-        int accepted_fd    = ::accept4(
-            fd_, reinterpret_cast<sockaddr*>(&peer_storage), &peer_len,
-            SOCK_NONBLOCK | SOCK_CLOEXEC);
-        if (accepted_fd >= 0)
+        // A live arming takes each connection as it lands, so a direct
+        // accept would only find the backlog empty.
+        bool armed = false;
         {
-            w->peer_service = peer_service_;
-            w->adopt_fn     = &Derived::adopt_thunk;
-            w->accepted_fd  = accepted_fd;
-            w->peer_storage = peer_storage;
-            w->peer_len     = peer_len;
-            sched_->post(w);
-            return;
+            std::lock_guard lk(mutex_);
+            armed = armed_ != nullptr;
         }
-        // accept4 returned <0 — only EAGAIN/EWOULDBLOCK should fall
-        // through to the parked/waiter path. Other errors (EBADF, etc.)
-        // surface through the existing scheduler-completion path so the
-        // user sees them via the node's ec_out: `err` set means
-        // do_handler delivers make_err(err).
-        if (errno != EAGAIN && errno != EWOULDBLOCK)
+        if (!armed)
         {
-            w->err = errno;
-            sched_->post(w);
-            return;
+            sockaddr_storage peer_storage{};
+            socklen_t peer_len = sizeof(peer_storage);
+            int accepted_fd    = ::accept4(
+                fd_, reinterpret_cast<sockaddr*>(&peer_storage), &peer_len,
+                SOCK_NONBLOCK | SOCK_CLOEXEC);
+            if (accepted_fd >= 0)
+            {
+                w->peer_service = peer_service_;
+                w->adopt_fn     = &Derived::adopt_thunk;
+                w->accepted_fd  = accepted_fd;
+                w->peer_storage = peer_storage;
+                w->peer_len     = peer_len;
+                sched_->post(w);
+                return;
+            }
+            // accept4 returned <0 — only EAGAIN/EWOULDBLOCK should fall
+            // through to the parked/waiter path. Other errors (EBADF,
+            // etc.) surface through the existing scheduler-completion
+            // path so the user sees them via the node's ec_out: `err`
+            // set means do_handler delivers make_err(err).
+            if (errno != EAGAIN && errno != EWOULDBLOCK)
+            {
+                w->err = errno;
+                sched_->post(w);
+                return;
+            }
         }
 
         bool have_ready = false;
