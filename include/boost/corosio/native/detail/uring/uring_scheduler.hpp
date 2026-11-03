@@ -531,6 +531,13 @@ private:
 
         submit_sqes_op() noexcept : scheduler_op(&do_handler) {}
 
+        // do_one dispatches through operator(); do_handler alone
+        // serves only the destroy path.
+        void operator()() override
+        {
+            do_handler(sched_, this, 0, 0);
+        }
+
         static void do_handler(
             void* owner,
             scheduler_op* base,
