@@ -132,9 +132,8 @@ struct multishot_acceptor_test
 
     // Destroying an acceptor must leave uring_inflight_ balanced: the
     // multishot accept SQE and the cancel SQEs close submits are each
-    // counted once and must each be uncounted by their CQEs. The
-    // counter gates the do_one ring pump, so a leak would accumulate
-    // across every acceptor teardown for the lifetime of the io_context.
+    // counted once and must each be uncounted by their CQEs. Shutdown
+    // waits for the counter to drain, so a leak would hang teardown.
     void testCloseReapsArming()
     {
         uring_test_context ctx;

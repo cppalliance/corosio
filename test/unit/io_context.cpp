@@ -13,6 +13,7 @@
 #include <boost/corosio/tcp_socket.hpp>
 #include <boost/corosio/test/socket_pair.hpp>
 
+#include <boost/capy/buffers.hpp>
 #include <boost/capy/ex/async_event.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -325,6 +326,32 @@ inline void
 post_coro(io_context::executor_type& ex, std::coroutine_handle<> h)
 {
     ex.post(h);
+}
+
+// Reschedules the awaiting coroutine through the executor.
+struct repost_awaitable
+{
+    io_context::executor_type ex;
+
+    bool await_ready() const noexcept
+    {
+        return false;
+    }
+
+    void await_suspend(std::coroutine_handle<> h) const
+    {
+        ex.post(h);
+    }
+
+    void await_resume() const noexcept {}
+};
+
+// Keeps the ready queue non-empty until `done` is set.
+inline counter_coro
+spin_until(io_context::executor_type ex, bool const& done)
+{
+    while (!done)
+        co_await repost_awaitable{ex};
 }
 
 inline capy::task<capy::results<>>
@@ -927,6 +954,37 @@ struct io_context_test
         }
     }
 
+    // Ready work never lets the queue drain, so I/O completions must
+    // still be reaped between handlers.
+    void testRepostingHandlerDoesNotStarveIo()
+    {
+        io_context ioc(Backend);
+        auto ex     = ioc.get_executor();
+        auto [a, b] = test::must(test::make_socket_pair(ioc));
+
+        bool done = false;
+        post_coro(ex, spin_until(ex, done));
+
+        auto reader = [&]() -> capy::task<> {
+            char buf[1];
+            auto [ec, n] = co_await b.read_some(capy::mutable_buffer(buf, 1));
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(n, 1u);
+            done = true;
+        };
+        auto writer = [&]() -> capy::task<> {
+            char const c = 'x';
+            auto [ec, n] = co_await a.write_some(capy::const_buffer(&c, 1));
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(n, 1u);
+        };
+        capy::run_async(ex)(reader());
+        capy::run_async(ex)(writer());
+
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
     void testWhenAllSetEvent()
     {
         io_context ctx;
@@ -1149,6 +1207,7 @@ struct io_context_test
         testMultithreadedStress();
         testMultithreadedNotifyAndWaitFor();
         testWhenAllSetEvent();
+        testRepostingHandlerDoesNotStarveIo();
         testShutdownDestroysPostedCoroutineFrames();
         testContinuationOpDestroyOnShutdown();
     }

@@ -224,9 +224,9 @@ public:
     /** Return the current io_uring in-flight counter.
 
         Test-only helper: `uring_inflight_` is an internal accounting
-        counter (it gates the `do_one` ring pump), with no bearing on the
-        public API. It is exposed solely so tests can assert the counter
-        stays balanced across op submission and teardown. Not thread-safe with
+        counter with no bearing on the public API. It is exposed solely
+        so tests can assert the counter stays balanced across op
+        submission and teardown. Not thread-safe with
         respect to a concurrently running scheduler; call it from a quiesced
         context.
 
@@ -452,12 +452,11 @@ private:
     // Count of io_uring SQEs in flight whose completion must be reaped.
     // Excludes the wakeup-eventfd poll (registered in lazy_init_ring), and
     // is updated by uring_submit_op and by process_completions on
-    // each non-F_MORE, non-eventfd CQE. Used by do_one to skip the
-    // ring pump when there is no io_uring work pending.
+    // each non-F_MORE, non-eventfd CQE. shutdown() waits for it to drain.
     alignas(64) mutable std::atomic<std::int64_t> uring_inflight_{0};
     std::atomic<bool> stopped_{false};
-    // Leader-follower flag: true while a thread is blocked in
-    // io_uring_submit_and_wait_timeout. Protected by dispatch_mutex_.
+    // True while a thread holds task_op_ and runs a ring pass.
+    // Protected by dispatch_mutex_.
     mutable bool task_running_       = false;
     bool scheduler_locking_disabled_ = false;
     bool reactor_io_locking_         = true;
@@ -553,6 +552,21 @@ private:
     /// Single embedded `submit_sqes_op` instance, owned by the scheduler.
     mutable submit_sqes_op submit_op_;
 
+    /// Sentinel op that triggers a ring pass when dequeued.
+    struct task_op final : scheduler_op
+    {
+        // LCOV_EXCL_START: the sentinel is intercepted by pointer
+        // identity; its virtuals exist for vtable completeness.
+        void operator()() override {}
+        void destroy() override {}
+        // LCOV_EXCL_STOP
+    };
+
+    // Exactly one instance circulates through completed_ops_, so the
+    // ring is entered once per pass over the queue rather than once
+    // per handler.
+    mutable task_op task_op_;
+
     // ring_inited_ goes true once the ring exists. The init is deferred
     // from the constructor so configure_threading() and configure_sqpoll()
     // can take effect before io_uring_queue_init_params chooses flags.
@@ -560,6 +574,16 @@ private:
     mutable bool ring_inited_ = false;
 
     std::size_t do_one(long timeout_us);
+
+    /** Reap the ring once, then expire due timers.
+
+        A zero timeout only peeks the completion queue, which needs no
+        kernel entry unless the kernel holds completions back.
+
+        @throws std::system_error If the kernel wait fails.
+    */
+    void run_task(long timeout_us);
+
     void process_completions();
     void drain_wakeup_eventfd() const noexcept;
     bool prep_multishot_poll(int fd, void* data) noexcept;
@@ -572,6 +596,7 @@ inline uring_scheduler::uring_scheduler(
     // sched_ cannot be set in the member initialiser — `this` is not
     // available there.
     submit_op_.sched_ = this;
+    completed_ops_.push(&task_op_);
 
     // Ring init is deferred so the options the io_context applies
     // after this constructor — the locking tier and SQPOLL — can feed
@@ -759,8 +784,11 @@ uring_scheduler::destroy_queued(lock_type& lock) noexcept
         }
         else
         {
+            auto* op = ready_as_op(e);
+            if (op == &task_op_)
+                continue;
             lock.unlock();
-            ready_as_op(e)->destroy();
+            op->destroy();
             lock.lock();
         }
     }
@@ -1158,11 +1186,6 @@ uring_scheduler::poll_one()
 inline std::size_t
 uring_scheduler::do_one(long timeout_us)
 {
-    // Leader-follower: only one thread at a time may call
-    // io_uring_submit_and_wait_timeout on a shared ring (liburing's
-    // userspace head/tail bookkeeping is not thread-safe). Other
-    // threads either dispatch ready ops from completed_ops_ or wait
-    // on cond_ until the leader returns from the kernel.
     if (stopped_.load(std::memory_order_acquire))
     {
         // stop() sets the flag under the lock and still writes the
@@ -1172,66 +1195,64 @@ uring_scheduler::do_one(long timeout_us)
         return 0;
     }
 
-    // submit_sqes_op only pumps the ring once per SQE batch. If the user
-    // keeps a non-empty completed_ops_ (e.g. timer with 0ns expiry as a
-    // yield primitive), the leader-phase kernel pass below never runs
-    // and CQEs accumulate in the ring forever — sub_request's read CQE
-    // never gets drained and the bench spins. submit_and_get_events,
-    // not plain submit, so completions the kernel holds pending reach
-    // the CQ ring before it is drained.
-    //
-    // Gate the kernel pump on there being io_uring-specific work. The
-    // check is performed under ring_mutex_ so a concurrent cross-thread
-    // submitter cannot prep an SQE that we then race past — both this
-    // path and uring_submit_op acquire ring_mutex_ before touching
-    // the ring. When all three sources are empty (no io_uring ops in
-    // flight, no userspace-pending
-    // SQEs, no kernel-ready CQEs) a kernel entry would have no work —
-    // saves ~8 pp of cycles on the no-I/O microbenchmark
-    // (io_context:single_threaded). We deliberately do NOT include
-    // outstanding_work_ here, because that counter mixes coroutine
-    // posts (in completed_ops_) with io_uring work — IOCTX has many
-    // coroutine posts and no io_uring work, and the kernel pump there
-    // is pure overhead.
-    if (ring_inited_)
-    {
-        lock_type ring_lock(ring_mutex_);
-        if (has_deferred_cancels_.load(std::memory_order_acquire))
-            queue_deferred_cancels();
-        if (uring_inflight_.load(std::memory_order_acquire) != 0 ||
-            ::io_uring_sq_ready(&ring_) != 0 ||
-            ::io_uring_cq_ready(&ring_) != 0)
-        {
-            ::io_uring_submit_and_get_events(&ring_);
-            process_completions();
-        }
-    }
-
-    // Drain expired timers eagerly, for the same reason the kernel CQE
-    // pump runs unconditionally above: when completed_ops_ stays non-
-    // empty (e.g. continuous loopback I/O whose CQEs land in the top-
-    // of-do_one process_completions call), the leader-wait branch
-    // below — the only other place process_expired() runs — is never
-    // reached. Without this, stopper-timer-based shutdowns (and any
-    // other timer dependent on a busy I/O loop yielding) deadlock.
-    //
-    // empty() is a single relaxed-acquire atomic load on
-    // timer_service::cached_nearest_ns_ (lock-free, no clock_gettime).
-    // Skipping process_expired() when no timer is registered avoids the
-    // mutex + clock_gettime hot-path cost that dominates IOCTX cycles
-    // (~25 pp on io_context:single_threaded). When a timer IS
-    // registered the call runs exactly as before, preserving the
-    // deadlock fix this guard was originally written to address.
-    if (auto* tsvc = timers(); tsvc && !tsvc->empty())
-        tsvc->process_expired();
-
     lock_type lock(dispatch_mutex_);
     for (;;)
     {
         if (stopped_.load(std::memory_order_acquire))
             return 0;
 
-        if (auto e = completed_ops_.pop())
+        auto const e = completed_ops_.pop();
+
+        if (e && !ready_is_continuation(e) && ready_as_op(e) == &task_op_)
+        {
+            bool const more_handlers = !completed_ops_.empty();
+
+            if (!more_handlers &&
+                outstanding_work_.load(std::memory_order_acquire) == 0)
+            {
+                completed_ops_.push(&task_op_);
+                return 0;
+            }
+
+            // A peer takes the queued handlers while this thread is in
+            // the ring.
+            if (more_handlers)
+                cond_.notify_one();
+            task_running_ = true;
+            lock.unlock();
+
+            try
+            {
+                // Queued handlers must not wait behind a kernel block.
+                run_task(more_handlers ? 0 : timeout_us);
+            }
+            catch (...)
+            {
+                // Restore state so followers don't wait for a leader
+                // that never returns.
+                lock.lock();
+                task_running_ = false;
+                completed_ops_.push(&task_op_);
+                cond_.notify_all();
+                throw;
+            }
+
+            lock.lock();
+            task_running_     = false;
+            bool const reaped = !completed_ops_.empty();
+            completed_ops_.push(&task_op_);
+
+            // poll() and wait_one() make one ring pass, handing the
+            // sentinel to a waiting peer.
+            if (timeout_us >= 0 && !reaped)
+            {
+                cond_.notify_one();
+                return 0;
+            }
+            continue;
+        }
+
+        if (e)
         {
             // Hand off any remaining queued work to a follower so we
             // dispatch in parallel.
@@ -1251,58 +1272,68 @@ uring_scheduler::do_one(long timeout_us)
         if (outstanding_work_.load(std::memory_order_acquire) == 0)
             return 0;
 
-        if (task_running_)
+        // LCOV_EXCL_START: follower path — entered only when another
+        // thread holds the sentinel at the instant this thread finds
+        // the queue empty. That overlap is a race no deterministic
+        // test reliably forces (see the io_uring mt_scheduler
+        // regression test, which exercises MT run but does not pin
+        // this window).
+        if (timeout_us == 0)
+            return 0;
+        if (timeout_us < 0)
+            cond_.wait(lock);
+        else
         {
-            // LCOV_EXCL_START: follower path — entered only when another
-            // thread holds ring leadership at the instant this thread
-            // checks. That leader/follower timing overlap is a race no
-            // deterministic test reliably forces (see the io_uring
-            // mt_scheduler regression test, which exercises MT run but
-            // does not pin this window).
-            // Another thread holds leadership; either return (poll)
-            // or wait for it to deliver work / release leadership.
-            if (timeout_us == 0)
+            cond_.wait_for(lock, std::chrono::microseconds(timeout_us));
+            // wait_one honoured its timeout; if nothing arrived,
+            // return rather than re-arm.
+            if (completed_ops_.empty() &&
+                !stopped_.load(std::memory_order_acquire))
                 return 0;
-            if (timeout_us < 0)
-                cond_.wait(lock);
-            else
-            {
-                cond_.wait_for(lock, std::chrono::microseconds(timeout_us));
-                // wait_one honoured its timeout; if nothing arrived,
-                // return rather than re-arm.
-                if (completed_ops_.empty() &&
-                    !stopped_.load(std::memory_order_acquire))
-                    return 0;
-            }
-            continue;
-            // LCOV_EXCL_STOP
         }
+        // LCOV_EXCL_STOP
+    }
+}
 
-        // Become the leader: run the kernel poll. We drop the lock
-        // for the blocking wait, then take it back to release
-        // leadership and wake any follower that should pick up new
-        // work.
+inline void
+uring_scheduler::run_task(long timeout_us)
+{
+    auto* tsvc = timers();
+
+    if (timeout_us == 0)
+    {
+        lock_type ring_lock(ring_mutex_);
+        if (has_deferred_cancels_.load(std::memory_order_acquire))
+            queue_deferred_cancels();
+        // A queued submit_op_ flushes its batch; anything else in the
+        // SQ (cancels, poll re-arms) would otherwise wait for the
+        // queue to drain.
+        if (!submit_op_posted_ && ::io_uring_sq_ready(&ring_) != 0)
+            ::io_uring_submit_and_get_events(&ring_);
+        else
+        {
+            ::io_uring_cqe* cqe = nullptr;
+            std::ignore         = ::io_uring_peek_batch_cqe(&ring_, &cqe, 1);
+        }
+        process_completions();
+    }
+    else
+    {
         __kernel_timespec ts{};
         __kernel_timespec* ts_ptr = nullptr;
-        auto* tsvc                = timers();
         auto next_expiry =
             tsvc ? tsvc->nearest_expiry() : timer_service::time_point::max();
         auto now = std::chrono::steady_clock::now();
 
-        if (timeout_us == 0)
+        if (next_expiry != timer_service::time_point::max())
         {
-            ts.tv_sec  = 0;
-            ts.tv_nsec = 0;
-            ts_ptr     = &ts;
-        }
-        else if (next_expiry != timer_service::time_point::max())
-        {
-            auto delta_ns =
-                std::chrono::duration_cast<std::chrono::nanoseconds>(
-                    next_expiry - now)
-                    .count();
-            if (delta_ns < 0)
-                delta_ns = 0;
+            // Timers expire after the wait, so a past deadline can be as
+            // early as time_point::min(), where the subtraction overflows.
+            std::chrono::nanoseconds::rep delta_ns = 0;
+            if (next_expiry > now)
+                delta_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               next_expiry - now)
+                               .count();
             if (timeout_us > 0 && timeout_us < delta_ns / 1000)
                 delta_ns = static_cast<decltype(delta_ns)>(timeout_us) * 1000;
             ts.tv_sec  = delta_ns / 1'000'000'000;
@@ -1327,9 +1358,6 @@ uring_scheduler::do_one(long timeout_us)
             ts.tv_nsec = 0;
             ts_ptr     = &ts;
         }
-
-        task_running_ = true;
-        lock.unlock();
 
         // Three-phase kernel wait, matching Boost.Asio's
         // io_uring_service::run pattern. ring_mutex_ is held briefly
@@ -1368,30 +1396,12 @@ uring_scheduler::do_one(long timeout_us)
         }
 
         if (rc < 0 && !transient)
-        {
-            // Restore state before propagating so followers don't
-            // deadlock waiting for a leader that never returns.
-            lock.lock();
-            task_running_ = false;
-            cond_.notify_all();
             detail::throw_system_error(
                 make_err(-rc), "io_uring_wait_cqe_timeout");
-        }
-
-        if (tsvc && !tsvc->empty())
-            tsvc->process_expired();
-
-        lock.lock();
-        task_running_ = false;
-        cond_.notify_all();
-
-        // For poll() / wait_one() we honour the timeout: one kernel
-        // pass is the contract. If still nothing dispatchable, exit.
-        // For run() (timeout < 0) keep looping until work arrives or
-        // someone calls stop().
-        if (timeout_us >= 0 && completed_ops_.empty())
-            return 0;
     }
+
+    if (tsvc && !tsvc->empty())
+        tsvc->process_expired();
 }
 
 inline void
