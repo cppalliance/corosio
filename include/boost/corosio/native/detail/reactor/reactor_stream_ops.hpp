@@ -50,7 +50,29 @@ template<class Traits, class Socket, class Acceptor, class Endpoint>
 struct reactor_stream_read_op final
     : reactor_read_op<
           reactor_stream_base_op<Traits, Socket, Acceptor, Endpoint>>
-{};
+{
+    // A single buffer reads with recv(), which skips the VFS layer and
+    // the iovec copy-in that readv() pays on every call.
+    void perform_io() noexcept override
+    {
+        if (this->iovec_count != 1)
+            return reactor_read_op<reactor_stream_base_op<
+                Traits, Socket, Acceptor, Endpoint>>::perform_io();
+
+        ssize_t n;
+        do
+        {
+            n = ::recv(
+                this->fd, this->iovecs[0].iov_base, this->iovecs[0].iov_len, 0);
+        }
+        while (n < 0 && errno == EINTR);
+
+        if (n >= 0)
+            this->complete(0, static_cast<std::size_t>(n));
+        else
+            this->complete(errno, 0);
+    }
+};
 
 template<class Traits, class Socket, class Acceptor, class Endpoint>
 struct reactor_stream_write_op final
