@@ -247,7 +247,7 @@ struct reactor_common_faults
         io_context ioc(Backend);
         auto [a, b] = must(test::make_socket_pair(ioc));
         char buf[8] = "1234567";
-        std::error_code rec, wec, rec_multi, wec_multi, drec;
+        std::error_code rec, wec, rec_multi, wec_multi, drec, drec_multi;
         auto body = [&]() -> capy::task<> {
             {
                 fault_scope f(spec_write, EPIPE);
@@ -324,23 +324,37 @@ struct reactor_common_faults
                 BOOST_TEST(!ec);
                 BOOST_TEST_EQ(n, 8u);
             }
-            // Deferred read: the speculative recv reports EAGAIN, so the
-            // reactor re-runs the op, which always uses readv even for a
-            // single buffer.
+            // Deferred reads: the speculative call reports EAGAIN, so the
+            // reactor re-runs the op with the same call it speculated with.
+            // The data is written first, and awaited, so no write on `a`
+            // is still in flight when the next one starts.
             {
-                fault_scope f1(sys::recv, EAGAIN);
-                fault_scope f2(sys::readv, EIO);
-                auto writer = [&]() -> capy::task<> {
+                {
                     auto [ec, n] =
                         co_await a.write_some(capy::const_buffer(buf, 4));
                     std::ignore = n;
                     BOOST_TEST(!ec);
-                };
-                capy::run_async(ioc.get_executor())(writer());
+                }
+                fault_scope f1(sys::recv, EAGAIN);
+                fault_scope f2(sys::recv, EIO, 2);
                 auto [ec, n] =
                     co_await b.read_some(capy::mutable_buffer(buf, 7));
                 std::ignore = n;
                 drec        = ec;
+                BOOST_TEST(f1.fired());
+                BOOST_TEST(f2.fired());
+            }
+            {
+                {
+                    auto [ec, n] = co_await a.write_some(cb);
+                    std::ignore  = n;
+                    BOOST_TEST(!ec);
+                }
+                fault_scope f1(sys::readv, EAGAIN);
+                fault_scope f2(sys::readv, EIO, 2);
+                auto [ec, n] = co_await b.read_some(mb);
+                std::ignore  = n;
+                drec_multi   = ec;
                 BOOST_TEST(f1.fired());
                 BOOST_TEST(f2.fired());
             }
@@ -352,6 +366,7 @@ struct reactor_common_faults
         BOOST_TEST(wec_multi == std::errc::broken_pipe);
         BOOST_TEST(rec_multi == std::errc::connection_reset);
         BOOST_TEST(drec == std::errc::io_error);
+        BOOST_TEST(drec_multi == std::errc::io_error);
     }
 
     void testDeferredWriteFails()
