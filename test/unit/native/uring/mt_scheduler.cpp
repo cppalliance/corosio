@@ -88,6 +88,8 @@ struct cancel_probe_op : detail::uring_op
 
 struct uring_probe_context : native_io_context<uring>
 {
+    using native_io_context<uring>::native_io_context;
+
     detail::uring_scheduler& scheduler() noexcept
     {
         return *static_cast<detail::uring_scheduler*>(sched_);
@@ -285,8 +287,146 @@ struct uring_mt_scheduler_test
         ::close(p[1]);
     }
 
+    // A ring that defers completion work to its submitting thread is
+    // only usable when that work still reaches a thread asleep outside
+    // the ring.
+    void testRingDefersCompletionWorkWhenSupported()
+    {
+        ::io_uring probe{};
+        io_uring_params p{};
+        unsigned const taskrun =
+            IORING_SETUP_COOP_TASKRUN | IORING_SETUP_TASKRUN_FLAG;
+        p.flags              = IORING_SETUP_SUBMIT_ALL | taskrun;
+        bool const supported = ::io_uring_queue_init_params(8, &probe, &p) == 0;
+        if (supported)
+            ::io_uring_queue_exit(&probe);
+
+        uring_probe_context plain;
+        BOOST_TEST_EQ(
+            plain.scheduler().ring()->flags & taskrun,
+            supported ? taskrun : 0u);
+
+        // The SQPOLL ring refuses the flags; it must keep SUBMIT_ALL.
+        io_context_options opts;
+        opts.enable_sqpoll = true;
+        uring_probe_context polled(opts, 1);
+        auto const flags = polled.scheduler().ring()->flags;
+        BOOST_TEST_EQ(flags & taskrun, 0u);
+        if (supported)
+            BOOST_TEST_NE(flags & IORING_SETUP_SUBMIT_ALL, 0u);
+    }
+
+    // This thread submits the read, then sleeps in a join while another
+    // thread leads the ring. The kernel finishes the read on the
+    // submitting thread, so the leader sees it only if that thread is
+    // woken to do so.
+    void testSleepingSubmitterStillCompletes()
+    {
+        uring_probe_context ioc;
+        int sv[2];
+        BOOST_TEST(
+            ::socketpair(
+                AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, sv) ==
+            0);
+        local_stream_socket s(ioc);
+        BOOST_TEST(!s.assign(sv[0]));
+
+        char buf     = 0;
+        bool resumed = false;
+        capy::run_async(ioc.get_executor())(
+            [](local_stream_socket& s, char* b, bool& resumed) -> capy::task<> {
+                auto [ec, n] = co_await s.read_some(capy::mutable_buffer(b, 1));
+                std::ignore  = ec;
+                std::ignore  = n;
+                resumed      = true;
+            }(s, &buf, resumed));
+        std::ignore = ioc.poll();
+        BOOST_TEST(!resumed);
+        BOOST_TEST_EQ(::io_uring_sq_ready(ioc.scheduler().ring()), 0u);
+
+        std::atomic<bool> finished{false};
+        std::thread watchdog([&] {
+            for (int i = 0; i < 300 && !finished.load(); ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            if (!finished.load())
+            {
+                std::fputs(
+                    "sleeping submitter: read never completed\n", stderr);
+                std::abort();
+            }
+        });
+        std::thread leader([&] { ioc.run(); });
+        std::thread writer([&] {
+            // Lets this thread fall asleep in the join first; an earlier
+            // write only lets the test pass without exercising the wake.
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            std::ignore = ::write(sv[1], "x", 1);
+        });
+        writer.join();
+        leader.join();
+        finished = true;
+        watchdog.join();
+
+        BOOST_TEST(resumed);
+        BOOST_TEST_EQ(buf, 'x');
+        ::close(sv[1]);
+    }
+
+    // Completion work owed to this thread waits for its next kernel
+    // entry. A pass that only peeks must still finish it while handlers
+    // keep the thread in user space.
+    void testPeekingPassFindsWaitingCompletion()
+    {
+        uring_probe_context ioc;
+        int sv[2];
+        BOOST_TEST(
+            ::socketpair(
+                AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, sv) ==
+            0);
+        local_stream_socket s(ioc);
+        BOOST_TEST(!s.assign(sv[0]));
+
+        char buf     = 0;
+        bool resumed = false;
+        capy::run_async(ioc.get_executor())(
+            [](local_stream_socket& s, char* b, bool& resumed) -> capy::task<> {
+                auto [ec, n] = co_await s.read_some(capy::mutable_buffer(b, 1));
+                std::ignore  = ec;
+                std::ignore  = n;
+                resumed      = true;
+            }(s, &buf, resumed));
+        std::ignore = ioc.poll();
+        BOOST_TEST(!resumed);
+        BOOST_TEST_EQ(::io_uring_sq_ready(ioc.scheduler().ring()), 0u);
+
+        std::atomic<bool> written{false};
+        std::thread writer([&] {
+            std::ignore = ::write(sv[1], "x", 1);
+            written.store(true);
+        });
+        // Spins rather than blocks: any kernel entry here would finish
+        // the work before the pass gets to.
+        while (!written.load())
+        {
+        }
+        std::ignore = ioc.poll();
+        BOOST_TEST(resumed);
+        BOOST_TEST_EQ(buf, 'x');
+
+        writer.join();
+        if (!resumed)
+        {
+            ioc.restart();
+            ioc.run();
+        }
+        ::close(sv[1]);
+    }
+
     void run()
     {
+        testRingDefersCompletionWorkWhenSupported();
+        testPeekingPassFindsWaitingCompletion();
+        testSleepingSubmitterStillCompletes();
         testStopBeforeLinkCancelsOp();
         testForeignPostWakesParkedFollower();
         testForeignPostWakesUnsafeIoRun();

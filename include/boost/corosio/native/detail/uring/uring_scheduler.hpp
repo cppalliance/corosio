@@ -655,12 +655,34 @@ uring_scheduler::lazy_init_ring_unlocked() const
         }
     }
 
-    // Keeps a batch going past an entry the kernel rejects, so a cancel
-    // queued behind it is still issued. Kernels that predate the flag
-    // refuse it, and the ring is set up without.
+    // SUBMIT_ALL keeps a batch going past an entry the kernel rejects,
+    // so a cancel queued behind it is still issued.
+    //
+    // The kernel finishes a socket completion on the thread that
+    // submitted its entry, and a batch submit makes one thread the
+    // submitter for its peers' entries too. Without COOP_TASKRUN the
+    // kernel interrupts that thread for each completion while it runs
+    // handlers; with it, the work waits for the thread's next kernel
+    // entry, and a sleeping thread is still woken. TASKRUN_FLAG marks
+    // that waiting work in the ring, so a pass that only peeks still
+    // enters the kernel to finish it rather than missing completions
+    // while handlers keep the thread in user space. SQPOLL rings already
+    // work that way and refuse both flags.
+    //
+    // Kernels that predate a flag refuse it. The two TASKRUN flags are
+    // the newer, so they are dropped first.
     io_uring_params const base = params;
-    params.flags |= IORING_SETUP_SUBMIT_ALL;
+    unsigned const coop        = enable_sqpoll_
+        ? 0u
+        : IORING_SETUP_COOP_TASKRUN | IORING_SETUP_TASKRUN_FLAG;
+    params.flags |= IORING_SETUP_SUBMIT_ALL | coop;
     int rc = ::io_uring_queue_init_params(256, &ring_, &params);
+    if (rc == -EINVAL && coop != 0)
+    {
+        params = base;
+        params.flags |= IORING_SETUP_SUBMIT_ALL;
+        rc = ::io_uring_queue_init_params(256, &ring_, &params);
+    }
     if (rc == -EINVAL)
     {
         params = base;
