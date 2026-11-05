@@ -48,8 +48,9 @@ namespace boost::corosio {
 
     This class provides asynchronous Unix domain datagram socket
     operations that return awaitable types. Each operation
-    participates in the affine awaitable protocol, ensuring
-    coroutines resume on the correct executor.
+    participates in the affine awaitable protocol. It resumes the
+    awaiting coroutine through that coroutine's executor, not through
+    the executor of the context that owns the socket.
 
     Supports two modes of operation:
 
