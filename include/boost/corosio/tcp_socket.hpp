@@ -46,7 +46,8 @@ namespace boost::corosio {
 
     This class provides asynchronous TCP socket operations that return
     awaitable types. Each operation participates in the affine awaitable
-    protocol, ensuring coroutines resume on the correct executor.
+    protocol. It resumes the awaiting coroutine through that coroutine's
+    executor, not through the executor of the context that owns the socket.
 
     The socket must be opened before performing I/O operations. Operations
     support cancellation through `std::stop_token` via the affine protocol,

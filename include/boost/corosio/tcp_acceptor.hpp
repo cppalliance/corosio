@@ -46,8 +46,9 @@ namespace boost::corosio {
     awaitable types. The acceptor binds to a local endpoint and listens
     for incoming connections.
 
-    Each accept operation participates in the affine awaitable protocol,
-    ensuring coroutines resume on the correct executor.
+    Each accept operation participates in the affine awaitable protocol.
+    It resumes the awaiting coroutine through that coroutine's executor,
+    not through the executor of the context that owns the acceptor.
 
     @par Thread Safety
     Distinct objects: Safe.@n

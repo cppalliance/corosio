@@ -41,6 +41,11 @@ namespace boost::corosio {
     Shared objects: Unsafe. All operations on a single I/O object
     must be serialized.
 
+    @par Executor Affinity
+    An operation resumes the awaiting coroutine through that
+    coroutine's executor, not through the executor of the context
+    that owns the I/O object.
+
     @note Intended as a protected base class. The handle member
         `h_` is accessible to derived classes.
 
