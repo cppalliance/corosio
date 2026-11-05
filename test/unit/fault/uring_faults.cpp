@@ -586,11 +586,10 @@ struct uring_faults
         udp_socket sender(ioc);
         BOOST_TEST(!sender.open(family::v4));
         auto to = s2.local_endpoint();
-        capy::run_async(ioc.get_executor())(
-            [](udp_socket& u, endpoint ep) -> capy::task<> {
-                std::ignore =
-                    co_await u.send_to(capy::const_buffer("hi", 2), ep);
-            }(sender, to));
+        capy::run_async(
+            ioc.get_executor())([](udp_socket& u, endpoint ep) -> capy::task<> {
+            std::ignore = co_await u.send_to(capy::const_buffer("hi", 2), ep);
+        }(sender, to));
         while (!done2 && ioc.run_one_for(std::chrono::seconds(5)) != 0)
         {
         }
@@ -745,9 +744,9 @@ struct uring_faults
             std::error_code wec;
             std::size_t wn  = 1;
             auto write_body = [&]() -> capy::task<> {
-                // The socket is writable, so the speculative sendmsg
-                // would answer the write without ever needing an SQE.
-                fault_scope s(sys::sendmsg, EAGAIN);
+                // The socket is writable, so the direct send would
+                // answer the write without ever needing an SQE.
+                fault_scope s(sys::send, EAGAIN);
                 auto [ec, n] =
                     co_await b.write_some(capy::const_buffer("abcd", 4));
                 wec = ec;
@@ -871,7 +870,7 @@ struct uring_faults
         bool smfired = false, rvfired = false;
         auto body = [&]() -> capy::task<> {
             {
-                fault_scope f(sys::sendmsg, EAGAIN);
+                fault_scope f(sys::send, EAGAIN);
                 cqe_fault_scope q(a.native_handle(), IORING_OP_SEND, -EPIPE);
                 auto [ec, n] =
                     co_await a.write_some(capy::const_buffer(buf, 7));
@@ -881,7 +880,7 @@ struct uring_faults
                 sfired = q.fired();
             }
             {
-                fault_scope f(sys::readv, EAGAIN);
+                fault_scope f(sys::recv, EAGAIN);
                 cqe_fault_scope q(
                     b.native_handle(), IORING_OP_RECV, -ECONNRESET);
                 auto [ec, n] =
@@ -1499,6 +1498,57 @@ struct uring_faults
         BOOST_TEST_EQ(f.count(), 0u);
     }
 
+    // A single buffer takes the direct calls that skip the vector copy;
+    // several buffers still need the vectored ones.
+    void testDirectIoCalls()
+    {
+        io_context ioc(uring);
+        auto [a, b] = test::must(test::make_socket_pair(ioc));
+        char buf[8] = "1234567";
+        char x[4] = {}, y[4] = {};
+        std::size_t sends = 0, sendmsgs = 0, recvs = 0, readvs = 0;
+        auto body = [&]() -> capy::task<> {
+            // Count this thread's calls; the ones they would fail are
+            // never reached.
+            fault_scope s(sys::send, EIO, 1u << 30);
+            fault_scope sm(sys::sendmsg, EIO, 1u << 30);
+            fault_scope r(sys::recv, EIO, 1u << 30);
+            fault_scope rv(sys::readv, EIO, 1u << 30);
+
+            auto [ec1, n1] = co_await a.write_some(capy::const_buffer(buf, 7));
+            BOOST_TEST(!ec1);
+            BOOST_TEST_EQ(n1, 7u);
+            auto [ec2, n2] = co_await b.read_some(capy::mutable_buffer(buf, 7));
+            BOOST_TEST(!ec2);
+            BOOST_TEST_EQ(n2, 7u);
+            BOOST_TEST_EQ(s.count(), 1u);
+            BOOST_TEST_EQ(sm.count(), 0u);
+            BOOST_TEST_EQ(r.count(), 1u);
+            BOOST_TEST_EQ(rv.count(), 0u);
+
+            std::array<capy::const_buffer, 2> cb{
+                capy::const_buffer(buf, 4), capy::const_buffer(buf + 4, 3)};
+            auto [ec3, n3] = co_await a.write_some(cb);
+            BOOST_TEST(!ec3);
+            BOOST_TEST_EQ(n3, 7u);
+            std::array<capy::mutable_buffer, 2> mb{
+                capy::mutable_buffer(x, 4), capy::mutable_buffer(y, 3)};
+            auto [ec4, n4] = co_await b.read_some(mb);
+            BOOST_TEST(!ec4);
+            BOOST_TEST_EQ(n4, 7u);
+            sends    = s.count();
+            sendmsgs = sm.count();
+            recvs    = r.count();
+            readvs   = rv.count();
+        };
+        capy::run_async(ioc.get_executor())(body());
+        ioc.run();
+        BOOST_TEST_EQ(sends, 1u);
+        BOOST_TEST_EQ(sendmsgs, 1u);
+        BOOST_TEST_EQ(recvs, 1u);
+        BOOST_TEST_EQ(readvs, 1u);
+    }
+
     // A socket with nothing armed leaves the ring nothing to flush, so
     // closing it costs neither a submit nor a wake.
     void testIdleCloseSkipsRing()
@@ -1549,6 +1599,7 @@ struct uring_faults
     {
         testRingInitSqExhaustion();
         testOpenedSocketsKnowFamily();
+        testDirectIoCalls();
         testIdleCloseSkipsRing();
         testArmedAcceptSkipsDirectAccept();
         testCancelSqFullBestEffort();
