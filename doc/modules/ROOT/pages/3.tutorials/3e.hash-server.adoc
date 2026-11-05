@@ -55,9 +55,8 @@ work justifies leaving the event loop.
 include::example$hash-server/hash_server.cpp[tag=hash_function]
 ----
 
-This is a `capy::task` — a lazy coroutine that doesn't start until someone
-awaits it. That matters because `run()` needs to control which executor the
-task runs on.
+This is a plain function. It knows nothing about coroutines or executors, so
+any code can reuse it. The session decides where it runs.
 
 == Session Coroutine
 
@@ -72,8 +71,8 @@ Three things happen in sequence, but on two different executors:
 
 1. **Read** — runs on the cpp:io_context[] thread. The socket awaitable suspends
    the coroutine until data arrives from the kernel.
-2. **Hash** — `capy::run( pool.get_executor() )` posts `compute_fnv1a` to the
-   thread pool. The coroutine suspends on the cpp:io_context[] and resumes on a
+2. **Hash** — `capy::run( pool.get_executor() )` posts a task that calls
+   `compute_fnv1a` to the thread pool. The coroutine suspends on the cpp:io_context[] and resumes on a
    pool thread. When the task completes, a trampoline posts the
    coroutine back to the cpp:io_context[].
 3. **Write** — back on the cpp:io_context[] thread, the hex result is sent to the
@@ -90,6 +89,11 @@ When you write:
 ----
 include::example$hash-server/hash_server.cpp[tag=run_switch,indent=0]
 ----
+
+`run()` takes a task, so a coroutine lambda wraps the plain function. Following
+the xref:../4.guide/4t.lifetime.adoc[lifetime rules], it gets `buf` and `n` as
+parameters, not captures. `buf` stays valid because `do_session` stays
+suspended until the hash completes.
 
 Behind the scenes:
 

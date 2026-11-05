@@ -29,9 +29,9 @@ namespace corosio = boost::corosio;
 namespace capy    = boost::capy;
 // end::assume[]
 
-/// Compute FNV-1a hash on the thread pool.
+/// Compute the FNV-1a hash of a buffer.
 // tag::hash_function[]
-capy::task<std::uint64_t>
+std::uint64_t
 compute_fnv1a(char const* data, std::size_t len)
 {
     constexpr std::uint64_t basis = 14695981039346656037ULL;
@@ -43,7 +43,7 @@ compute_fnv1a(char const* data, std::size_t len)
         h ^= static_cast<unsigned char>(data[i]);
         h *= prime;
     }
-    co_return h;
+    return h;
 }
 // end::hash_function[]
 
@@ -81,7 +81,10 @@ do_session(corosio::tcp_socket sock, capy::thread_pool& pool)
     // Switch to thread pool for CPU-bound hash computation,
     // then automatically resume on io_context when done
     // tag::run_switch[]
-    auto hash = co_await capy::run(pool.get_executor())(compute_fnv1a(buf, n));
+    auto hash = co_await capy::run(pool.get_executor())(
+        [](char const* data, std::size_t len) -> capy::task<std::uint64_t> {
+            co_return compute_fnv1a(data, len);
+        }(buf, n));
     // end::run_switch[]
 
     // Send hex result back to client (on io_context)
