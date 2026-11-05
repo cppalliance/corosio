@@ -95,11 +95,32 @@ FIN_WAIT_1:: This side has sent a FIN and is waiting for an acknowledgment.
 
 FIN_WAIT_2:: The other side acknowledged the FIN, but has not yet sent its own FIN. This side is waiting for the remote FIN.
 
+CLOSING:: Both sides sent a FIN at about the same time. This side has received the remote FIN and is waiting for the acknowledgment of its own.
+
 CLOSE_WAIT:: This side has received a FIN from the remote end but has not yet sent its own FIN. If your server has many connections in CLOSE_WAIT, it means the application is not closing sockets promptly after the remote end has disconnected.
 
 LAST_ACK:: This side has sent its FIN (after receiving the remote FIN) and is waiting for the final ACK.
 
 TIME_WAIT:: The connection is fully closed, but the socket lingers for a period (typically 60 seconds to 2 minutes) before returning to CLOSED. This is the state that causes the most confusion.
+
+Closing takes one of two paths, depending on which side sends the first FIN. The side that closes first moves through FIN_WAIT_1 and FIN_WAIT_2 to TIME_WAIT. The other side moves through CLOSE_WAIT and LAST_ACK straight to CLOSED. If both sides close at the same time, each goes from FIN_WAIT_1 through CLOSING to TIME_WAIT. Each arrow names what moves the connection on: the application calling `close()`, or the segment that arrives.
+
+[role=figure]
+----
+                 ESTABLISHED
+       close()  /           \  FIN
+               v             v
+         FIN_WAIT_1        CLOSE_WAIT
+    ACK   /        \  FIN      |  close()
+         v          v          v
+   FIN_WAIT_2    CLOSING     LAST_ACK
+    FIN  |          |  ACK     |  ACK
+         v          v          v
+         TIME_WAIT <+        CLOSED
+             |  2MSL timeout
+             v
+           CLOSED
+----
 
 == TIME_WAIT
 
