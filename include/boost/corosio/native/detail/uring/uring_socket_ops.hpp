@@ -39,6 +39,55 @@
 
 namespace boost::corosio::detail {
 
+/** Read directly from a socket, retrying on `EINTR`.
+
+    A single buffer uses `recv`, which skips the VFS layer and the
+    iovec copy-in that `readv` pays on every call.
+
+    @return The byte count, or -1 with `errno` set.
+*/
+inline ssize_t
+uring_direct_read(int fd, iovec* iovecs, int count) noexcept
+{
+    ssize_t n;
+    do
+    {
+        n = count == 1 ? ::recv(fd, iovecs[0].iov_base, iovecs[0].iov_len, 0)
+                       : ::readv(fd, iovecs, count);
+    }
+    while (n < 0 && errno == EINTR);
+    return n;
+}
+
+/** Write directly to a socket, retrying on `EINTR`.
+
+    A single buffer uses `send`, which skips the msghdr and iovec
+    copy-in that `sendmsg` pays on every call.
+
+    @return The byte count, or -1 with `errno` set.
+*/
+inline ssize_t
+uring_direct_write(int fd, iovec* iovecs, int count) noexcept
+{
+    ssize_t n;
+    do
+    {
+        if (count == 1)
+        {
+            n = ::send(fd, iovecs[0].iov_base, iovecs[0].iov_len, MSG_NOSIGNAL);
+        }
+        else
+        {
+            msghdr msg{};
+            msg.msg_iov    = iovecs;
+            msg.msg_iovlen = static_cast<decltype(msg.msg_iovlen)>(count);
+            n              = ::sendmsg(fd, &msg, MSG_NOSIGNAL);
+        }
+    }
+    while (n < 0 && errno == EINTR);
+    return n;
+}
+
 /// Maximum scatter/gather segments per read/write/dgram op.
 ///
 /// Bounded well below `IOV_MAX` (1024 on Linux) so each op's

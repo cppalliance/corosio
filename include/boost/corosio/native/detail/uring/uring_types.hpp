@@ -171,11 +171,7 @@ public:
         bool have_sync_res = stop_now || empty_buf;
         if (!have_sync_res && spec_.may_speculate_read())
         {
-            do
-            {
-                n = ::readv(fd_, iovecs, iovec_count);
-            }
-            while (n < 0 && errno == EINTR);
+            n = uring_direct_read(fd_, iovecs, iovec_count);
             if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
             {
                 have_sync_res = true;
@@ -255,14 +251,7 @@ public:
         if (!have_sync_res && spec_.may_speculate_write() &&
             !sched_->write_may_join_batch())
         {
-            msghdr msg{};
-            msg.msg_iov    = iovecs;
-            msg.msg_iovlen = static_cast<decltype(msg.msg_iovlen)>(iovec_count);
-            do
-            {
-                n = ::sendmsg(fd_, &msg, MSG_NOSIGNAL);
-            }
-            while (n < 0 && errno == EINTR);
+            n = uring_direct_write(fd_, iovecs, iovec_count);
             if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
             {
                 have_sync_res = true;
@@ -1147,11 +1136,7 @@ public:
         bool have_sync_res = stop_now || empty_buf;
         if (!have_sync_res && spec_.may_speculate_read())
         {
-            do
-            {
-                n = ::readv(fd_, iovecs, iovec_count);
-            }
-            while (n < 0 && errno == EINTR);
+            n = uring_direct_read(fd_, iovecs, iovec_count);
             if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
             {
                 have_sync_res = true;
@@ -1231,14 +1216,7 @@ public:
         if (!have_sync_res && spec_.may_speculate_write() &&
             !sched_->write_may_join_batch())
         {
-            msghdr msg{};
-            msg.msg_iov    = iovecs;
-            msg.msg_iovlen = static_cast<decltype(msg.msg_iovlen)>(iovec_count);
-            do
-            {
-                n = ::sendmsg(fd_, &msg, MSG_NOSIGNAL);
-            }
-            while (n < 0 && errno == EINTR);
+            n = uring_direct_write(fd_, iovecs, iovec_count);
             if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
             {
                 have_sync_res = true;
