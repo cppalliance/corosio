@@ -1498,6 +1498,38 @@ struct uring_faults
         BOOST_TEST_EQ(f.count(), 0u);
     }
 
+    // A connect leaves the local endpoint for the first read of it, so
+    // a connection that never asks costs no getsockname.
+    void testConnectDefersLocalEndpoint()
+    {
+        io_context ioc(uring);
+        tcp_acceptor acc(ioc, uring_loopback());
+        tcp_socket c(ioc);
+        BOOST_TEST(!c.open(family::v4));
+        std::error_code cec;
+        std::size_t at_connect = 1, at_read = 0, at_reread = 0;
+        endpoint local;
+        auto body = [&]() -> capy::task<> {
+            // Counts this thread's calls; the one it would fail is never
+            // reached.
+            fault_scope f(sys::getsockname, EBADF, 1u << 30);
+            auto [ec]   = co_await c.connect(acc.local_endpoint());
+            cec         = ec;
+            at_connect  = f.count();
+            local       = c.local_endpoint();
+            at_read     = f.count();
+            std::ignore = c.local_endpoint();
+            at_reread   = f.count();
+        };
+        capy::run_async(ioc.get_executor())(body());
+        ioc.run();
+        BOOST_TEST(!cec);
+        BOOST_TEST_EQ(at_connect, 0u);
+        BOOST_TEST_EQ(at_read, 1u);
+        BOOST_TEST_EQ(at_reread, 1u);
+        BOOST_TEST(local.port() != 0);
+    }
+
     // A single buffer takes the direct calls that skip the vector copy;
     // several buffers still need the vectored ones.
     void testDirectIoCalls()
@@ -1599,6 +1631,7 @@ struct uring_faults
     {
         testRingInitSqExhaustion();
         testOpenedSocketsKnowFamily();
+        testConnectDefersLocalEndpoint();
         testDirectIoCalls();
         testIdleCloseSkipsRing();
         testArmedAcceptSkipsDirectAccept();

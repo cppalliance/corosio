@@ -29,6 +29,7 @@
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/native/detail/speculative_state.hpp>
 
+#include <atomic>
 #include <system_error>
 
 #include <errno.h>
@@ -87,6 +88,22 @@ uring_direct_write(int fd, iovec* iovecs, int count) noexcept
     while (n < 0 && errno == EINTR);
     return n;
 }
+
+/** Resolution state of a TCP socket's cached local endpoint.
+
+    @li `unresolved`: never set; the accessor returns the default
+        endpoint (open-but-unbound socket, failed connect).
+    @li `lazy_pending`: the socket has an authoritative local endpoint
+        that has not been fetched; the accessor calls `getsockname` on
+        first read.
+    @li `resolved`: the cached endpoint is authoritative.
+*/
+enum class uring_endpoint_state : int
+{
+    unresolved,
+    lazy_pending,
+    resolved
+};
 
 /// Maximum scatter/gather segments per read/write/dgram op.
 ///
@@ -368,6 +385,9 @@ struct uring_connect_op : uring_op
     endpoint target_endpoint{};
     endpoint* remote_endpoint_out = nullptr;
     endpoint* local_endpoint_out  = nullptr;
+    // Set instead of `local_endpoint_out` by a socket that fetches its
+    // local endpoint on demand, sparing each connect a `getsockname`.
+    std::atomic<uring_endpoint_state>* local_state_out = nullptr;
 
     uring_connect_op() noexcept : uring_op(&do_handler, &do_cqe, &do_prep) {}
 
@@ -445,6 +465,10 @@ struct uring_connect_op : uring_op
         {
             if (self->remote_endpoint_out)
                 *self->remote_endpoint_out = self->target_endpoint;
+            if (self->local_state_out)
+                self->local_state_out->store(
+                    uring_endpoint_state::lazy_pending,
+                    std::memory_order_release);
             if (self->local_endpoint_out && self->fd >= 0)
             {
                 sockaddr_storage local{};
