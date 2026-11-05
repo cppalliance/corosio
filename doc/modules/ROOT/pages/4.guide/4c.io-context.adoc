@@ -39,6 +39,18 @@ The cpp:io_context[]:
 * Provides an executor for coroutine dispatch
 * Tracks outstanding work to know when to stop
 
+== Why the Context Also Runs Coroutines
+
+The cpp:io_context[] both waits for I/O and runs the coroutines that wait on
+it. Coroutines could instead run elsewhere, such as on a thread pool, and call
+into the context only to read or write. Every completion would then cost a
+hand-off: queue the coroutine for another thread and wake that thread.
+
+Keeping both in one place removes that hand-off. An operation often completes
+on a thread that runs the context its awaiting coroutine belongs to. The
+executor's `dispatch` then resumes the coroutine right there, by symmetric
+transfer.
+
 == Construction
 
 === Default Construction
