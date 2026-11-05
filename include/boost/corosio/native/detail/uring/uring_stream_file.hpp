@@ -32,7 +32,6 @@
 #include <memory>
 #include <mutex>
 #include <system_error>
-#include <unordered_map>
 
 #include <fcntl.h>
 #include <sys/stat.h>
