@@ -498,7 +498,9 @@ include::example$snippets/4b_concurrent_programming.cpp[tag=dangling_reference,i
 ----
 
 A coroutine may outlive the scope that started it. Ensure captured data lives
-long enough.
+long enough. Take by value whatever a started coroutine reads after it
+suspends; xref:4.guide/4t.lifetime.adoc[Lifetime and Teardown] gives the full
+rules.
 
 === Cross-Executor Access
 
