@@ -95,21 +95,7 @@ class BOOST_COROSIO_DECL uring_tcp_socket final
     // sockets). native_handle()/is_open()/set_option()/get_option() come
     // from there too; local_endpoint() is overridden below for lazy
     // getsockname resolution.
-    // Three-state machine for the local endpoint:
-    //   unresolved    — never set; accessor returns default endpoint
-    //                   (open-but-unbound socket, failed-connect, etc.)
-    //   lazy_pending  — set by adopt_fd to signal "this socket has an
-    //                   authoritative local endpoint that hasn't been
-    //                   fetched yet"; accessor will getsockname on
-    //                   first read
-    //   resolved      — local_endpoint_ is authoritative; accessor
-    //                   returns the cached value
-    enum class endpoint_state : int
-    {
-        unresolved,
-        lazy_pending,
-        resolved
-    };
+    using endpoint_state = uring_endpoint_state;
     mutable std::atomic<endpoint_state> local_endpoint_state_{
         endpoint_state::unresolved};
     endpoint remote_endpoint_;
@@ -327,7 +313,7 @@ public:
             conn_.addrlen = to_sockaddr(ep, this->native_family(), conn_.addr);
             conn_.prepare(
                 cont, ex, ec, fd_, sched_, detail::object_ref(this), ep,
-                &remote_endpoint_, &local_endpoint_, token);
+                &remote_endpoint_, nullptr, token);
             conn_.cancelled.store(true, std::memory_order_release);
             sched_->work_started();
             {
@@ -340,9 +326,10 @@ public:
         // A speculative ::connect would leave the fd in EINPROGRESS and
         // a subsequent IORING_OP_CONNECT would see EALREADY — avoid.
         conn_.addrlen = to_sockaddr(ep, this->native_family(), conn_.addr);
+        conn_.local_state_out = &local_endpoint_state_;
         conn_.prepare(
             cont, ex, ec, fd_, sched_, detail::object_ref(this), ep,
-            &remote_endpoint_, &local_endpoint_, token);
+            &remote_endpoint_, nullptr, token);
         sched_->work_started();
         if (conn_.cancelled.load(std::memory_order_acquire))
         {
@@ -492,7 +479,7 @@ public:
     endpoint local_endpoint() const noexcept override
     {
         // Lazy resolution: only fire the getsockname syscall when
-        // adopt_fd marked the endpoint as "lazy_pending". For
+        // an accept or connect marked the endpoint "lazy_pending". For
         // unbound/disconnected sockets the state remains unresolved
         // and the accessor returns the default endpoint without a
         // syscall. The mutable update races benignly with concurrent
