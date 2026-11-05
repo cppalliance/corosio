@@ -251,7 +251,10 @@ public:
         ssize_t n          = 0;
         int err            = 0;
         bool have_sync_res = stop_now || empty_buf;
-        if (!have_sync_res && spec_.may_speculate_write())
+        // A queued batch enters the kernel anyway; joining it spares
+        // this write a syscall of its own.
+        if (!have_sync_res && spec_.may_speculate_write() &&
+            !sched_->write_may_join_batch())
         {
             msghdr msg{};
             msg.msg_iov    = iovecs;
@@ -1224,7 +1227,10 @@ public:
         ssize_t n          = 0;
         int err            = 0;
         bool have_sync_res = stop_now || empty_buf;
-        if (!have_sync_res && spec_.may_speculate_write())
+        // A queued batch enters the kernel anyway; joining it spares
+        // this write a syscall of its own.
+        if (!have_sync_res && spec_.may_speculate_write() &&
+            !sched_->write_may_join_batch())
         {
             msghdr msg{};
             msg.msg_iov    = iovecs;

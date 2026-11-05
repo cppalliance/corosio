@@ -198,13 +198,45 @@ public:
     bool try_consume_inline_budget() const noexcept;
 
     /// Exchange the submit-batch posted flag. Returns the prior value.
-    /// Caller MUST hold ring_mutex_ — the flag is plain bool, not atomic,
-    /// and the mutex provides the read-modify-write atomicity.
+    /// Caller MUST hold ring_mutex_.
     bool submit_op_posted_exchange(bool desired) const noexcept
     {
-        bool prev         = submit_op_posted_;
-        submit_op_posted_ = desired;
-        return prev;
+        return submit_op_posted_.exchange(desired, std::memory_order_relaxed);
+    }
+
+    /** Check whether a stream write should join the queued batch.
+
+        A write that would otherwise be issued directly can instead
+        ride the batch submit's kernel entry. Only a single running
+        thread joins: with more, the batch may run on another thread,
+        which would then own this write's completion. The answer is a
+        hint and may be stale.
+
+        @return `true` if a batch submit is queued and exactly one
+            thread is running the scheduler.
+    */
+    bool write_may_join_batch() const noexcept
+    {
+        return submit_op_posted_.load(std::memory_order_relaxed) &&
+            runners_.load(std::memory_order_relaxed) == 1;
+    }
+
+    /// Return the number of threads running the scheduler.
+    int runners() const noexcept
+    {
+        return runners_.load(std::memory_order_relaxed);
+    }
+
+    /// Record a thread entering a run function.
+    void runner_entered() const noexcept
+    {
+        runners_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    /// Record a thread leaving a run function.
+    void runner_exited() const noexcept
+    {
+        runners_.fetch_sub(1, std::memory_order_relaxed);
     }
 
     /// Return a reference to the mutable embedded submit_sqes_op.
@@ -554,9 +586,11 @@ private:
     };
 
     /// True between the first submitter of a batch posting `submit_op_`
-    /// and the dispatched op clearing the flag inside its handler. Read
-    /// and written only while holding `ring_mutex_`.
-    mutable bool submit_op_posted_ = false;
+    /// and the dispatched op clearing the flag inside its handler.
+    /// Written only while holding `ring_mutex_`.
+    mutable std::atomic<bool> submit_op_posted_{false};
+
+    mutable std::atomic<int> runners_{0};
 
     /// Single embedded `submit_sqes_op` instance, owned by the scheduler.
     mutable submit_sqes_op submit_op_;
@@ -1076,10 +1110,12 @@ struct uring_run_guard
         , running_(self)
     {
         tl_running_scheduler_frame_ = &frame_;
+        self->runner_entered();
     }
 
     ~uring_run_guard() noexcept
     {
+        frame_.sched->runner_exited();
         tl_running_scheduler_frame_ = frame_.prev;
     }
 };
@@ -1339,7 +1375,8 @@ uring_scheduler::run_task(long timeout_us)
         // A queued submit_op_ flushes its batch; anything else in the
         // SQ (cancels, poll re-arms) would otherwise wait for the
         // queue to drain.
-        if (!submit_op_posted_ && ::io_uring_sq_ready(&ring_) != 0)
+        if (!submit_op_posted_.load(std::memory_order_relaxed) &&
+            ::io_uring_sq_ready(&ring_) != 0)
             ::io_uring_submit_and_get_events(&ring_);
         else
         {
@@ -1540,7 +1577,7 @@ uring_scheduler::submit_sqes_op::do_handler(
     auto* sched = self->sched_;
 
     uring_scheduler::lock_type ring_lock(sched->ring_mutex_);
-    sched->submit_op_posted_ = false;
+    sched->submit_op_posted_.store(false, std::memory_order_relaxed);
     ::io_uring_submit_and_get_events(&sched->ring_);
     sched->process_completions();
 }
