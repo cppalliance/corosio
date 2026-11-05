@@ -46,7 +46,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <unordered_map>
 #include <vector>
 
 #include <fcntl.h>
