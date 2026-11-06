@@ -8,50 +8,52 @@
 <rect x='93' y='36' width='10' height='10' rx='2' class='bch-s-cb' fill='#1baf7a'/>
 <text x='107' y='45' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='11' class='bch-ink2' fill='#5f5e58'>asio (coroutines)</text>
 <line x1='52' y1='278.0' x2='704' y2='278.0' class='bch-grid' stroke='#e3e2dc' stroke-width='1'/>
-<text x='46' y='281.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='end'>-7.5%</text>
-<line x1='52' y1='223.0' x2='704' y2='223.0' class='bch-grid' stroke='#e3e2dc' stroke-width='1'/>
-<text x='46' y='226.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='end'>-5%</text>
-<line x1='52' y1='168.0' x2='704' y2='168.0' class='bch-grid' stroke='#e3e2dc' stroke-width='1'/>
-<text x='46' y='171.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='end'>-2.5%</text>
+<text x='46' y='281.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='end'>-10%</text>
+<line x1='52' y1='234.0' x2='704' y2='234.0' class='bch-grid' stroke='#e3e2dc' stroke-width='1'/>
+<text x='46' y='237.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='end'>-7.5%</text>
+<line x1='52' y1='190.0' x2='704' y2='190.0' class='bch-grid' stroke='#e3e2dc' stroke-width='1'/>
+<text x='46' y='193.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='end'>-5%</text>
+<line x1='52' y1='146.0' x2='704' y2='146.0' class='bch-grid' stroke='#e3e2dc' stroke-width='1'/>
+<text x='46' y='149.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='end'>-2.5%</text>
 <line x1='52' y1='58.0' x2='704' y2='58.0' class='bch-grid' stroke='#e3e2dc' stroke-width='1'/>
 <text x='46' y='61.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='end'>+2.5%</text>
-<text x='46' y='116.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='end'>0%</text>
-<rect x='52.0' y='129.8' width='23.2' height='148.2' rx='2' class='bch-s-native' fill='#2a78d6'><title>concurrent/1 — N client/server pairs run the single_conn request/response loop concurrently; N is the number of connections.</title></rect>
-<rect x='77.2' y='211.5' width='23.2' height='66.5' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent/1 — N client/server pairs run the single_conn request/response loop concurrently; N is the number of connections.</title></rect>
+<text x='46' y='105.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='end'>0%</text>
+<rect x='52.0' y='132.4' width='23.2' height='145.6' rx='2' class='bch-s-native' fill='#2a78d6'><title>concurrent/1 — N client/server pairs run the single_conn request/response loop concurrently; N is the number of connections.</title></rect>
+<text x='63.6' y='128.4' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-2%</text>
+<rect x='77.2' y='161.3' width='23.2' height='116.7' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent/1 — N client/server pairs run the single_conn request/response loop concurrently; N is the number of connections.</title></rect>
 <text x='76.2' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 76.2 292.0)'>concurrent/1</text>
-<rect x='112.4' y='154.5' width='23.2' height='123.5' rx='2' class='bch-s-native' fill='#2a78d6'><title>concurrent/16 — N client/server pairs run the single_conn request/response loop concurrently; N is the number of connections.</title></rect>
-<rect x='137.5' y='202.0' width='23.2' height='76.0' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent/16 — N client/server pairs run the single_conn request/response loop concurrently; N is the number of connections.</title></rect>
+<rect x='112.4' y='161.0' width='23.2' height='117.0' rx='2' class='bch-s-native' fill='#2a78d6'><title>concurrent/16 — N client/server pairs run the single_conn request/response loop concurrently; N is the number of connections.</title></rect>
+<rect x='137.5' y='171.5' width='23.2' height='106.5' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent/16 — N client/server pairs run the single_conn request/response loop concurrently; N is the number of connections.</title></rect>
 <text x='136.5' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 136.5 292.0)'>concurrent/16</text>
-<rect x='172.7' y='149.3' width='23.2' height='128.7' rx='2' class='bch-s-native' fill='#2a78d6'><title>concurrent/32 — N client/server pairs run the single_conn request/response loop concurrently; N is the number of connections.</title></rect>
-<rect x='197.9' y='200.7' width='23.2' height='77.3' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent/32 — N client/server pairs run the single_conn request/response loop concurrently; N is the number of connections.</title></rect>
+<rect x='172.7' y='165.2' width='23.2' height='112.8' rx='2' class='bch-s-native' fill='#2a78d6'><title>concurrent/32 — N client/server pairs run the single_conn request/response loop concurrently; N is the number of connections.</title></rect>
+<rect x='197.9' y='169.4' width='23.2' height='108.6' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent/32 — N client/server pairs run the single_conn request/response loop concurrently; N is the number of connections.</title></rect>
 <text x='196.9' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 196.9 292.0)'>concurrent/32</text>
-<rect x='233.1' y='137.7' width='23.2' height='140.3' rx='2' class='bch-s-native' fill='#2a78d6'><title>concurrent/4 — N client/server pairs run the single_conn request/response loop concurrently; N is the number of connections.</title></rect>
-<rect x='258.3' y='200.3' width='23.2' height='77.7' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent/4 — N client/server pairs run the single_conn request/response loop concurrently; N is the number of connections.</title></rect>
+<rect x='233.1' y='146.5' width='23.2' height='131.5' rx='2' class='bch-s-native' fill='#2a78d6'><title>concurrent/4 — N client/server pairs run the single_conn request/response loop concurrently; N is the number of connections.</title></rect>
+<rect x='258.3' y='160.8' width='23.2' height='117.2' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent/4 — N client/server pairs run the single_conn request/response loop concurrently; N is the number of connections.</title></rect>
 <text x='257.3' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 257.3 292.0)'>concurrent/4</text>
-<rect x='293.5' y='147.2' width='23.2' height='130.8' rx='2' class='bch-s-native' fill='#2a78d6'><title>multithread/1 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
-<rect x='318.6' y='195.4' width='23.2' height='82.6' rx='2' class='bch-s-cb' fill='#1baf7a'><title>multithread/1 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
+<rect x='293.5' y='161.2' width='23.2' height='116.8' rx='2' class='bch-s-native' fill='#2a78d6'><title>multithread/1 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
+<rect x='318.6' y='170.1' width='23.2' height='107.9' rx='2' class='bch-s-cb' fill='#1baf7a'><title>multithread/1 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
 <text x='317.6' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 317.6 292.0)'>multithread/1</text>
-<rect x='353.8' y='246.8' width='23.2' height='31.2' rx='2' class='bch-s-native' fill='#2a78d6'><title>multithread/16 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
-<text x='365.4' y='242.8' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-6%</text>
-<rect x='379.0' y='166.3' width='23.2' height='111.7' rx='2' class='bch-s-cb' fill='#1baf7a'><title>multithread/16 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
-<text x='390.6' y='162.3' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-2%</text>
+<rect x='353.8' y='221.3' width='23.2' height='56.7' rx='2' class='bch-s-native' fill='#2a78d6'><title>multithread/16 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
+<text x='365.4' y='217.3' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-7%</text>
+<rect x='379.0' y='144.4' width='23.2' height='133.6' rx='2' class='bch-s-cb' fill='#1baf7a'><title>multithread/16 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
+<text x='390.6' y='140.4' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-2%</text>
 <text x='378.0' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 378.0 292.0)'>multithread/16</text>
-<rect x='414.2' y='177.0' width='23.2' height='101.0' rx='2' class='bch-s-native' fill='#2a78d6'><title>multithread/2 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
-<rect x='439.4' y='198.6' width='23.2' height='79.4' rx='2' class='bch-s-cb' fill='#1baf7a'><title>multithread/2 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
+<rect x='414.2' y='173.6' width='23.2' height='104.4' rx='2' class='bch-s-native' fill='#2a78d6'><title>multithread/2 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
+<rect x='439.4' y='169.5' width='23.2' height='108.5' rx='2' class='bch-s-cb' fill='#1baf7a'><title>multithread/2 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
 <text x='438.4' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 438.4 292.0)'>multithread/2</text>
-<rect x='474.5' y='212.5' width='23.2' height='65.5' rx='2' class='bch-s-native' fill='#2a78d6'><title>multithread/4 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
-<rect x='499.7' y='186.3' width='23.2' height='91.7' rx='2' class='bch-s-cb' fill='#1baf7a'><title>multithread/4 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
+<rect x='474.5' y='188.9' width='23.2' height='89.1' rx='2' class='bch-s-native' fill='#2a78d6'><title>multithread/4 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
+<rect x='499.7' y='149.8' width='23.2' height='128.2' rx='2' class='bch-s-cb' fill='#1baf7a'><title>multithread/4 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
 <text x='498.7' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 498.7 292.0)'>multithread/4</text>
-<rect x='534.9' y='240.9' width='23.2' height='37.1' rx='2' class='bch-s-native' fill='#2a78d6'><title>multithread/8 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
-<rect x='560.1' y='171.3' width='23.2' height='106.7' rx='2' class='bch-s-cb' fill='#1baf7a'><title>multithread/8 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
+<rect x='534.9' y='216.8' width='23.2' height='61.2' rx='2' class='bch-s-native' fill='#2a78d6'><title>multithread/8 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
+<rect x='560.1' y='149.7' width='23.2' height='128.3' rx='2' class='bch-s-cb' fill='#1baf7a'><title>multithread/8 — 32 client/server pairs share one context serviced by N threads running the context; N is the thread count.</title></rect>
 <text x='559.1' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 559.1 292.0)'>multithread/8</text>
-<rect x='595.3' y='127.8' width='23.2' height='150.2' rx='2' class='bch-s-native' fill='#2a78d6'><title>single_conn — One client repeatedly sends a fixed small HTTP request to one server and reads the response.</title></rect>
-<rect x='620.5' y='206.1' width='23.2' height='71.9' rx='2' class='bch-s-cb' fill='#1baf7a'><title>single_conn — One client repeatedly sends a fixed small HTTP request to one server and reads the response.</title></rect>
+<rect x='595.3' y='140.4' width='23.2' height='137.6' rx='2' class='bch-s-native' fill='#2a78d6'><title>single_conn — One client repeatedly sends a fixed small HTTP request to one server and reads the response.</title></rect>
+<rect x='620.5' y='171.0' width='23.2' height='107.0' rx='2' class='bch-s-cb' fill='#1baf7a'><title>single_conn — One client repeatedly sends a fixed small HTTP request to one server and reads the response.</title></rect>
 <text x='619.5' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 619.5 292.0)'>single_conn</text>
-<rect x='655.6' y='123.2' width='23.2' height='154.8' rx='2' class='bch-s-native' fill='#2a78d6'><title>single_conn_lockless — Same as single_conn, with the context in single-threaded lockless mode.</title></rect>
-<text x='667.2' y='119.2' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>0%</text>
-<rect x='680.8' y='212.9' width='23.2' height='65.1' rx='2' class='bch-s-cb' fill='#1baf7a'><title>single_conn_lockless — Same as single_conn, with the context in single-threaded lockless mode.</title></rect>
-<text x='692.4' y='208.9' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-5%</text>
+<rect x='655.6' y='138.0' width='23.2' height='140.0' rx='2' class='bch-s-native' fill='#2a78d6'><title>single_conn_lockless — Same as single_conn, with the context in single-threaded lockless mode.</title></rect>
+<rect x='680.8' y='173.5' width='23.2' height='104.5' rx='2' class='bch-s-cb' fill='#1baf7a'><title>single_conn_lockless — Same as single_conn, with the context in single-threaded lockless mode.</title></rect>
+<text x='692.4' y='169.5' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-4%</text>
 <text x='679.8' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 679.8 292.0)'>single_conn_lockless</text>
-<line x1='52' y1='113.0' x2='704' y2='113.0' class='bch-zero' stroke='#5f5e58' stroke-width='1.5' stroke-dasharray='5 4'/>
+<line x1='52' y1='102.0' x2='704' y2='102.0' class='bch-zero' stroke='#5f5e58' stroke-width='1.5' stroke-dasharray='5 4'/>
 </svg>
