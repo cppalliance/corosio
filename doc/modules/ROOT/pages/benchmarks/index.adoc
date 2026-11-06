@@ -3,7 +3,7 @@
 :page-mode: explanation
 :toc: left
 
-_Generated 2026-10-02 from corosio `e2de06fda069` — https://github.com/cppalliance/corosio/actions/runs/37015995763[benchmark run]. This page is fully generated; do not edit by hand (see <<Reproducing>>)._
+_Generated 2026-11-06 from corosio `0b3830d5c30b` — https://github.com/cppalliance/corosio/actions/runs/42119198783[benchmark run]. This page is fully generated; do not edit by hand (see <<Reproducing>>)._
 
 This report compares Boost.Corosio against Boost.Asio using coroutines (the `asio` configuration) and Boost.Asio using callback-based handlers (`asio_callback`) across the corosio benchmark suite. Its purpose is to track corosio's performance relative to an established async I/O library as both evolve, not to crown a universal winner.
 
@@ -31,7 +31,7 @@ python3 .github/bench/report_page.py --input-dir <artifacts-dir> \
     --output-dir doc/modules/ROOT
 ----
 
-Source data: https://github.com/cppalliance/corosio/actions/runs/37015995763[workflow run]. Regenerate this page with the command above. GitHub retains the run's raw JSON artifacts for 90 days; these pages are the durable record.
+Source data: https://github.com/cppalliance/corosio/actions/runs/42119198783[workflow run]. Regenerate this page with the command above. GitHub retains the run's raw JSON artifacts for 90 days; these pages are the durable record.
 
 == Platforms
 
