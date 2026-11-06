@@ -13,7 +13,7 @@
 #
 # After running this workflow successfully, go to https://github.com/cppalliance/corosio/settings/pages
 # and enable github pages on the code-coverage branch.
-# The coverage will be hosted at https://cppalliance.org/corosio
+# The coverage will be hosted at https://gh.cppalliance.org/corosio
 #
 
 name: Code Coverage
