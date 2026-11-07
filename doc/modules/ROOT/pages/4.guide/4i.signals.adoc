@@ -214,10 +214,18 @@ when `request_stop()` is called from another thread.
 
 === Graceful Shutdown
 
+Request a stop on the token the server runs with. Its pending operations
+complete with `capy::error::canceled`, and `run()` returns once its coroutines
+finish. Copies of a `std::stop_source` share one stop state, so the coroutine
+takes it by value.
+
 [source,cpp]
 ----
 include::example$snippets/4i_signals.cpp[tag=graceful_shutdown]
 ----
+
+Calling `ioc.stop()` instead leaves the server's coroutines suspended; see
+xref:4.guide/4t.lifetime.adoc#_stopping_work[Stopping Work].
 
 === Multiple Signal Waits
 
@@ -273,6 +281,10 @@ Don't call `wait()`, `add()`, `remove()`, `clear()`, or `cancel()`
 concurrently on the same cpp:signal_set[].
 
 == Example: Server with Graceful Shutdown
+
+The accept loop runs with a stop token. When a signal arrives, `run_server`
+requests a stop, the pending accept completes with `canceled`, and the loop
+ends.
 
 [source,cpp]
 ----

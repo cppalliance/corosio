@@ -263,6 +263,7 @@ include::example$snippets/4e_tcp_acceptor.cpp[tag=accept_loop]
 
 Key points:
 
+* The loop owns the acceptor, so the acceptor lives as long as the loop
 * Create a fresh socket for each accept
 * Move the socket into the handler coroutine
 * Continue accepting after non-fatal errors
