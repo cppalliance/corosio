@@ -219,6 +219,11 @@ it only in the sense the row names. **scheduler** is approved only in its P2300 
 - **D4. Document thread-safety *and* executor affinity** at the class level where relevant.
 - **D5. No unexplained qualifiers.** Hedges like "even on X" or "where available" either get
   explained or get cut.
+- **D6. Examples follow the coroutine lifetime rules** of `4.guide/4t.lifetime.adoc`. A
+  coroutine an example starts with `run_async` takes by value whatever it reads after it may
+  be stored, which for a lazy task includes reads before its first `co_await`. It takes by
+  reference only what outlives `run()`: the `io_context`, or an object `main` owns for the
+  whole program. A child coroutine awaited in the same expression may take references.
 
 ## Part E — Presentation & Tooling
 
@@ -261,7 +266,7 @@ Not every rule is machine-checkable. Each rule sits in one of three tiers:
 |---|---|
 | **Gate** | A1, A6, A7, B2, B3, B6, C2, C4, C9, C10, D2 |
 | **Warning** | A2, B1, C1, C3, C5, C6, D4, D5, E1 |
-| **Review** | A3, A4, A5, B4, B5, C7, C8, C11, D1, D3, E2, E3, E4 |
+| **Review** | A3, A4, A5, B4, B5, C7, C8, C11, D1, D3, D6, E2, E3, E4 |
 
 The accuracy gates (B2, B3, D2 correctness) are enforced by the snippet-compile job, not by
 Vale — that job is what makes examples unable to drift.
@@ -330,7 +335,7 @@ max: 25
   compiled file (Part B2).
 - **F3.** Doc PR checklist: mode declared (A1)? no hand-typed signatures (B1)? example
   compiled (B2)? namespace alias, not a using-directive (B5)? terminology clean (`vale`)?
-  rationale present (D3)?
+  rationale present (D3)? examples follow the lifetime rules (D6)?
 
 ### F4 — A check is not adopted until a planted violation has failed it
 

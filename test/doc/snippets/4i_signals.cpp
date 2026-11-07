@@ -51,7 +51,6 @@ namespace capy    = boost::capy;
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
-#include <atomic>
 #include <iostream>
 #include <stop_token>
 #include <system_error>
@@ -141,17 +140,15 @@ stop_token_frag(corosio::signal_set& signals, std::error_code& out)
 
 // tag::graceful_shutdown[]
 capy::task<void>
-shutdown_handler(corosio::io_context& ioc, std::atomic<bool>& running)
+shutdown_on_signal(corosio::io_context& ioc, std::stop_source stop_src)
 {
     corosio::signal_set signals(ioc, SIGINT, SIGTERM);
 
     auto [ec, signum] = co_await signals.wait();
     if (!ec)
-    {
         std::cout << "Shutdown signal received\n";
-        running = false;
-        ioc.stop();
-    }
+
+    stop_src.request_stop(); // Also stops the server if the wait failed
 }
 // end::graceful_shutdown[]
 
@@ -227,32 +224,36 @@ child_reaper(corosio::io_context& ioc)
 
 // tag::server_shutdown[]
 capy::task<void>
-run_server(corosio::io_context& ioc)
+accept_loop(corosio::io_context& ioc)
 {
-    std::atomic<bool> running{true};
-
-    // Start signal handler
-    capy::run_async(ioc.get_executor())(
-        [](corosio::io_context& ioc,
-           std::atomic<bool>& running) -> capy::task<void> {
-            corosio::signal_set signals(ioc, SIGINT, SIGTERM);
-            co_await signals.wait();
-            running = false;
-            ioc.stop();
-        }(ioc, running));
-
-    // Accept loop
     corosio::tcp_acceptor acc(ioc, corosio::endpoint(8080));
 
-    while (running)
+    for (;;)
     {
         corosio::tcp_socket peer(ioc);
         auto [ec] = co_await acc.accept(peer);
         if (ec)
-            break;
+            break; // Stop requested, or accept failed
 
         // Handle connection...
     }
+}
+
+capy::task<void>
+run_server(corosio::io_context& ioc)
+{
+    std::stop_source stop_src;
+
+    // Start the accept loop with a stop token
+    capy::run_async(ioc.get_executor(), stop_src.get_token())(
+        accept_loop(ioc));
+
+    // Wait for SIGINT or SIGTERM
+    corosio::signal_set signals(ioc, SIGINT, SIGTERM);
+    co_await signals.wait();
+
+    // Stop the accept loop; run() returns once it has finished
+    stop_src.request_stop();
 }
 // end::server_shutdown[]
 

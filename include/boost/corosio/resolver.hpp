@@ -177,7 +177,9 @@ struct endpoint_name
 
     This class provides asynchronous DNS resolution operations that return
     awaitable types. Each operation participates in the affine awaitable
-    protocol, ensuring coroutines resume on the correct executor.
+    protocol. It resumes the awaiting coroutine through that coroutine's
+    executor, not through the executor of the context that owns the
+    resolver.
 
     @par Thread Safety
     Distinct objects: Safe.@n

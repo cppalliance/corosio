@@ -244,7 +244,7 @@ handle_connection(corosio::tcp_socket peer)
 
 // tag::accept_loop[]
 capy::task<void>
-accept_loop(corosio::io_context& ioc, corosio::tcp_acceptor& acc)
+accept_loop(corosio::io_context& ioc, corosio::tcp_acceptor acc)
 {
     for (;;)
     {
@@ -286,18 +286,19 @@ run_server(corosio::io_context& ioc)
     }
 
     corosio::signal_set signals(ioc, SIGINT, SIGTERM);
+    std::stop_source stop_src;
 
-    // Spawn accept loop
-    capy::run_async(ioc.get_executor())(accept_loop(ioc, acc));
+    // Spawn accept loop; it owns the acceptor
+    capy::run_async(ioc.get_executor(), stop_src.get_token())(
+        accept_loop(ioc, std::move(acc)));
 
     // Wait for shutdown signal
     auto [ec, signum] = co_await signals.wait();
     if (!ec)
-    {
         std::cout << "Received signal " << signum << ", shutting down\n";
-        acc.cancel(); // Stop accepting
-        // Existing connections continue until complete
-    }
+
+    stop_src.request_stop(); // Stop accepting
+    // Existing connections continue until complete
 }
 // end::graceful_shutdown[]
 
