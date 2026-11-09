@@ -76,6 +76,9 @@ The Antora pipeline provides two mechanisms; use them instead of hand-authoring:
   launder real code past B2. `doc-lint.mjs`'s SHAPE check runs a content heuristic over every
   role=output/role=figure block and reports (non-gated, advisory) any whose content looks
   like code, so a wrong tag is not silently permanent — see the check's header comment.
+  A `[mermaid]` block is diagram source for the Mermaid extension, so B2 and SHAPE skip it
+  too; like role=output/role=figure, it never clears a `[source,*]` block. Prefer one to a
+  hand-drawn `[role=figure]`, and include `partial$diagram-style.adoc` once on its page.
   Note `role=` on a bare listing emits a real CSS class (`class="listingblock output"` /
   `...figure`) with no stylesheet rule behind it today; a future UI bundle that styles
   `.output`/`.figure` will change how every such block renders, project-wide, in one step.

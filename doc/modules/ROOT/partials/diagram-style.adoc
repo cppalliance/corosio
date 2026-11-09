@@ -1,0 +1,156 @@
+//
+// Copyright (c) 2026 Michael Vandeberg
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
+
+// Page styles for mermaid diagrams, adapted from Capy's partial of the same
+// name (cppalliance/capy doc/modules/ROOT/partials/diagram-style.adoc).
+// Include this once on every page that has a diagram.
+//
+// A <style> element in the page body applies to the whole page, and it
+// works on boost.org, where neither our playbook nor our CSS is used.
+// The benchmark charts style the page the same way
+// (.github/bench/report_page.py).
+++++
+<style>
+/* Mermaid diagrams, in the palette and font of the benchmark charts.
+   Mermaid scopes its own rules to the diagram's id, so these need
+   !important to win. A theme cannot be set any other way: mermaid 10 drops
+   themeCSS from diagram directives, and boost.org's playbook owns
+   mermaid.initialize. The rules rely on mermaid 10 class names; both
+   playbooks pin mermaid@10. */
+.mermaid svg {
+  font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif !important;
+}
+.mermaid svg .messageText,
+.mermaid svg text.actor > tspan,
+.mermaid svg .labelText, .mermaid svg .labelText > tspan,
+.mermaid svg .loopText, .mermaid svg .loopText > tspan,
+.mermaid svg .noteText, .mermaid svg .noteText > tspan {
+  fill: #1f1f1e !important;
+}
+/* The outline is the only edge a box has in light mode, because the fill
+   barely differs from the page. #8a8983 is the lightest warm gray at 3:1
+   against both the page and the fill (WCAG 1.4.11). */
+.mermaid svg .actor,
+.mermaid svg .labelBox,
+.mermaid svg .note {
+  fill: #f0efec !important;
+  stroke: #8a8983 !important;
+}
+/* line[id^="actor"] is a lifeline. */
+.mermaid svg .messageLine0,
+.mermaid svg .messageLine1,
+.mermaid svg .loopLine,
+.mermaid svg line[id^="actor"] {
+  stroke: #5f5e58 !important;
+}
+.mermaid svg .loopLine {
+  fill: none !important;
+}
+/* A ring of page color behind each label, so that lifelines crossing a
+   label do not strike through its text. */
+.mermaid svg .messageText,
+.mermaid svg .loopText {
+  stroke: #ffffff !important;
+  stroke-width: 3px !important;
+  stroke-linejoin: round;
+  paint-order: stroke fill;
+}
+.mermaid svg marker path {
+  fill: #5f5e58 !important;
+  stroke: #5f5e58 !important;
+}
+.mermaid svg marker circle {
+  fill: #1f1f1e !important;
+}
+.mermaid svg .sequenceNumber {
+  fill: #ffffff !important;
+}
+
+html.dark .mermaid svg .messageText,
+html.dark .mermaid svg text.actor > tspan,
+html.dark .mermaid svg .labelText, html.dark .mermaid svg .labelText > tspan,
+html.dark .mermaid svg .loopText, html.dark .mermaid svg .loopText > tspan,
+html.dark .mermaid svg .noteText, html.dark .mermaid svg .noteText > tspan {
+  fill: #ffffff !important;
+}
+html.dark .mermaid svg .actor,
+html.dark .mermaid svg .labelBox,
+html.dark .mermaid svg .note {
+  fill: #383835 !important;
+  stroke: #3a3a38 !important;
+}
+html.dark .mermaid svg .messageLine0,
+html.dark .mermaid svg .messageLine1,
+html.dark .mermaid svg .loopLine,
+html.dark .mermaid svg line[id^="actor"] {
+  stroke: #c3c2b7 !important;
+}
+html.dark .mermaid svg .messageText,
+html.dark .mermaid svg .loopText {
+  stroke: #0d0e0f !important;
+}
+html.dark .mermaid svg marker path {
+  fill: #c3c2b7 !important;
+  stroke: #c3c2b7 !important;
+}
+html.dark .mermaid svg marker circle {
+  fill: #ffffff !important;
+}
+html.dark .mermaid svg .sequenceNumber {
+  fill: #1a1a19 !important;
+}
+
+/* Mermaid state diagrams, in the same palette. Their labels are HTML
+   inside a foreignObject, so they take color, not fill. An edge label
+   gets the page color behind it, so that a transition crossing it does
+   not strike through its text. Arrowheads use the marker rules above. */
+.mermaid svg .statediagram-state rect.basic {
+  fill: #f0efec !important;
+  stroke: #8a8983 !important;
+}
+.mermaid svg .statediagram-state .nodeLabel {
+  color: #1f1f1e !important;
+}
+.mermaid svg path.transition {
+  stroke: #5f5e58 !important;
+}
+.mermaid svg .edgeLabel {
+  color: #1f1f1e !important;
+  background-color: #ffffff !important;
+}
+.mermaid svg g.edgeLabel rect {
+  fill: #ffffff !important;
+  opacity: 1 !important;
+}
+
+html.dark .mermaid svg .statediagram-state rect.basic {
+  fill: #383835 !important;
+  stroke: #3a3a38 !important;
+}
+html.dark .mermaid svg .statediagram-state .nodeLabel {
+  color: #ffffff !important;
+}
+html.dark .mermaid svg path.transition {
+  stroke: #c3c2b7 !important;
+}
+html.dark .mermaid svg .edgeLabel {
+  color: #ffffff !important;
+  background-color: #0d0e0f !important;
+}
+html.dark .mermaid svg g.edgeLabel rect {
+  fill: #0d0e0f !important;
+}
+
+/* The UI gives a diagram's image block no vertical margin. */
+.boostlook .doc .imageblock:has(.mermaid) {
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+</style>
+++++

@@ -38,6 +38,8 @@
 //        `[quote,...]`) — a first cut that merged any `[...]`-shaped line
 //        made one of those, sitting directly above an exempt
 //        `[source,...,role=pseudocode]` block, defeat that exemption.
+//        A `[mermaid]` block (diagram source, not code) is exempt from B2
+//        and SHAPE both, unless it is also `[source,...]`.
 //   SHAPE — advisory only, NEVER gated (not in the summary the CI gate
 //        spec reads by rule prefix). A role=output/role=figure block is a
 //        permanent B2 exemption, so a block wrongly marked non-code would
@@ -206,6 +208,15 @@ function scanBlocks(lines, ch) {
     // exemption for real code); only pseudocode/external do that, and only
     // on a [source,*] block.
     if (isSource && hasClearingRole) continue;
+
+    // A [mermaid] block is diagram source for the mermaid Antora extension:
+    // neither B2 nor SHAPE applies (sequence-diagram messages routinely say
+    // `co_await`, which SHAPE matches). Code pasted into one cannot hide, as
+    // mermaid fails to parse it and the page shows an error box. The style
+    // line sits directly above the walked [source,...]/[role=...] stack, and
+    // the exemption is isSource-gated for the same reason as role=output.
+    const isMermaid = a >= 0 && /^\[mermaid\b/i.test(lines[a].trim());
+    if (!isSource && isMermaid) continue;
 
     if (!isSource && hasNonCodeRole) {
       // Bare listing explicitly marked as program output / a figure: not a
