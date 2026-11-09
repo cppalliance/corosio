@@ -220,10 +220,11 @@ it only in the sense the row names. **scheduler** is approved only in its P2300 
 - **D5. No unexplained qualifiers.** Hedges like "even on X" or "where available" either get
   explained or get cut.
 - **D6. Examples follow the coroutine lifetime rules** of `4.guide/4t.lifetime.adoc`. A
-  coroutine an example starts with `run_async` takes by value whatever it reads after it may
-  be stored, which for a lazy task includes reads before its first `co_await`. It takes by
-  reference only what outlives `run()`: the `io_context`, or an object `main` owns for the
-  whole program. A child coroutine awaited in the same expression may take references.
+  coroutine an example starts with `run_async` takes by value whatever it reads after the
+  caller's scope may have ended, which for a lazy task includes reads before its first
+  `co_await`. It takes by reference only what outlives `run()`: the `io_context`, or an
+  object `main` owns for the whole program. A child coroutine awaited in the same expression
+  may take references.
 
 ## Part E — Presentation & Tooling
 

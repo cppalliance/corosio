@@ -103,7 +103,7 @@ LAST_ACK:: This side has sent its FIN (after receiving the remote FIN) and is wa
 
 TIME_WAIT:: The connection is fully closed, but the socket lingers for a period (typically 60 seconds to 2 minutes) before returning to CLOSED. This is the state that causes the most confusion.
 
-Closing takes one of two paths, depending on which side sends the first FIN. The side that closes first moves through FIN_WAIT_1 and FIN_WAIT_2 to TIME_WAIT. The other side moves through CLOSE_WAIT and LAST_ACK straight to CLOSED. If both sides close at the same time, each goes from FIN_WAIT_1 through CLOSING to TIME_WAIT. Each arrow names what moves the connection on: the application calling `close()`, or the segment that arrives.
+Closing takes one of two paths, depending on which side sends the first FIN. The side that closes first moves through FIN_WAIT_1 and FIN_WAIT_2 to TIME_WAIT. The other side moves through CLOSE_WAIT and LAST_ACK straight to CLOSED. If both sides close at the same time, each goes from FIN_WAIT_1 through CLOSING to TIME_WAIT. Each arrow names what moves the connection on: the application calling `close()`, or the segment that arrives. The figure leaves out one shortcut. When the peer's ACK and FIN arrive in one segment, the side that closes first goes straight from FIN_WAIT_1 to TIME_WAIT.
 
 [role=figure]
 ----

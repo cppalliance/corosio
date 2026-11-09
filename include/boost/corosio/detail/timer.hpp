@@ -54,8 +54,9 @@ struct wait_awaitable;
     completes with success; a cancelled wait completes with an error
     that compares equal to `capy::cond::canceled`.
 
-    Each timer operation participates in the affine awaitable protocol,
-    ensuring coroutines resume on the correct executor.
+    Each timer operation participates in the affine awaitable protocol.
+    It resumes the awaiting coroutine through that coroutine's executor,
+    not through the executor of the context that owns the timer.
 
     @par Thread Safety
     Distinct objects: Safe.@n
