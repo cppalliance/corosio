@@ -90,10 +90,13 @@ When you write:
 include::example$hash-server/hash_server.cpp[tag=run_switch,indent=0]
 ----
 
-`run()` takes a task, so a coroutine lambda wraps the plain function. Following
-the xref:../4.guide/4t.lifetime.adoc[lifetime rules], it gets `buf` and `n` as
-parameters, not captures. `buf` stays valid because `do_session` stays
-suspended until the hash completes.
+`run()` takes a task, so a coroutine lambda wraps the plain function. The
+lambda gets `buf` and `n` as parameters, not captures. The lambda object lives
+until the end of the full expression, which includes the `co_await`, so
+captures would also be safe here. Parameters are still the habit the
+xref:../4.guide/4t.lifetime.adoc[lifetime rules] teach, because they live in
+the coroutine frame rather than in the lambda object. `buf` stays valid
+because `do_session` stays suspended until the hash completes.
 
 Behind the scenes:
 

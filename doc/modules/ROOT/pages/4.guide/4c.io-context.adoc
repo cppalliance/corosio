@@ -48,8 +48,8 @@ hand-off: queue the coroutine for another thread and wake that thread.
 
 Keeping both in one place removes that hand-off. An operation often completes
 on a thread that runs the context its awaiting coroutine belongs to. The
-executor's `dispatch` then resumes the coroutine right there, by symmetric
-transfer.
+executor's `dispatch` then resumes the coroutine inline on that thread, with no
+queue or wakeup.
 
 == Construction
 
