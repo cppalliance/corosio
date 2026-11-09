@@ -10,6 +10,8 @@
 = Opening and Closing TCP Connections
 :page-mode: explanation
 
+include::partial$diagram-style.adoc[]
+
 A TCP connection is not a physical wire. It is an agreement between two machines to track a shared conversation. That agreement begins with a handshake, ends with a teardown, and passes through a series of well-defined states in between. Knowing these states explains errors you encounter in every networked application you write.
 
 == The Three-Way Handshake
@@ -20,17 +22,18 @@ Before any data flows, TCP establishes the connection with three segments:
 . *SYN-ACK*: The server responds with both the SYN and ACK flags set. It acknowledges the client's ISN (by setting the acknowledgment number to the client's ISN + 1) and provides its own ISN. This says "I accept, I acknowledge your starting number, and my byte numbering starts here."
 . *ACK*: The client sends a final acknowledgment of the server's ISN. At this point both sides have agreed on initial sequence numbers, and the connection is established.
 
-[role=figure]
+[mermaid]
 ----
-Client                              Server
-  |                                    |
-  |--- SYN (seq=100) ----------------->|
-  |                                    |
-  |<-- SYN-ACK (seq=300, ack=101) -----|
-  |                                    |
-  |--- ACK (ack=301) ----------------->|
-  |                                    |
-  |      Connection established        |
+sequenceDiagram
+    autonumber
+    accTitle: The three-way handshake
+    accDescr: The client sends a SYN with sequence number 100. The server answers with a SYN-ACK that has sequence number 300 and acknowledges 101. The client sends an ACK that acknowledges 301, and the connection is established.
+    participant C as Client
+    participant S as Server
+    C->>S: SYN (seq=100)
+    S->>C: SYN-ACK (seq=300, ack=101)
+    C->>S: ACK (ack=301)
+    Note over C,S: Connection established
 ----
 
 Why three steps instead of two? Both sides need to agree on two things: the client's ISN and the server's ISN. A two-step handshake would let the server accept without the client confirming the server's ISN. The third step completes the exchange.
@@ -54,17 +57,19 @@ Closing a TCP connection takes four segments because each direction of the strea
 . *FIN*: The other side sends its own FIN when it, too, has finished sending.
 . *ACK*: The first side acknowledges the second FIN.
 
-[role=figure]
+[mermaid]
 ----
-Client                              Server
-  |                                    |
-  |--- FIN --------------------------->|
-  |<-- ACK ----------------------------|
-  |                                    |
-  |<-- FIN ----------------------------|
-  |--- ACK --------------------------->|
-  |                                    |
-  |      Connection closed             |
+sequenceDiagram
+    autonumber
+    accTitle: Graceful teardown
+    accDescr: The client sends a FIN, and the server acknowledges it. Then the server sends its own FIN, and the client acknowledges it. The connection is closed.
+    participant C as Client
+    participant S as Server
+    C->>S: FIN
+    S->>C: ACK
+    S->>C: FIN
+    C->>S: ACK
+    Note over C,S: Connection closed
 ----
 
 In practice, the server's ACK and FIN are often combined into a single segment, reducing the exchange to three segments. But logically, the four steps reflect two independent half-closes.
@@ -103,23 +108,23 @@ LAST_ACK:: This side has sent its FIN (after receiving the remote FIN) and is wa
 
 TIME_WAIT:: The connection is fully closed, but the socket lingers for a period (typically 60 seconds to 2 minutes) before returning to CLOSED. This is the state that causes the most confusion.
 
-Closing takes one of two paths, depending on which side sends the first FIN. The side that closes first moves through FIN_WAIT_1 and FIN_WAIT_2 to TIME_WAIT. The other side moves through CLOSE_WAIT and LAST_ACK straight to CLOSED. If both sides close at the same time, each goes from FIN_WAIT_1 through CLOSING to TIME_WAIT. Each arrow names what moves the connection on: the application calling `close()`, or the segment that arrives. The figure leaves out one shortcut. When the peer's ACK and FIN arrive in one segment, the side that closes first goes straight from FIN_WAIT_1 to TIME_WAIT.
+Closing takes one of two paths, depending on which side sends the first FIN. The side that closes first moves through FIN_WAIT_1 and FIN_WAIT_2 to TIME_WAIT. The other side moves through CLOSE_WAIT and LAST_ACK straight to CLOSED. If both sides close at the same time, each goes from FIN_WAIT_1 through CLOSING to TIME_WAIT. When the peer's ACK and FIN arrive in one segment, the side that closes first skips FIN_WAIT_2 and goes straight from FIN_WAIT_1 to TIME_WAIT. Each arrow names what moves the connection on: the application calling `close()`, or the segment that arrives.
 
-[role=figure]
+[mermaid]
 ----
-                 ESTABLISHED
-       close()  /           \  FIN
-               v             v
-         FIN_WAIT_1        CLOSE_WAIT
-    ACK   /        \  FIN      |  close()
-         v          v          v
-   FIN_WAIT_2    CLOSING     LAST_ACK
-    FIN  |          |  ACK     |  ACK
-         v          v          v
-         TIME_WAIT <+        CLOSED
-             |  2MSL timeout
-             v
-           CLOSED
+stateDiagram-v2
+    accTitle: The two ways a TCP connection closes
+    accDescr: From ESTABLISHED, the side that calls close() goes to FIN_WAIT_1, and the side that receives a FIN goes to CLOSE_WAIT. From FIN_WAIT_1, an ACK leads to FIN_WAIT_2, a FIN leads to CLOSING, and an ACK and FIN in one segment lead to TIME_WAIT. FIN_WAIT_2 goes to TIME_WAIT on a FIN, and CLOSING goes to TIME_WAIT on an ACK. TIME_WAIT goes to CLOSED after the 2MSL timeout. CLOSE_WAIT goes to LAST_ACK when the application calls close(), and LAST_ACK goes to CLOSED on an ACK.
+    ESTABLISHED --> FIN_WAIT_1: close()
+    ESTABLISHED --> CLOSE_WAIT: FIN
+    FIN_WAIT_1 --> FIN_WAIT_2: ACK
+    FIN_WAIT_1 --> CLOSING: FIN
+    FIN_WAIT_1 --> TIME_WAIT: ACK and FIN
+    FIN_WAIT_2 --> TIME_WAIT: FIN
+    CLOSING --> TIME_WAIT: ACK
+    TIME_WAIT --> CLOSED: 2MSL timeout
+    CLOSE_WAIT --> LAST_ACK: close()
+    LAST_ACK --> CLOSED: ACK
 ----
 
 == TIME_WAIT

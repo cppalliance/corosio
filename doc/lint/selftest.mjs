@@ -386,6 +386,31 @@ try {
       '',
     ].join('\n'));
 
+    // A `[mermaid]` block is diagram source rendered by the mermaid Antora
+    // extension, not code: B2 and SHAPE must both leave it alone (a sequence
+    // diagram's messages routinely say `co_await`, which SHAPE matches).
+    // The exemption must not reach a block that is ALSO `[source,...]`, or
+    // a `[mermaid]` line stacked above a real C++ block would clear it.
+    // Line numbers are asserted below, so keep them stable.
+    write('mermaid.adoc', [
+      ':page-mode: how-to',                 // 1
+      '',                                   // 2
+      '= Mermaid',                          // 3
+      '',                                   // 4
+      '[mermaid]',                          // 5
+      '----',                               // 6
+      'sequenceDiagram',                    // 7
+      '    A->>B: co_await child()',        // 8
+      '----',                               // 9
+      '',                                   // 10
+      '[mermaid]',                          // 11
+      '[source,cpp]',                       // 12 <- must fire
+      '----',                               // 13
+      'int w = 4;',                         // 14
+      '----',                               // 15
+      '',
+    ].join('\n'));
+
     // ANCHOR fixture. Line numbers are asserted below, so keep them stable:
     // 3 = the prose violation, 5-8 = the in-block negative, 10 = the
     // passthrough negative.
@@ -511,6 +536,18 @@ try {
       check('a [[anchor]]/[NOTE]/[quote,...] line above an exempt [source,...] block does not defeat its exemption',
         anchorHits.length === 0,
         `anchor-above-pseudocode.adoc should have 0 B2 findings, got: ${JSON.stringify(anchorHits)}`);
+
+      const mermaidB2 = dOut.findings.B2.filter((f) => f.file === 'mermaid.adoc');
+      check('B2 leaves a [mermaid] diagram block alone',
+        !mermaidB2.some((f) => f.line === 5 || f.line === 6),
+        `mermaid.adoc:5 is a diagram, not code; got: ${JSON.stringify(mermaidB2)}`);
+      check('a [mermaid] line stacked above [source,cpp] does not clear the C++ block',
+        mermaidB2.length === 1 && mermaidB2[0].line === 12,
+        `expected exactly 1 mermaid.adoc B2 finding at line 12, got: ${JSON.stringify(mermaidB2)}`);
+      const mermaidShape = dOut.findings.SHAPE.filter((f) => f.file === 'mermaid.adoc');
+      check('SHAPE leaves a [mermaid] diagram block alone even when a message says co_await',
+        mermaidShape.length === 0,
+        `mermaid.adoc should have 0 SHAPE findings, got: ${JSON.stringify(mermaidShape)}`);
 
       // ANCHOR: a C++ attribute in a prose code span. Asciidoctor's
       // inline-anchor substitution runs inside a backtick span, so
