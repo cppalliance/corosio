@@ -20,6 +20,7 @@
 #include <boost/corosio/detail/scheduler_op.hpp>
 #include <boost/corosio/detail/thread_local_ptr.hpp>
 #include <boost/corosio/detail/timer_service.hpp>
+#include <boost/corosio/native/detail/reactor/reactor_defer_policy.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -333,6 +334,11 @@ protected:
     std::atomic<bool> stopped_{false};
     mutable std::atomic<bool> task_running_{false};
     mutable bool task_interrupted_ = false;
+    // Set while the sentinel waits behind queued handlers (guarded by
+    // mutex_).
+    bool task_deferred_ = false;
+    // Whether waiting is paying off (guarded by mutex_).
+    reactor_defer_policy defer_policy_;
 
     // Descriptors retired during the running reactor pass (guarded by
     // mutex_).
@@ -1032,7 +1038,13 @@ reactor_scheduler::do_one(lock_type& lock, long timeout_us, context_type& ctx)
     for (;;)
     {
         if (stopped_.load(std::memory_order_acquire))
+        {
+            // The next run is scored afresh, but a deferral left pending
+            // stays marked: clearing the mark would let a loop of short
+            // runs defer the sentinel forever.
+            defer_policy_.reset();
             return 0;
+        }
 
         auto const e     = completed_ops_.pop();
         scheduler_op* op = ready_is_continuation(e) ? nullptr : ready_as_op(e);
@@ -1041,6 +1053,27 @@ reactor_scheduler::do_one(lock_type& lock, long timeout_us, context_type& ctx)
         if (op == &task_op_)
         {
             bool more_handlers = !completed_ops_.empty();
+
+            // Handlers queued here usually start the next I/O
+            // themselves, so running them first can save a reactor pass.
+            // Defer at most once in a row so reposting work cannot
+            // starve I/O. poll() and poll_one() don't defer: the reactor
+            // turn they would skip may be their last before returning.
+            if (task_deferred_)
+            {
+                task_deferred_ = false;
+                defer_policy_.on_deferred_turn(more_handlers);
+            }
+            else if (more_handlers && timeout_us != 0)
+            {
+                if (defer_policy_.may_defer())
+                {
+                    task_deferred_ = true;
+                    completed_ops_.push(&task_op_);
+                    continue;
+                }
+                defer_policy_.on_polled_instead();
+            }
 
             if (!more_handlers &&
                 outstanding_work_.load(std::memory_order_acquire) == 0)
