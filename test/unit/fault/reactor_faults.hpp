@@ -27,6 +27,7 @@
 #include <boost/corosio/test/socket_pair.hpp>
 #include <boost/corosio/udp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
+#include <boost/capy/ex/async_waker.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -84,6 +85,9 @@ struct reactor_common_faults
     static constexpr sys spec_write = sys::write;
 #endif
     static constexpr sys vec_write = is_kqueue ? sys::writev : sys::sendmsg;
+    static constexpr sys wait_sys  = is_select ? sys::select
+        : is_kqueue                            ? sys::kevent
+                                               : sys::epoll_wait;
 
     static endpoint loopback()
     {
@@ -1034,6 +1038,73 @@ struct reactor_common_faults
 #endif
     }
 
+    // A handler that an I/O completion posts runs before the reactor is
+    // polled again: right after a pass, a poll would find nothing new.
+    void testPostedWakeRunsBeforeNextPoll()
+    {
+        io_context ioc(Backend);
+        auto [a, b] = test::must(test::make_socket_pair(ioc));
+        capy::async_waker waker;
+        unsigned at_read = 0;
+        unsigned at_wake = 0;
+        // Counts this thread's calls to the wait symbol (every kevent on
+        // kqueue); the one it would fail is never reached.
+        fault_scope f(wait_sys, EINTR, 1u << 30);
+
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec] = co_await waker.wait();
+            BOOST_TEST(!ec);
+            at_wake = f.count();
+        };
+        auto reader = [&]() -> capy::task<> {
+            char buf[1];
+            auto [ec, n] = co_await b.read_some(capy::mutable_buffer(buf, 1));
+            BOOST_TEST(!ec);
+            at_read = f.count();
+            waker.wake();
+        };
+        auto writer = [&]() -> capy::task<> {
+            char const c = 'x';
+            auto [ec, n] = co_await a.write_some(capy::const_buffer(&c, 1));
+            BOOST_TEST(!ec);
+        };
+        capy::run_async(ioc.get_executor())(waiter());
+        capy::run_async(ioc.get_executor())(reader());
+        capy::run_async(ioc.get_executor())(writer());
+        ioc.run();
+
+        // The read parked, so a poll completed it.
+        BOOST_TEST(at_read > 0);
+        BOOST_TEST_EQ(at_wake, at_read);
+    }
+
+    // A run stopped while the sentinel was deferred leaves the next run
+    // its own deferral, so a posted handler still runs before a poll.
+    void testRestartRenewsDeferral()
+    {
+        io_context ioc(Backend);
+        auto stopper = [&]() -> capy::task<> {
+            ioc.stop();
+            co_return;
+        };
+        capy::run_async(ioc.get_executor())(stopper());
+        ioc.run();
+        ioc.restart();
+
+        // Counts this thread's calls to the wait symbol (every kevent on
+        // kqueue); the one it would fail is never reached.
+        fault_scope f(wait_sys, EINTR, 1u << 30);
+        unsigned at_run = 1;
+        auto probe      = [&]() -> capy::task<> {
+            at_run = f.count();
+            co_return;
+        };
+        capy::run_async(ioc.get_executor())(probe());
+        ioc.run();
+
+        BOOST_TEST_EQ(at_run, 0u);
+    }
+
     // Accepted and assigned sockets learn their family from the
     // addresses the library already reads, so option calls never ask.
     void testAdoptedSocketsKnowFamily()
@@ -1352,6 +1423,8 @@ struct reactor_common_faults
         testSocketFamilyProbeFails();
         testOpenedSocketKnowsFamily();
         testAdoptedSocketsKnowFamily();
+        testPostedWakeRunsBeforeNextPoll();
+        testRestartRenewsDeferral();
         testDatagramFails();
     }
 };

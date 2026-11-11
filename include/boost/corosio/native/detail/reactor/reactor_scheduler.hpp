@@ -333,6 +333,9 @@ protected:
     std::atomic<bool> stopped_{false};
     mutable std::atomic<bool> task_running_{false};
     mutable bool task_interrupted_ = false;
+    // Set while the sentinel waits behind queued handlers (guarded by
+    // mutex_).
+    bool task_deferred_ = false;
 
     // Descriptors retired during the running reactor pass (guarded by
     // mutex_).
@@ -631,6 +634,10 @@ reactor_scheduler::stopped() const noexcept
 inline void
 reactor_scheduler::restart()
 {
+    // A run can end with the sentinel marked deferred; clearing the
+    // mark lets the next run defer it again.
+    lock_type lock(mutex_);
+    task_deferred_ = false;
     stopped_.store(false, std::memory_order_release);
 }
 
@@ -1012,6 +1019,19 @@ reactor_scheduler::do_one(lock_type& lock, long timeout_us, context_type& ctx)
         if (op == &task_op_)
         {
             bool more_handlers = !completed_ops_.empty();
+
+            // Handlers queued here were mostly posted by the pass that
+            // just ran, so polling ahead of them usually finds nothing.
+            // Defer at most once in a row so reposting work cannot
+            // starve I/O. poll() and poll_one() don't defer: the reactor
+            // turn they would skip may be their last before returning.
+            if (more_handlers && !task_deferred_ && timeout_us != 0)
+            {
+                task_deferred_ = true;
+                completed_ops_.push(&task_op_);
+                continue;
+            }
+            task_deferred_ = false;
 
             if (!more_handlers &&
                 (outstanding_work_.load(std::memory_order_acquire) == 0 ||
