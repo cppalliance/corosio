@@ -329,14 +329,12 @@ struct kqueue_faults
 
     void testRunLoopFaults()
     {
-        // Nothing calls kevent between the constructor and the run
-        // loop's first wait: posting the task does not interrupt a
-        // reactor that is not running yet
-        // (reactor_scheduler::wake_one_thread_and_unlock), so nth 1 is
-        // that wait.
+        // The run loop runs the posted task before its first wait, and
+        // arming the delay triggers the user event, so nth 1 is that
+        // trigger and nth 2 is the wait.
         {
             io_context ioc(kqueue);
-            fault_scope f(sys::kevent, EINTR);
+            fault_scope f(sys::kevent, EINTR, 2);
             bool done = false;
             auto body = [&]() -> capy::task<> {
                 std::ignore =
@@ -352,7 +350,7 @@ struct kqueue_faults
             // Any other errno leaves run() through an exception
             // (kqueue_scheduler::run_task).
             io_context ioc(kqueue);
-            fault_scope f(sys::kevent, EBADF);
+            fault_scope f(sys::kevent, EBADF, 2);
             auto body = [&]() -> capy::task<> {
                 std::ignore =
                     co_await corosio::delay(std::chrono::milliseconds(1));
@@ -377,10 +375,9 @@ struct kqueue_faults
     {
         io_context ioc(kqueue);
         {
-            // stop() is the one path that reaches NOTE_TRIGGER without
-            // a reactor thread (reactor_scheduler::stop), and it
-            // interrupts only on the transition, so each stop below is
-            // one kevent.
+            // stop() reaches NOTE_TRIGGER with no other kevent call in
+            // between, and it interrupts only on the transition, so each
+            // stop below is one kevent.
             fault_scope first(sys::kevent, EIO, 1);
             fault_scope second(sys::kevent, EIO, 2);
             ioc.stop();
