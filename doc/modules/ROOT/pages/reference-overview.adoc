@@ -16,17 +16,25 @@ The xref:reference:boost/corosio.adoc[index by kind] lists these names, plus nam
 
 All names are in namespace `boost::corosio`.
 The socket options are in cpp:socket_option[].
-Operators are listed on the page of their type.
-The test tools in namespace `boost::corosio::test` are not in the generated reference.
-xref:5.testing/5.intro.adoc[Testing] describes them.
+The page of each type lists its operators.
+
+Corosio builds on Boost.Capy, which provides tasks, executors, buffer sequences, the stream concepts, and `capy::results`.
+See xref:4.guide/4b.concurrent-programming.adoc[Concurrent Programming], xref:4.guide/4n.buffers.adoc[Buffer Sequences], xref:4.guide/4g.composed-operations.adoc[Composed Operations], and xref:4.guide/4m.error-handling.adoc[Error Handling].
+
+Two public Corosio namespaces are not in the generated reference.
+`boost::corosio::test` holds the test tools that xref:5.testing/5.intro.adoc[Testing] describes.
+<<socket-options>> describes `boost::corosio::native_socket_option`.
 
 [#io-context-and-io-backends]
 == I/O Context and I/O Backends
 
-An cpp:io_context[] runs the event loop that completes I/O operations and resumes the coroutines that await them.
+An cpp:io_context[] runs the event loop that completes I/O operations.
+A completed operation resumes the awaiting coroutine through that coroutine's executor.
 Each I/O object belongs to one cpp:io_context[].
-By default, the context uses IOCP on Windows, epoll on Linux, kqueue on BSD and macOS, and select on other POSIX systems.
+By default, an cpp:io_context[] uses IOCP on Windows, epoll on Linux, kqueue on BSD and macOS, and select on other POSIX systems.
 Each I/O backend has a tag type, such as cpp:epoll_t[], and a tag value, such as cpp:epoll[].
+Each tag type and tag value exists only on platforms where its I/O backend is available.
+The io_uring I/O backend, cpp:uring_t[], needs Linux and liburing, and an cpp:io_context[] never uses it by default.
 Pass a tag value to the cpp:io_context[] constructor to choose the I/O backend at compile time.
 cpp:io_context_options[] holds the runtime tuning settings, including the cpp:locking_mode[].
 See xref:4.guide/4c.io-context.adoc[I/O Context] and xref:4.guide/4c2.configuration.adoc[Configuration].
@@ -48,12 +56,12 @@ See xref:4.guide/4c.io-context.adoc[I/O Context] and xref:4.guide/4c2.configurat
 [#io-objects-and-streams]
 == I/O Objects and Streams
 
-Sockets, acceptors, files, resolvers, and signal sets derive from cpp:io_object[].
+Sockets, acceptors, files, resolvers, signal sets, and the descriptor and handle types derive from cpp:io_object[].
 cpp:io_stream[] combines cpp:io_read_stream[] and cpp:io_write_stream[].
 A function that takes an cpp:io_stream[] reference accepts a TCP socket, a Unix domain stream socket, a stream file, or a stream descriptor or handle.
 cpp:shutdown_type[] selects which directions a socket's `shutdown` closes.
 cpp:wait_type[] selects the readiness condition that completes a `wait` operation.
-cpp:native_handle_type[] holds a platform descriptor or handle.
+cpp:native_handle_type[] is the type of a platform descriptor or handle.
 See xref:4.guide/4d.sockets.adoc[Sockets] and xref:4.guide/4r.wait.adoc[Readiness Wait].
 
 [cols="1,4"]
@@ -68,27 +76,6 @@ See xref:4.guide/4d.sockets.adoc[Sockets] and xref:4.guide/4r.wait.adoc[Readines
 
 | Enum Types
 | cpp:shutdown_type[], cpp:wait_type[]
-|===
-
-[#tcp]
-== TCP
-
-A cpp:tcp_socket[] connects to a peer, then reads and writes a byte stream.
-A cpp:tcp_acceptor[] listens on an endpoint and accepts inbound connections.
-cpp:connect[] tries each endpoint in a range, in order, until one connects.
-The range is often the list of endpoints that a cpp:resolver[] returns.
-cpp:tcp_server[] manages a pool of reusable workers that handle accepted connections.
-See xref:4.guide/4d.sockets.adoc[Sockets], xref:4.guide/4e.tcp-acceptor.adoc[Acceptors], and xref:4.guide/4k.tcp-server.adoc[TCP Server].
-
-[cols="1,4"]
-|===
-| Kind | Names
-
-| Types
-| cpp:tcp_socket[], cpp:tcp_acceptor[], cpp:tcp_server[]
-
-| Functions
-| cpp:connect[]
 |===
 
 [#addresses-and-endpoints]
@@ -138,12 +125,33 @@ See xref:4.guide/4j.resolver.adoc[Name Resolution] and xref:3.tutorials/3c.dns-l
 | cpp:host_name[]
 |===
 
+[#tcp]
+== TCP
+
+A cpp:tcp_socket[] connects to a peer, then reads and writes a byte stream.
+A cpp:tcp_acceptor[] listens on an endpoint and accepts inbound connections.
+cpp:connect[] tries each endpoint in a range, in order, until one connects.
+The range is often the list of endpoints that a cpp:resolver[] returns.
+cpp:tcp_server[] manages a pool of reusable workers that handle accepted connections.
+See xref:4.guide/4d.sockets.adoc[Sockets], xref:4.guide/4e.tcp-acceptor.adoc[Acceptors], and xref:4.guide/4k.tcp-server.adoc[TCP Server].
+
+[cols="1,4"]
+|===
+| Kind | Names
+
+| Types
+| cpp:tcp_socket[], cpp:tcp_acceptor[], cpp:tcp_server[]
+
+| Functions
+| cpp:connect[]
+|===
+
 [#udp]
 == UDP
 
 A cpp:udp_socket[] sends and receives datagrams.
 In connectionless mode, each send names its destination, and each receive reports its sender.
-In connected mode, the socket has one fixed peer.
+In connected mode, `connect` sets a default peer that send and receive use.
 cpp:message_flags[] modifies a single send or receive on a UDP socket or a Unix domain datagram socket.
 See xref:4.guide/4q.udp.adoc[UDP Sockets].
 
@@ -163,8 +171,8 @@ See xref:4.guide/4q.udp.adoc[UDP Sockets].
 
 A Unix domain socket connects processes on the same machine through a filesystem path, which a cpp:local_endpoint[] holds.
 cpp:local_stream_socket[] and cpp:local_stream_acceptor[] work like their TCP counterparts.
-cpp:local_datagram_socket[] sends and receives datagrams.
-cpp:connect_pair[] connects two sockets to each other without a path.
+cpp:local_datagram_socket[] sends and receives datagrams, on POSIX systems only.
+cpp:connect_pair[] connects two sockets to each other, so the caller needs no path.
 cpp:bind_option[] controls whether an acceptor's `bind` first removes an existing socket file at the path.
 See xref:4.guide/4p.unix-sockets.adoc[Unix Domain Sockets].
 
@@ -187,9 +195,12 @@ See xref:4.guide/4p.unix-sockets.adoc[Unix Domain Sockets].
 
 A socket option changes how the operating system handles a socket.
 Pass one to `set_option` or `get_option` on a socket or an acceptor.
-Each type in cpp:socket_option[] supplies the platform's protocol level and option name, so the calling code needs no platform headers.
+Each concrete option in cpp:socket_option[] supplies the platform's protocol level and option name, so the calling code needs no platform headers.
 Most on-off options derive from cpp:socket_option::boolean_option[], and the buffer-size options derive from cpp:socket_option::integer_option[].
-See the xref:4.guide/4q.udp.adoc#_socket_options[Socket Options] and xref:4.guide/4q.udp.adoc#_multicast[Multicast] sections of the UDP guide.
+The header `<boost/corosio/native/native_socket_option.hpp>` defines the same options inline, in namespace `boost::corosio::native_socket_option`.
+That header includes the platform's socket headers.
+See xref:4.guide/4a.tcp-networking.adoc#_tcp_nodelay[TCP_NODELAY] and xref:4.guide/4a.tcp-networking.adoc#_so_reuseaddr[SO_REUSEADDR] in the TCP/IP guide.
+See also the xref:4.guide/4q.udp.adoc#_socket_options[Socket Options] and xref:4.guide/4q.udp.adoc#_multicast[Multicast] sections of the UDP guide.
 
 [cols="1,4"]
 |===
@@ -203,11 +214,13 @@ See the xref:4.guide/4q.udp.adoc#_socket_options[Socket Options] and xref:4.guid
 == Delays and Timeouts
 
 `co_await` cpp:delay[] to suspend a coroutine for a duration or until a time point.
-The delay ends early if the coroutine's stop token is activated.
-cpp:timeout[] races an awaitable that returns `results` against a deadline.
-A delay on the steady clock is a cpp:delay_awaitable[], and a delay on any other clock is a cpp:clock_delay_awaitable[].
-For another clock, cpp:wait_traits[] limits how long each underlying wait lasts before the clock is read again.
-cpp:WaitTraits[] is the concept for such a policy.
+A stop request on the coroutine's stop token ends the delay early.
+cpp:timeout[] races an operation whose result is a `capy::results` against a deadline.
+A delay for a duration, or until a steady-clock time point, is a cpp:delay_awaitable[].
+A delay until a time point on any other clock is a cpp:clock_delay_awaitable[].
+On another clock, a wait-traits policy sets how long each underlying wait lasts before the delay reads the clock again.
+The default policy, cpp:wait_traits[], waits for the full remaining time.
+A custom policy satisfies cpp:WaitTraits[].
 See xref:4.guide/4h.timers.adoc[Delays and Timeouts] and xref:3.tutorials/3f.reconnect.adoc[Reconnect with Backoff].
 
 [cols="1,4"]
@@ -244,7 +257,8 @@ See xref:4.guide/4i.signals.adoc[Signal Handling].
 
 A cpp:stream_file[] reads and writes a file in order, like a stream.
 A cpp:random_access_file[] reads and writes at offsets that the caller chooses.
-cpp:file_base[] holds the open flags and seek origins that both types use.
+cpp:file_base[] holds the open flags that both types use.
+It also holds the seek origins that cpp:stream_file[] uses.
 See xref:4.guide/4o.file-io.adoc[File I/O].
 
 [cols="1,4"]
@@ -259,7 +273,7 @@ See xref:4.guide/4o.file-io.adoc[File I/O].
 == Native Descriptors and Handles
 
 These types adopt a descriptor or handle that other code opened, and run its I/O on an cpp:io_context[].
-A cpp:posix_stream_descriptor[] drives a POSIX descriptor such as a pipe, a FIFO, or a terminal.
+On POSIX systems, a cpp:posix_stream_descriptor[] drives a descriptor such as a pipe, a FIFO, or a terminal.
 On Windows, cpp:win_stream_handle[] and cpp:win_random_access_handle[] drive overlapped handles.
 A cpp:win_object_handle[] waits on a Windows kernel object.
 See xref:4.guide/4s.native-descriptors.adoc[Native Descriptors and Handles].
@@ -300,10 +314,13 @@ See xref:4.guide/4l.tls.adoc[TLS Encryption] and xref:3.tutorials/3d.tls-context
 [#errors]
 == Errors
 
-Operations report failures as a `std::error_code`.
-cpp:error[] lists the failures that Corosio detects itself.
-cpp:make_error_code[] makes a `std::error_code` from one of them.
-Errors from OpenSSL and WolfSSL use the categories that cpp:openssl_category[] and cpp:wolfssl_category[] return.
+Operations report runtime failures as a `std::error_code`, alone or in a `capy::results`.
+cpp:error[] lists Corosio's own error codes, such as `already_open`.
+Most failures that Corosio detects itself use `std::errc` codes instead.
+cpp:make_error_code[] makes a `std::error_code` from an cpp:error[] value.
+An error from the OpenSSL error queue uses the category that cpp:openssl_category[] returns.
+OpenSSL errors from the system library, `ERR_LIB_SYS`, use `std::system_category()` instead.
+An error from `wolfSSL_get_error` uses the category that cpp:wolfssl_category[] returns.
 See xref:4.guide/4m.error-handling.adoc[Error Handling].
 
 [cols="1,4"]
@@ -320,12 +337,13 @@ See xref:4.guide/4m.error-handling.adoc[Error Handling].
 [#native-types]
 == Native Types
 
-Each `native_` type derives from the type with the same name minus that prefix.
+Each type in this section derives from the type with the same name minus the `native_` prefix.
 It takes a tag value from <<io-context-and-io-backends>> as a template argument, as in `native_tcp_socket<epoll>`.
-Its asynchronous operations call that I/O backend directly, so the compiler can inline the whole call chain.
-Code can pass a native object wherever its base type is expected.
+The asynchronous operations of these types call that I/O backend directly, so the compiler can inline the whole call chain.
+cpp:native_io_context[] does the same for its event loop functions, such as `run`.
+A function that takes the base type also accepts the native object.
 Calls through the base type use virtual dispatch.
-See xref:4.guide/4c2.configuration.adoc[Configuration].
+xref:4.guide/4c2.configuration.adoc[Configuration] shows how to construct a cpp:native_io_context[] with options.
 
 [cols="1,4"]
 |===
