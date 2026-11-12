@@ -51,4 +51,5 @@
 ** xref:benchmarks/windows.adoc[Windows]
 ** xref:benchmarks/macos.adoc[macOS]
 * xref:glossary.adoc[Glossary]
-* xref:reference:boost/corosio.adoc[Reference]
+* Reference
+** xref:reference:boost/corosio.adoc[Index by Kind]
