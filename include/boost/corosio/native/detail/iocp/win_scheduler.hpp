@@ -623,6 +623,16 @@ win_scheduler::do_one(unsigned long timeout_ms)
 inline std::size_t
 win_scheduler::do_one_wait(unsigned long timeout_ms, bool& took_wake)
 {
+    // A handler that throws has still consumed its work.
+    struct finish_on_exit
+    {
+        win_scheduler* self;
+        ~finish_on_exit()
+        {
+            self->work_finished();
+        }
+    };
+
     for (;;)
     {
         // Check if we need to process timers or deferred ops
@@ -689,9 +699,9 @@ win_scheduler::do_one_wait(unsigned long timeout_ms, bool& took_wake)
                         std::memory_order_acquire))
                 {
                     ::InterlockedDecrement(&pending_io_);
+                    finish_on_exit on_exit{this};
                     ov_op->complete(
                         this, ov_op->bytes_transferred, ov_op->dwError);
-                    work_finished();
                     return 1;
                 }
                 continue;
@@ -701,8 +711,8 @@ win_scheduler::do_one_wait(unsigned long timeout_ms, bool& took_wake)
             {
                 // Posted scheduler_op*: overlapped is actually a scheduler_op*
                 auto* op = reinterpret_cast<scheduler_op*>(overlapped);
+                finish_on_exit on_exit{this};
                 op->complete(this, bytes, err);
-                work_finished();
                 return 1;
             }
 
@@ -710,8 +720,8 @@ win_scheduler::do_one_wait(unsigned long timeout_ms, bool& took_wake)
             {
                 // Posted continuation: overlapped is actually a continuation*
                 auto* c = reinterpret_cast<capy::continuation*>(overlapped);
+                finish_on_exit on_exit{this};
                 c->h.resume();
-                work_finished();
                 return 1;
             }
 

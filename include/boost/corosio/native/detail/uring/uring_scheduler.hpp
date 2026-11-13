@@ -1332,11 +1332,19 @@ uring_scheduler::do_one(long timeout_us)
             lock.unlock();
             // Speculative follow-ups in the handler share this budget.
             reset_inline_budget();
+            // A handler that throws has still consumed its work.
+            struct finish_on_exit
+            {
+                uring_scheduler* self;
+                ~finish_on_exit()
+                {
+                    self->work_finished();
+                }
+            } on_exit{this};
             if (ready_is_continuation(e))
                 ready_as_cont(e)->h.resume();
             else
                 (*ready_as_op(e))();
-            work_finished();
             return 1;
         }
 
