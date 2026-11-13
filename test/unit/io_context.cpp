@@ -613,6 +613,45 @@ struct io_context_test
         BOOST_TEST(ioc.stopped());
     }
 
+    // A run nested in a handler must see work that handler posted,
+    // rather than leave it until the handler returns.
+    void nestedRunSeesPostedWork(int mode)
+    {
+        io_context ioc(Backend);
+        auto ex         = ioc.get_executor();
+        int counter     = 0;
+        int seen        = -1;
+        std::size_t ran = 0;
+        auto outer      = [&]() -> capy::task<> {
+            post_coro(ex, make_coro(counter));
+            ran  = mode == 0 ? ioc.poll()
+                 : mode == 1 ? ioc.poll_one()
+                             : ioc.run_one();
+            seen = counter;
+            co_return;
+        };
+        capy::run_async(ex)(outer());
+        ioc.run();
+        BOOST_TEST_EQ(ran, 1u);
+        BOOST_TEST_EQ(seen, 1);
+        BOOST_TEST_EQ(counter, 1);
+    }
+
+    void testNestedPollSeesPostedWork()
+    {
+        nestedRunSeesPostedWork(0);
+    }
+
+    void testNestedPollOneSeesPostedWork()
+    {
+        nestedRunSeesPostedWork(1);
+    }
+
+    void testNestedRunOneSeesPostedWork()
+    {
+        nestedRunSeesPostedWork(2);
+    }
+
     void testStopAndRestart()
     {
         io_context ioc(Backend);
@@ -1191,6 +1230,9 @@ struct io_context_test
         testRunOne();
         testPoll();
         testPollOne();
+        testNestedPollSeesPostedWork();
+        testNestedPollOneSeesPostedWork();
+        testNestedRunOneSeesPostedWork();
         testStopAndRestart();
         testRunOneFor();
         testRunOneUntil();
