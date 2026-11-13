@@ -255,13 +255,10 @@ public:
     {
         frame_allocator_restore restore;
         typename Clock::time_point now = Clock::now();
-        for (;;)
+        while (now < abs_time)
         {
-            auto rel_time  = abs_time - now;
-            using rel_type = decltype(rel_time);
-            if (rel_time < rel_type::zero())
-                rel_time = rel_type::zero();
-            else if (rel_time > std::chrono::seconds(1))
+            auto rel_time = abs_time - now;
+            if (rel_time > std::chrono::seconds(1))
                 rel_time = std::chrono::seconds(1);
 
             std::size_t s = sched().wait_one(
@@ -274,9 +271,8 @@ public:
                 return s;
 
             now = Clock::now();
-            if (now >= abs_time)
-                return 0;
         }
+        return 0;
     }
 
     /** Process all ready work items without blocking.

@@ -66,6 +66,7 @@ struct bounded_run_test
             resumed     = true;
         };
         capy::run_async(ex)(reader());
+        std::ignore = ioc.poll();
 
         std::ignore = ioc.run_for(std::chrono::milliseconds(50));
         BOOST_TEST(!resumed);
@@ -94,9 +95,10 @@ struct bounded_run_test
             resumed     = true;
         };
         capy::run_async(ex)(reader());
+        std::ignore = ioc.poll();
 
-        // First slice starts the reader coroutine and parks it; the
-        // second finds only the parked read and waits out the bound.
+        // Only the parked read is left, so each slice waits out its
+        // bound.
         std::ignore = ioc.run_one_for(std::chrono::milliseconds(20));
         std::ignore = ioc.run_one_for(std::chrono::milliseconds(20));
         BOOST_TEST(!resumed);
