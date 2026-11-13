@@ -9,8 +9,8 @@
 
 // Bounded run variants (run_for / run_one_for / poll) on the reactor
 // schedulers. Durations here bound how long a call may block; nothing
-// asserts elapsed time, only that parked work stays parked and armed
-// timers still fire within the bound.
+// asserts elapsed time, only that parked work stays parked, ready work
+// completes, and armed timers still fire within the bound.
 
 #include <boost/corosio/detail/platform.hpp>
 
@@ -19,6 +19,8 @@
 
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/io_context.hpp>
+#include <boost/corosio/local_connect_pair.hpp>
+#include <boost/corosio/local_stream_socket.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
 
@@ -35,6 +37,8 @@
 #include <limits>
 #include <stdexcept>
 #include <system_error>
+
+#include <sys/socket.h>
 
 #include "context.hpp"
 #include "must.hpp"
@@ -172,6 +176,65 @@ struct bounded_run_test
         BOOST_TEST(resumed);
     }
 
+    template<class Drive>
+    void checkPollCompletesReadyRead(Drive drive)
+    {
+        io_context ioc(Backend);
+        local_stream_socket a(ioc);
+        local_stream_socket b(ioc);
+        test::must_ok(connect_pair(a, b));
+
+        bool done   = false;
+        auto reader = [&]() -> capy::task<> {
+            char buf[1];
+            auto [ec, n] = co_await b.read_some(capy::mutable_buffer(buf, 1));
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(n, 1u);
+            done = true;
+        };
+        capy::run_async(ioc.get_executor())(reader());
+        std::ignore = ioc.poll(); // the read parks
+        BOOST_TEST(!done);
+
+        char const c = 'x';
+        BOOST_TEST_EQ(::send(a.native_handle(), &c, 1, 0), 1);
+
+        for (int i = 0; i < 5 && !done; ++i)
+        {
+            ioc.restart();
+            std::ignore = drive(ioc);
+        }
+        BOOST_TEST(done);
+    }
+
+    void testPollCompletesReadyRead()
+    {
+        checkPollCompletesReadyRead([](io_context& c) { return c.poll(); });
+        checkPollCompletesReadyRead(
+            [](io_context& c) { return c.poll_one(); });
+    }
+
+    void testPollFiresExpiredDelay()
+    {
+        io_context ioc(Backend);
+        bool fired = false;
+        auto task  = [&]() -> capy::task<> {
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(1));
+            fired = true;
+        };
+        capy::run_async(ioc.get_executor())(task());
+
+        for (int i = 0; i < 1000 && !fired; ++i)
+        {
+            ioc.restart();
+            std::ignore = ioc.poll();
+            if (!fired)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        BOOST_TEST(fired);
+    }
+
     void testTwoThreadBoundedFollower()
     {
         // Two threads inside the scheduler: one holds reactor
@@ -234,6 +297,8 @@ struct bounded_run_test
         testRunOneForLeavesParkedReadParked();
         testRunForFiresArmedDelay();
         testPollLeavesParkedReadParked();
+        testPollCompletesReadyRead();
+        testPollFiresExpiredDelay();
         testTwoThreadBoundedFollower();
         testOversizeBudgetThrows();
         testRunOneOnIdleReturnsZero();
