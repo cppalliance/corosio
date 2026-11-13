@@ -238,6 +238,12 @@ it only in the sense the row names. **scheduler** is approved only in its P2300 
   `page-toc` attribute in `doc/antora.yml`, not by the theme.
 - **E3.** The reference is grouped by functionality where the generator allows; operators are
   documented with their types; asynchronous operations are distinguishable from synchronous.
+  MrDocs groups the generated index by entity kind only, so the hand-written page
+  `doc/modules/ROOT/pages/reference-overview.adoc` groups every symbol on the generated
+  `boost::corosio` and `socket_option` index pages by purpose, except namespaces and
+  operators. Each such symbol is listed once, as a `cpp:` link in one section's table. A
+  change that adds, removes, or renames such a symbol updates that page in the same pull
+  request.
 - **E4.** The theme passes a contrast check in both light and dark mode. *(Review tier:
   verify by eye, do not gate, and there is no automated scan.) Corosio deliberately runs no
   accessibility scanner. Capy's `run-a11y.mjs` could not fail CI there — it carried
