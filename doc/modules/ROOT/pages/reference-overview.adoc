@@ -60,7 +60,7 @@ Sockets, acceptors, files, resolvers, signal sets, and the descriptor and handle
 cpp:io_stream[] combines cpp:io_read_stream[] and cpp:io_write_stream[].
 A function that takes an cpp:io_stream[] reference accepts a TCP socket, a Unix domain stream socket, a stream file, or a stream descriptor or handle.
 cpp:shutdown_type[] selects which directions a socket's `shutdown` closes.
-cpp:wait_type[] selects the readiness condition that completes a `wait` operation.
+cpp:wait_type[] selects the readiness condition that completes the `wait` operation of a socket, an acceptor, or a cpp:posix_stream_descriptor[].
 cpp:native_handle_type[] is the type of a platform descriptor or handle.
 See xref:4.guide/4d.sockets.adoc[Sockets] and xref:4.guide/4r.wait.adoc[Readiness Wait].
 
@@ -197,7 +197,7 @@ A socket option changes how the operating system handles a socket.
 Pass one to `set_option` or `get_option` on a socket or an acceptor.
 Each concrete option in cpp:socket_option[] supplies the platform's protocol level and option name, so the calling code needs no platform headers.
 Most on-off options derive from cpp:socket_option::boolean_option[], and the buffer-size options derive from cpp:socket_option::integer_option[].
-The header `<boost/corosio/native/native_socket_option.hpp>` defines the same options inline, in namespace `boost::corosio::native_socket_option`.
+The header `<boost/corosio/native/native_socket_option.hpp>` defines the same options inline, in namespace `boost::corosio::native_socket_option`, except any that the platform lacks, such as `reuse_port` without `SO_REUSEPORT`.
 That header includes the platform's socket headers.
 See xref:4.guide/4a.tcp-networking.adoc#_tcp_nodelay[TCP_NODELAY] and xref:4.guide/4a.tcp-networking.adoc#_so_reuseaddr[SO_REUSEADDR] in the TCP/IP guide.
 See also the xref:4.guide/4q.udp.adoc#_socket_options[Socket Options] and xref:4.guide/4q.udp.adoc#_multicast[Multicast] sections of the UDP guide.
@@ -315,7 +315,7 @@ See xref:4.guide/4l.tls.adoc[TLS Encryption] and xref:3.tutorials/3d.tls-context
 == Errors
 
 Operations report runtime failures as a `std::error_code`, alone or in a `capy::results`.
-cpp:error[] lists Corosio's own error codes, such as `already_open`.
+cpp:error[] holds Corosio's own error code, `already_open`, its one value.
 Most failures that Corosio detects itself use `std::errc` codes instead.
 cpp:make_error_code[] makes a `std::error_code` from an cpp:error[] value.
 An error from the OpenSSL error queue uses the category that cpp:openssl_category[] returns.
