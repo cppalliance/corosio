@@ -256,6 +256,48 @@ struct bounded_run_test
         pollFiresExpiredTimer(true);
     }
 
+    // A bounded wait runs what its reactor pass found, instead of
+    // leaving it queued for the next call.
+    void testBoundedPassRunsWhatItFound()
+    {
+        struct probe_context : io_context
+        {
+            using io_context::io_context;
+
+            std::size_t wait_one(long usec)
+            {
+                return sched_->wait_one(usec);
+            }
+        };
+
+        probe_context ioc(Backend);
+        auto ex       = ioc.get_executor();
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
+
+        char buf[8];
+        bool resumed = false;
+        auto reader  = [&]() -> capy::task<> {
+            auto [ec, n] =
+                co_await s1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            std::ignore = n;
+            std::ignore = ec;
+            resumed     = true;
+        };
+        capy::run_async(ex)(reader());
+        std::ignore = ioc.poll();
+
+        char const c = 'x';
+        BOOST_TEST_EQ(::send(s2.native_handle(), &c, 1, 0), 1);
+        pollfd pfd{};
+        pfd.fd     = s1.native_handle();
+        pfd.events = POLLIN;
+        BOOST_TEST_EQ(::poll(&pfd, 1, -1), 1);
+
+        BOOST_TEST_EQ(ioc.wait_one(30'000'000), 1u);
+        BOOST_TEST(resumed);
+    }
+
     void testTwoThreadBoundedFollower()
     {
         // Two threads inside the scheduler: one holds reactor
@@ -322,6 +364,7 @@ struct bounded_run_test
         testPollOneCompletesReadyRead();
         testPollFiresExpiredTimer();
         testPollOneFiresExpiredTimer();
+        testBoundedPassRunsWhatItFound();
         testTwoThreadBoundedFollower();
         testOversizeBudgetThrows();
         testRunOneOnIdleReturnsZero();
