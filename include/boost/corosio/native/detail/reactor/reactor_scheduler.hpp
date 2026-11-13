@@ -1043,8 +1043,10 @@ reactor_scheduler::do_one(lock_type& lock, long timeout_us, context_type& ctx)
             bool const idle = completed_ops_.empty();
             completed_ops_.push(&task_op_);
             settle_retired(lock);
+            // A bounded call blocks at most once, then finishes as a poll
+            // does, running what its pass queued.
             if (timeout_us > 0)
-                return 0;
+                timeout_us = 0;
             // A poll ends once a pass leaves nothing queued; going round
             // again would only repeat the pass. A peer that found the
             // queue empty during the pass may be asleep, so it is woken
@@ -1090,9 +1092,16 @@ reactor_scheduler::do_one(lock_type& lock, long timeout_us, context_type& ctx)
 
         clear_signal();
         if (timeout_us < 0)
+        {
             wait_for_signal(lock);
+        }
         else
+        {
             wait_for_signal_for(lock, timeout_us);
+            // A bounded call blocks once, so its caller can check its
+            // deadline; another thread may hold the reactor for good.
+            timeout_us = 0;
+        }
     }
 }
 
