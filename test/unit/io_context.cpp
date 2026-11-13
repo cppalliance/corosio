@@ -689,7 +689,7 @@ struct io_context_test
         int counter = 0;
 
         // run_one_for with no work - returns immediately and stops context
-        std::size_t n = ioc.run_one_for(std::chrono::milliseconds(10));
+        std::size_t n = ioc.run_one_for(std::chrono::seconds(30));
         BOOST_TEST(n == 0);
         BOOST_TEST(ioc.stopped());
 
@@ -699,7 +699,7 @@ struct io_context_test
         // With work posted
         post_coro(ex, make_coro(counter));
 
-        n = ioc.run_one_for(std::chrono::milliseconds(100));
+        n = ioc.run_one_for(std::chrono::seconds(30));
         BOOST_TEST(n == 1);
         BOOST_TEST(counter == 1);
     }
@@ -712,7 +712,7 @@ struct io_context_test
 
         // run_one_until with no work - returns immediately and stops context
         auto deadline =
-            std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
+            std::chrono::steady_clock::now() + std::chrono::seconds(30);
         std::size_t n = ioc.run_one_until(deadline);
         BOOST_TEST(n == 0);
         BOOST_TEST(ioc.stopped());
@@ -723,33 +723,40 @@ struct io_context_test
         // Post work and run_one_until
         post_coro(ex, make_coro(counter));
 
-        deadline =
-            std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
-        n = ioc.run_one_until(deadline);
+        deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        n        = ioc.run_one_until(deadline);
         BOOST_TEST(n == 1);
         BOOST_TEST(counter == 1);
     }
 
-    void testRunOneUntilExpiredDeadlineStops()
+    // A deadline that has already passed runs nothing and leaves the
+    // context as it was, whether or not work is outstanding.
+    void testExpiredDeadlineRunsNothing()
     {
-        // An already-elapsed deadline with no work must still stop the
-        // context: run_one_until has to call wait_one at least once. This
-        // is the deterministic form of a valgrind/CI flake where the thread
-        // is preempted past the deadline before the first loop check, so
-        // wait_one (which holds the "no work -> stop" logic) was skipped.
         io_context ioc(Backend);
+        auto ex     = ioc.get_executor();
+        int counter = 0;
 
-        auto past =
+        auto const past =
             std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
-        std::size_t n = ioc.run_one_until(past);
-        BOOST_TEST(n == 0);
-        BOOST_TEST(ioc.stopped());
+        auto const late = std::chrono::milliseconds(-1);
 
-        // run_for with an already-elapsed deadline (run_until -> run_one_until)
-        ioc.restart();
-        n = ioc.run_for(std::chrono::milliseconds(-1));
-        BOOST_TEST(n == 0);
-        BOOST_TEST(ioc.stopped());
+        BOOST_TEST(ioc.run_one_until(past) == 0);
+        BOOST_TEST(ioc.run_until(past) == 0);
+        BOOST_TEST(ioc.run_one_for(late) == 0);
+        BOOST_TEST(ioc.run_for(late) == 0);
+        BOOST_TEST(!ioc.stopped());
+
+        post_coro(ex, make_coro(counter));
+        BOOST_TEST(ioc.run_one_until(past) == 0);
+        BOOST_TEST(ioc.run_until(past) == 0);
+        BOOST_TEST(ioc.run_one_for(late) == 0);
+        BOOST_TEST(ioc.run_for(late) == 0);
+        BOOST_TEST(counter == 0);
+        BOOST_TEST(!ioc.stopped());
+
+        BOOST_TEST(ioc.poll() == 1);
+        BOOST_TEST(counter == 1);
     }
 
     void testRunFor()
@@ -760,7 +767,7 @@ struct io_context_test
 
         // run_for with no work returns without blocking and stops the
         // context; a wall-clock bound here only flakes under load.
-        std::size_t n = ioc.run_for(std::chrono::milliseconds(20));
+        std::size_t n = ioc.run_for(std::chrono::seconds(30));
 
         BOOST_TEST(n == 0);
         BOOST_TEST(ioc.stopped());
@@ -770,7 +777,7 @@ struct io_context_test
 
         // run_for with work
         post_coro(ex, make_coro(counter));
-        n = ioc.run_for(std::chrono::milliseconds(100));
+        n = ioc.run_for(std::chrono::seconds(30));
         BOOST_TEST(n == 1);
         BOOST_TEST(counter == 1);
     }
@@ -819,6 +826,8 @@ struct io_context_test
             []() -> capy::task<> {
                 std::ignore = co_await delay(std::chrono::hours(1));
             }());
+        // A bound that has passed runs nothing, so start the waiter here.
+        std::ignore = ioc.poll();
 
         std::ignore = ioc.run_for(std::chrono::milliseconds(50));
         BOOST_TEST(ioc.run_one_for(std::chrono::milliseconds(50)) == 0);
@@ -1236,7 +1245,7 @@ struct io_context_test
         testStopAndRestart();
         testRunOneFor();
         testRunOneUntil();
-        testRunOneUntilExpiredDeadlineStops();
+        testExpiredDeadlineRunsNothing();
         testRunOneUntilLongDeadlineNoWork();
         testRunFor();
         testRunForWithOutstandingWork();

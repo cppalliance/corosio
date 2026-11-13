@@ -92,9 +92,11 @@ template<auto Backend>
 struct reactor_teardown_test
 {
     // Starts every coroutine and lets each op park; nothing it waits
-    // for ever happens, so the bound is what returns.
+    // for ever happens, so the bound is what returns. The poll starts
+    // them even if the bound has passed by the time it is checked.
     static void park(io_context& ioc)
     {
+        std::ignore = ioc.poll();
         std::ignore = ioc.run_for(std::chrono::milliseconds(20));
     }
 

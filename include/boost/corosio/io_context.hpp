@@ -528,6 +528,9 @@ public:
         specified duration, or until `stop()` is called. The context
         is stopped when there is no more outstanding work.
 
+        A duration of zero or less returns 0 at once, without running
+        any work or stopping the context.
+
         @throws std::system_error if waiting on the operating system's
             event demultiplexer fails other than by interruption or
             another transient condition; the context can no longer
@@ -552,6 +555,9 @@ public:
         This function blocks until the specified time is reached
         or `stop()` is called. The context is stopped when there
         is no more outstanding work.
+
+        A time that has already passed returns 0 at once, without
+        running any work or stopping the context.
 
         @throws std::system_error if waiting on the operating system's
             event demultiplexer fails other than by interruption or
@@ -583,6 +589,9 @@ public:
         the specified duration has elapsed, or `stop()` is called.
         The context is stopped when there is no more outstanding work.
 
+        A duration of zero or less returns 0 at once, without running
+        any work or stopping the context.
+
         @throws std::system_error if waiting on the operating system's
             event demultiplexer fails other than by interruption or
             another transient condition; the context can no longer
@@ -608,6 +617,9 @@ public:
         the specified time is reached, or `stop()` is called.
         The context is stopped when there is no more outstanding work.
 
+        A time that has already passed returns 0 at once, without
+        running any work or stopping the context.
+
         @throws std::system_error if waiting on the operating system's
             event demultiplexer fails other than by interruption or
             another transient condition; the context can no longer
@@ -627,13 +639,10 @@ public:
     {
         frame_allocator_restore restore;
         typename Clock::time_point now = Clock::now();
-        for (;;)
+        while (now < abs_time)
         {
-            auto rel_time  = abs_time - now;
-            using rel_type = decltype(rel_time);
-            if (rel_time < rel_type::zero())
-                rel_time = rel_type::zero();
-            else if (rel_time > std::chrono::seconds(1))
+            auto rel_time = abs_time - now;
+            if (rel_time > std::chrono::seconds(1))
                 rel_time = std::chrono::seconds(1);
 
             std::size_t s = sched_->wait_one(
@@ -646,9 +655,8 @@ public:
                 return s;
 
             now = Clock::now();
-            if (now >= abs_time)
-                return 0;
         }
+        return 0;
     }
 
     /** Process all ready work items without blocking.

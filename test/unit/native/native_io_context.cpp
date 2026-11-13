@@ -79,7 +79,7 @@ struct native_io_context_test
         };
         capy::run_async(ex)(task(done));
 
-        auto n = ctx.run_for(std::chrono::milliseconds(100));
+        auto n = ctx.run_for(std::chrono::seconds(30));
         BOOST_TEST(n > 0u);
         BOOST_TEST(done);
     }
@@ -147,18 +147,35 @@ struct native_io_context_test
         ex.on_work_finished();
     }
 
-    // An already-elapsed deadline with no work must still stop the context.
-    // run_one_until has to call wait_one (which holds the "no work -> stop"
-    // logic) at least once; the deterministic form of a valgrind/CI flake
-    // where preemption pushes now past the deadline before the first check.
-    void testIoContextRunOneUntilExpiredDeadlineStops()
+    // A deadline that has already passed runs nothing and leaves the
+    // context as it was.
+    void testIoContextExpiredDeadlineRunsNothing()
     {
         native_io_context<Backend> ctx;
-        auto past =
+        auto const past =
             std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
-        auto n = ctx.run_one_until(past);
-        BOOST_TEST(n == 0u);
-        BOOST_TEST(ctx.stopped());
+        auto const late = std::chrono::milliseconds(-1);
+        BOOST_TEST(ctx.run_one_until(past) == 0u);
+        BOOST_TEST(ctx.run_until(past) == 0u);
+        BOOST_TEST(ctx.run_one_for(late) == 0u);
+        BOOST_TEST(ctx.run_for(late) == 0u);
+        BOOST_TEST(!ctx.stopped());
+
+        bool done = false;
+        auto task = [](bool& done_out) -> capy::task<> {
+            done_out = true;
+            co_return;
+        };
+        capy::run_async(ctx.get_executor())(task(done));
+        BOOST_TEST(ctx.run_one_until(past) == 0u);
+        BOOST_TEST(ctx.run_until(past) == 0u);
+        BOOST_TEST(ctx.run_one_for(late) == 0u);
+        BOOST_TEST(ctx.run_for(late) == 0u);
+        BOOST_TEST(!done);
+        BOOST_TEST(!ctx.stopped());
+
+        BOOST_TEST(ctx.poll() == 1u);
+        BOOST_TEST(done);
     }
 
     void run()
@@ -172,7 +189,7 @@ struct native_io_context_test
         testIoContextRun();
         testIoContextRunFor();
         testIoContextRunOneUntilLongDeadlineNoWork();
-        testIoContextRunOneUntilExpiredDeadlineStops();
+        testIoContextExpiredDeadlineRunsNothing();
         testIoContextRunForWithOutstandingWork();
     }
 };
