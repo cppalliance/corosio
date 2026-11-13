@@ -417,7 +417,16 @@ epoll_scheduler::run_task(lock_type& lock, context_type& ctx, long timeout_us)
     if (nfds < 0 && errno != EINTR)
         detail::throw_system_error(make_err(errno), "epoll_wait");
 
+    // The timerfd is armed relative to when it was set, so it can fire a
+    // little after a deadline. A pass that doesn't block checks the
+    // clock instead, so poll() never misses a timer that is already due.
     bool check_timers = poll_timers;
+    if (!check_timers && tsvc && timeout_ms == 0)
+    {
+        auto const nearest = tsvc->nearest_expiry();
+        check_timers       = nearest != (timer_service::time_point::max)() &&
+            nearest <= std::chrono::steady_clock::now();
+    }
     ready_queue local_ops;
 
     for (int i = 0; i < nfds; ++i)
