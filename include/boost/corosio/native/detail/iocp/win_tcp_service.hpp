@@ -181,6 +181,12 @@ public:
         return accept_ex_;
     }
 
+    /** Return the GetAcceptExSockaddrs function pointer, or null. */
+    LPFN_GETACCEPTEXSOCKADDRS get_accept_ex_sockaddrs() const noexcept
+    {
+        return get_accept_ex_sockaddrs_;
+    }
+
     /** Post an overlapped operation for completion. */
     void post(overlapped_op* op);
 
@@ -209,6 +215,9 @@ private:
     void* iocp_;
     LPFN_CONNECTEX connect_ex_ = nullptr;
     LPFN_ACCEPTEX accept_ex_   = nullptr;
+    // Optional: an accept parses its endpoints out of the AcceptEx
+    // buffer with it, and asks the kernel for them without it.
+    LPFN_GETACCEPTEXSOCKADDRS get_accept_ex_sockaddrs_ = nullptr;
     BOOST_COROSIO_MSVC_WARNING_PUSH
     BOOST_COROSIO_MSVC_WARNING_DISABLE(4251) // detail:: members, dll-interface
     object_pool<win_tcp_socket> pool_;
@@ -1104,6 +1113,12 @@ win_tcp_service::load_extension_functions()
         sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &accept_ex_guid,
         sizeof(accept_ex_guid), &accept_ex_, sizeof(accept_ex_), &bytes,
         nullptr, nullptr);
+
+    GUID sockaddrs_guid = WSAID_GETACCEPTEXSOCKADDRS;
+    ::WSAIoctl(
+        sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &sockaddrs_guid,
+        sizeof(sockaddrs_guid), &get_accept_ex_sockaddrs_,
+        sizeof(get_accept_ex_sockaddrs_), &bytes, nullptr, nullptr);
 
     ::closesocket(sock);
 }
