@@ -27,6 +27,7 @@
 #include <boost/corosio/native/detail/iocp/win_overlapped_op.hpp>
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
 
+#include <atomic>
 #include <coroutine>
 
 #include <mswsock.h>
@@ -144,8 +145,23 @@ class win_tcp_socket final
     wait_op wt_;
     SOCKET socket_ = INVALID_SOCKET;
     int family_    = AF_UNSPEC;
-    endpoint local_endpoint_;
+    // What local_endpoint_ holds. `cached`: it is authoritative, and
+    // empty for a socket with no known endpoint. `pending`: a connect
+    // left the endpoint unfetched, and the first local_endpoint() asks
+    // the kernel for it. `fetching`: the reader that claimed the fetch
+    // is writing the cache, and other readers fetch their own copy
+    // meanwhile. Whatever else writes local_endpoint_ sets `cached`.
+    enum class local_state : unsigned char
+    {
+        cached,
+        pending,
+        fetching
+    };
+
+    // Mutable so local_endpoint() can fill it on first read.
+    mutable endpoint local_endpoint_;
     endpoint remote_endpoint_;
+    mutable std::atomic<local_state> local_state_{local_state::cached};
 
 public:
     explicit win_tcp_socket(win_tcp_service& svc) noexcept;

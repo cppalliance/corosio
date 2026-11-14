@@ -333,14 +333,12 @@ connect_op::do_complete(
             op->internal.socket_, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT,
             nullptr, 0);
 
-        endpoint local_ep;
-        sockaddr_storage local_storage{};
-        int local_len = sizeof(local_storage);
-        if (::getsockname(
-                op->internal.socket_,
-                reinterpret_cast<sockaddr*>(&local_storage), &local_len) == 0)
-            local_ep = from_sockaddr(local_storage);
-        op->internal.set_endpoints(local_ep, op->target_endpoint);
+        // Most connections never read their local endpoint, so it is
+        // left for local_endpoint() to fetch rather than costing every
+        // connect a getsockname.
+        op->internal.remote_endpoint_ = op->target_endpoint;
+        op->internal.local_state_.store(
+            win_tcp_socket::local_state::pending, std::memory_order_release);
     }
 
     auto prevent_premature_destruction = std::move(op->object_ref_);
@@ -441,6 +439,7 @@ win_tcp_socket::reuse() noexcept
     // can still have written these.
     local_endpoint_  = endpoint{};
     remote_endpoint_ = endpoint{};
+    local_state_.store(local_state::cached, std::memory_order_relaxed);
     BOOST_COROSIO_ASSERT(!conn_.stop_cb);
     BOOST_COROSIO_ASSERT(!rd_.stop_cb);
     BOOST_COROSIO_ASSERT(!wr_.stop_cb);
@@ -458,6 +457,7 @@ win_tcp_socket::set_endpoints(endpoint local, endpoint remote) noexcept
 {
     local_endpoint_  = local;
     remote_endpoint_ = remote;
+    local_state_.store(local_state::cached, std::memory_order_release);
 }
 
 inline std::coroutine_handle<>
@@ -481,9 +481,15 @@ win_tcp_socket::connect(
 
     svc_.work_started();
 
-    // ConnectEx requires the socket to be bound. Skip if already bound
-    // (e.g. the caller used tcp_socket::bind() before connect).
-    if (local_endpoint_ == endpoint{})
+    // ConnectEx requires the socket to be bound. A cache that names an
+    // endpoint says it is (e.g. tcp_socket::bind() before connect). An
+    // endpoint an earlier connect left unfetched says it most likely
+    // is, but that mark can outlive the socket it described when a late
+    // completion races a close and reopen, so the bind is tried anyway
+    // and an "already bound" refusal leaves the verdict to ConnectEx.
+    bool const unfetched =
+        local_state_.load(std::memory_order_acquire) != local_state::cached;
+    if (unfetched || local_endpoint_ == endpoint{})
     {
         sockaddr_storage bind_storage{};
         socklen_t bind_len;
@@ -510,8 +516,12 @@ win_tcp_socket::connect(
                 socket_, reinterpret_cast<sockaddr*>(&bind_storage),
                 bind_len) == SOCKET_ERROR)
         {
-            svc_.on_completion(&op, ::WSAGetLastError(), 0);
-            return std::noop_coroutine();
+            int const err = ::WSAGetLastError();
+            if (!unfetched || err != WSAEINVAL)
+            {
+                svc_.on_completion(&op, static_cast<DWORD>(err), 0);
+                return std::noop_coroutine();
+            }
         }
     }
 
@@ -816,6 +826,7 @@ win_tcp_socket::close_socket() noexcept
     // Clear cached endpoints
     local_endpoint_  = endpoint{};
     remote_endpoint_ = endpoint{};
+    local_state_.store(local_state::cached, std::memory_order_release);
 }
 
 inline std::error_code
@@ -862,6 +873,7 @@ win_tcp_socket::release_socket() noexcept
         family_          = AF_UNSPEC;
         local_endpoint_  = endpoint{};
         remote_endpoint_ = endpoint{};
+        local_state_.store(local_state::cached, std::memory_order_release);
     }
     return static_cast<native_handle_type>(s);
 }
@@ -892,7 +904,30 @@ win_tcp_socket::get_option(
 inline endpoint
 win_tcp_socket::local_endpoint() const noexcept
 {
-    return local_endpoint_;
+    auto state = local_state_.load(std::memory_order_acquire);
+    if (state == local_state::cached)
+        return local_endpoint_;
+
+    // A connect left the endpoint for the first read to fetch. One
+    // reader claims the cache and fills it; a reader racing it asks the
+    // kernel for its own copy rather than read the cache mid-write. A
+    // fetch that fails caches nothing, so the next read asks again.
+    sockaddr_storage storage{};
+    int len = sizeof(storage);
+    if (socket_ == INVALID_SOCKET ||
+        ::getsockname(socket_, reinterpret_cast<sockaddr*>(&storage), &len) !=
+            0)
+        return endpoint{};
+    endpoint const ep = from_sockaddr(storage);
+    if (state == local_state::pending &&
+        local_state_.compare_exchange_strong(
+            state, local_state::fetching, std::memory_order_acquire,
+            std::memory_order_relaxed))
+    {
+        local_endpoint_ = ep;
+        local_state_.store(local_state::cached, std::memory_order_release);
+    }
+    return ep;
 }
 
 inline endpoint
@@ -1050,6 +1085,8 @@ win_tcp_service::bind_socket(win_tcp_socket& impl, endpoint ep)
     if (::getsockname(
             sock, reinterpret_cast<sockaddr*>(&local_storage), &local_len) == 0)
         impl.local_endpoint_ = detail::from_sockaddr(local_storage);
+    impl.local_state_.store(
+        win_tcp_socket::local_state::cached, std::memory_order_release);
 
     return {};
 }
