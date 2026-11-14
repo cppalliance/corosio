@@ -1436,6 +1436,53 @@ struct iocp_faults
         s2.close();
     }
 
+    // Once the polling thread runs, a close or cancel with no wait
+    // parked leaves it asleep: nothing goes down its wakeup channel.
+    void testIdleReactorNotWokenByClose()
+    {
+        if (!hook_is_live(sys::send))
+        {
+            skip_dead_hook("send");
+            return;
+        }
+        io_context ioc(iocp);
+        auto [s1, s2] = must(make_socket_pair(ioc));
+        std::error_code wec;
+        unsigned sends = 1;
+        bool done      = false;
+        bool expired   = false;
+        auto body      = [&]() -> capy::task<> {
+            // A healthy pair is writable at once, so this wait starts the
+            // polling thread and leaves nothing parked once it returns.
+            auto [ec] = co_await s1.wait(wait_type::write);
+            wec       = ec;
+            {
+                // Counts this thread's calls; the one it would fail is
+                // never reached.
+                fault_scope f(sys::send, WSAENOBUFS, 1u << 30);
+                for (int i = 0; i < 4; ++i)
+                {
+                    tcp_socket t(ioc);
+                    BOOST_TEST(!t.open(family::v4));
+                    t.close();
+                }
+                s1.cancel();
+                sends = f.count();
+            }
+            done = true;
+            ioc.stop();
+        };
+        capy::run_async(ioc.get_executor())(body());
+        capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
+        ioc.run();
+        BOOST_TEST(!expired);
+        BOOST_TEST(done);
+        BOOST_TEST(!wec);
+        BOOST_TEST_EQ(sends, 0u);
+        s1.close();
+        s2.close();
+    }
+
     /* A wake that never left has to be retried, not swallowed.
 
        `wake_pending_` is set before the send and stands for a byte in
@@ -1444,9 +1491,11 @@ struct iocp_faults
        coalesces into that phantom, and the poll they were meant to end
        is indefinite.
 
-       A parked wait starts the polling thread, so the cancels below
-       have a thread to wake. A cancel only sends once the byte already
-       in the channel is drained, so they repeat until two sends have
+       A parked wait starts the polling thread, and the waiter parks
+       again after every cancel, so each cancel below finds a wait the
+       reactor holds -- a cancel with nothing parked wakes nobody -- and
+       a thread to wake. A wake only sends once the byte already in the
+       channel is drained, so the cancels repeat until two sends have
        failed; a latch would coalesce every later wake into the phantom,
        and the final cancel, sent with nothing failing, would never
        reach the thread.
@@ -1462,12 +1511,18 @@ struct iocp_faults
             io_context ioc(iocp);
             auto [s1, s2] = must(make_socket_pair(ioc));
             std::error_code parked_ec;
-            bool parked_done = false;
-            bool expired     = false;
-            bool fired       = false;
-            auto parked      = [&]() -> capy::task<> {
-                auto [ec]   = co_await s1.wait(wait_type::error);
-                parked_ec   = ec;
+            bool parked_done  = false;
+            bool stop_parking = false;
+            bool expired      = false;
+            bool fired        = false;
+            auto parked       = [&]() -> capy::task<> {
+                for (;;)
+                {
+                    auto [ec] = co_await s1.wait(wait_type::error);
+                    parked_ec = ec;
+                    if (stop_parking)
+                        break;
+                }
                 parked_done = true;
             };
             auto breaker = [&]() -> capy::task<> {
@@ -1485,6 +1540,7 @@ struct iocp_faults
                     }
                     fired = first.fired() && second.fired();
                 }
+                stop_parking = true;
                 s1.cancel();
                 for (int i = 0; i < 100 && !parked_done; ++i)
                     std::ignore =
@@ -1551,10 +1607,14 @@ struct iocp_faults
             // the way out covers registered_ and pending_register_
             // alike.
             arm.emplace(sys::WSAPoll, WSAENOBUFS, 1u, any_thread);
-            // A cancel for an op the reactor never registered is a
-            // no-op that still pokes the self-pipe.
-            s2.cancel();
-            co_return;
+            // A register wakes the polling thread, by its own byte or one
+            // already in the channel, where a cancel with nothing parked
+            // would not. A thread blocked in a poll begun before the arm
+            // polls again and fails holding this wait, which is drained
+            // with the rest; one whose poll failed first drains it on
+            // the way out or, once gone, refuses it with the same error.
+            // Either way the pair's being writable is never reported.
+            std::ignore = co_await s2.wait(wait_type::write);
         };
         capy::run_async(ioc.get_executor())(parked());
         capy::run_async(ioc.get_executor())(breaker());
@@ -2391,6 +2451,7 @@ struct iocp_faults
         testUdpIoFails();
         testWaitReactorSetupFails();
         testWaitReactorStartsOnFirstWait();
+        testIdleReactorNotWokenByClose();
         testWakeSendFails();
         testWaitReactorPollFails();
         testWaitReactorErrorProbe();

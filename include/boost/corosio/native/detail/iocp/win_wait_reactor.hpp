@@ -66,9 +66,10 @@ namespace boost::corosio::detail {
        wait completes with the SO_ERROR value when it is set, or
        WSAECONNABORTED as a synthesized fallback when it is zero.
     4. On socket cancel(), the user's thread calls cancel_wait(op),
-       which queues a cancel request. The reactor thread removes the
-       op from the table and posts a completion; invoke_handler sees
-       op.cancelled==true and yields capy::cond::canceled.
+       which queues a cancel request if the reactor holds the op. The
+       reactor thread removes the op from the table and posts a
+       completion; invoke_handler sees op.cancelled==true and yields
+       capy::cond::canceled.
 
     A poll the provider refuses on account of one descriptor answers
     that descriptor's op with the refusal and leaves the rest of the
@@ -404,6 +405,7 @@ win_wait_reactor::queue_register(entry const& e)
     }
 
     pending_register_.push_back(e);
+    e.op->reactor_parked_.store(true, std::memory_order_relaxed);
     return 0;
 }
 
@@ -423,6 +425,14 @@ win_wait_reactor::cancel_wait(overlapped_op* op)
         // No thread yet means nothing was ever parked; every socket's
         // close asks, and the queue would only grow.
         if (!thread_.joinable())
+            return;
+        // Nor is there anything to ask for an op the reactor does not
+        // hold, which is every close of a socket with no wait parked:
+        // waking the polling thread for it would cost a send, a poll
+        // and a search of the table. A register queued under this lock
+        // set the flag, and the reactor clears it only once it has let
+        // the op go.
+        if (!op->reactor_parked_.load(std::memory_order_acquire))
             return;
         pending_cancel_.push_back(op);
     }
@@ -466,7 +476,9 @@ win_wait_reactor::drop_refused_entries()
         if (::WSAPoll(&pfd, 1, 0) != SOCKET_ERROR)
             continue;
 
-        sched_.on_completion(e.op, last_error(), 0);
+        DWORD const err = last_error();
+        e.op->reactor_parked_.store(false, std::memory_order_release);
+        sched_.on_completion(e.op, err, 0);
         registered_.erase(registered_.begin() + (i - 1));
         dropped = true;
     }
@@ -507,11 +519,11 @@ win_wait_reactor::run()
 
         for (auto* op : to_cancel)
         {
-            // A socket's close() and cancel() ask the reactor to drop
-            // their wait op whether or not one is parked -- open() goes
-            // through close_socket() before it has a socket at all.
-            // Only a parked op pins its owner, so an op that is not in
-            // registered_ may belong to an object already destroyed:
+            // An ask can reach here for an op that is no longer parked:
+            // cancel_wait queues it while the flag is still set, and
+            // the op may fire or be cancelled before this pass reads
+            // it. Only a parked op pins its owner, so an op that is not
+            // in registered_ may belong to an object already destroyed:
             // look it up before touching it.
             auto it = std::find_if(
                 registered_.begin(), registered_.end(),
@@ -528,6 +540,7 @@ win_wait_reactor::run()
             {
                 // The op's cancelled flag has already been set by
                 // request_cancel; invoke_handler will translate it.
+                op->reactor_parked_.store(false, std::memory_order_release);
                 sched_.on_completion(op, 0, 0);
                 registered_.erase(it);
             }
@@ -617,6 +630,7 @@ win_wait_reactor::run()
                 }
             }
 
+            e.op->reactor_parked_.store(false, std::memory_order_release);
             sched_.on_completion(e.op, err, 0);
             registered_.erase(registered_.begin() + (i - 2));
         }
@@ -640,7 +654,10 @@ win_wait_reactor::run()
         pending_cancel_.clear();
     }
     for (auto& e : registered_)
+    {
+        e.op->reactor_parked_.store(false, std::memory_order_release);
         sched_.on_completion(e.op, drain_err, 0);
+    }
     registered_.clear();
 }
 

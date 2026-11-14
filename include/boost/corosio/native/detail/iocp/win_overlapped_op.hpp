@@ -171,6 +171,13 @@ struct overlapped_op
     DWORD bytes_transferred       = 0;
     cancel_func_type cancel_func_ = nullptr;
 
+    /** Whether the wait reactor holds this op. Set under the reactor's
+        lock when a register queues the op, cleared by the reactor before
+        it completes the op, and read under that lock by a cancel, which
+        has nothing to ask the reactor for while it is clear. reset()
+        leaves it alone: only the reactor knows when it lets go. */
+    std::atomic<bool> reactor_parked_{false};
+
     explicit overlapped_op(func_type func) noexcept : coro_op(func)
     {
         reset_overlapped();
