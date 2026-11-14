@@ -138,6 +138,7 @@ private:
 
     void run();
     bool drop_refused_entries();
+    void remove_entry(std::size_t i) noexcept;
     DWORD queue_register(entry const& e);
     void wake_self() noexcept;
     DWORD make_wakeup_pair() noexcept;
@@ -293,9 +294,10 @@ win_wait_reactor::make_wakeup_pair() noexcept
     }
     ::closesocket(listener);
 
-    // The drain loop in run() calls recv() until it returns <= 0.
-    // With a blocking socket that second recv() would block instead
-    // of returning WSAEWOULDBLOCK, deadlocking the reactor thread.
+    // The drain loop in run() reads again after a full buffer. With a
+    // blocking socket that recv() would block on an empty channel
+    // instead of returning WSAEWOULDBLOCK, deadlocking the reactor
+    // thread.
     u_long non_blocking = 1;
     if (::ioctlsocket(wakeup_read_, FIONBIO, &non_blocking) == SOCKET_ERROR)
     {
@@ -479,10 +481,22 @@ win_wait_reactor::drop_refused_entries()
         DWORD const err = last_error();
         e.op->reactor_parked_.store(false, std::memory_order_release);
         sched_.on_completion(e.op, err, 0);
-        registered_.erase(registered_.begin() + (i - 1));
+        remove_entry(i - 1);
         dropped = true;
     }
     return dropped;
+}
+
+inline void
+win_wait_reactor::remove_entry(std::size_t i) noexcept
+{
+    // Order means nothing in the table, so the last entry fills the hole
+    // instead of everything after it moving down. The walks that remove
+    // as they go run from the back, so the entry moved into slot i was
+    // already examined, and the entries below i -- with their poll set
+    // slots -- stay put.
+    registered_[i] = registered_.back();
+    registered_.pop_back();
 }
 
 inline void
@@ -542,7 +556,8 @@ win_wait_reactor::run()
                 // request_cancel; invoke_handler will translate it.
                 op->reactor_parked_.store(false, std::memory_order_release);
                 sched_.on_completion(op, 0, 0);
-                registered_.erase(it);
+                remove_entry(
+                    static_cast<std::size_t>(it - registered_.begin()));
             }
         }
 
@@ -581,11 +596,16 @@ win_wait_reactor::run()
         // Drain the wakeup socket so it stops reporting readable.
         if (pollfds[0].revents != 0)
         {
+            // wake_self sends only on the false-to-true turn of
+            // wake_pending_, which this drain turns back, so the channel
+            // holds a byte at a time: a short read has emptied it, and a
+            // further recv would only report WSAEWOULDBLOCK. A byte that
+            // lands after it makes the next poll return at once.
             char buf[64];
             for (;;)
             {
                 int r = ::recv(wakeup_read_, buf, sizeof(buf), 0);
-                if (r <= 0)
+                if (r < static_cast<int>(sizeof(buf)))
                     break;
             }
             wake_pending_.store(false, std::memory_order_release);
@@ -632,7 +652,7 @@ win_wait_reactor::run()
 
             e.op->reactor_parked_.store(false, std::memory_order_release);
             sched_.on_completion(e.op, err, 0);
-            registered_.erase(registered_.begin() + (i - 2));
+            remove_entry(i - 2);
         }
     }
 
