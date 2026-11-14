@@ -1483,6 +1483,67 @@ struct iocp_faults
         s2.close();
     }
 
+    // Dropping a wait from the middle of the reactor's table moves the
+    // last entry into its slot. The moved wait stays parked, polled for
+    // what it asked, and still the reactor's to drop.
+    void testReactorRemovalKeepsMovedWait()
+    {
+        io_context ioc(iocp);
+        auto [a1, a2] = must(make_socket_pair(ioc));
+        auto [b1, b2] = must(make_socket_pair(ioc));
+        std::error_code aec, bec;
+        bool a_done  = false;
+        bool b_done  = false;
+        bool b_early = true;
+        bool expired = false;
+        // An error wait on a quiet socket never becomes ready, so only
+        // a cancel ends either of these.
+        auto wait_a = [&]() -> capy::task<> {
+            auto [ec] = co_await a1.wait(wait_type::error);
+            aec       = ec;
+            a_done    = true;
+        };
+        auto wait_b = [&]() -> capy::task<> {
+            auto [ec] = co_await b1.wait(wait_type::error);
+            bec       = ec;
+            b_done    = true;
+        };
+        auto driver = [&]() -> capy::task<> {
+            // a1's wait was registered first, so it is not the last
+            // entry, and dropping it moves b1's into its slot.
+            a1.cancel();
+            for (int i = 0; i < 100 && !a_done; ++i)
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(5));
+            // A few more polls with the moved entry in place must not
+            // complete it. The pauses are not a timing assertion.
+            for (int i = 0; i < 4; ++i)
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(5));
+            b_early = b_done;
+            b1.cancel();
+            for (int i = 0; i < 100 && !b_done; ++i)
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(5));
+            ioc.stop();
+        };
+        capy::run_async(ioc.get_executor())(wait_a());
+        capy::run_async(ioc.get_executor())(wait_b());
+        capy::run_async(ioc.get_executor())(driver());
+        capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
+        ioc.run();
+        BOOST_TEST(!expired);
+        BOOST_TEST(a_done);
+        BOOST_TEST(aec == capy::error::canceled);
+        BOOST_TEST(!b_early);
+        BOOST_TEST(b_done);
+        BOOST_TEST(bec == capy::error::canceled);
+        a1.close();
+        a2.close();
+        b1.close();
+        b2.close();
+    }
+
     /* A wake that never left has to be retried, not swallowed.
 
        `wake_pending_` is set before the send and stands for a byte in
@@ -2452,6 +2513,7 @@ struct iocp_faults
         testWaitReactorSetupFails();
         testWaitReactorStartsOnFirstWait();
         testIdleReactorNotWokenByClose();
+        testReactorRemovalKeepsMovedWait();
         testWakeSendFails();
         testWaitReactorPollFails();
         testWaitReactorErrorProbe();
