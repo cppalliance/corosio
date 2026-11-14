@@ -28,6 +28,7 @@
 #include "temp_path.hpp"
 #include <boost/corosio/udp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
+#include <boost/capy/cond.hpp>
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -908,6 +909,243 @@ struct iocp_faults
         BOOST_TEST(compec == std::errc::connection_aborted);
     }
 
+    // An accept reads both endpoints out of the buffer AcceptEx filled,
+    // so it asks the kernel for neither.
+    void testAcceptReadsAcceptExAddresses()
+    {
+        if (!hook_is_live(sys::getsockname) || !hook_is_live(sys::getpeername))
+        {
+            skip_dead_hook("getsockname/getpeername");
+            return;
+        }
+        io_context ioc(iocp);
+        tcp_acceptor acc(ioc, loopback());
+        auto const ep =
+            endpoint(ipv4_address::loopback(), acc.local_endpoint().port());
+        tcp_socket client(ioc);
+        tcp_socket server(ioc);
+        std::error_code cec, aec;
+        unsigned names = 1, peers = 1;
+        endpoint client_local, local, remote;
+        bool expired = false;
+        auto body    = [&]() -> capy::task<> {
+            // The connection waits in the backlog, so the counted window
+            // holds the accept alone.
+            auto [ec]    = co_await client.connect(ep);
+            cec          = ec;
+            client_local = client.local_endpoint();
+            // Count this thread's calls; the ones they would fail are
+            // never reached.
+            fault_scope n(sys::getsockname, WSAEFAULT, 1u << 30);
+            fault_scope p(sys::getpeername, WSAEFAULT, 1u << 30);
+            auto [aec2] = co_await acc.accept(server);
+            aec         = aec2;
+            names       = n.count();
+            peers       = p.count();
+            local       = server.local_endpoint();
+            remote      = server.remote_endpoint();
+            ioc.stop();
+        };
+        capy::run_async(ioc.get_executor())(body());
+        // An accept that never completes reads as a failure rather than
+        // as a job timeout.
+        capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
+        ioc.run();
+        BOOST_TEST(!expired);
+        BOOST_TEST(!cec);
+        BOOST_TEST(!aec);
+        BOOST_TEST_EQ(names, 0u);
+        BOOST_TEST_EQ(peers, 0u);
+        BOOST_TEST(local == ep);
+        BOOST_TEST(remote == client_local);
+        BOOST_TEST(remote.port() != 0);
+    }
+
+    // Without GetAcceptExSockaddrs an accept still learns both endpoints,
+    // by asking the kernel for them.
+    void testAcceptWithoutSockaddrsParser()
+    {
+        if (!hook_is_live(sys::getsockname) || !hook_is_live(sys::getpeername))
+        {
+            skip_dead_hook("getsockname/getpeername");
+            return;
+        }
+        // The tcp service looks up ConnectEx, AcceptEx and then
+        // GetAcceptExSockaddrs when the first tcp object is created, so
+        // the arm precedes the acceptor and fails the third lookup.
+        fault_scope f(sys::WSAIoctl, WSAEOPNOTSUPP, 3);
+        io_context ioc(iocp);
+        tcp_acceptor acc(ioc, loopback());
+        BOOST_TEST(f.fired());
+        auto const ep =
+            endpoint(ipv4_address::loopback(), acc.local_endpoint().port());
+        tcp_socket client(ioc);
+        tcp_socket server(ioc);
+        std::error_code cec, aec;
+        unsigned names = 0, peers = 0;
+        endpoint client_local, local, remote;
+        bool expired = false;
+        auto body    = [&]() -> capy::task<> {
+            auto [ec]    = co_await client.connect(ep);
+            cec          = ec;
+            client_local = client.local_endpoint();
+            // Count this thread's calls, which show the fallback ran;
+            // the ones they would fail are never reached.
+            fault_scope n(sys::getsockname, WSAEFAULT, 1u << 30);
+            fault_scope p(sys::getpeername, WSAEFAULT, 1u << 30);
+            auto [aec2] = co_await acc.accept(server);
+            aec         = aec2;
+            names       = n.count();
+            peers       = p.count();
+            local       = server.local_endpoint();
+            remote      = server.remote_endpoint();
+            ioc.stop();
+        };
+        capy::run_async(ioc.get_executor())(body());
+        capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
+        ioc.run();
+        BOOST_TEST(!expired);
+        BOOST_TEST(!cec);
+        BOOST_TEST(!aec);
+        BOOST_TEST_EQ(names, 1u);
+        BOOST_TEST_EQ(peers, 1u);
+        BOOST_TEST(local == ep);
+        BOOST_TEST(remote == client_local);
+        BOOST_TEST(remote.port() != 0);
+    }
+
+    // A connect leaves the local endpoint for the first read of it, so
+    // a connection that never asks costs no getsockname.
+    void testConnectDefersLocalEndpoint()
+    {
+        if (!hook_is_live(sys::getsockname))
+        {
+            skip_dead_hook("getsockname");
+            return;
+        }
+        io_context ioc(iocp);
+        tcp_acceptor acc(ioc, loopback());
+        auto const ep =
+            endpoint(ipv4_address::loopback(), acc.local_endpoint().port());
+        tcp_socket c(ioc);
+        BOOST_TEST(!c.open(family::v4));
+        std::error_code cec;
+        unsigned at_connect = 1, at_read = 0, at_reread = 0;
+        endpoint local;
+        auto body = [&]() -> capy::task<> {
+            // Counts this thread's calls; the one it would fail is never
+            // reached.
+            fault_scope f(sys::getsockname, WSAEFAULT, 1u << 30);
+            auto [ec]   = co_await c.connect(ep);
+            cec         = ec;
+            at_connect  = f.count();
+            local       = c.local_endpoint();
+            at_read     = f.count();
+            std::ignore = c.local_endpoint();
+            at_reread   = f.count();
+        };
+        capy::run_async(ioc.get_executor())(body());
+        ioc.run();
+        BOOST_TEST(!cec);
+        BOOST_TEST_EQ(at_connect, 0u);
+        BOOST_TEST_EQ(at_read, 1u);
+        BOOST_TEST_EQ(at_reread, 1u);
+        BOOST_TEST(local.address() == ep.address());
+        BOOST_TEST(local.port() != 0);
+        BOOST_TEST(c.remote_endpoint() == ep);
+    }
+
+    // A second connect on a connected socket whose local endpoint was
+    // never read still tries the bind ConnectEx needs. Winsock answers
+    // that the socket is already bound, and the connect fails at
+    // ConnectEx, as it did when the endpoint was fetched eagerly.
+    void testSecondConnectFailsAtConnectEx()
+    {
+        if (!hook_is_live(sys::bind))
+        {
+            skip_dead_hook("bind");
+            return;
+        }
+        io_context ioc(iocp);
+        tcp_acceptor acc(ioc, loopback());
+        auto const ep =
+            endpoint(ipv4_address::loopback(), acc.local_endpoint().port());
+        tcp_socket c(ioc);
+        BOOST_TEST(!c.open(family::v4));
+        std::error_code first, second;
+        unsigned binds = 0;
+        auto body      = [&]() -> capy::task<> {
+            auto [ec1] = co_await c.connect(ep);
+            first      = ec1;
+            // Counts this thread's calls; the one it would fail is never
+            // reached.
+            fault_scope b(sys::bind, WSAEFAULT, 1u << 30);
+            auto [ec2] = co_await c.connect(ep);
+            second     = ec2;
+            binds      = b.count();
+        };
+        capy::run_async(ioc.get_executor())(body());
+        ioc.run();
+        BOOST_TEST(!first);
+        BOOST_TEST_EQ(binds, 1u);
+        BOOST_TEST(second == win_err(WSAEISCONN));
+        BOOST_TEST(c.local_endpoint().port() != 0);
+    }
+
+    // A local endpoint a connect left unfetched is read after the
+    // connection is gone as well as while it lasts: the first read,
+    // made after the peer reset it or after both sides closed it,
+    // returns the endpoint the peer saw the connection come from.
+    void testDeferredLocalEndpointOutlivesConnection()
+    {
+        auto check = [](bool abort) {
+            io_context ioc(iocp);
+            tcp_acceptor acc(ioc, loopback());
+            auto const ep =
+                endpoint(ipv4_address::loopback(), acc.local_endpoint().port());
+            tcp_socket c(ioc);
+            tcp_socket s(ioc);
+            BOOST_TEST(!c.open(family::v4));
+            std::error_code cec, aec, rec;
+            endpoint seen_by_peer, local;
+            bool expired = false;
+            auto body    = [&]() -> capy::task<> {
+                auto [ec1]   = co_await c.connect(ep);
+                cec          = ec1;
+                auto [ec2]   = co_await acc.accept(s);
+                aec          = ec2;
+                seen_by_peer = s.remote_endpoint();
+                // A zero linger turns the close into a reset.
+                if (abort)
+                    must_ok(s.set_option(socket_option::linger(true, 0)));
+                s.close();
+                char buf[8]   = {};
+                auto [ec3, n] = co_await c.read_some(
+                    capy::mutable_buffer(buf, sizeof(buf)));
+                std::ignore = n;
+                rec         = ec3;
+                if (!abort)
+                    std::ignore = c.shutdown(tcp_socket::shutdown_send);
+                local = c.local_endpoint();
+                ioc.stop();
+            };
+            capy::run_async(ioc.get_executor())(body());
+            capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
+            ioc.run();
+            BOOST_TEST(!expired);
+            BOOST_TEST(!cec);
+            BOOST_TEST(!aec);
+            if (abort)
+                BOOST_TEST(rec == std::errc::connection_reset);
+            else
+                BOOST_TEST(rec == capy::cond::eof);
+            BOOST_TEST(seen_by_peer.port() != 0);
+            BOOST_TEST(local == seen_by_peer);
+        };
+        check(true);
+        check(false);
+    }
+
     void testUdpSetupFails()
     {
         io_context ioc(iocp);
@@ -1198,6 +1436,114 @@ struct iocp_faults
         s2.close();
     }
 
+    // Once the polling thread runs, a close or cancel with no wait
+    // parked leaves it asleep: nothing goes down its wakeup channel.
+    void testIdleReactorNotWokenByClose()
+    {
+        if (!hook_is_live(sys::send))
+        {
+            skip_dead_hook("send");
+            return;
+        }
+        io_context ioc(iocp);
+        auto [s1, s2] = must(make_socket_pair(ioc));
+        std::error_code wec;
+        unsigned sends = 1;
+        bool done      = false;
+        bool expired   = false;
+        auto body      = [&]() -> capy::task<> {
+            // A healthy pair is writable at once, so this wait starts the
+            // polling thread and leaves nothing parked once it returns.
+            auto [ec] = co_await s1.wait(wait_type::write);
+            wec       = ec;
+            {
+                // Counts this thread's calls; the one it would fail is
+                // never reached.
+                fault_scope f(sys::send, WSAENOBUFS, 1u << 30);
+                for (int i = 0; i < 4; ++i)
+                {
+                    tcp_socket t(ioc);
+                    BOOST_TEST(!t.open(family::v4));
+                    t.close();
+                }
+                s1.cancel();
+                sends = f.count();
+            }
+            done = true;
+            ioc.stop();
+        };
+        capy::run_async(ioc.get_executor())(body());
+        capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
+        ioc.run();
+        BOOST_TEST(!expired);
+        BOOST_TEST(done);
+        BOOST_TEST(!wec);
+        BOOST_TEST_EQ(sends, 0u);
+        s1.close();
+        s2.close();
+    }
+
+    // Dropping a wait from the middle of the reactor's table moves the
+    // last entry into its slot. The moved wait stays parked, polled for
+    // what it asked, and still the reactor's to drop.
+    void testReactorRemovalKeepsMovedWait()
+    {
+        io_context ioc(iocp);
+        auto [a1, a2] = must(make_socket_pair(ioc));
+        auto [b1, b2] = must(make_socket_pair(ioc));
+        std::error_code aec, bec;
+        bool a_done  = false;
+        bool b_done  = false;
+        bool b_early = true;
+        bool expired = false;
+        // An error wait on a quiet socket never becomes ready, so only
+        // a cancel ends either of these.
+        auto wait_a = [&]() -> capy::task<> {
+            auto [ec] = co_await a1.wait(wait_type::error);
+            aec       = ec;
+            a_done    = true;
+        };
+        auto wait_b = [&]() -> capy::task<> {
+            auto [ec] = co_await b1.wait(wait_type::error);
+            bec       = ec;
+            b_done    = true;
+        };
+        auto driver = [&]() -> capy::task<> {
+            // a1's wait was registered first, so it is not the last
+            // entry, and dropping it moves b1's into its slot.
+            a1.cancel();
+            for (int i = 0; i < 100 && !a_done; ++i)
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(5));
+            // A few more polls with the moved entry in place must not
+            // complete it. The pauses are not a timing assertion.
+            for (int i = 0; i < 4; ++i)
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(5));
+            b_early = b_done;
+            b1.cancel();
+            for (int i = 0; i < 100 && !b_done; ++i)
+                std::ignore =
+                    co_await corosio::delay(std::chrono::milliseconds(5));
+            ioc.stop();
+        };
+        capy::run_async(ioc.get_executor())(wait_a());
+        capy::run_async(ioc.get_executor())(wait_b());
+        capy::run_async(ioc.get_executor())(driver());
+        capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
+        ioc.run();
+        BOOST_TEST(!expired);
+        BOOST_TEST(a_done);
+        BOOST_TEST(aec == capy::error::canceled);
+        BOOST_TEST(!b_early);
+        BOOST_TEST(b_done);
+        BOOST_TEST(bec == capy::error::canceled);
+        a1.close();
+        a2.close();
+        b1.close();
+        b2.close();
+    }
+
     /* A wake that never left has to be retried, not swallowed.
 
        `wake_pending_` is set before the send and stands for a byte in
@@ -1206,9 +1552,11 @@ struct iocp_faults
        coalesces into that phantom, and the poll they were meant to end
        is indefinite.
 
-       A parked wait starts the polling thread, so the cancels below
-       have a thread to wake. A cancel only sends once the byte already
-       in the channel is drained, so they repeat until two sends have
+       A parked wait starts the polling thread, and the waiter parks
+       again after every cancel, so each cancel below finds a wait the
+       reactor holds -- a cancel with nothing parked wakes nobody -- and
+       a thread to wake. A wake only sends once the byte already in the
+       channel is drained, so the cancels repeat until two sends have
        failed; a latch would coalesce every later wake into the phantom,
        and the final cancel, sent with nothing failing, would never
        reach the thread.
@@ -1224,12 +1572,18 @@ struct iocp_faults
             io_context ioc(iocp);
             auto [s1, s2] = must(make_socket_pair(ioc));
             std::error_code parked_ec;
-            bool parked_done = false;
-            bool expired     = false;
-            bool fired       = false;
-            auto parked      = [&]() -> capy::task<> {
-                auto [ec]   = co_await s1.wait(wait_type::error);
-                parked_ec   = ec;
+            bool parked_done  = false;
+            bool stop_parking = false;
+            bool expired      = false;
+            bool fired        = false;
+            auto parked       = [&]() -> capy::task<> {
+                for (;;)
+                {
+                    auto [ec] = co_await s1.wait(wait_type::error);
+                    parked_ec = ec;
+                    if (stop_parking)
+                        break;
+                }
                 parked_done = true;
             };
             auto breaker = [&]() -> capy::task<> {
@@ -1247,6 +1601,7 @@ struct iocp_faults
                     }
                     fired = first.fired() && second.fired();
                 }
+                stop_parking = true;
                 s1.cancel();
                 for (int i = 0; i < 100 && !parked_done; ++i)
                     std::ignore =
@@ -1313,10 +1668,14 @@ struct iocp_faults
             // the way out covers registered_ and pending_register_
             // alike.
             arm.emplace(sys::WSAPoll, WSAENOBUFS, 1u, any_thread);
-            // A cancel for an op the reactor never registered is a
-            // no-op that still pokes the self-pipe.
-            s2.cancel();
-            co_return;
+            // A register wakes the polling thread, by its own byte or one
+            // already in the channel, where a cancel with nothing parked
+            // would not. A thread blocked in a poll begun before the arm
+            // polls again and fails holding this wait, which is drained
+            // with the rest; one whose poll failed first drains it on
+            // the way out or, once gone, refuses it with the same error.
+            // Either way the pair's being writable is never reported.
+            std::ignore = co_await s2.wait(wait_type::write);
         };
         capy::run_async(ioc.get_executor())(parked());
         capy::run_async(ioc.get_executor())(breaker());
@@ -1896,8 +2255,8 @@ struct iocp_faults
     /* A context whose extension-pointer bootstrap never ran.
 
        win_tcp_service::load_extension_functions creates one socket to
-       ask Winsock for ConnectEx and AcceptEx; failing that socket
-       leaves both pointers null for the whole
+       ask Winsock for ConnectEx, AcceptEx and GetAcceptExSockaddrs;
+       failing that socket leaves all three pointers null for the whole
        context. That is the one arm that reaches all three call sites
        which refuse an operation because the pointer is missing --
        testTcpExtensionPointerMissing fails the query instead and
@@ -2143,11 +2502,18 @@ struct iocp_faults
         testAcceptorOptionsFail();
         testAcceptorAssignFails();
         testAcceptFails();
+        testAcceptReadsAcceptExAddresses();
+        testAcceptWithoutSockaddrsParser();
+        testConnectDefersLocalEndpoint();
+        testSecondConnectFailsAtConnectEx();
+        testDeferredLocalEndpointOutlivesConnection();
         testExtensionPointersMissing();
         testUdpSetupFails();
         testUdpIoFails();
         testWaitReactorSetupFails();
         testWaitReactorStartsOnFirstWait();
+        testIdleReactorNotWokenByClose();
+        testReactorRemovalKeepsMovedWait();
         testWakeSendFails();
         testWaitReactorPollFails();
         testWaitReactorErrorProbe();

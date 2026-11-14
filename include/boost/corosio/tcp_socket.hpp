@@ -602,16 +602,18 @@ public:
 
         Returns the local address and port to which the socket is bound.
         For a connected socket, this is the local side of the connection.
-        The endpoint is cached when the connection is established.
+        The endpoint is cached when the connection is established, or by
+        the first call after it.
 
         @return The local endpoint, or a default endpoint (0.0.0.0:0) if
             the socket is not connected.
 
         @par Thread Safety
-        The cached endpoint value is set during connect/accept completion
-        and cleared during close(). This function may be called concurrently
-        with I/O operations, but must not be called concurrently with
-        connect(), accept(), or close().
+        The cached endpoint value is set during connect/accept completion,
+        or by the first call after it, and cleared during close().
+        This function may be called concurrently with I/O operations, but
+        must not be called concurrently with connect(), accept(), or
+        close().
     */
     endpoint local_endpoint() const noexcept;
 

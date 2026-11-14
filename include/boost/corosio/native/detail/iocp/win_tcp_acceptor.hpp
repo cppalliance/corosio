@@ -46,6 +46,9 @@ struct accept_op : overlapped_op
     SOCKET listen_socket                 = INVALID_SOCKET;
     io_object::implementation** impl_out = nullptr;
     char addr_buf[2 * (sizeof(sockaddr_in6) + 16)];
+    // The size AcceptEx was given for each address in addr_buf, which
+    // GetAcceptExSockaddrs needs to find them again.
+    DWORD addr_len = 0;
 
     static void do_complete(
         void* owner,

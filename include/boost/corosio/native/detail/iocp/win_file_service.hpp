@@ -31,6 +31,7 @@
 #include <boost/capy/buffers.hpp>
 
 #include <filesystem>
+#include <utility>
 
 namespace boost::corosio::detail {
 
@@ -216,7 +217,7 @@ win_stream_file::read_some(
     std::error_code* ec,
     std::size_t* bytes)
 {
-    return internal_.read_some(cont, d, buf, token, ec, bytes);
+    return internal_.read_some(cont, d, buf, std::move(token), ec, bytes);
 }
 
 inline std::coroutine_handle<>
@@ -228,7 +229,7 @@ win_stream_file::write_some(
     std::error_code* ec,
     std::size_t* bytes)
 {
-    return internal_.write_some(cont, d, buf, token, ec, bytes);
+    return internal_.write_some(cont, d, buf, std::move(token), ec, bytes);
 }
 
 inline native_handle_type

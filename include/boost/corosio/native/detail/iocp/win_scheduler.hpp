@@ -808,6 +808,13 @@ win_scheduler::update_timeout()
         return;
     if (timers_)
     {
+        // Read and arm under one lock. Two threads arming at once could
+        // otherwise read different earliest expiries and set the timer
+        // in the opposite order, leaving the later deadline set and the
+        // earlier timer firing late. A new earliest expiry is published
+        // before its notification takes this lock, so the last thread
+        // through arms the earliest one.
+        std::lock_guard<win_mutex> lock(dispatch_mutex_);
         timers_->update_timeout(tsvc->nearest_expiry());
     }
     else

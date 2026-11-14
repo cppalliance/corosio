@@ -446,10 +446,13 @@ struct iocp_paths_test
         f.close();
     }
 
-    // close() asks the wait reactor to drop the object's wait op even
-    // when none was ever parked. Objects destroyed before the reactor
-    // thread exists leave those asks queued; the first wait starts the
-    // thread, which must not touch the dead ops (ASan catches it).
+    // close() used to ask the wait reactor to drop the object's wait op
+    // even when none was ever parked, so objects destroyed before the
+    // reactor thread existed left those asks queued; the first wait
+    // started the thread, which must not touch the dead ops (ASan
+    // catches it). An ask now needs both a running thread and a parked
+    // op, so these objects ask nothing, and the scenario only shows
+    // that the wait after them still completes.
     void testStaleWaitCancelsFromDestroyedObjects()
     {
         io_context ioc(iocp);

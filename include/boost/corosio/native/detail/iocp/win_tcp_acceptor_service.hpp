@@ -33,6 +33,7 @@
 
 #include <ws2tcpip.h>
 
+#include <cstring>
 #include <system_error>
 
 namespace boost::corosio::detail {
@@ -120,6 +121,18 @@ acceptor_wait_op::do_cancel_impl(overlapped_op* base) noexcept
     op->acceptor.socket_service().scheduler().cancel_wait(op);
 }
 
+// An address GetAcceptExSockaddrs pointed into the AcceptEx buffer,
+// as an endpoint; one it could not find stays the default endpoint.
+inline endpoint
+accept_ex_endpoint(sockaddr const* sa, int len) noexcept
+{
+    sockaddr_storage storage{};
+    if (!sa || len <= 0 || len > static_cast<int>(sizeof(storage)))
+        return {};
+    std::memcpy(&storage, sa, static_cast<std::size_t>(len));
+    return from_sockaddr(storage);
+}
+
 // accept_op completion handler
 
 inline void
@@ -172,20 +185,41 @@ accept_op::do_complete(
 
         op->peer_wrapper->set_socket(op->accepted_socket);
 
-        sockaddr_storage local_storage{};
-        int local_len = sizeof(local_storage);
-        sockaddr_storage remote_storage{};
-        int remote_len = sizeof(remote_storage);
-
         endpoint local_ep, remote_ep;
-        if (::getsockname(
-                op->accepted_socket,
-                reinterpret_cast<sockaddr*>(&local_storage), &local_len) == 0)
-            local_ep = from_sockaddr(local_storage);
-        if (::getpeername(
-                op->accepted_socket,
-                reinterpret_cast<sockaddr*>(&remote_storage), &remote_len) == 0)
-            remote_ep = from_sockaddr(remote_storage);
+        if (auto parse =
+                op->acceptor.socket_service().get_accept_ex_sockaddrs())
+        {
+            // AcceptEx already wrote both addresses into addr_buf, so
+            // reading them back costs no syscall, where getsockname and
+            // getpeername cost one each on every accept.
+            sockaddr* local_sa  = nullptr;
+            sockaddr* remote_sa = nullptr;
+            int local_len       = 0;
+            int remote_len      = 0;
+            parse(
+                op->addr_buf, 0, op->addr_len, op->addr_len, &local_sa,
+                &local_len, &remote_sa, &remote_len);
+            local_ep  = accept_ex_endpoint(local_sa, local_len);
+            remote_ep = accept_ex_endpoint(remote_sa, remote_len);
+        }
+        else
+        {
+            sockaddr_storage local_storage{};
+            int local_len = sizeof(local_storage);
+            sockaddr_storage remote_storage{};
+            int remote_len = sizeof(remote_storage);
+
+            if (::getsockname(
+                    op->accepted_socket,
+                    reinterpret_cast<sockaddr*>(&local_storage),
+                    &local_len) == 0)
+                local_ep = from_sockaddr(local_storage);
+            if (::getpeername(
+                    op->accepted_socket,
+                    reinterpret_cast<sockaddr*>(&remote_storage),
+                    &remote_len) == 0)
+                remote_ep = from_sockaddr(remote_storage);
+        }
 
         op->peer_wrapper->set_endpoints(local_ep, remote_ep);
         op->accepted_socket = INVALID_SOCKET;
@@ -369,6 +403,7 @@ win_tcp_acceptor::accept(
     // AcceptEx address buffer sizes must match the socket's address family
     DWORD addr_size = static_cast<DWORD>(
         (af == AF_INET6 ? sizeof(sockaddr_in6) : sizeof(sockaddr_in)) + 16);
+    op.addr_len          = addr_size;
     DWORD bytes_received = 0;
 
     BOOL ok = accept_ex(
