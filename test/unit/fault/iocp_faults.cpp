@@ -28,6 +28,7 @@
 #include "temp_path.hpp"
 #include <boost/corosio/udp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
+#include <boost/capy/cond.hpp>
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -1011,6 +1012,138 @@ struct iocp_faults
         BOOST_TEST(local == ep);
         BOOST_TEST(remote == client_local);
         BOOST_TEST(remote.port() != 0);
+    }
+
+    // A connect leaves the local endpoint for the first read of it, so
+    // a connection that never asks costs no getsockname.
+    void testConnectDefersLocalEndpoint()
+    {
+        if (!hook_is_live(sys::getsockname))
+        {
+            skip_dead_hook("getsockname");
+            return;
+        }
+        io_context ioc(iocp);
+        tcp_acceptor acc(ioc, loopback());
+        auto const ep =
+            endpoint(ipv4_address::loopback(), acc.local_endpoint().port());
+        tcp_socket c(ioc);
+        BOOST_TEST(!c.open(family::v4));
+        std::error_code cec;
+        unsigned at_connect = 1, at_read = 0, at_reread = 0;
+        endpoint local;
+        auto body = [&]() -> capy::task<> {
+            // Counts this thread's calls; the one it would fail is never
+            // reached.
+            fault_scope f(sys::getsockname, WSAEFAULT, 1u << 30);
+            auto [ec]   = co_await c.connect(ep);
+            cec         = ec;
+            at_connect  = f.count();
+            local       = c.local_endpoint();
+            at_read     = f.count();
+            std::ignore = c.local_endpoint();
+            at_reread   = f.count();
+        };
+        capy::run_async(ioc.get_executor())(body());
+        ioc.run();
+        BOOST_TEST(!cec);
+        BOOST_TEST_EQ(at_connect, 0u);
+        BOOST_TEST_EQ(at_read, 1u);
+        BOOST_TEST_EQ(at_reread, 1u);
+        BOOST_TEST(local.address() == ep.address());
+        BOOST_TEST(local.port() != 0);
+        BOOST_TEST(c.remote_endpoint() == ep);
+    }
+
+    // A second connect on a connected socket whose local endpoint was
+    // never read still tries the bind ConnectEx needs. Winsock answers
+    // that the socket is already bound, and the connect fails at
+    // ConnectEx, as it did when the endpoint was fetched eagerly.
+    void testSecondConnectFailsAtConnectEx()
+    {
+        if (!hook_is_live(sys::bind))
+        {
+            skip_dead_hook("bind");
+            return;
+        }
+        io_context ioc(iocp);
+        tcp_acceptor acc(ioc, loopback());
+        auto const ep =
+            endpoint(ipv4_address::loopback(), acc.local_endpoint().port());
+        tcp_socket c(ioc);
+        BOOST_TEST(!c.open(family::v4));
+        std::error_code first, second;
+        unsigned binds = 0;
+        auto body      = [&]() -> capy::task<> {
+            auto [ec1] = co_await c.connect(ep);
+            first      = ec1;
+            // Counts this thread's calls; the one it would fail is never
+            // reached.
+            fault_scope b(sys::bind, WSAEFAULT, 1u << 30);
+            auto [ec2] = co_await c.connect(ep);
+            second     = ec2;
+            binds      = b.count();
+        };
+        capy::run_async(ioc.get_executor())(body());
+        ioc.run();
+        BOOST_TEST(!first);
+        BOOST_TEST_EQ(binds, 1u);
+        BOOST_TEST(second == win_err(WSAEISCONN));
+        BOOST_TEST(c.local_endpoint().port() != 0);
+    }
+
+    // A local endpoint a connect left unfetched is read after the
+    // connection is gone as well as while it lasts: the first read,
+    // made after the peer reset it or after both sides closed it,
+    // returns the endpoint the peer saw the connection come from.
+    void testDeferredLocalEndpointOutlivesConnection()
+    {
+        auto check = [](bool abort) {
+            io_context ioc(iocp);
+            tcp_acceptor acc(ioc, loopback());
+            auto const ep =
+                endpoint(ipv4_address::loopback(), acc.local_endpoint().port());
+            tcp_socket c(ioc);
+            tcp_socket s(ioc);
+            BOOST_TEST(!c.open(family::v4));
+            std::error_code cec, aec, rec;
+            endpoint seen_by_peer, local;
+            bool expired = false;
+            auto body    = [&]() -> capy::task<> {
+                auto [ec1]   = co_await c.connect(ep);
+                cec          = ec1;
+                auto [ec2]   = co_await acc.accept(s);
+                aec          = ec2;
+                seen_by_peer = s.remote_endpoint();
+                // A zero linger turns the close into a reset.
+                if (abort)
+                    must_ok(s.set_option(socket_option::linger(true, 0)));
+                s.close();
+                char buf[8]   = {};
+                auto [ec3, n] = co_await c.read_some(
+                    capy::mutable_buffer(buf, sizeof(buf)));
+                std::ignore = n;
+                rec         = ec3;
+                if (!abort)
+                    std::ignore = c.shutdown(tcp_socket::shutdown_send);
+                local = c.local_endpoint();
+                ioc.stop();
+            };
+            capy::run_async(ioc.get_executor())(body());
+            capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
+            ioc.run();
+            BOOST_TEST(!expired);
+            BOOST_TEST(!cec);
+            BOOST_TEST(!aec);
+            if (abort)
+                BOOST_TEST(rec == std::errc::connection_reset);
+            else
+                BOOST_TEST(rec == capy::cond::eof);
+            BOOST_TEST(seen_by_peer.port() != 0);
+            BOOST_TEST(local == seen_by_peer);
+        };
+        check(true);
+        check(false);
     }
 
     void testUdpSetupFails()
@@ -2250,6 +2383,9 @@ struct iocp_faults
         testAcceptFails();
         testAcceptReadsAcceptExAddresses();
         testAcceptWithoutSockaddrsParser();
+        testConnectDefersLocalEndpoint();
+        testSecondConnectFailsAtConnectEx();
+        testDeferredLocalEndpointOutlivesConnection();
         testExtensionPointersMissing();
         testUdpSetupFails();
         testUdpIoFails();
