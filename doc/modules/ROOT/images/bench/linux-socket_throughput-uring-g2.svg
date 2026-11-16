@@ -18,20 +18,20 @@
 <line x1='52' y1='58.0' x2='704' y2='58.0' class='bch-grid' stroke='#e3e2dc' stroke-width='1'/>
 <text x='46' y='61.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='end'>+400%</text>
 <text x='46' y='237.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='end'>0%</text>
-<rect x='129.7' y='168.2' width='26.0' height='109.8' rx='2' class='bch-s-uring' fill='#eb6834'><title>multithread/2 — 32 bidirectional connection pairs share one context serviced by N threads running the context, with 64 KiB chunks; N is the thread count.</title></rect>
-<text x='142.7' y='164.2' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+149%</text>
-<rect x='157.7' y='228.4' width='26.0' height='49.6' rx='2' class='bch-s-cb' fill='#1baf7a'><title>multithread/2 — 32 bidirectional connection pairs share one context serviced by N threads running the context, with 64 KiB chunks; N is the thread count.</title></rect>
-<text x='170.7' y='224.4' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+13%</text>
+<rect x='129.7' y='183.1' width='26.0' height='94.9' rx='2' class='bch-s-uring' fill='#eb6834'><title>multithread/2 — 32 bidirectional connection pairs share one context serviced by N threads running the context, with 64 KiB chunks; N is the thread count.</title></rect>
+<text x='142.7' y='179.1' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+116%</text>
+<rect x='157.7' y='232.9' width='26.0' height='45.1' rx='2' class='bch-s-cb' fill='#1baf7a'><title>multithread/2 — 32 bidirectional connection pairs share one context serviced by N threads running the context, with 64 KiB chunks; N is the thread count.</title></rect>
+<text x='170.7' y='228.9' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+2%</text>
 <text x='156.7' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 156.7 292.0)'>multithread/2</text>
-<rect x='351.0' y='110.0' width='26.0' height='168.0' rx='2' class='bch-s-uring' fill='#eb6834'><title>multithread/4 — 32 bidirectional connection pairs share one context serviced by N threads running the context, with 64 KiB chunks; N is the thread count.</title></rect>
-<text x='364.0' y='106.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+282%</text>
+<rect x='351.0' y='103.4' width='26.0' height='174.6' rx='2' class='bch-s-uring' fill='#eb6834'><title>multithread/4 — 32 bidirectional connection pairs share one context serviced by N threads running the context, with 64 KiB chunks; N is the thread count.</title></rect>
+<text x='364.0' y='99.4' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+297%</text>
 <rect x='379.0' y='234.1' width='26.0' height='43.9' rx='2' class='bch-s-cb' fill='#1baf7a'><title>multithread/4 — 32 bidirectional connection pairs share one context serviced by N threads running the context, with 64 KiB chunks; N is the thread count.</title></rect>
 <text x='392.0' y='230.1' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>0%</text>
 <text x='378.0' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 378.0 292.0)'>multithread/4</text>
-<rect x='572.3' y='105.5' width='26.0' height='172.5' rx='2' class='bch-s-uring' fill='#eb6834'><title>multithread/8 — 32 bidirectional connection pairs share one context serviced by N threads running the context, with 64 KiB chunks; N is the thread count.</title></rect>
-<text x='585.3' y='101.5' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+292%</text>
-<rect x='600.3' y='234.6' width='26.0' height='43.4' rx='2' class='bch-s-cb' fill='#1baf7a'><title>multithread/8 — 32 bidirectional connection pairs share one context serviced by N threads running the context, with 64 KiB chunks; N is the thread count.</title></rect>
-<text x='613.3' y='230.6' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-1%</text>
+<rect x='572.3' y='100.2' width='26.0' height='177.8' rx='2' class='bch-s-uring' fill='#eb6834'><title>multithread/8 — 32 bidirectional connection pairs share one context serviced by N threads running the context, with 64 KiB chunks; N is the thread count.</title></rect>
+<text x='585.3' y='96.2' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+304%</text>
+<rect x='600.3' y='234.3' width='26.0' height='43.7' rx='2' class='bch-s-cb' fill='#1baf7a'><title>multithread/8 — 32 bidirectional connection pairs share one context serviced by N threads running the context, with 64 KiB chunks; N is the thread count.</title></rect>
+<text x='613.3' y='230.3' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-1%</text>
 <text x='599.3' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 599.3 292.0)'>multithread/8</text>
 <line x1='52' y1='234.0' x2='704' y2='234.0' class='bch-zero' stroke='#5f5e58' stroke-width='1.5' stroke-dasharray='5 4'/>
 </svg>
