@@ -118,7 +118,7 @@
       "msvc_toolset": "14.44"
     },
     {
-      "version": "14.51",
+      "version": "14.52",
       "cxxstd": "20",
       "latest_cxxstd": "20",
       "runs_on": "windows-11-vs2026-arm",
