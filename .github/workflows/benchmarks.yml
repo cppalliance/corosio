@@ -11,7 +11,8 @@
 #
 # Runner prerequisites (per machine, maintained by the infra admin):
 #   all      : git, cmake >= 3.20, ninja or make/msbuild, python3
-#   linux    : gcc or clang, liburing-dev
+#   linux    : apt with passwordless sudo (clang and liburing-dev are
+#              installed by the workflow when missing)
 #   windows  : MSVC (vcvars auto-detected by cmake), python3 on PATH,
 #              Git Bash (for shell: bash steps)
 #   macos    : Xcode command line tools
@@ -267,12 +268,32 @@ jobs:
           # Self-hosted runner service shells are often non-login/non-interactive
           # and don't source the profile files an admin's interactive install
           # left PATH changes in (.bashrc/.zprofile/etc). Widen discovery to the
-          # usual install locations without installing anything ourselves.
+          # usual install locations.
           for dir in /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" /snap/bin /opt/cmake/bin; do
             if [ -d "$dir" ]; then
               echo "$dir" >> "$GITHUB_PATH"
             fi
           done
+
+      # GCC and clang lower coroutines very differently, so an unpinned
+      # compiler would make coroutine results depend on the runner image.
+      - name: Install clang and liburing on Linux
+        if: matrix.platform == 'linux'
+        run: |
+          set -e
+          if ! command -v clang++ >/dev/null 2>&1 \
+              || ! dpkg-query -W -f '${Status}' liburing-dev 2>/dev/null \
+                   | grep -q "install ok installed"; then
+            sudo apt-get update
+            sudo apt-get install -y clang liburing-dev
+          fi
+          major=$(clang++ -dumpversion | cut -d. -f1)
+          if [ "$major" -lt 17 ]; then
+            echo "::error::clang++ $major is older than the supported minimum (17)"
+            exit 1
+          fi
+          echo "CC=clang" >> "$GITHUB_ENV"
+          echo "CXX=clang++" >> "$GITHUB_ENV"
 
       - name: Toolchain diagnostics
         run: |
