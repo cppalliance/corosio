@@ -277,8 +277,9 @@ struct continuation_post_test
 };
 
 #ifndef COROSIO_TEST_HAS_TSAN
-// Assert post(continuation&) allocates nothing on backends that enqueue
-// continuations directly on the ready queue (reactor + io_uring).
+// Assert post(continuation&) allocates nothing. The reactors and
+// io_uring link the continuation onto the ready queue; IOCP posts its
+// address as the completion packet.
 template<auto Backend>
 struct continuation_zero_alloc_test
 {
@@ -310,7 +311,7 @@ struct continuation_zero_alloc_test
 
 COROSIO_BACKEND_TESTS(continuation_post_test, "boost.corosio.continuation_post")
 #ifndef COROSIO_TEST_HAS_TSAN
-COROSIO_NON_IOCP_BACKEND_TESTS(
+COROSIO_BACKEND_TESTS(
     continuation_zero_alloc_test, "boost.corosio.continuation_post.zero_alloc")
 #endif
 
