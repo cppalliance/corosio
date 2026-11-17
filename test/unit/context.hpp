@@ -93,8 +93,7 @@
     COROSIO_TEST_KQUEUE_(impl, name)              \
     COROSIO_TEST_SELECT_(impl, name)
 
-// All backends except IOCP (which posts via a separate tagged-PQCS path
-// and is not zero-alloc until that task is done).
+// All backends except IOCP.
 #define COROSIO_NON_IOCP_BACKEND_TESTS(impl, name) \
     COROSIO_TEST_EPOLL_(impl, name)                \
     COROSIO_TEST_KQUEUE_(impl, name)               \
