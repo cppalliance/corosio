@@ -526,6 +526,21 @@ win_wait_reactor::run()
             std::lock_guard lock(mutex_);
             to_add.swap(pending_register_);
             to_cancel.swap(pending_cancel_);
+
+            // The buffer handed back must hold as much as the one just
+            // taken. Otherwise only the buffer callers happened to fill
+            // ever grows, and the other one allocates on a caller's
+            // thread the first time a request lands on it, which can
+            // be long after the reactor looked warm. Failing to grow
+            // here costs nothing: push_back grows it later.
+            try
+            {
+                pending_register_.reserve(to_add.capacity());
+                pending_cancel_.reserve(to_cancel.capacity());
+            }
+            catch (...)
+            {
+            }
         }
 
         for (auto& e : to_add)
