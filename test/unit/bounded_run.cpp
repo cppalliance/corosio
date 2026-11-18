@@ -36,6 +36,9 @@
 #include <stdexcept>
 #include <system_error>
 
+#include <poll.h>
+#include <sys/socket.h>
+
 #include "context.hpp"
 #include "must.hpp"
 #include "test_suite.hpp"
@@ -63,6 +66,7 @@ struct bounded_run_test
             resumed     = true;
         };
         capy::run_async(ex)(reader());
+        std::ignore = ioc.poll();
 
         std::ignore = ioc.run_for(std::chrono::milliseconds(50));
         BOOST_TEST(!resumed);
@@ -91,9 +95,10 @@ struct bounded_run_test
             resumed     = true;
         };
         capy::run_async(ex)(reader());
+        std::ignore = ioc.poll();
 
-        // First slice starts the reader coroutine and parks it; the
-        // second finds only the parked read and waits out the bound.
+        // Only the parked read is left, so each slice waits out its
+        // bound.
         std::ignore = ioc.run_one_for(std::chrono::milliseconds(20));
         std::ignore = ioc.run_one_for(std::chrono::milliseconds(20));
         BOOST_TEST(!resumed);
@@ -172,6 +177,129 @@ struct bounded_run_test
         BOOST_TEST(resumed);
     }
 
+    // Data waiting for a parked read is ready work, so a poll must
+    // check the reactor even when nothing else is queued.
+    void pollCompletesReadyRead(bool one)
+    {
+        io_context ioc(Backend);
+        auto ex       = ioc.get_executor();
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
+
+        char buf[8];
+        std::error_code rec;
+        bool resumed = false;
+        auto reader  = [&]() -> capy::task<> {
+            auto [ec, n] =
+                co_await s1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            std::ignore = n;
+            rec         = ec;
+            resumed     = true;
+        };
+        capy::run_async(ex)(reader());
+        std::ignore = ioc.poll();
+        BOOST_TEST(!resumed);
+
+        // Wait outside the context for the byte to be readable, so the
+        // poll below is certain to find it.
+        char const c = 'x';
+        BOOST_TEST_EQ(::send(s2.native_handle(), &c, 1, 0), 1);
+        pollfd pfd{};
+        pfd.fd     = s1.native_handle();
+        pfd.events = POLLIN;
+        BOOST_TEST_EQ(::poll(&pfd, 1, -1), 1);
+
+        ioc.restart();
+        std::ignore = one ? ioc.poll_one() : ioc.poll();
+        BOOST_TEST(resumed);
+        BOOST_TEST(!rec);
+    }
+
+    void testPollCompletesReadyRead()
+    {
+        pollCompletesReadyRead(false);
+    }
+
+    void testPollOneCompletesReadyRead()
+    {
+        pollCompletesReadyRead(true);
+    }
+
+    // A timer past its deadline is ready work, found by the same reactor
+    // pass as ready I/O.
+    void pollFiresExpiredTimer(bool one)
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        bool fired = false;
+        auto const tp =
+            std::chrono::steady_clock::now() + std::chrono::milliseconds(20);
+        auto waiter = [&]() -> capy::task<> {
+            auto [ec] = co_await corosio::delay(tp);
+            fired     = !ec;
+        };
+        capy::run_async(ex)(waiter());
+        std::ignore = ioc.poll();
+
+        std::this_thread::sleep_until(tp);
+
+        std::ignore = one ? ioc.poll_one() : ioc.poll();
+        BOOST_TEST(fired);
+    }
+
+    void testPollFiresExpiredTimer()
+    {
+        pollFiresExpiredTimer(false);
+    }
+
+    void testPollOneFiresExpiredTimer()
+    {
+        pollFiresExpiredTimer(true);
+    }
+
+    // A bounded wait runs what its reactor pass found, instead of
+    // leaving it queued for the next call.
+    void testBoundedPassRunsWhatItFound()
+    {
+        struct probe_context : io_context
+        {
+            using io_context::io_context;
+
+            std::size_t wait_one(long usec)
+            {
+                return sched_->wait_one(usec);
+            }
+        };
+
+        probe_context ioc(Backend);
+        auto ex       = ioc.get_executor();
+        auto [s1, s2] = test::must(
+            test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
+
+        char buf[8];
+        bool resumed = false;
+        auto reader  = [&]() -> capy::task<> {
+            auto [ec, n] =
+                co_await s1.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            std::ignore = n;
+            std::ignore = ec;
+            resumed     = true;
+        };
+        capy::run_async(ex)(reader());
+        std::ignore = ioc.poll();
+
+        char const c = 'x';
+        BOOST_TEST_EQ(::send(s2.native_handle(), &c, 1, 0), 1);
+        pollfd pfd{};
+        pfd.fd     = s1.native_handle();
+        pfd.events = POLLIN;
+        BOOST_TEST_EQ(::poll(&pfd, 1, -1), 1);
+
+        BOOST_TEST_EQ(ioc.wait_one(30'000'000), 1u);
+        BOOST_TEST(resumed);
+    }
+
     void testTwoThreadBoundedFollower()
     {
         // Two threads inside the scheduler: one holds reactor
@@ -234,6 +362,11 @@ struct bounded_run_test
         testRunOneForLeavesParkedReadParked();
         testRunForFiresArmedDelay();
         testPollLeavesParkedReadParked();
+        testPollCompletesReadyRead();
+        testPollOneCompletesReadyRead();
+        testPollFiresExpiredTimer();
+        testPollOneFiresExpiredTimer();
+        testBoundedPassRunsWhatItFound();
         testTwoThreadBoundedFollower();
         testOversizeBudgetThrows();
         testRunOneOnIdleReturnsZero();

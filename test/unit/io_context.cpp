@@ -24,13 +24,16 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <mutex>
 #include <stop_token>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <thread>
+#include <type_traits>
 #include <vector>
 #include <tuple>
 #include <utility>
@@ -38,6 +41,10 @@
 #include <boost/corosio/detail/platform.hpp>
 #if BOOST_COROSIO_HAS_EPOLL
 #include <sys/epoll.h>
+#endif
+#if BOOST_COROSIO_POSIX
+#include <poll.h>
+#include <sys/socket.h>
 #endif
 
 #include "context.hpp"
@@ -328,6 +335,53 @@ post_coro(io_context::executor_type& ex, std::coroutine_handle<> h)
     ex.post(h);
 }
 
+// Runs a function when resumed. An exception from the function leaves
+// the frame suspended at its end, for the caller to destroy.
+struct fn_coro
+{
+    struct promise_type
+    {
+        fn_coro get_return_object()
+        {
+            return {std::coroutine_handle<promise_type>::from_promise(*this)};
+        }
+
+        std::suspend_always initial_suspend() noexcept
+        {
+            return {};
+        }
+        std::suspend_never final_suspend() noexcept
+        {
+            return {};
+        }
+
+        void return_void() {}
+
+        void unhandled_exception()
+        {
+            throw;
+        }
+    };
+
+    std::coroutine_handle<promise_type> h;
+};
+
+inline fn_coro
+make_fn_coro(std::function<void()> f)
+{
+    f();
+    co_return;
+}
+
+// Post a function, returning the frame that runs it.
+inline std::coroutine_handle<>
+post_fn(io_context::executor_type ex, std::function<void()> f)
+{
+    auto h = make_fn_coro(std::move(f)).h;
+    ex.post(h);
+    return h;
+}
+
 // Reschedules the awaiting coroutine through the executor.
 struct repost_awaitable
 {
@@ -613,6 +667,506 @@ struct io_context_test
         BOOST_TEST(ioc.stopped());
     }
 
+    // A run nested in a handler must see work that handler posted,
+    // rather than leave it until the handler returns.
+    void nestedRunSeesPostedWork(int mode)
+    {
+        io_context ioc(Backend);
+        auto ex         = ioc.get_executor();
+        int counter     = 0;
+        int seen        = -1;
+        std::size_t ran = 0;
+        auto outer      = [&]() -> capy::task<> {
+            post_coro(ex, make_coro(counter));
+            ran  = mode == 0 ? ioc.poll()
+                 : mode == 1 ? ioc.poll_one()
+                             : ioc.run_one();
+            seen = counter;
+            co_return;
+        };
+        capy::run_async(ex)(outer());
+        ioc.run();
+        BOOST_TEST_EQ(ran, 1u);
+        BOOST_TEST_EQ(seen, 1);
+        BOOST_TEST_EQ(counter, 1);
+    }
+
+    void testNestedPollSeesPostedWork()
+    {
+        nestedRunSeesPostedWork(0);
+    }
+
+    void testNestedPollOneSeesPostedWork()
+    {
+        nestedRunSeesPostedWork(1);
+    }
+
+    void testNestedRunOneSeesPostedWork()
+    {
+        nestedRunSeesPostedWork(2);
+    }
+
+    // The run family, function by function, in a set of fixed
+    // situations. Each check compares one line naming the function and
+    // what it observed, so a failure shows every value at once.
+
+    enum class run_fn
+    {
+        run,
+        run_one,
+        poll,
+        poll_one,
+        run_for,
+        run_one_for,
+        run_until,
+        run_one_until
+    };
+
+    static constexpr run_fn all_run_fns[] = {
+        run_fn::run,       run_fn::run_one,      run_fn::poll,
+        run_fn::poll_one,  run_fn::run_for,      run_fn::run_one_for,
+        run_fn::run_until, run_fn::run_one_until};
+
+    static char const* name(run_fn f)
+    {
+        switch (f)
+        {
+        case run_fn::run:
+            return "run";
+        case run_fn::run_one:
+            return "run_one";
+        case run_fn::poll:
+            return "poll";
+        case run_fn::poll_one:
+            return "poll_one";
+        case run_fn::run_for:
+            return "run_for";
+        case run_fn::run_one_for:
+            return "run_one_for";
+        case run_fn::run_until:
+            return "run_until";
+        case run_fn::run_one_until:
+            return "run_one_until";
+        }
+        return "?";
+    }
+
+    static bool runs_one(run_fn f)
+    {
+        return f == run_fn::run_one || f == run_fn::poll_one ||
+            f == run_fn::run_one_for || f == run_fn::run_one_until;
+    }
+
+    // run() and run_one() would block forever where nothing completes.
+    static bool unbounded(run_fn f)
+    {
+        return f == run_fn::run || f == run_fn::run_one;
+    }
+
+    // The bound only matters to the bounded forms. Situations that end
+    // on their own pass a long one, which they never wait out.
+    static std::size_t
+    call(io_context& ioc, run_fn f, std::chrono::milliseconds bound)
+    {
+        switch (f)
+        {
+        case run_fn::run:
+            return ioc.run();
+        case run_fn::run_one:
+            return ioc.run_one();
+        case run_fn::poll:
+            return ioc.poll();
+        case run_fn::poll_one:
+            return ioc.poll_one();
+        case run_fn::run_for:
+            return ioc.run_for(bound);
+        case run_fn::run_one_for:
+            return ioc.run_one_for(bound);
+        case run_fn::run_until:
+            return ioc.run_until(std::chrono::steady_clock::now() + bound);
+        case run_fn::run_one_until:
+            return ioc.run_one_until(std::chrono::steady_clock::now() + bound);
+        }
+        return 0;
+    }
+
+    template<class Tag>
+    static constexpr bool is_backend =
+        std::is_same_v<std::remove_const_t<decltype(Backend)>, Tag>;
+
+    // Only the reactors leave readiness for a test to wait on: elsewhere
+    // the kernel takes the data into the pending read itself.
+    static constexpr bool can_await_readiness()
+    {
+#if BOOST_COROSIO_HAS_URING
+        return !is_backend<uring_t>;
+#else
+        return true;
+#endif
+    }
+
+    // IOCP reports timer expiry from a thread of its own, so a passed
+    // deadline doesn't mean a pass can see it yet.
+    static constexpr bool pass_sees_expired_timer()
+    {
+#if BOOST_COROSIO_HAS_IOCP
+        return !is_backend<iocp_t>;
+#else
+        return true;
+#endif
+    }
+
+    // IOCP sees a stop only when it reaches the stop's own wakeup, so
+    // work queued ahead of it still runs.
+    static constexpr bool stop_runs_queued_work()
+    {
+#if BOOST_COROSIO_HAS_IOCP
+        return is_backend<iocp_t>;
+#else
+        return false;
+#endif
+    }
+
+    static constexpr std::chrono::milliseconds long_bound{30000};
+    static constexpr std::chrono::milliseconds short_bound{20};
+
+    static std::string line(run_fn f, std::string const& observed)
+    {
+        return std::string(name(f)) + ": " + observed;
+    }
+
+    static std::string
+    fields(std::initializer_list<std::pair<char const*, long long>> kv)
+    {
+        std::string out;
+        for (auto const& [k, v] : kv)
+        {
+            if (!out.empty())
+                out += ' ';
+            out += k;
+            out += '=';
+            out += std::to_string(v);
+        }
+        return out;
+    }
+
+    void testRunFamilyNoWork()
+    {
+        for (auto f : all_run_fns)
+        {
+            io_context ioc(Backend);
+            auto n = call(ioc, f, long_bound);
+            BOOST_TEST_EQ(
+                line(f, fields({{"ret", n}, {"stopped", ioc.stopped()}})),
+                line(f, fields({{"ret", 0}, {"stopped", 1}})));
+        }
+    }
+
+    void testRunFamilyPostedWork()
+    {
+        for (auto f : all_run_fns)
+        {
+            io_context ioc(Backend);
+            int ran = 0;
+            for (int i = 0; i < 3; ++i)
+                post_fn(ioc.get_executor(), [&] { ++ran; });
+            auto n               = call(ioc, f, long_bound);
+            long long const want = runs_one(f) ? 1 : 3;
+            BOOST_TEST_EQ(
+                line(
+                    f,
+                    fields(
+                        {{"ret", n},
+                         {"ran", ran},
+                         {"stopped", ioc.stopped()}})),
+                line(
+                    f,
+                    fields(
+                        {{"ret", want},
+                         {"ran", want},
+                         {"stopped", !runs_one(f)}})));
+        }
+    }
+
+    // Work posted by a handler joins the same call.
+    void testRunFamilyChainedPost()
+    {
+        for (auto f : all_run_fns)
+        {
+            io_context ioc(Backend);
+            auto ex = ioc.get_executor();
+            int ran = 0;
+            post_fn(ex, [&] {
+                ++ran;
+                post_fn(ex, [&] { ++ran; });
+            });
+            auto n               = call(ioc, f, long_bound);
+            long long const want = runs_one(f) ? 1 : 2;
+            BOOST_TEST_EQ(
+                line(
+                    f,
+                    fields(
+                        {{"ret", n},
+                         {"ran", ran},
+                         {"stopped", ioc.stopped()}})),
+                line(
+                    f,
+                    fields(
+                        {{"ret", want},
+                         {"ran", want},
+                         {"stopped", !runs_one(f)}})));
+        }
+    }
+
+    // A parked read with nothing to read keeps work outstanding.
+    void testRunFamilyParkedReadIdle()
+    {
+        for (auto f : all_run_fns)
+        {
+            if (unbounded(f))
+                continue;
+            io_context ioc(Backend);
+            auto [s1, s2] = test::must(test::make_socket_pair(ioc));
+            char buf[1];
+            bool done   = false;
+            auto reader = [&]() -> capy::task<> {
+                auto [ec, n] =
+                    co_await s1.read_some(capy::mutable_buffer(buf, 1));
+                std::ignore = ec;
+                std::ignore = n;
+                done        = true;
+            };
+            capy::run_async(ioc.get_executor())(reader());
+            std::ignore = ioc.poll();
+
+            auto n = call(ioc, f, short_bound);
+            BOOST_TEST_EQ(
+                line(
+                    f,
+                    fields(
+                        {{"ret", n},
+                         {"done", done},
+                         {"stopped", ioc.stopped()}})),
+                line(f, fields({{"ret", 0}, {"done", 0}, {"stopped", 0}})));
+
+            s1.cancel();
+            ioc.restart();
+            ioc.run();
+        }
+    }
+
+#if BOOST_COROSIO_POSIX
+    // Data already waiting for a parked read is ready work.
+    void testRunFamilyParkedReadReady()
+    {
+        for (auto f : all_run_fns)
+        {
+            io_context ioc(Backend);
+            auto [s1, s2] = test::must(test::make_socket_pair(ioc));
+            char buf[1];
+            bool done   = false;
+            auto reader = [&]() -> capy::task<> {
+                auto [ec, n] =
+                    co_await s1.read_some(capy::mutable_buffer(buf, 1));
+                done = !ec && n == 1;
+            };
+            capy::run_async(ioc.get_executor())(reader());
+            std::ignore = ioc.poll();
+
+            char const c = 'x';
+            BOOST_TEST_EQ(::send(s2.native_handle(), &c, 1, 0), 1);
+            pollfd pfd{};
+            pfd.fd     = s1.native_handle();
+            pfd.events = POLLIN;
+            BOOST_TEST_EQ(::poll(&pfd, 1, -1), 1);
+
+            auto n = call(ioc, f, long_bound);
+            BOOST_TEST_EQ(
+                line(
+                    f,
+                    fields(
+                        {{"ret", n},
+                         {"done", done},
+                         {"stopped", ioc.stopped()}})),
+                line(f, fields({{"ret", 1}, {"done", 1}, {"stopped", 1}})));
+        }
+    }
+#endif
+
+    // A timer whose deadline has passed is ready work.
+    void testRunFamilyExpiredTimer()
+    {
+        for (auto f : all_run_fns)
+        {
+            io_context ioc(Backend);
+            bool fired    = false;
+            auto const tp = std::chrono::steady_clock::now() +
+                std::chrono::milliseconds(20);
+            auto waiter = [&]() -> capy::task<> {
+                auto [ec] = co_await delay(tp);
+                fired     = !ec;
+            };
+            capy::run_async(ioc.get_executor())(waiter());
+            std::ignore = ioc.poll();
+            // A start slow enough to reach the deadline leaves nothing for
+            // the call to do, so this round can't check it.
+            if (fired)
+                continue;
+            std::this_thread::sleep_until(tp);
+
+            auto n = call(ioc, f, long_bound);
+            BOOST_TEST_EQ(
+                line(
+                    f,
+                    fields(
+                        {{"ret", n},
+                         {"fired", fired},
+                         {"stopped", ioc.stopped()}})),
+                line(f, fields({{"ret", 1}, {"fired", 1}, {"stopped", 1}})));
+        }
+    }
+
+    void testRunFamilyFutureTimer()
+    {
+        for (auto f : all_run_fns)
+        {
+            if (unbounded(f))
+                continue;
+            io_context ioc(Backend);
+            std::stop_source stop;
+            bool fired  = false;
+            auto waiter = [&]() -> capy::task<> {
+                auto [ec] = co_await delay(std::chrono::hours(1));
+                fired     = !ec;
+            };
+            capy::run_async(ioc.get_executor(), stop.get_token())(waiter());
+            std::ignore = ioc.poll();
+
+            auto n = call(ioc, f, short_bound);
+            BOOST_TEST_EQ(
+                line(
+                    f,
+                    fields(
+                        {{"ret", n},
+                         {"fired", fired},
+                         {"stopped", ioc.stopped()}})),
+                line(f, fields({{"ret", 0}, {"fired", 0}, {"stopped", 0}})));
+
+            stop.request_stop();
+            ioc.restart();
+            ioc.run();
+        }
+    }
+
+    void testRunFamilyStoppedWithWork()
+    {
+        for (auto f : all_run_fns)
+        {
+            io_context ioc(Backend);
+            int ran = 0;
+            post_fn(ioc.get_executor(), [&] { ++ran; });
+            ioc.stop();
+            auto n           = call(ioc, f, long_bound);
+            int const before = ran;
+            bool const st    = ioc.stopped();
+            ioc.restart();
+            auto n2 = ioc.poll();
+            BOOST_TEST_EQ(
+                line(
+                    f,
+                    fields(
+                        {{"ret", n},
+                         {"ran", before},
+                         {"stopped", st},
+                         {"then_poll", n2},
+                         {"ran_after", ran}})),
+                line(
+                    f,
+                    fields(
+                        {{"ret", stop_runs_queued_work() ? 1 : 0},
+                         {"ran", stop_runs_queued_work() ? 1 : 0},
+                         {"stopped", 1},
+                         {"then_poll", stop_runs_queued_work() ? 0 : 1},
+                         {"ran_after", 1}})));
+        }
+    }
+
+    void testRunFamilyStopInsideHandler()
+    {
+        for (auto f : all_run_fns)
+        {
+            io_context ioc(Backend);
+            auto ex = ioc.get_executor();
+            int ran = 0;
+            post_fn(ex, [&] {
+                ++ran;
+                ioc.stop();
+            });
+            post_fn(ex, [&] { ++ran; });
+            post_fn(ex, [&] { ++ran; });
+            auto n = call(ioc, f, long_bound);
+            long long const want =
+                stop_runs_queued_work() && !runs_one(f) ? 3 : 1;
+            BOOST_TEST_EQ(
+                line(
+                    f,
+                    fields(
+                        {{"ret", n},
+                         {"ran", ran},
+                         {"stopped", ioc.stopped()}})),
+                line(
+                    f, fields({{"ret", want}, {"ran", want}, {"stopped", 1}})));
+        }
+    }
+
+    // The exception leaves the call; the context is still usable and
+    // the rest of the queue still runs.
+    void testRunFamilyThrowingHandler()
+    {
+        for (auto f : all_run_fns)
+        {
+            io_context ioc(Backend);
+            auto ex      = ioc.get_executor();
+            int ran      = 0;
+            auto thrower = post_fn(ex, [&] {
+                ++ran;
+                throw std::runtime_error("handler");
+            });
+            post_fn(ex, [&] { ++ran; });
+            bool threw = false;
+            try
+            {
+                std::ignore = call(ioc, f, long_bound);
+            }
+            catch (std::runtime_error const&)
+            {
+                threw = true;
+            }
+            thrower.destroy();
+            bool const st = ioc.stopped();
+            auto n2       = ioc.poll();
+            // With nothing left, the poll stops the context: the throw
+            // didn't leave its work counted.
+            BOOST_TEST_EQ(
+                line(
+                    f,
+                    fields(
+                        {{"threw", threw},
+                         {"stopped", st},
+                         {"then_poll", n2},
+                         {"ran", ran},
+                         {"then_stopped", ioc.stopped()}})),
+                line(
+                    f,
+                    fields(
+                        {{"threw", 1},
+                         {"stopped", 0},
+                         {"then_poll", 1},
+                         {"ran", 2},
+                         {"then_stopped", 1}})));
+        }
+    }
+
     void testStopAndRestart()
     {
         io_context ioc(Backend);
@@ -650,7 +1204,7 @@ struct io_context_test
         int counter = 0;
 
         // run_one_for with no work - returns immediately and stops context
-        std::size_t n = ioc.run_one_for(std::chrono::milliseconds(10));
+        std::size_t n = ioc.run_one_for(std::chrono::seconds(30));
         BOOST_TEST(n == 0);
         BOOST_TEST(ioc.stopped());
 
@@ -660,7 +1214,7 @@ struct io_context_test
         // With work posted
         post_coro(ex, make_coro(counter));
 
-        n = ioc.run_one_for(std::chrono::milliseconds(100));
+        n = ioc.run_one_for(std::chrono::seconds(30));
         BOOST_TEST(n == 1);
         BOOST_TEST(counter == 1);
     }
@@ -673,7 +1227,7 @@ struct io_context_test
 
         // run_one_until with no work - returns immediately and stops context
         auto deadline =
-            std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
+            std::chrono::steady_clock::now() + std::chrono::seconds(30);
         std::size_t n = ioc.run_one_until(deadline);
         BOOST_TEST(n == 0);
         BOOST_TEST(ioc.stopped());
@@ -684,33 +1238,40 @@ struct io_context_test
         // Post work and run_one_until
         post_coro(ex, make_coro(counter));
 
-        deadline =
-            std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
-        n = ioc.run_one_until(deadline);
+        deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        n        = ioc.run_one_until(deadline);
         BOOST_TEST(n == 1);
         BOOST_TEST(counter == 1);
     }
 
-    void testRunOneUntilExpiredDeadlineStops()
+    // A deadline that has already passed runs nothing and leaves the
+    // context as it was, whether or not work is outstanding.
+    void testExpiredDeadlineRunsNothing()
     {
-        // An already-elapsed deadline with no work must still stop the
-        // context: run_one_until has to call wait_one at least once. This
-        // is the deterministic form of a valgrind/CI flake where the thread
-        // is preempted past the deadline before the first loop check, so
-        // wait_one (which holds the "no work -> stop" logic) was skipped.
         io_context ioc(Backend);
+        auto ex     = ioc.get_executor();
+        int counter = 0;
 
-        auto past =
+        auto const past =
             std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
-        std::size_t n = ioc.run_one_until(past);
-        BOOST_TEST(n == 0);
-        BOOST_TEST(ioc.stopped());
+        auto const late = std::chrono::milliseconds(-1);
 
-        // run_for with an already-elapsed deadline (run_until -> run_one_until)
-        ioc.restart();
-        n = ioc.run_for(std::chrono::milliseconds(-1));
-        BOOST_TEST(n == 0);
-        BOOST_TEST(ioc.stopped());
+        BOOST_TEST(ioc.run_one_until(past) == 0);
+        BOOST_TEST(ioc.run_until(past) == 0);
+        BOOST_TEST(ioc.run_one_for(late) == 0);
+        BOOST_TEST(ioc.run_for(late) == 0);
+        BOOST_TEST(!ioc.stopped());
+
+        post_coro(ex, make_coro(counter));
+        BOOST_TEST(ioc.run_one_until(past) == 0);
+        BOOST_TEST(ioc.run_until(past) == 0);
+        BOOST_TEST(ioc.run_one_for(late) == 0);
+        BOOST_TEST(ioc.run_for(late) == 0);
+        BOOST_TEST(counter == 0);
+        BOOST_TEST(!ioc.stopped());
+
+        BOOST_TEST(ioc.poll() == 1);
+        BOOST_TEST(counter == 1);
     }
 
     void testRunFor()
@@ -721,7 +1282,7 @@ struct io_context_test
 
         // run_for with no work returns without blocking and stops the
         // context; a wall-clock bound here only flakes under load.
-        std::size_t n = ioc.run_for(std::chrono::milliseconds(20));
+        std::size_t n = ioc.run_for(std::chrono::seconds(30));
 
         BOOST_TEST(n == 0);
         BOOST_TEST(ioc.stopped());
@@ -731,7 +1292,7 @@ struct io_context_test
 
         // run_for with work
         post_coro(ex, make_coro(counter));
-        n = ioc.run_for(std::chrono::milliseconds(100));
+        n = ioc.run_for(std::chrono::seconds(30));
         BOOST_TEST(n == 1);
         BOOST_TEST(counter == 1);
     }
@@ -780,6 +1341,8 @@ struct io_context_test
             []() -> capy::task<> {
                 std::ignore = co_await delay(std::chrono::hours(1));
             }());
+        // A bound that has passed runs nothing, so start the waiter here.
+        std::ignore = ioc.poll();
 
         std::ignore = ioc.run_for(std::chrono::milliseconds(50));
         BOOST_TEST(ioc.run_one_for(std::chrono::milliseconds(50)) == 0);
@@ -1191,10 +1754,27 @@ struct io_context_test
         testRunOne();
         testPoll();
         testPollOne();
+        testNestedPollSeesPostedWork();
+        testNestedPollOneSeesPostedWork();
+        testNestedRunOneSeesPostedWork();
+        testRunFamilyNoWork();
+        testRunFamilyPostedWork();
+        testRunFamilyChainedPost();
+        testRunFamilyParkedReadIdle();
+#if BOOST_COROSIO_POSIX
+        if constexpr (can_await_readiness())
+            testRunFamilyParkedReadReady();
+#endif
+        if constexpr (pass_sees_expired_timer())
+            testRunFamilyExpiredTimer();
+        testRunFamilyFutureTimer();
+        testRunFamilyStoppedWithWork();
+        testRunFamilyStopInsideHandler();
+        testRunFamilyThrowingHandler();
         testStopAndRestart();
         testRunOneFor();
         testRunOneUntil();
-        testRunOneUntilExpiredDeadlineStops();
+        testExpiredDeadlineRunsNothing();
         testRunOneUntilLongDeadlineNoWork();
         testRunFor();
         testRunForWithOutstandingWork();

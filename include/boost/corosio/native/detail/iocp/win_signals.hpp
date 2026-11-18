@@ -361,10 +361,18 @@ signal_op::do_complete(
     auto* c       = op->cont;
     auto ex       = op->d;
 
-    dispatch_coro(ex, *c).resume();
+    // A handler that throws has still consumed the service's work.
+    struct finish_on_exit
+    {
+        decltype(service) svc;
+        ~finish_on_exit()
+        {
+            if (svc)
+                svc->work_finished();
+        }
+    } on_exit{service};
 
-    if (service)
-        service->work_finished();
+    dispatch_coro(ex, *c).resume();
 }
 
 //

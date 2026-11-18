@@ -100,6 +100,26 @@ jobs:
             if [ -d "$dir" ]; then echo "$dir" >> "$GITHUB_PATH"; fi
           done
 
+      # GCC and clang lower coroutines very differently, so an unpinned
+      # compiler would make coroutine results depend on the runner image.
+      - name: Install clang and liburing on Linux
+        if: matrix.platform == 'linux'
+        run: |
+          set -e
+          if ! command -v clang++ >/dev/null 2>&1 \
+              || ! dpkg-query -W -f '${Status}' liburing-dev 2>/dev/null \
+                   | grep -q "install ok installed"; then
+            sudo apt-get update
+            sudo apt-get install -y clang liburing-dev
+          fi
+          major=$(clang++ -dumpversion | cut -d. -f1)
+          if [ "$major" -lt 17 ]; then
+            echo "::error::clang++ $major is older than the supported minimum (17)"
+            exit 1
+          fi
+          echo "CC=clang" >> "$GITHUB_ENV"
+          echo "CXX=clang++" >> "$GITHUB_ENV"
+
       - name: Configure and build (epoll/default asio reactor)
         run: |
           set -e
@@ -190,7 +210,7 @@ jobs:
           osname=$(uname -sr 2>/dev/null || echo unknown)
           kern=$(uname -v 2>/dev/null || echo unknown)
           if command -v cl.exe >/dev/null 2>&1; then comp=$(cl.exe 2>&1 | head -1)
-          elif command -v c++ >/dev/null 2>&1; then comp=$(c++ --version | head -1)
+          elif command -v "${CXX:-c++}" >/dev/null 2>&1; then comp=$("${CXX:-c++}" --version | head -1)
           else comp=unknown; fi
           cmakev=$(cmake --version | head -1)
           uringv=$( (dpkg-query -W -f '${Version}' liburing-dev) 2>/dev/null || echo n/a)

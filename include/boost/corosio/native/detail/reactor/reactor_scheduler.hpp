@@ -342,6 +342,10 @@ protected:
     /// @pre `lock` holds `mutex_`; it is held again on return.
     void settle_retired(lock_type& lock) const;
 
+    /// Move what an enclosing handler on this thread queued privately
+    /// to the shared queue. @pre `mutex_` is held.
+    void adopt_enclosing_work(context_type const& ctx);
+
     // Runtime-configurable reactor tuning parameters.
     // Defaults match the library's built-in values.
     unsigned max_events_per_poll_   = 128;
@@ -645,6 +649,7 @@ reactor_scheduler::run()
 
     reactor_thread_context_guard ctx(this);
     lock_type lock(mutex_);
+    adopt_enclosing_work(ctx.frame_);
 
     std::size_t n = 0;
     for (;;)
@@ -670,6 +675,7 @@ reactor_scheduler::run_one()
 
     reactor_thread_context_guard ctx(this);
     lock_type lock(mutex_);
+    adopt_enclosing_work(ctx.frame_);
     return do_one(lock, -1, ctx.frame_);
 }
 
@@ -684,6 +690,7 @@ reactor_scheduler::wait_one(long usec)
 
     reactor_thread_context_guard ctx(this);
     lock_type lock(mutex_);
+    adopt_enclosing_work(ctx.frame_);
     return do_one(lock, usec, ctx.frame_);
 }
 
@@ -698,6 +705,7 @@ reactor_scheduler::poll()
 
     reactor_thread_context_guard ctx(this);
     lock_type lock(mutex_);
+    adopt_enclosing_work(ctx.frame_);
 
     std::size_t n = 0;
     for (;;)
@@ -723,6 +731,7 @@ reactor_scheduler::poll_one()
 
     reactor_thread_context_guard ctx(this);
     lock_type lock(mutex_);
+    adopt_enclosing_work(ctx.frame_);
     return do_one(lock, 0, ctx.frame_);
 }
 
@@ -796,6 +805,26 @@ reactor_scheduler::retire_descriptor(
     d.retired_ref_  = std::move(keep);
     d.retired_next_ = retired_;
     retired_        = &d;
+}
+
+inline void
+reactor_scheduler::adopt_enclosing_work(context_type const& ctx)
+{
+    // A run nested in a handler would otherwise never see what that
+    // handler posted: it stays in the handler's frame until it returns.
+    for (auto* c = ctx.next; c != nullptr; c = c->next)
+    {
+        if (c->key != this)
+            continue;
+        if (c->private_outstanding_work > 0)
+        {
+            outstanding_work_.fetch_add(
+                c->private_outstanding_work, std::memory_order_relaxed);
+            c->private_outstanding_work = 0;
+        }
+        completed_ops_.splice(c->private_queue);
+        return;
+    }
 }
 
 inline void
@@ -1014,8 +1043,7 @@ reactor_scheduler::do_one(lock_type& lock, long timeout_us, context_type& ctx)
             bool more_handlers = !completed_ops_.empty();
 
             if (!more_handlers &&
-                (outstanding_work_.load(std::memory_order_acquire) == 0 ||
-                 timeout_us == 0))
+                outstanding_work_.load(std::memory_order_acquire) == 0)
             {
                 completed_ops_.push(&task_op_);
                 return 0;
@@ -1041,10 +1069,22 @@ reactor_scheduler::do_one(lock_type& lock, long timeout_us, context_type& ctx)
             }
 
             task_running_.store(false, std::memory_order_relaxed);
+            bool const idle = completed_ops_.empty();
             completed_ops_.push(&task_op_);
             settle_retired(lock);
+            // A bounded call blocks at most once, then finishes as a poll
+            // does, running what its pass queued.
             if (timeout_us > 0)
+                timeout_us = 0;
+            // A poll ends once a pass leaves nothing queued; going round
+            // again would only repeat the pass. A peer that found the
+            // queue empty during the pass may be asleep, so it is woken
+            // to take the sentinel.
+            if (timeout_us == 0 && idle)
+            {
+                maybe_unlock_and_signal_one(lock);
                 return 0;
+            }
             continue;
         }
 
@@ -1081,9 +1121,16 @@ reactor_scheduler::do_one(lock_type& lock, long timeout_us, context_type& ctx)
 
         clear_signal();
         if (timeout_us < 0)
+        {
             wait_for_signal(lock);
+        }
         else
+        {
             wait_for_signal_for(lock, timeout_us);
+            // A bounded call blocks once, so its caller can check its
+            // deadline; another thread may hold the reactor for good.
+            timeout_us = 0;
+        }
     }
 }
 

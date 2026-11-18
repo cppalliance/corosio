@@ -1309,9 +1309,13 @@ uring_scheduler::do_one(long timeout_us)
             bool const reaped = !completed_ops_.empty();
             completed_ops_.push(&task_op_);
 
-            // poll() and wait_one() make one ring pass, handing the
-            // sentinel to a waiting peer.
-            if (timeout_us >= 0 && !reaped)
+            // A bounded call blocks at most once, then finishes as a poll
+            // does.
+            if (timeout_us > 0)
+                timeout_us = 0;
+            // A poll ends once a pass reaps nothing; a peer waiting
+            // meanwhile is woken to take the sentinel.
+            if (timeout_us == 0 && !reaped)
             {
                 cond_.notify_one();
                 return 0;
@@ -1328,11 +1332,19 @@ uring_scheduler::do_one(long timeout_us)
             lock.unlock();
             // Speculative follow-ups in the handler share this budget.
             reset_inline_budget();
+            // A handler that throws has still consumed its work.
+            struct finish_on_exit
+            {
+                uring_scheduler* self;
+                ~finish_on_exit()
+                {
+                    self->work_finished();
+                }
+            } on_exit{this};
             if (ready_is_continuation(e))
                 ready_as_cont(e)->h.resume();
             else
                 (*ready_as_op(e))();
-            work_finished();
             return 1;
         }
 
@@ -1348,15 +1360,14 @@ uring_scheduler::do_one(long timeout_us)
         if (timeout_us == 0)
             return 0;
         if (timeout_us < 0)
+        {
             cond_.wait(lock);
+        }
         else
         {
             cond_.wait_for(lock, std::chrono::microseconds(timeout_us));
-            // wait_one honoured its timeout; if nothing arrived,
-            // return rather than re-arm.
-            if (completed_ops_.empty() &&
-                !stopped_.load(std::memory_order_acquire))
-                return 0;
+            // wait_one blocks once, so its caller can check its deadline.
+            timeout_us = 0;
         }
         // LCOV_EXCL_STOP
     }

@@ -288,4 +288,5 @@ during operation. See xref:4.guide/4k.tcp-server.adoc[TCP Server].
 
 == See Also
 
-* xref:reference:boost/corosio.adoc[Reference] — API reference documentation
+* xref:reference-overview.adoc[Reference] — the API grouped by purpose
+* xref:reference:boost/corosio.adoc[Index by Kind] — the generated index, grouped by entity kind
