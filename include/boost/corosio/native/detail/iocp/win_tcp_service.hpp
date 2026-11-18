@@ -816,7 +816,15 @@ win_tcp_socket::close_socket() noexcept
 
     if (socket_ != INVALID_SOCKET)
     {
-        ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
+        // closesocket() aborts pending I/O only when it closes the last
+        // handle to the socket; with an inherited or duplicated handle
+        // still open, an op left in the kernel would never complete. So
+        // cancel explicitly, but only when an op is in the kernel: the
+        // call costs every close otherwise. wt_'s write and error waits
+        // live in the wait reactor, released above.
+        if (kernel_pending(conn_) || kernel_pending(rd_) ||
+            kernel_pending(wr_) || kernel_pending(wt_))
+            ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
         ::closesocket(socket_);
         socket_ = INVALID_SOCKET;
     }

@@ -503,7 +503,12 @@ win_tcp_acceptor::close_socket() noexcept
 
     if (socket_ != INVALID_SOCKET)
     {
-        ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
+        // closesocket() leaves a pending AcceptEx in the kernel while an
+        // inherited or duplicated handle keeps the socket open, so cancel
+        // it explicitly, but only when it is there to cancel (see
+        // win_tcp_socket::close_socket). wt_ waits in the reactor only.
+        if (kernel_pending(acc_))
+            ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
         ::closesocket(socket_);
         socket_ = INVALID_SOCKET;
     }

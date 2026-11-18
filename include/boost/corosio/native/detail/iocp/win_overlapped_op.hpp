@@ -247,6 +247,21 @@ struct overlapped_op
     }
 };
 
+/** Return whether an op's overlapped I/O may still be in the kernel.
+
+    Winsock sets `Internal` to `STATUS_PENDING` when it takes an
+    overlapped request, and Windows writes the final status there
+    before the completion is dequeued (`HasOverlappedIoCompleted`).
+    `reset_overlapped()` zeroes it, so an op never issued reads as not
+    pending. A request that fails synchronously can leave
+    `STATUS_PENDING` behind, which costs only a needless cancel.
+*/
+inline bool
+kernel_pending(overlapped_op const& op) noexcept
+{
+    return !HasOverlappedIoCompleted(&op);
+}
+
 /** Cast OVERLAPPED* to overlapped_op*.
 
     Safe because overlapped_op has OVERLAPPED as first base class.
