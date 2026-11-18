@@ -10,7 +10,8 @@
 
 // IOCP paths no other suite drives: per-op cancellation hooks for the
 // write/connect/wait directions, teardown with overlapped ops still in
-// flight, assign validation, and the receive-direction shutdowns.
+// flight, close with a second handle to the socket open, assign
+// validation, and the receive-direction shutdowns.
 
 #include <boost/corosio/detail/platform.hpp>
 
@@ -98,6 +99,21 @@ make_local_pair(io_context& ioc, test::temp_socket_dir const& tmp)
     ioc.restart();
     acc.close();
     return {std::move(server), std::move(client)};
+}
+
+// A second handle to the socket `h` names, as an inherited or
+// duplicated handle would be, so closing `h` no longer closes the last
+// one.
+SOCKET
+duplicate_socket(native_handle_type h)
+{
+    WSAPROTOCOL_INFOW info{};
+    if (::WSADuplicateSocketW(
+            static_cast<SOCKET>(h), ::GetCurrentProcessId(), &info) != 0)
+        return INVALID_SOCKET;
+    return ::WSASocketW(
+        FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &info, 0,
+        WSA_FLAG_OVERLAPPED);
 }
 
 } // namespace
@@ -586,6 +602,129 @@ struct iocp_paths_test
             ::closesocket(static_cast<SOCKET>(h));
     }
 
+    // Starts `op`, then closes `obj` while a second handle keeps its
+    // socket open, and checks the op ends canceled.
+    template<class Object, class Op>
+    void
+    closeCancelsWithSecondHandle(io_context& ioc, Object& obj, Op const& op)
+    {
+        SOCKET const dup = duplicate_socket(obj.native_handle());
+        BOOST_TEST(dup != INVALID_SOCKET);
+
+        std::error_code ec;
+        bool done = false;
+        capy::run_async(ioc.get_executor())(op(ec, done));
+        std::ignore = ioc.poll();
+        ioc.restart();
+        BOOST_TEST(!done);
+
+        obj.close();
+        // Bounded only to fail rather than hang.
+        std::ignore = ioc.run_for(std::chrono::seconds(5));
+        ioc.restart();
+        BOOST_TEST(done);
+        BOOST_TEST(ec == capy::cond::canceled);
+
+        // Closing the last handle aborts whatever close() left in the
+        // kernel, so a failed check still ends the op while `ec` and
+        // `done` are alive.
+        ::closesocket(dup);
+        if (!done)
+        {
+            std::ignore = ioc.run_for(std::chrono::seconds(5));
+            ioc.restart();
+        }
+    }
+
+    // closesocket() aborts pending I/O only when it closes the last
+    // handle to the socket, so with an inherited or duplicated handle
+    // open, close() must cancel the ops it leaves in the kernel itself.
+    // Each op runs alone on its socket, so a cancel aimed at another op
+    // cannot end it.
+    void testCloseCancelsWithSecondHandle()
+    {
+        io_context ioc(iocp);
+
+        // Without SO_LINGER: a zero-linger close resets the connection
+        // even through a handle that is not the last, which would end
+        // the op with no cancel at all.
+        auto graceful_pair = [&] {
+            return test::must(
+                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
+        };
+
+        // read_some: a WSARecv on a socket nothing is sent to.
+        auto [r1, r2] = graceful_pair();
+        char rbuf[8];
+        closeCancelsWithSecondHandle(
+            ioc, r1, [&](std::error_code& ec, bool& done) -> capy::task<> {
+                auto [e, n] = co_await r1.read_some(
+                    capy::mutable_buffer(rbuf, sizeof(rbuf)));
+                std::ignore = n;
+                ec          = e;
+                done        = true;
+            });
+
+        // wait(read): the zero-byte WSARecv.
+        auto [w1, w2] = graceful_pair();
+        closeCancelsWithSecondHandle(
+            ioc, w1, [&](std::error_code& ec, bool& done) -> capy::task<> {
+                auto [e] = co_await w1.wait(wait_type::read);
+                ec       = e;
+                done     = true;
+            });
+
+        // write_some: with no send buffer, a WSASend larger than the
+        // peer's receive window stays in flight while the peer never
+        // reads.
+        auto [s1, s2] = graceful_pair();
+        test::must_ok(s1.set_option(socket_option::send_buffer_size(0)));
+        std::vector<char> big(4 * 1024 * 1024);
+        closeCancelsWithSecondHandle(
+            ioc, s1, [&](std::error_code& ec, bool& done) -> capy::task<> {
+                auto [e, n] = co_await s1.write_some(
+                    capy::const_buffer(big.data(), big.size()));
+                std::ignore = n;
+                ec          = e;
+                done        = true;
+            });
+
+        // connect: a listener in conditional-accept mode that never
+        // accepts leaves the SYN unanswered, so the connect stays in
+        // flight until it times out some 20 seconds later.
+        tcp_acceptor held(ioc);
+        BOOST_TEST(!held.open(family::v4));
+        BOOL const on = TRUE;
+        BOOST_TEST(
+            ::setsockopt(
+                static_cast<SOCKET>(held.native_handle()), SOL_SOCKET,
+                SO_CONDITIONAL_ACCEPT, reinterpret_cast<char const*>(&on),
+                sizeof(on)) == 0);
+        BOOST_TEST(!held.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!held.listen());
+        tcp_socket conn(ioc);
+        BOOST_TEST(!conn.open(family::v4));
+        closeCancelsWithSecondHandle(
+            ioc, conn, [&](std::error_code& ec, bool& done) -> capy::task<> {
+                auto [e] = co_await conn.connect(held.local_endpoint());
+                ec       = e;
+                done     = true;
+            });
+
+        // accept: an AcceptEx no client connects to.
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.open(family::v4));
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!acc.listen());
+        tcp_socket peer(ioc);
+        closeCancelsWithSecondHandle(
+            ioc, acc, [&](std::error_code& ec, bool& done) -> capy::task<> {
+                auto [e] = co_await acc.accept(peer);
+                ec       = e;
+                done     = true;
+            });
+    }
+
     void testDestroyWithParkedSocketOps()
     {
         int resumed = 0;
@@ -729,6 +868,7 @@ struct iocp_paths_test
         testTruncateWithoutCreate();
         testStaleWaitCancelsFromDestroyedObjects();
         testReleaseWithKernelOpsInFlight();
+        testCloseCancelsWithSecondHandle();
         testDestroyWithParkedSocketOps();
         testDestroyWithParkedLocalOps();
         testDestroyWithParkedTcpStreamOps();
