@@ -711,11 +711,12 @@ win_tcp_socket::complete_now(
         (op.cancelled.load(std::memory_order_acquire) ||
          token.stop_requested());
 
-    // A large transfer goes through the loop, behind whatever the
-    // port already holds, which lets the peer's side run before the
-    // next one: left to run on, a writer piles far more into the
-    // kernel's buffers than the cache holds, and the reader then
-    // takes it all cold.
+    // A large transfer goes through the loop, and the loop looks at
+    // the port before it runs the result. What the peer has completed
+    // is then queued behind this result and runs before this side's
+    // next large transfer: left to run on, a writer piles far more
+    // into the kernel's buffers than the cache holds, and the reader
+    // then takes it all cold.
     constexpr DWORD inline_transfer_max = 64 * 1024;
     bool const large                    = bytes > inline_transfer_max;
 
