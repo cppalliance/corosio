@@ -72,9 +72,9 @@ include::example$snippets/4c2_configuration.cpp[tag=options_native,indent=0]
 | epoll, kqueue, select, IOCP
 | Hard ceiling on adaptive inline budget ramp-up.  The budget
   doubles each cycle it is fully consumed, up to this limit.  On
-  IOCP it is a fixed budget: the number of TCP reads and writes a
-  handler may complete during the initiating call before the next
-  one goes through the run loop.
+  IOCP it is a fixed budget.  A handler may complete that many TCP
+  reads and writes during the initiating call.  The next one goes
+  through the run loop.
 
 | cpp:io_context_options::unassisted_budget[unassisted_budget]
 | 4
@@ -167,7 +167,7 @@ a re-queue through the scheduler.
 
 The IOCP backend reads `inline_budget_max` alone. A TCP read or write
 that Windows finishes during the call resumes its coroutine at once,
-up to that many times per handler; a transfer larger than 64 KiB
+up to that many times per handler. A transfer larger than 64 KiB
 always goes through the run loop. Setting it to 0 sends every
 completion through the loop.
 

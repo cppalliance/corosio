@@ -395,7 +395,7 @@ cpp:tcp_socket[] is the exception to the skip-on-success rule below.
 A TCP socket the library opens or accepts is put in that mode, and
 `tcp_socket::assign()` adopts one that is already in it. The mode
 cannot be cleared, so `release()` hands such a socket back still in
-it: an overlapped operation on it that succeeds during the call
+it. An overlapped operation on it that succeeds during the call
 queues no completion packet. A socket adopted without the mode is
 never given it.
 
