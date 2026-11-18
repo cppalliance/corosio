@@ -1757,9 +1757,13 @@ struct udp_socket_test
         BOOST_TEST(!probe.open(family::v4));
         BOOST_TEST(!probe.bind(endpoint(ipv4_address::loopback(), 0)));
         auto dead = probe.local_endpoint();
+
+        // Bound while the probe still holds `dead`, so connect() can't
+        // pick the freed port and leave `s` talking to itself.
+        BOOST_TEST(!s.open(family::v4));
+        BOOST_TEST(!s.bind(endpoint(ipv4_address::loopback(), 0)));
         probe.close();
 
-        BOOST_TEST(!s.open(family::v4));
         std::error_code cec, sec;
         auto setup = [&]() -> capy::task<> {
             auto [c]    = co_await s.connect(dead);
