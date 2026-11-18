@@ -86,7 +86,7 @@ struct post_awaitable
 // socket reports through the completion port, including one the
 // kernel finished during the call, which is what lets a test put an
 // error on its completion.
-std::pair<tcp_socket, tcp_socket>
+std::tuple<tcp_socket, tcp_socket>
 make_plain_socket_pair(io_context& ioc)
 {
     // One call per socket the pair opens or accepts; an arm no call

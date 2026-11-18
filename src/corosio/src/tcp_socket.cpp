@@ -34,6 +34,18 @@ using tcp_service_key = detail::tcp_service;
 
 } // namespace
 
+#if BOOST_COROSIO_HAS_IOCP
+bool
+detail::iocp_skip_on_success_enabled() noexcept
+{
+#if defined(BOOST_COROSIO_IOCP_NO_SKIP_ON_SUCCESS)
+    return false;
+#else
+    return true;
+#endif
+}
+#endif
+
 tcp_socket::~tcp_socket()
 {
     close();

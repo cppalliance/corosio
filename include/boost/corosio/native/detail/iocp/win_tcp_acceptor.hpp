@@ -43,6 +43,8 @@ struct accept_op : overlapped_op
     SOCKET accepted_socket       = INVALID_SOCKET;
     // Whether accepted_socket was put in skip-on-success mode.
     bool accepted_skip           = false;
+    // Whether its provider hands out kernel handles.
+    bool accepted_ifs            = false;
     win_tcp_socket* peer_wrapper = nullptr;
     win_tcp_acceptor& acceptor;
     SOCKET listen_socket                 = INVALID_SOCKET;
@@ -102,6 +104,10 @@ class win_tcp_acceptor final
     acceptor_wait_op wt_;
     SOCKET socket_ = INVALID_SOCKET;
     int family_    = AF_UNSPEC;
+
+    // The socket's provider hands out kernel handles, so a request it
+    // takes is marked pending in the OVERLAPPED (see kernel_pending).
+    bool ifs_ = false;
     endpoint local_endpoint_;
 
 public:

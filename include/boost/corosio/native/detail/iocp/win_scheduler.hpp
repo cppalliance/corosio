@@ -211,6 +211,10 @@ private:
 
     void* iocp_;
     int inline_budget_max_ = 16;
+
+    BOOST_COROSIO_MSVC_WARNING_PUSH
+    BOOST_COROSIO_MSVC_WARNING_DISABLE(
+        4251) // std::/detail:: members, dll-interface
     mutable std::atomic<long> outstanding_work_;
 
     // Packets in flight to the completion port that reference
@@ -231,10 +235,6 @@ private:
     // whichever thread is free first.
     mutable std::atomic<long> loop_threads_{0};
     bool scheduler_locking_disabled_ = false;
-
-    BOOST_COROSIO_MSVC_WARNING_PUSH
-    BOOST_COROSIO_MSVC_WARNING_DISABLE(
-        4251) // std::/detail:: members, dll-interface
     mutable win_mutex dispatch_mutex_;
     mutable ready_queue completed_ops_;
     std::unique_ptr<win_timers> timers_;

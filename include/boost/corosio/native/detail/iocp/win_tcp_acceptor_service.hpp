@@ -183,7 +183,8 @@ accept_op::do_complete(
             op->accepted_socket, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT,
             reinterpret_cast<char*>(&op->listen_socket), sizeof(SOCKET));
 
-        op->peer_wrapper->set_socket(op->accepted_socket, op->accepted_skip);
+        op->peer_wrapper->set_socket(
+            op->accepted_socket, op->accepted_skip, op->accepted_ifs);
 
         endpoint local_ep, remote_ep;
         if (auto parse =
@@ -387,6 +388,7 @@ win_tcp_acceptor::accept(
     // Set up the accept operation
     op.accepted_socket = accepted;
     op.accepted_skip   = svc_.enable_skip_on_success(accepted, af);
+    op.accepted_ifs    = af == AF_INET6 ? svc_.ifs_v6_ : svc_.ifs_v4_;
     op.peer_wrapper    = &peer_wrapper;
     op.listen_socket   = socket_;
 
@@ -507,14 +509,16 @@ win_tcp_acceptor::close_socket() noexcept
         // closesocket() leaves a pending AcceptEx in the kernel while an
         // inherited or duplicated handle keeps the socket open, so cancel
         // it explicitly, but only when it is there to cancel (see
-        // win_tcp_socket::close_socket). wt_ waits in the reactor only.
-        if (kernel_pending(acc_))
+        // win_tcp_socket::close_socket); behind a provider not known to
+        // mark the request, always. wt_ waits in the reactor only.
+        if (!ifs_ || kernel_pending(acc_))
             ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
         ::closesocket(socket_);
         socket_ = INVALID_SOCKET;
     }
 
     family_ = AF_UNSPEC;
+    ifs_    = false;
 
     // Clear cached endpoint
     local_endpoint_ = endpoint{};
@@ -530,6 +534,7 @@ win_tcp_acceptor::release_socket() noexcept
         dissociate_from_iocp(s);
         socket_          = INVALID_SOCKET;
         family_          = AF_UNSPEC;
+        ifs_             = false;
         local_endpoint_  = endpoint{};
     }
     return static_cast<native_handle_type>(s);
