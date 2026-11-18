@@ -96,6 +96,7 @@ public:
     void configure_threading(threading_config cfg) noexcept override
     {
         scheduler_locking_disabled_ = !cfg.scheduler_locking;
+        one_thread_                 = cfg.one_thread;
         dispatch_mutex_.set_enabled(cfg.scheduler_locking);
     }
 
@@ -167,9 +168,14 @@ private:
     // the shared queue, for another loop or a later run call.
     void flush_context(iocp::scheduler_context& t) const noexcept;
 
+    // Wake a loop blocked in the port for the shared queue, if there
+    // can be one. Call after setting dispatch_queue.
+    void share_queue_wake() const noexcept;
+
     // Sort one batch of dequeued packets into the frame's queues.
     void claim(
         iocp::scheduler_context& t,
+        ready_queue& into,
         void const* entries,
         unsigned long count,
         bool& took_wake);
@@ -235,6 +241,12 @@ private:
     // whichever thread is free first.
     mutable std::atomic<long> loop_threads_{0};
     bool scheduler_locking_disabled_ = false;
+
+    // A single run thread is guaranteed (a lockless tier). Only then
+    // does a thread keep to itself work it did not produce, a batch
+    // of packets or the shared queue: a second loop could not reach
+    // it behind the handler the first is running.
+    bool one_thread_ = false;
     mutable win_mutex dispatch_mutex_;
     mutable ready_queue completed_ops_;
     std::unique_ptr<win_timers> timers_;
@@ -296,15 +308,23 @@ inline constexpr unsigned poll_every = 32;
     Per-thread state of one run loop.
 
     A thread running the loop keeps the work it produces for itself in
-    `ready`: handlers posted from a handler, completions that never
-    reached the kernel, and the packets of a batched dequeue. Nothing
-    in it is visible to other threads, so pushing and popping cost no
-    lock and no system call.
+    `ready`: handlers posted from a handler and completions that never
+    reached the kernel. Nothing in it is visible to other threads, so
+    pushing and popping cost no lock and no system call.
 
     That invisibility is why a thread queues here only while it is
     the one loop running, and hands the queue over before each handler
     once it is not. What remains is the handler already running when a
-    second loop starts: work queued before it waits until it returns.
+    second loop starts: what it posted before then waits until it
+    returns, as a handler's posts do on the reactor backends.
+
+    Work the thread did not produce is another matter: a second loop
+    must be able to run it while the first is in a handler. So the
+    packets of a batched dequeue go to the scheduler's shared queue,
+    and a thread takes one entry from that queue at a time, ahead of
+    its own, which was queued later. That costs the lock and no
+    system call. A context that guarantees a single run thread keeps
+    the batch and the shared queue here instead.
 
     `work_delta` is the part of the scheduler's work count this thread
     has not published: +1 for each private post, -1 for each handler
@@ -398,7 +418,8 @@ inline thread_context_guard::thread_context_guard(
     for (auto* c = frame_.next; c != nullptr; c = c->next)
         if (c->key == ctx)
             ctx->flush_context(*c);
-    ctx->loop_threads_.fetch_add(1, std::memory_order_acq_rel);
+    // Ordered against share_queue_wake().
+    ctx->loop_threads_.fetch_add(1, std::memory_order_seq_cst);
     context_stack.set(&frame_);
 }
 
@@ -569,6 +590,21 @@ win_scheduler::flush_context(iocp::scheduler_context& t) const noexcept
             ::PostQueuedCompletionStatus(iocp_, 0, key_wake_dispatch, nullptr);
     }
     publish_work(t);
+}
+
+inline void
+win_scheduler::share_queue_wake() const noexcept
+{
+    // A thread blocked in the port learns of the queue only from a
+    // packet, but the one loop there is needs none: it is the caller.
+    // A loop that starts counts itself and then reads the flag, and
+    // the caller set the flag and now reads the count, each pair in a
+    // single total order: either that loop sees the flag, or it is
+    // counted here and woken. A stopped scheduler wakes its threads
+    // to leave, and the next run call looks at the queue first.
+    if (loop_threads_.load(std::memory_order_seq_cst) != 1 &&
+        stopped_.load(std::memory_order_acquire) == 0)
+        ::PostQueuedCompletionStatus(iocp_, 0, key_wake_dispatch, nullptr);
 }
 
 inline void
@@ -906,6 +942,7 @@ win_scheduler::do_one(iocp::scheduler_context& t, unsigned long timeout_ms)
 inline void
 win_scheduler::claim(
     iocp::scheduler_context& t,
+    ready_queue& into,
     void const* entries_v,
     unsigned long count,
     bool& took_wake)
@@ -917,7 +954,7 @@ win_scheduler::claim(
         LPOVERLAPPED overlapped = e.lpOverlapped;
         // What a stop packet leaves behind it in the batch was queued
         // after the stop, and waits for the next run.
-        auto& q = t.stop_seen ? t.after_stop : t.ready;
+        auto& q = t.stop_seen ? t.after_stop : into;
 
         if (overlapped)
         {
@@ -1017,20 +1054,17 @@ win_scheduler::do_one_wait(
             t.ready.splice(t.after_stop);
         }
 
+        // The one entry this pass takes from the shared queue.
+        void* shared = nullptr;
+
         // Check if we need to process timers or deferred ops. The
         // flag is nearly always clear, so it is read before it is
-        // written.
+        // written. The read is ordered against share_queue_wake().
         if (!t.stop_seen &&
-            dispatch_required_.load(std::memory_order_acquire) != 0)
+            dispatch_required_.load(std::memory_order_seq_cst) != 0)
         {
             long const why =
                 dispatch_required_.exchange(0, std::memory_order_acq_rel);
-
-            if (why & iocp::dispatch_queue)
-            {
-                std::lock_guard<win_mutex> lock(dispatch_mutex_);
-                t.ready.splice(completed_ops_);
-            }
 
             if (why & iocp::dispatch_timers)
             {
@@ -1044,12 +1078,40 @@ win_scheduler::do_one_wait(
 
                 update_timeout();
             }
+
+            if (why & iocp::dispatch_queue)
+            {
+                bool more = false;
+                {
+                    std::lock_guard<win_mutex> lock(dispatch_mutex_);
+                    if (one_thread_)
+                    {
+                        t.ready.splice(completed_ops_);
+                    }
+                    else
+                    {
+                        // The rest stays where another loop can take
+                        // it while this one runs its handler.
+                        shared = completed_ops_.pop();
+                        more   = !completed_ops_.empty();
+                        if (more)
+                            dispatch_required_.fetch_or(
+                                iocp::dispatch_queue,
+                                std::memory_order_seq_cst);
+                    }
+                }
+                if (more)
+                    share_queue_wake();
+            }
         }
 
-        // With its own work queued the thread only looks at the port
-        // now and then, without waiting.
-        bool const visit = t.ready.empty() ||
-            (!t.stop_seen && ++t.since_poll >= iocp::poll_every);
+        // With work in hand the thread only looks at the port now and
+        // then, without waiting; with an entry of the shared queue in
+        // hand, not at all, so nothing can come between taking the
+        // entry and running it.
+        bool const visit = shared == nullptr &&
+            (t.ready.empty() ||
+             (!t.stop_seen && ++t.since_poll >= iocp::poll_every));
         if (visit)
         {
             t.since_poll = 0;
@@ -1072,8 +1134,9 @@ win_scheduler::do_one_wait(
             if (idle)
                 publish_work(t);
 
-            // A thread that takes a batch runs it alone, so it takes
-            // one only when no other loop could run part of it.
+            // With another loop running, the port itself hands each
+            // packet to whichever thread is free, so a thread takes a
+            // batch only while it is the one loop there is.
             ULONG const cap =
                 (!t.private_ok ||
                  loop_threads_.load(std::memory_order_relaxed) != 1)
@@ -1089,7 +1152,28 @@ win_scheduler::do_one_wait(
 
             if (result)
             {
-                claim(t, entries, count, took_wake);
+                ready_queue batch;
+                claim(t, batch, entries, count, took_wake);
+                // A second loop may start while the first handler of
+                // a batch runs, and has to be able to run the rest:
+                // the batch goes where it can be reached. Ahead of a
+                // stop it is this thread's to finish before leaving.
+                if (one_thread_ || count == 1 || t.stop_seen ||
+                    batch.empty())
+                {
+                    t.ready.splice(batch);
+                }
+                else
+                {
+                    {
+                        std::lock_guard<win_mutex> lock(dispatch_mutex_);
+                        completed_ops_.splice(batch);
+                        dispatch_required_.fetch_or(
+                            iocp::dispatch_queue, std::memory_order_seq_cst);
+                    }
+                    share_queue_wake();
+                    continue;
+                }
             }
             else
             {
@@ -1111,7 +1195,9 @@ win_scheduler::do_one_wait(
             }
         }
 
-        void* const e = t.ready.pop();
+        // The shared queue's entry was queued before anything this
+        // thread holds.
+        void* const e = shared != nullptr ? shared : t.ready.pop();
         if (!e)
             continue;
 
