@@ -479,33 +479,38 @@ struct iocp_paths_test
     }
 
     // Work a handler posts while the context is stopped waits behind
-    // the stop, and runs ahead of what the handler posts once it has
-    // restarted the context.
+    // the stop. Once the handler has restarted the context it runs
+    // after what the handler posted ahead of the stop, and ahead of
+    // what it posts after the restart.
     void testPostsAcrossRestartKeepTheirOrder()
     {
-        io_context ioc(iocp);
-        auto ex = ioc.get_executor();
-        capy::continuation ca{};
-        capy::continuation cb{};
-        std::vector<int> order;
-        auto a = [&]() -> capy::task<> {
-            co_await post_awaitable{&ca};
-            order.push_back(1);
-        };
-        auto b = [&]() -> capy::task<> {
-            co_await post_awaitable{&cb};
-            order.push_back(2);
-        };
-        auto body = [&]() -> capy::task<> {
-            ioc.stop();
-            capy::run_async(ex)(a());
-            ioc.restart();
-            capy::run_async(ex)(b());
-            co_return;
-        };
-        capy::run_async(ex)(body());
-        ioc.run();
-        BOOST_TEST(order == (std::vector<int>{1, 2}));
+        for (bool lockless : {false, true})
+        {
+            io_context_options opts;
+            if (lockless)
+                opts.locking = locking_mode::unsafe_io;
+            io_context ioc(iocp, opts);
+            auto ex = ioc.get_executor();
+            capy::continuation c0{};
+            capy::continuation c1{};
+            capy::continuation c2{};
+            std::vector<int> order;
+            auto step = [&](capy::continuation& c, int n) -> capy::task<> {
+                co_await post_awaitable{&c};
+                order.push_back(n);
+            };
+            auto body = [&]() -> capy::task<> {
+                capy::run_async(ex)(step(c0, 0));
+                ioc.stop();
+                capy::run_async(ex)(step(c1, 1));
+                ioc.restart();
+                capy::run_async(ex)(step(c2, 2));
+                co_return;
+            };
+            capy::run_async(ex)(body());
+            ioc.run();
+            BOOST_TEST(order == (std::vector<int>{0, 1, 2}));
+        }
     }
 
     // Sockets this library opens or accepts are in skip-on-success

@@ -91,13 +91,15 @@ public:
     void work_started() noexcept override;
     void work_finished() noexcept override;
 
-    // IOCP has only the dispatch mutex; reactor_io_locking and one_thread do
-    // not apply (the completion port provides its own synchronization).
+    // reactor_io_locking does not apply: the completion port provides
+    // its own synchronization. one_thread selects where a loop thread
+    // queues the work it produces (see iocp::scheduler_context).
     void configure_threading(threading_config cfg) noexcept override
     {
         scheduler_locking_disabled_ = !cfg.scheduler_locking;
         one_thread_                 = cfg.one_thread;
         dispatch_mutex_.set_enabled(cfg.scheduler_locking);
+        timer_arm_mutex_.set_enabled(cfg.scheduler_locking);
     }
 
     /// Return true when scheduler locking is disabled (fully-lockless tier).
@@ -185,7 +187,8 @@ private:
     void share_entry(Entry&& e) const noexcept;
     void share_all(ready_queue& q) const noexcept;
 
-    // Put an entry on the queue of work held behind a stop.
+    // Put an entry on the queue of work held behind a stop, or on the
+    // shared queue if the scheduler has been restarted meanwhile.
     template<class Entry>
     void hold(Entry&& e) const noexcept;
 
@@ -278,13 +281,19 @@ private:
     // not reach it there behind the handler the first is running.
     bool one_thread_ = false;
     mutable win_mutex dispatch_mutex_;
+
+    // Orders reading the earliest expiry with arming the timer. Kept
+    // apart from dispatch_mutex_, which every queued handler takes.
+    mutable win_mutex timer_arm_mutex_;
     mutable ready_queue completed_ops_;
 
     // Work queued behind a stop without a packet: what a loop thread
     // produced while the scheduler was stopped, and packets dequeued
     // in the same batch as the stop, after it. It waits for the next
-    // run, so restart() moves it to the head of the shared queue.
-    // Guarded by dispatch_mutex_.
+    // run, so restart() moves it to the shared queue, behind what
+    // was queued ahead of the stop. Guarded by dispatch_mutex_, and
+    // only added to while stopped_ is set under that lock: restart()
+    // clears stopped_ first, so nothing is added after it has looked.
     mutable ready_queue held_;
     std::unique_ptr<win_timers> timers_;
     std::unique_ptr<win_wait_reactor> wait_reactor_;
@@ -383,6 +392,11 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE scheduler_context
 
     // Runnable work owned by this thread.
     ready_queue ready;
+
+    // Single-thread tier only: what this thread queued while the
+    // scheduler was stopped. It follows `ready` once the scheduler
+    // is restarted, ahead of what the thread queues after that.
+    ready_queue held;
 
     long work_delta     = 0;
     int inline_budget   = 0;
@@ -561,11 +575,15 @@ win_scheduler::keep(iocp::scheduler_context& t, Entry&& e) const noexcept
     if (stopped_.load(std::memory_order_relaxed) != 0)
     {
         outstanding_work_.fetch_add(1, std::memory_order_acq_rel);
-        hold(e);
+        if (one_thread_)
+            t.held.push(e);
+        else
+            hold(e);
         return;
     }
     if (one_thread_)
     {
+        t.ready.splice(t.held);
         ++t.work_delta;
         t.ready.push(e);
         return;
@@ -583,11 +601,15 @@ win_scheduler::keep_counted(
 {
     if (stopped_.load(std::memory_order_relaxed) != 0)
     {
-        hold(op);
+        if (one_thread_)
+            t.held.push(op);
+        else
+            hold(op);
         return;
     }
     if (one_thread_)
     {
+        t.ready.splice(t.held);
         t.ready.push(op);
         return;
     }
@@ -652,6 +674,28 @@ win_scheduler::flush_context(iocp::scheduler_context& t) const noexcept
         share_all(t.ready);
         share_queue_wake();
     }
+    if (!t.held.empty())
+    {
+        // Still behind the stop for the next run, unless a restart
+        // has been by: then it is next in line.
+        bool shared = false;
+        {
+            std::lock_guard<win_mutex> lock(dispatch_mutex_);
+            if (stopped_.load(std::memory_order_seq_cst) != 0)
+            {
+                held_.splice(t.held);
+            }
+            else
+            {
+                completed_ops_.splice(t.held);
+                dispatch_required_.fetch_or(
+                    iocp::dispatch_queue, std::memory_order_seq_cst);
+                shared = true;
+            }
+        }
+        if (shared)
+            share_queue_wake();
+    }
     publish_work(t);
 }
 
@@ -669,8 +713,20 @@ template<class Entry>
 void
 win_scheduler::hold(Entry&& e) const noexcept
 {
-    std::lock_guard<win_mutex> lock(dispatch_mutex_);
-    held_.push(e);
+    {
+        std::lock_guard<win_mutex> lock(dispatch_mutex_);
+        if (stopped_.load(std::memory_order_seq_cst) != 0)
+        {
+            held_.push(e);
+            return;
+        }
+        // Restarted since the caller looked: restart() has been by,
+        // or will find nothing of this entry on the held queue.
+        completed_ops_.push(e);
+        dispatch_required_.fetch_or(
+            iocp::dispatch_queue, std::memory_order_seq_cst);
+    }
+    share_queue_wake();
 }
 
 inline void
@@ -886,18 +942,18 @@ win_scheduler::stopped() const noexcept
 inline void
 win_scheduler::restart()
 {
-    stopped_.store(0, std::memory_order_release);
+    // Cleared before the held queue is looked at: see held_.
+    stopped_.store(0, std::memory_order_seq_cst);
     stop_event_posted_.store(0, std::memory_order_release);
     stop_failure_.store(0, std::memory_order_release);
 
-    // What was queued behind the stop is next in line, ahead of
-    // anything queued from now on.
+    // What was queued behind the stop comes after what was queued
+    // ahead of it and before anything queued from now on.
     bool released = false;
     {
         std::lock_guard<win_mutex> lock(dispatch_mutex_);
         if (!held_.empty())
         {
-            held_.splice(completed_ops_);
             completed_ops_.splice(held_);
             dispatch_required_.fetch_or(
                 iocp::dispatch_queue, std::memory_order_seq_cst);
@@ -1151,8 +1207,24 @@ win_scheduler::claim(
 
     if (!behind.empty())
     {
-        std::lock_guard<win_mutex> lock(dispatch_mutex_);
-        held_.splice(behind);
+        bool shared = false;
+        {
+            std::lock_guard<win_mutex> lock(dispatch_mutex_);
+            if (stopped_.load(std::memory_order_seq_cst) != 0)
+            {
+                held_.splice(behind);
+            }
+            else
+            {
+                // Restarted since the stop was dequeued, as in hold().
+                completed_ops_.splice(behind);
+                dispatch_required_.fetch_or(
+                    iocp::dispatch_queue, std::memory_order_seq_cst);
+                shared = true;
+            }
+        }
+        if (shared)
+            share_queue_wake();
     }
 }
 
@@ -1163,9 +1235,13 @@ win_scheduler::do_one_wait(
     for (;;)
     {
         // A restart ends the stop for this thread too, whatever it
-        // still has queued: it looks at the port and the timers again.
-        if (t.stop_seen && !stopped())
+        // still has queued: it looks at the port and the timers
+        // again, and what it queued while stopped is next in line.
+        if ((t.stop_seen || !t.held.empty()) && !stopped())
+        {
             t.stop_seen = false;
+            t.ready.splice(t.held);
+        }
 
         // The one entry this pass takes from the shared queue, and
         // whether the queue was left alone because the port is due a
@@ -1219,8 +1295,6 @@ win_scheduler::do_one_wait(
                         std::lock_guard<win_mutex> lock(dispatch_mutex_);
                         if (one_thread_)
                         {
-                            // Queued before anything the thread holds.
-                            completed_ops_.splice(t.ready);
                             t.ready.splice(completed_ops_);
                         }
                         else
@@ -1371,14 +1445,6 @@ win_scheduler::do_one_wait(
         if (!e)
             continue;
 
-        // Work queued behind this handler would wait for it while
-        // another loop could run it: one that started since the work
-        // was queued, or the others when this thread drained the
-        // shared queue. Hand it over.
-        if (!t.stop_seen && !t.ready.empty() &&
-            loop_threads_.load(std::memory_order_relaxed) != 1)
-            flush_context(t);
-
         t.inline_budget = inline_budget_max_;
 
         // Counted when the handler leaves, by return or by exception.
@@ -1450,7 +1516,7 @@ win_scheduler::update_timeout()
         // earlier timer firing late. A new earliest expiry is published
         // before its notification takes this lock, so the last thread
         // through arms the earliest one.
-        std::lock_guard<win_mutex> lock(dispatch_mutex_);
+        std::lock_guard<win_mutex> lock(timer_arm_mutex_);
         timers_->update_timeout(tsvc->nearest_expiry());
     }
     else
