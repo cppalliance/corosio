@@ -47,6 +47,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iterator>
 #include <stop_token>
 #include <string>
@@ -430,6 +431,51 @@ struct iocp_paths_test
         ioc.stop();
         ioc.run();
         BOOST_TEST(done);
+    }
+
+    // A handler may block its thread until other work of the context
+    // has run, as long as another loop is there to run it. A loop that
+    // starts while the first is inside such a handler must reach what
+    // the first has queued off the port: the packets dequeued in the
+    // same batch as the handler, and what the handler posted.
+    void testSecondLoopRunsWorkBehindBlockedHandler()
+    {
+        for (bool own_post : {false, true})
+        {
+            io_context ioc(iocp);
+            auto ex = ioc.get_executor();
+            capy::continuation cont{};
+            std::promise<void> started;
+            std::promise<void> ran;
+            bool reached = false;
+            auto second  = [&]() -> capy::task<> {
+                // Started from the first handler, it runs inline up
+                // to here and leaves the rest as that handler's post.
+                if (own_post)
+                    co_await post_awaitable{&cont};
+                ran.set_value();
+            };
+            auto first = [&]() -> capy::task<> {
+                if (own_post)
+                    capy::run_async(ex)(second());
+                started.set_value();
+                reached = ran.get_future().wait_for(std::chrono::seconds(
+                              30)) == std::future_status::ready;
+                co_return;
+            };
+            // Both are in the port before a loop runs, so the first
+            // loop takes them in one batch.
+            capy::run_async(ex)(first());
+            if (!own_post)
+                capy::run_async(ex)(second());
+
+            std::thread a([&] { ioc.run(); });
+            started.get_future().wait();
+            std::thread b([&] { ioc.run(); });
+            a.join();
+            b.join();
+            BOOST_TEST(reached);
+        }
     }
 
     // Sockets this library opens or accepts are in skip-on-success
@@ -1021,6 +1067,7 @@ struct iocp_paths_test
         testReleasedTcpSocketIsAdoptedAgain();
         testPostAfterTimerKeepsRunning();
         testRestartAfterStopKeepsRunning();
+        testSecondLoopRunsWorkBehindBlockedHandler();
         testStopRacingWaitRegistration();
         testShutdownReceiveVariants();
         testZeroLengthUdpReceive();
