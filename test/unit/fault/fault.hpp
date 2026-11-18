@@ -37,9 +37,12 @@ namespace boost::corosio::test::fault {
     `kevent` calls that add a descriptor to the kqueue, so a test can
     reach a registration without counting the waits the run loop makes
     on its way there. An arm on `kevent` still counts every call,
-    registrations included. `cpp_new` is not an OS symbol: it names the
-    global allocation functions the fault target replaces, so arming it
-    makes the nth `new` on the armed thread report `bad_alloc` (the
+    registrations included. `kevent_wait` is the other slice: the
+    calls that collect events without submitting changes, so a test
+    can fail a wait that wakeups from other threads cannot reach.
+    `cpp_new` is not an OS symbol: it names the global allocation
+    functions the fault target replaces, so arming it makes the nth
+    `new` on the armed thread report `bad_alloc` (the
     nothrow forms return null). `pthread_create` names thread creation
     wherever it happens: the libc symbol on POSIX, and on Windows both
     the winpthreads `pthread_create` and the CRT `_beginthreadex` that
@@ -98,6 +101,7 @@ enum class sys
     kqueue,
     kevent,
     kevent_register,
+    kevent_wait,
     io_uring_queue_init_params,
     io_uring_queue_exit,
     io_uring_submit,
