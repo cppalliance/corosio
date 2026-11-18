@@ -61,9 +61,7 @@ loopback()
     return endpoint(ipv4_address::loopback(), 0);
 }
 
-// Reach win_scheduler::post(continuation&) without a heap allocation,
-// which is the overload whose PostQueuedCompletionStatus failure has a
-// fallback of its own.
+// Reach win_scheduler::post(continuation&) without a heap allocation.
 struct post_awaitable
 {
     capy::continuation* cont;
@@ -82,6 +80,25 @@ struct post_awaitable
 
     void await_resume() const noexcept {}
 };
+
+// A connected pair left out of skip-on-success mode, as on a system
+// whose socket provider rules the mode out. Every operation on such a
+// socket reports through the completion port, including one the
+// kernel finished during the call, which is what lets a test put an
+// error on its completion.
+std::pair<tcp_socket, tcp_socket>
+make_plain_socket_pair(io_context& ioc)
+{
+    // One call per socket the pair opens or accepts; an arm no call
+    // reaches is simply dropped.
+    fault_scope f1(
+        sys::SetFileCompletionNotificationModes, ERROR_INVALID_FUNCTION, 1);
+    fault_scope f2(
+        sys::SetFileCompletionNotificationModes, ERROR_INVALID_FUNCTION, 2);
+    fault_scope f3(
+        sys::SetFileCompletionNotificationModes, ERROR_INVALID_FUNCTION, 3);
+    return must(make_socket_pair(ioc));
+}
 
 // One entry point make_wakeup_pair calls, the code to fail it with,
 // and which of its calls to that entry point to hit.
@@ -352,8 +369,8 @@ struct iocp_faults
         bool fired = false;
         auto body  = [&]() -> capy::task<> {
             {
-                // A failed post falls back to the allocating handle
-                // path, so the work still runs.
+                // A failed post leaves the work on the deferred
+                // queue, so it still runs.
                 fault_scope f(
                     sys::PostQueuedCompletionStatus, ERROR_NO_SYSTEM_RESOURCES);
                 co_await post_awaitable{&cont};
@@ -362,7 +379,11 @@ struct iocp_faults
             ran = true;
         };
         capy::run_async(ioc.get_executor())(body());
-        ioc.run();
+        // run() keeps a handler's posts on its own thread, with no
+        // packet to fail; run_one() sends each through the port.
+        while (ioc.run_one() != 0)
+        {
+        }
         BOOST_TEST(fired);
         BOOST_TEST(ran);
     }
@@ -678,7 +699,7 @@ struct iocp_faults
     void testTcpReadWriteFails()
     {
         io_context ioc(iocp);
-        auto [a, b] = must(make_socket_pair(ioc));
+        auto [a, b] = make_plain_socket_pair(ioc);
         char buf[8] = {};
         char out[4] = "abc";
         std::error_code rec, wec, rcec, wcec, eec, wtec;
@@ -1934,59 +1955,6 @@ struct iocp_faults
         BOOST_TEST(compec == std::errc::connection_aborted);
     }
 
-    /* The deferred queue, and a re-post that puts an op back on it.
-
-       A post that fails leaves the work on completed_ops_ with
-       dispatch_required_ raised, and do_one consults that flag only at
-       the top of its loop. The failure inside the drain therefore
-       raises it again just after the check, leaving the loop blocked
-       in GetQueuedCompletionStatus with work waiting: a timer is what
-       brings it round, and the wake is posted by the timer thread,
-       whose calls no arm here counts.
-    */
-    void testPostDeferredFallbackRuns()
-    {
-        io_context ioc(iocp);
-        capy::continuation cont{};
-        bool ran     = false;
-        bool fired   = false;
-        bool expired = false;
-        auto body    = [&]() -> capy::task<> {
-            {
-                // 1 is the continuation post, 2 the allocating handle
-                // post it falls back to -- the one that reaches the
-                // deferred queue -- and 3 the drain's own re-post.
-                fault_scope f1(
-                    sys::PostQueuedCompletionStatus, ERROR_NO_SYSTEM_RESOURCES,
-                    1);
-                fault_scope f2(
-                    sys::PostQueuedCompletionStatus, ERROR_NO_SYSTEM_RESOURCES,
-                    2);
-                fault_scope f3(
-                    sys::PostQueuedCompletionStatus, ERROR_NO_SYSTEM_RESOURCES,
-                    3);
-                co_await post_awaitable{&cont};
-                fired = f1.fired() && f2.fired() && f3.fired();
-            }
-            ran = true;
-            ioc.stop();
-        };
-        auto pump = [&]() -> capy::task<> {
-            while (!ran)
-            {
-                std::ignore =
-                    co_await corosio::delay(std::chrono::milliseconds(5));
-            }
-        };
-        capy::run_async(ioc.get_executor())(body());
-        capy::run_async(ioc.get_executor())(pump());
-        capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
-        ioc.run();
-        BOOST_TEST(!expired);
-        BOOST_TEST(fired);
-        BOOST_TEST(ran);
-    }
-
     /* An inline completion whose own post fails.
 
        A synchronous failure is published through on_completion, which
@@ -1994,11 +1962,17 @@ struct iocp_faults
        deferred queue instead is the only fallback that path has, and
        the run loop's next turn is what dispatches it -- the flag is
        raised while the loop is still inside the packet that resumed
-       this coroutine, so it is seen on the way back round.
+       this coroutine, so it is seen on the way back round. run_one()
+       drives the loop because run() keeps such a completion on its
+       own thread, with no packet to fail.
     */
     void testInlineCompletionPostFails()
     {
-        io_context ioc(iocp);
+        // With no inline budget the failed call's result goes to the
+        // run loop, which is the path under test.
+        io_context_options opts;
+        opts.inline_budget_max = 0;
+        io_context ioc(iocp, opts);
         auto [a, b] = must(make_socket_pair(ioc));
         char buf[8] = {};
         std::error_code rec;
@@ -2021,7 +1995,9 @@ struct iocp_faults
         };
         capy::run_async(ioc.get_executor())(body());
         capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
-        ioc.run();
+        while (ioc.run_one() != 0)
+        {
+        }
         BOOST_TEST(!expired);
         BOOST_TEST(fired);
         BOOST_TEST(rec == std::errc::not_a_socket);
@@ -2482,7 +2458,6 @@ struct iocp_faults
         testStopPostFailureRetriedByRun();
         testStopPostRetryFailureRecorded();
         testPostFallbackRuns();
-        testPostDeferredFallbackRuns();
         testInlineCompletionPostFails();
         testRunLoopDequeueFails();
         testWorkFinishedStopPostRetried();

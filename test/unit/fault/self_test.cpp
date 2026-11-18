@@ -1287,6 +1287,12 @@ struct self_test
                 FALSE &&
                 err_is(test_err);
         });
+        expect(
+            sys::SetFileCompletionNotificationModes,
+            "SetFileCompletionNotificationModes", [&] {
+                return ::SetFileCompletionNotificationModes(port, 0) == FALSE &&
+                    err_is(test_err);
+            });
         expect(sys::GetFileSizeEx, "GetFileSizeEx", [&] {
             return ::GetFileSizeEx(port, &big) == FALSE && err_is(test_err);
         });

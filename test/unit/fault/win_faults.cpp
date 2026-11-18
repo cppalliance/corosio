@@ -793,7 +793,11 @@ struct win_common_faults
         bool expired = false;
         capy::run_async(ioc.get_executor())(t());
         capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
-        ioc.run();
+        // run() keeps this completion on its own thread, with no
+        // packet to fail; run_one() sends it through the port.
+        while (ioc.run_one() != 0)
+        {
+        }
         BOOST_TEST(!expired);
         BOOST_TEST(fired);
         BOOST_TEST(fec == std::errc::address_family_not_supported);

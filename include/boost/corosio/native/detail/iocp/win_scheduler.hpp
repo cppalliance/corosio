@@ -23,6 +23,7 @@
 #include <system_error>
 
 #include <boost/corosio/detail/scheduler_op.hpp>
+#include <boost/corosio/detail/ready_queue.hpp>
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/abandon.hpp>
 #include <boost/corosio/native/detail/iocp/win_completion_key.hpp>
@@ -42,6 +43,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <utility>
 
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
 
@@ -51,6 +53,11 @@ namespace boost::corosio::detail {
 struct overlapped_op;
 class win_timers;
 class win_wait_reactor;
+
+namespace iocp {
+struct scheduler_context;
+struct thread_context_guard;
+} // namespace iocp
 
 class BOOST_COROSIO_DECL win_scheduler final
     : public scheduler
@@ -102,7 +109,7 @@ public:
     }
 
     /** Signal that an overlapped I/O operation is now pending.
-        Coordinates with do_one() via the ready_ CAS protocol. */
+        Coordinates with the run loop via the ready_ CAS protocol. */
     void on_pending(overlapped_op* op) const;
 
     /** Post an immediate completion with pre-stored results.
@@ -112,7 +119,64 @@ public:
     // Timer service integration
     void update_timeout();
 
+    /** Set how many operations a handler may complete inline.
+
+        An operation the kernel finishes during the initiating call can
+        resume its coroutine at once instead of going through the run
+        loop. The budget bounds how many do so in a row before the
+        loop gets to run other work; zero sends every completion
+        through the loop.
+    */
+    void configure_inline_budget(unsigned max) noexcept
+    {
+        constexpr auto cap =
+            static_cast<unsigned>((std::numeric_limits<int>::max)());
+        inline_budget_max_ = static_cast<int>(max < cap ? max : cap);
+    }
+
+    /** Take one unit of the running handler's inline budget.
+
+        @return True if the caller, on a thread running this scheduler,
+            may complete its operation inline.
+    */
+    bool try_consume_inline_budget() const noexcept;
+
+    /** Have the calling loop thread look at the port before it runs
+        more of its own queue.
+
+        A thread with work of its own queued visits the port only now
+        and then. An operation that wants the completions already
+        waiting there to be taken first asks for the visit.
+    */
+    void request_port_visit() const noexcept;
+
 private:
+    friend struct iocp::thread_context_guard;
+
+    // The calling thread's frame when it may queue work privately:
+    // the innermost run loop on this thread is this scheduler's and
+    // the only one running, it is not a single-handler call, and the
+    // scheduler is not stopped.
+    iocp::scheduler_context* private_context() const noexcept;
+
+    // Add the frame's unpublished work count to the shared one,
+    // stopping the scheduler if that leaves no work.
+    void publish_work(iocp::scheduler_context& t) const noexcept;
+
+    // Publish the frame's work count and move what it still holds to
+    // the shared queue, for another loop or a later run call.
+    void flush_context(iocp::scheduler_context& t) const noexcept;
+
+    // Sort one batch of dequeued packets into the frame's queues.
+    void claim(
+        iocp::scheduler_context& t,
+        void const* entries,
+        unsigned long count,
+        bool& took_wake);
+
+    // Destroy a queue entry without running it.
+    static void destroy_entry(void* e) noexcept;
+
     void on_timer_service_attached(timer_service& svc) override;
 
     /// Destroy every packet and deferred entry still queued, without
@@ -126,15 +190,13 @@ private:
     static void on_timer_changed(void* ctx);
     static unsigned long
     timer_timeout_ms(timer_service& svc, unsigned long timeout_ms) noexcept;
-    void post_deferred_completions(op_queue& ops);
-
     // Set stopped_ and post the shutdown packet; returns the Win32
     // error of a failed post, or 0.
-    unsigned long post_stop() noexcept;
+    unsigned long post_stop() const noexcept;
 
     // Post the shutdown packet unless one is in flight; returns the
     // Win32 error of a failed post, or 0.
-    unsigned long post_wakeup() noexcept;
+    unsigned long post_wakeup() const noexcept;
 
     // Retry a recorded wakeup that could not be queued, throwing if
     // the retry fails too.
@@ -143,11 +205,13 @@ private:
     // Record a failed wakeup for the next run or poll call to retry,
     // then throw it.
     [[noreturn]] void throw_wakeup_failure(unsigned long err);
-    std::size_t do_one(unsigned long timeout_ms);
-    std::size_t do_one_wait(unsigned long timeout_ms, bool& took_wake);
+    std::size_t do_one(iocp::scheduler_context& t, unsigned long timeout_ms);
+    std::size_t do_one_wait(
+        iocp::scheduler_context& t, unsigned long timeout_ms, bool& took_wake);
 
     void* iocp_;
-    mutable long outstanding_work_;
+    int inline_budget_max_ = 16;
+    mutable std::atomic<long> outstanding_work_;
 
     // Packets in flight to the completion port that reference
     // overlapped-op memory: kernel completions owed after a pending
@@ -155,18 +219,24 @@ private:
     // until this is zero before the services free op storage. The
     // run-loop counter cannot serve that role: frames destroyed at
     // teardown never return their work-guard credits.
-    mutable long pending_io_ = 0;
-    mutable long stopped_;
-    long stop_event_posted_;
-    long stop_failure_ = 0;
-    mutable long dispatch_required_;
+    mutable std::atomic<long> pending_io_{0};
+    mutable std::atomic<long> stopped_;
+    mutable std::atomic<long> stop_event_posted_;
+    mutable std::atomic<long> stop_failure_{0};
+    mutable std::atomic<long> dispatch_required_;
+
+    // Run-loop frames alive on any thread. A thread keeps work to
+    // itself only while it is the one loop there is: with a second,
+    // work goes through the port, where the kernel hands it to
+    // whichever thread is free first.
+    mutable std::atomic<long> loop_threads_{0};
     bool scheduler_locking_disabled_ = false;
 
     BOOST_COROSIO_MSVC_WARNING_PUSH
     BOOST_COROSIO_MSVC_WARNING_DISABLE(
         4251) // std::/detail:: members, dll-interface
     mutable win_mutex dispatch_mutex_;
-    mutable op_queue completed_ops_;
+    mutable ready_queue completed_ops_;
     std::unique_ptr<win_timers> timers_;
     std::unique_ptr<win_wait_reactor> wait_reactor_;
     BOOST_COROSIO_MSVC_WARNING_POP
@@ -192,12 +262,14 @@ public:
     All I/O handles are registered with the IOCP using key_io (0).
     Dispatch happens via the function pointer stored in each scheduler_op.
 
-    When GQCS returns with an OVERLAPPED*, we cast it to scheduler_op*
-    and call the function pointer directly - no virtual dispatch.
+    A dequeued packet's OVERLAPPED* is cast to scheduler_op*, queued
+    on the dequeuing thread, and run through the function pointer - no
+    virtual dispatch.
 
     The completion_key enum values are used only for internal signals:
       - key_io (0): Normal I/O completion, dispatch via func_
-      - key_wake_dispatch (1): Timer wakeup, check dispatch_required_
+      - key_wake_dispatch (1): Wakeup for due timers or the shared
+        queue, check dispatch_required_
       - key_shutdown (2): Stop signal
       - key_result_stored (3): Results pre-stored in OVERLAPPED
       - key_posted: Carries a scheduler_op* in the OVERLAPPED pointer
@@ -212,10 +284,68 @@ namespace iocp {
 // completion queue to make progress, so it uses a finite wait.
 inline constexpr unsigned long shutdown_drain_timeout_ms = 500;
 
+// Most packets one dequeue call takes from the port.
+inline constexpr unsigned long max_batch = 64;
+
+// Handlers and inline completions a thread runs from its own queue
+// before it looks at the port again, so a chain of posts or of
+// operations that never pend cannot starve I/O completions.
+inline constexpr unsigned poll_every = 32;
+
+/*
+    Per-thread state of one run loop.
+
+    A thread running the loop keeps the work it produces for itself in
+    `ready`: handlers posted from a handler, completions that never
+    reached the kernel, and the packets of a batched dequeue. Nothing
+    in it is visible to other threads, so pushing and popping cost no
+    lock and no system call.
+
+    That invisibility is why a thread queues here only while it is
+    the one loop running, and hands the queue over before each handler
+    once it is not. What remains is the handler already running when a
+    second loop starts: work queued before it waits until it returns.
+
+    `work_delta` is the part of the scheduler's work count this thread
+    has not published: +1 for each private post, -1 for each handler
+    run. It is added to the shared count before the thread waits on
+    the port, when its queue runs empty or is handed over, and when
+    the frame is left. A private post made from a handler leaves the
+    shared count at least one too high until then, because the
+    handler that made it, or the one that began the chain, was counted
+    there and its -1 is still here; so a work_finished() on any thread
+    cannot take the count to zero while this queue holds work. Posts
+    the loop makes outside a handler, for expired timers, have no such
+    cover and are published at once.
+*/
 struct BOOST_COROSIO_SYMBOL_VISIBLE scheduler_context
 {
     win_scheduler const* key;
     scheduler_context* next;
+
+    // Runnable work owned by this thread.
+    ready_queue ready;
+
+    // Packets dequeued in the same batch as a stop, after it. They
+    // were queued behind the stop, so they wait for the next run.
+    ready_queue after_stop;
+
+    long work_delta     = 0;
+    int inline_budget   = 0;
+    unsigned since_poll = 0;
+    bool stop_seen      = false;
+
+    // False for the calls that run a single handler: what one handler
+    // leaves behind would have to be handed back on the way out.
+    bool private_ok = true;
+
+    scheduler_context(
+        win_scheduler const* k, scheduler_context* n, bool priv) noexcept
+        : key(k)
+        , next(n)
+        , private_ok(priv)
+    {
+    }
 };
 
 inline thread_local_ptr<scheduler_context> context_stack;
@@ -225,18 +355,59 @@ struct thread_context_guard
     scheduler_context frame_;
     running_scheduler_guard running_;
 
-    explicit thread_context_guard(win_scheduler const* ctx) noexcept
-        : frame_{ctx, context_stack.get()}
-        , running_(ctx)
-    {
-        context_stack.set(&frame_);
-    }
-
-    ~thread_context_guard() noexcept
-    {
-        context_stack.set(frame_.next);
-    }
+    thread_context_guard(win_scheduler const* ctx, bool private_ok) noexcept;
+    ~thread_context_guard() noexcept;
 };
+
+} // namespace iocp
+
+/** Return the Win32 error of a completed overlapped request.
+
+    A batched dequeue reports only that packets were taken, so each
+    operation's outcome is read from the status the kernel left in its
+    `OVERLAPPED`. The conversion is the one `GetQueuedCompletionStatus`
+    applies, so the codes are the ones it reports.
+*/
+inline DWORD
+overlapped_error(OVERLAPPED const& ov) noexcept
+{
+    auto const status = static_cast<LONG>(ov.Internal);
+    if (status >= 0)
+        return 0;
+    using fn_type = ULONG(NTAPI*)(LONG);
+    // The two-step cast is the sanctioned FARPROC conversion.
+    static fn_type const fn = [] {
+        HMODULE h = ::GetModuleHandleW(L"ntdll.dll");
+        return h ? reinterpret_cast<fn_type>(reinterpret_cast<void (*)()>(
+                       ::GetProcAddress(h, "RtlNtStatusToDosError")))
+                 : nullptr;
+    }();
+    return fn ? fn(status) : static_cast<DWORD>(ERROR_GEN_FAILURE);
+}
+
+namespace iocp {
+
+inline thread_context_guard::thread_context_guard(
+    win_scheduler const* ctx, bool private_ok) noexcept
+    : frame_(ctx, context_stack.get(), private_ok)
+    , running_(ctx)
+{
+    // An outer loop of this scheduler on this thread is suspended
+    // inside a handler until this one returns; what it holds must
+    // not wait that long.
+    for (auto* c = frame_.next; c != nullptr; c = c->next)
+        if (c->key == ctx)
+            ctx->flush_context(*c);
+    ctx->loop_threads_.fetch_add(1, std::memory_order_acq_rel);
+    context_stack.set(&frame_);
+}
+
+inline thread_context_guard::~thread_context_guard() noexcept
+{
+    context_stack.set(frame_.next);
+    frame_.key->flush_context(frame_);
+    frame_.key->loop_threads_.fetch_sub(1, std::memory_order_acq_rel);
+}
 
 } // namespace iocp
 
@@ -280,46 +451,137 @@ win_scheduler::post_copy(capy::continuation const& c) const
         }
     };
 
-    auto* ph = new post_handler(c);
-    ::InterlockedIncrement(&outstanding_work_);
-
-    if (!::PostQueuedCompletionStatus(
-            iocp_, 0, key_posted, reinterpret_cast<LPOVERLAPPED>(ph)))
-    {
-        std::lock_guard<win_mutex> lock(dispatch_mutex_);
-        completed_ops_.push(ph);
-        ::InterlockedExchange(&dispatch_required_, 1);
-    }
+    post(new post_handler(c));
 }
 
 inline void
 win_scheduler::post(scheduler_op* h) const
 {
-    ::InterlockedIncrement(&outstanding_work_);
+    if (auto* t = private_context())
+    {
+        ++t->work_delta;
+        t->ready.push(h);
+        return;
+    }
+
+    outstanding_work_.fetch_add(1, std::memory_order_acq_rel);
 
     if (!::PostQueuedCompletionStatus(
             iocp_, 0, key_posted, reinterpret_cast<LPOVERLAPPED>(h)))
     {
         std::lock_guard<win_mutex> lock(dispatch_mutex_);
         completed_ops_.push(h);
-        ::InterlockedExchange(&dispatch_required_, 1);
+        dispatch_required_.fetch_or(
+            iocp::dispatch_queue, std::memory_order_acq_rel);
     }
 }
 
 inline void
 win_scheduler::post(capy::continuation& c) const
 {
-    ::InterlockedIncrement(&outstanding_work_);
+    if (auto* t = private_context())
+    {
+        ++t->work_delta;
+        t->ready.push(c);
+        return;
+    }
+
+    outstanding_work_.fetch_add(1, std::memory_order_acq_rel);
 
     if (!::PostQueuedCompletionStatus(
             iocp_, 0, key_continuation, reinterpret_cast<LPOVERLAPPED>(&c)))
     {
-        // completed_ops_ is an op_queue and cannot carry a raw continuation,
-        // so on the rare PQCS failure fall back to an allocated copy, which
-        // keeps the owner. Drop the increment first; post_copy counts its own.
-        ::InterlockedDecrement(&outstanding_work_);
-        post_copy(c);
+        std::lock_guard<win_mutex> lock(dispatch_mutex_);
+        completed_ops_.push(c);
+        dispatch_required_.fetch_or(
+            iocp::dispatch_queue, std::memory_order_acq_rel);
     }
+}
+
+inline iocp::scheduler_context*
+win_scheduler::private_context() const noexcept
+{
+    auto* t = iocp::context_stack.get();
+    // A stopped scheduler takes posts through the port, behind the
+    // stop packet, so they wait for the next run as they always have.
+    // With another loop running, the port lets whichever thread is
+    // free start the work; this one would get to it only after its
+    // handler, however long that runs.
+    if (t == nullptr || t->key != this || !t->private_ok ||
+        stopped_.load(std::memory_order_relaxed) != 0 ||
+        loop_threads_.load(std::memory_order_relaxed) != 1)
+        return nullptr;
+    return t;
+}
+
+inline bool
+win_scheduler::try_consume_inline_budget() const noexcept
+{
+    auto* t = iocp::context_stack.get();
+    if (t == nullptr || t->key != this || t->inline_budget <= 0)
+        return false;
+    --t->inline_budget;
+    // Work done without a look at the port, the same as a handler run
+    // from the thread's own queue.
+    ++t->since_poll;
+    return true;
+}
+
+inline void
+win_scheduler::request_port_visit() const noexcept
+{
+    auto* t = iocp::context_stack.get();
+    if (t != nullptr && t->key == this)
+        t->since_poll = iocp::poll_every;
+}
+
+inline void
+win_scheduler::publish_work(iocp::scheduler_context& t) const noexcept
+{
+    long const delta = std::exchange(t.work_delta, 0);
+    if (delta == 0)
+        return;
+    if (outstanding_work_.fetch_add(delta, std::memory_order_acq_rel) + delta !=
+        0)
+        return;
+    // Only a loop thread publishes, and its run call retries a failed
+    // wakeup on the way out.
+    if (auto err = post_stop())
+        stop_failure_.store(static_cast<long>(err), std::memory_order_release);
+}
+
+inline void
+win_scheduler::flush_context(iocp::scheduler_context& t) const noexcept
+{
+    if (!t.ready.empty() || !t.after_stop.empty())
+    {
+        {
+            std::lock_guard<win_mutex> lock(dispatch_mutex_);
+            completed_ops_.splice(t.ready);
+            completed_ops_.splice(t.after_stop);
+            dispatch_required_.fetch_or(
+                iocp::dispatch_queue, std::memory_order_acq_rel);
+        }
+        // A thread blocked in the port learns of the queue only from a
+        // packet. A stopped scheduler wakes its threads to leave, and
+        // the next run call looks at the queue first.
+        if (stopped_.load(std::memory_order_acquire) == 0)
+            ::PostQueuedCompletionStatus(iocp_, 0, key_wake_dispatch, nullptr);
+    }
+    publish_work(t);
+}
+
+inline void
+win_scheduler::destroy_entry(void* e) noexcept
+{
+    if (ready_is_continuation(e))
+    {
+        auto* c = ready_as_cont(e);
+        if (c->h)
+            capy::abandon(*c);
+        return;
+    }
+    ready_as_op(e)->destroy();
 }
 
 inline bool
@@ -334,13 +596,13 @@ win_scheduler::running_in_this_thread() const noexcept
 inline void
 win_scheduler::work_started() noexcept
 {
-    ::InterlockedIncrement(&outstanding_work_);
+    outstanding_work_.fetch_add(1, std::memory_order_acq_rel);
 }
 
 inline void
 win_scheduler::work_finished() noexcept
 {
-    if (::InterlockedDecrement(&outstanding_work_) != 0)
+    if (outstanding_work_.fetch_sub(1, std::memory_order_acq_rel) != 1)
         return;
     auto err = post_stop();
     if (!err)
@@ -350,14 +612,15 @@ win_scheduler::work_finished() noexcept
     // wake the threads blocked without a timeout.
     if (!running_in_this_thread())
         std::terminate();
-    ::InterlockedExchange(&stop_failure_, static_cast<long>(err));
+    stop_failure_.store(static_cast<long>(err), std::memory_order_release);
 }
 
 inline void
 win_scheduler::on_pending(overlapped_op* op) const
 {
     // If the CAS fails (ready_ was already 1), the completer got here first
-    // and stored the results — re-post so do_one() can dispatch. The acquire
+    // and stored the results — queue the op, on this thread's own queue or
+    // by a re-post, so the loop can dispatch it. The acquire
     // on failure makes those payload writes visible, so the re-posted op
     // carries valid dwError / bytes_transferred.
     //
@@ -371,20 +634,29 @@ win_scheduler::on_pending(overlapped_op* op) const
     // Counted before the packet can be consumed: once it can, a context
     // whose thread runs it may finish and be destroyed, so this call
     // touches nothing of the scheduler afterwards.
-    ::InterlockedIncrement(&pending_io_);
+    pending_io_.fetch_add(1, std::memory_order_acq_rel);
     long expected = 0;
     if (op->ready_.compare_exchange_strong(
             expected, 1, std::memory_order_acq_rel, std::memory_order_acquire))
         return;
+    // The packet is gone and the op is this thread's alone, so the
+    // scheduler is still safe to touch here.
+    if (auto* t = private_context())
+    {
+        pending_io_.fetch_sub(1, std::memory_order_acq_rel);
+        t->ready.push(op);
+        return;
+    }
     if (::PostQueuedCompletionStatus(
             iocp_, 0, key_result_stored, static_cast<LPOVERLAPPED>(op)))
         return;
     std::lock_guard<win_mutex> lock(dispatch_mutex_);
     completed_ops_.push(op);
-    ::InterlockedExchange(&dispatch_required_, 1);
+    dispatch_required_.fetch_or(
+        iocp::dispatch_queue, std::memory_order_acq_rel);
     // Uncounted only once queued, so a shutdown that sees no packet
     // left finds the op in the queue.
-    ::InterlockedDecrement(&pending_io_);
+    pending_io_.fetch_sub(1, std::memory_order_acq_rel);
 }
 
 inline void
@@ -397,30 +669,39 @@ win_scheduler::on_completion(overlapped_op* op, DWORD error, DWORD bytes) const
     op->bytes_transferred = bytes;
     op->ready_.store(1, std::memory_order_release);
 
+    // On a loop thread the result needs no packet to reach the loop.
+    // The caller counted the work already.
+    if (auto* t = private_context())
+    {
+        t->ready.push(op);
+        return;
+    }
+
     // Counted before the packet can be consumed, as in on_pending.
-    ::InterlockedIncrement(&pending_io_);
+    pending_io_.fetch_add(1, std::memory_order_acq_rel);
     if (::PostQueuedCompletionStatus(
             iocp_, 0, key_result_stored, static_cast<LPOVERLAPPED>(op)))
         return;
     std::lock_guard<win_mutex> lock(dispatch_mutex_);
     completed_ops_.push(op);
-    ::InterlockedExchange(&dispatch_required_, 1);
+    dispatch_required_.fetch_or(
+        iocp::dispatch_queue, std::memory_order_acq_rel);
     // Uncounted only once queued, so a shutdown that sees no packet
     // left finds the op in the queue.
-    ::InterlockedDecrement(&pending_io_);
+    pending_io_.fetch_sub(1, std::memory_order_acq_rel);
 }
 
 inline unsigned long
-win_scheduler::post_stop() noexcept
+win_scheduler::post_stop() const noexcept
 {
-    ::InterlockedExchange(&stopped_, 1);
+    stopped_.store(1, std::memory_order_seq_cst);
     return post_wakeup();
 }
 
 inline unsigned long
-win_scheduler::post_wakeup() noexcept
+win_scheduler::post_wakeup() const noexcept
 {
-    if (::InterlockedExchange(&stop_event_posted_, 1) != 0)
+    if (stop_event_posted_.exchange(1, std::memory_order_acq_rel) != 0)
         return 0;
     if (::PostQueuedCompletionStatus(iocp_, 0, key_shutdown, nullptr))
         return 0;
@@ -430,7 +711,7 @@ win_scheduler::post_wakeup() noexcept
         err = ERROR_INVALID_PARAMETER;
     // No packet is in flight, so a later stop retries the wakeup
     // rather than leaving blocked threads asleep for good.
-    ::InterlockedExchange(&stop_event_posted_, 0);
+    stop_event_posted_.store(0, std::memory_order_release);
     return err;
 }
 
@@ -450,14 +731,17 @@ win_scheduler::throw_wakeup_failure(unsigned long err)
 {
     // Kept recorded, so a later run or poll call on the stopped context
     // retries the wakeup instead of blocking while work remains.
-    ::InterlockedExchange(&stop_failure_, static_cast<long>(err));
+    stop_failure_.store(static_cast<long>(err), std::memory_order_release);
     detail::throw_system_error(make_err(err));
 }
 
 inline void
 win_scheduler::report_stop_failure()
 {
-    if (::InterlockedExchange(&stop_failure_, 0) == 0 || !stopped())
+    // Nearly always clear, so it is read before it is written.
+    if (stop_failure_.load(std::memory_order_acquire) == 0)
+        return;
+    if (stop_failure_.exchange(0, std::memory_order_acq_rel) == 0 || !stopped())
         return;
     // Other threads may still be blocked waiting for the lost wakeup,
     // so retry it and report only a retry that fails too.
@@ -468,41 +752,48 @@ win_scheduler::report_stop_failure()
 inline bool
 win_scheduler::stopped() const noexcept
 {
-    // equivalent to atomic read
-    return ::InterlockedExchangeAdd(&stopped_, 0) != 0;
+    return stopped_.load(std::memory_order_acquire) != 0;
 }
 
 inline void
 win_scheduler::restart()
 {
-    ::InterlockedExchange(&stopped_, 0);
-    ::InterlockedExchange(&stop_event_posted_, 0);
-    ::InterlockedExchange(&stop_failure_, 0);
+    stopped_.store(0, std::memory_order_release);
+    stop_event_posted_.store(0, std::memory_order_release);
+    stop_failure_.store(0, std::memory_order_release);
 }
 
 inline std::size_t
 win_scheduler::run()
 {
     report_stop_failure();
-    if (::InterlockedExchangeAdd(&outstanding_work_, 0) == 0)
+    if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
         stop();
         return 0;
     }
 
-    iocp::thread_context_guard ctx(this);
-
     std::size_t n = 0;
-    for (;;)
     {
-        if (!do_one(INFINITE))
-            break;
-        if (n != (std::numeric_limits<std::size_t>::max)())
-            ++n;
-        if (::InterlockedExchangeAdd(&outstanding_work_, 0) == 0)
+        iocp::thread_context_guard ctx(this, true);
+        auto& t = ctx.frame_;
+
+        for (;;)
         {
-            stop();
-            break;
+            if (!do_one(t, INFINITE))
+                break;
+            if (n != (std::numeric_limits<std::size_t>::max)())
+                ++n;
+            // Queued work is outstanding work, whatever the shared
+            // count reads before this thread publishes its part.
+            if (!t.ready.empty())
+                continue;
+            publish_work(t);
+            if (outstanding_work_.load(std::memory_order_acquire) == 0)
+            {
+                stop();
+                break;
+            }
         }
     }
     report_stop_failure();
@@ -513,14 +804,17 @@ inline std::size_t
 win_scheduler::run_one()
 {
     report_stop_failure();
-    if (::InterlockedExchangeAdd(&outstanding_work_, 0) == 0)
+    if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
         stop();
         return 0;
     }
 
-    iocp::thread_context_guard ctx(this);
-    auto n = do_one(INFINITE);
+    std::size_t n;
+    {
+        iocp::thread_context_guard ctx(this, false);
+        n = do_one(ctx.frame_, INFINITE);
+    }
     report_stop_failure();
     return n;
 }
@@ -529,13 +823,12 @@ inline std::size_t
 win_scheduler::wait_one(long usec)
 {
     report_stop_failure();
-    if (::InterlockedExchangeAdd(&outstanding_work_, 0) == 0)
+    if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
         stop();
         return 0;
     }
 
-    iocp::thread_context_guard ctx(this);
     unsigned long timeout_ms = INFINITE;
     if (usec >= 0)
     {
@@ -543,7 +836,11 @@ win_scheduler::wait_one(long usec)
         timeout_ms = ms >= 0xFFFFFFFELL ? static_cast<unsigned long>(0xFFFFFFFE)
                                         : static_cast<unsigned long>(ms);
     }
-    auto n = do_one(timeout_ms);
+    std::size_t n;
+    {
+        iocp::thread_context_guard ctx(this, false);
+        n = do_one(ctx.frame_, timeout_ms);
+    }
     report_stop_failure();
     return n;
 }
@@ -552,18 +849,19 @@ inline std::size_t
 win_scheduler::poll()
 {
     report_stop_failure();
-    if (::InterlockedExchangeAdd(&outstanding_work_, 0) == 0)
+    if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
         stop();
         return 0;
     }
 
-    iocp::thread_context_guard ctx(this);
-
     std::size_t n = 0;
-    while (do_one(0))
-        if (n != (std::numeric_limits<std::size_t>::max)())
-            ++n;
+    {
+        iocp::thread_context_guard ctx(this, true);
+        while (do_one(ctx.frame_, 0))
+            if (n != (std::numeric_limits<std::size_t>::max)())
+                ++n;
+    }
     report_stop_failure();
     return n;
 }
@@ -572,41 +870,26 @@ inline std::size_t
 win_scheduler::poll_one()
 {
     report_stop_failure();
-    if (::InterlockedExchangeAdd(&outstanding_work_, 0) == 0)
+    if (outstanding_work_.load(std::memory_order_acquire) == 0)
     {
         stop();
         return 0;
     }
 
-    iocp::thread_context_guard ctx(this);
-    auto n = do_one(0);
+    std::size_t n;
+    {
+        iocp::thread_context_guard ctx(this, false);
+        n = do_one(ctx.frame_, 0);
+    }
     report_stop_failure();
     return n;
 }
 
-inline void
-win_scheduler::post_deferred_completions(op_queue& ops)
-{
-    while (auto h = ops.pop())
-    {
-        if (::PostQueuedCompletionStatus(
-                iocp_, 0, key_posted, reinterpret_cast<LPOVERLAPPED>(h)))
-            continue;
-
-        // Out of resources, put the failed op and remaining ops back
-        ops.push(h);
-        std::lock_guard<win_mutex> lock(dispatch_mutex_);
-        completed_ops_.splice(ops);
-        ::InterlockedExchange(&dispatch_required_, 1);
-        return;
-    }
-}
-
 inline std::size_t
-win_scheduler::do_one(unsigned long timeout_ms)
+win_scheduler::do_one(iocp::scheduler_context& t, unsigned long timeout_ms)
 {
     bool took_wake = false;
-    std::size_t n  = do_one_wait(timeout_ms, took_wake);
+    std::size_t n  = do_one_wait(t, timeout_ms, took_wake);
     // Without the timer thread, the wake is all that tells a thread
     // blocked with no timeout about a new earliest timer; leaving
     // with it would strand those threads.
@@ -620,59 +903,25 @@ win_scheduler::do_one(unsigned long timeout_ms)
     return n;
 }
 
-inline std::size_t
-win_scheduler::do_one_wait(unsigned long timeout_ms, bool& took_wake)
+inline void
+win_scheduler::claim(
+    iocp::scheduler_context& t,
+    void const* entries_v,
+    unsigned long count,
+    bool& took_wake)
 {
-    // A handler that throws has still consumed its work.
-    struct finish_on_exit
+    auto const* entries = static_cast<OVERLAPPED_ENTRY const*>(entries_v);
+    for (unsigned long i = 0; i < count; ++i)
     {
-        win_scheduler* self;
-        ~finish_on_exit()
-        {
-            self->work_finished();
-        }
-    };
+        auto const& e           = entries[i];
+        LPOVERLAPPED overlapped = e.lpOverlapped;
+        // What a stop packet leaves behind it in the batch was queued
+        // after the stop, and waits for the next run.
+        auto& q = t.stop_seen ? t.after_stop : t.ready;
 
-    for (;;)
-    {
-        // Check if we need to process timers or deferred ops
-        if (::InterlockedCompareExchange(&dispatch_required_, 0, 1) == 1)
-        {
-            op_queue local_ops;
-            {
-                std::lock_guard<win_mutex> lock(dispatch_mutex_);
-                local_ops.splice(completed_ops_);
-            }
-            post_deferred_completions(local_ops);
-
-            if (auto* tsvc = timers())
-                tsvc->process_expired();
-
-            update_timeout();
-        }
-
-        unsigned long wait_ms = timeout_ms;
-        if (auto* tsvc = timers(); tsvc && !timers_)
-        {
-            tsvc->process_expired();
-            wait_ms = timer_timeout_ms(*tsvc, timeout_ms);
-        }
-
-        DWORD bytes             = 0;
-        ULONG_PTR key           = 0;
-        LPOVERLAPPED overlapped = nullptr;
-        ::SetLastError(0);
-
-        BOOL result = ::GetQueuedCompletionStatus(
-            iocp_, &bytes, &key, &overlapped, wait_ms);
-        DWORD dwError = ::GetLastError();
-
-        // Handle based on completion key
         if (overlapped)
         {
-            DWORD err = result ? 0 : dwError;
-
-            switch (key)
+            switch (e.lpCompletionKey)
             {
             case key_io:
             case key_result_stored:
@@ -685,8 +934,10 @@ win_scheduler::do_one_wait(unsigned long timeout_ms, bool& took_wake)
                 // the payload was already written and released (by the completer
                 // in on_pending, or by on_completion), so we must not overwrite
                 // it.
-                if (key == key_io)
-                    ov_op->store_result(bytes, err);
+                if (e.lpCompletionKey == key_io)
+                    ov_op->store_result(
+                        e.dwNumberOfBytesTransferred,
+                        overlapped_error(*overlapped));
 
                 // If old value was 1 the initiator already returned — dispatch.
                 // The acquire pairs with the publisher's release so the payload
@@ -698,78 +949,197 @@ win_scheduler::do_one_wait(unsigned long timeout_ms, bool& took_wake)
                         expected, 1, std::memory_order_acq_rel,
                         std::memory_order_acquire))
                 {
-                    ::InterlockedDecrement(&pending_io_);
-                    finish_on_exit on_exit{this};
-                    ov_op->complete(
-                        this, ov_op->bytes_transferred, ov_op->dwError);
-                    return 1;
+                    pending_io_.fetch_sub(1, std::memory_order_acq_rel);
+                    q.push(ov_op);
                 }
-                continue;
+                break;
             }
 
             case key_posted:
-            {
                 // Posted scheduler_op*: overlapped is actually a scheduler_op*
-                auto* op = reinterpret_cast<scheduler_op*>(overlapped);
-                finish_on_exit on_exit{this};
-                op->complete(this, bytes, err);
-                return 1;
-            }
+                q.push(reinterpret_cast<scheduler_op*>(overlapped));
+                break;
 
             case key_continuation:
-            {
                 // Posted continuation: overlapped is actually a continuation*
-                auto* c = reinterpret_cast<capy::continuation*>(overlapped);
-                finish_on_exit on_exit{this};
-                c->h.resume();
-                return 1;
-            }
+                q.push(*reinterpret_cast<capy::continuation*>(overlapped));
+                break;
 
-            default:      // LCOV_EXCL_LINE unreachable: closed key set
-                continue; // LCOV_EXCL_LINE unreachable: closed key set
+            default:   // LCOV_EXCL_LINE unreachable: closed key set
+                break; // LCOV_EXCL_LINE unreachable: closed key set
             }
+            continue;
         }
 
         // Signal completions (no OVERLAPPED)
-        if (result)
+        switch (e.lpCompletionKey)
         {
-            switch (key)
+        case key_wake_dispatch:
+            // Timer wakeup - loop to check dispatch_required_
+            took_wake = true;
+            break;
+
+        case key_shutdown:
+            stop_event_posted_.store(0, std::memory_order_release);
+            if (stopped())
             {
-            case key_wake_dispatch:
-                // Timer wakeup - loop to check dispatch_required_
-                took_wake = true;
-                continue;
+                // Re-post for other waiting threads
+                if (auto err = post_wakeup())
+                    stop_failure_.store(
+                        static_cast<long>(err), std::memory_order_release);
+                t.stop_seen = true;
+            }
+            break;
 
-            case key_shutdown:
-                ::InterlockedExchange(&stop_event_posted_, 0);
-                if (stopped())
+        // A key outside the closed set reaches here only if a
+        // third party posts to the port.
+        default:   // LCOV_EXCL_LINE unreachable: closed key set
+            break; // LCOV_EXCL_LINE unreachable: closed key set
+        }
+    }
+}
+
+inline std::size_t
+win_scheduler::do_one_wait(
+    iocp::scheduler_context& t, unsigned long timeout_ms, bool& took_wake)
+{
+    for (;;)
+    {
+        // A stop ends the run once the work dequeued ahead of it is
+        // done. The frame hands the rest back on the way out. A
+        // handler among that work may have restarted the scheduler,
+        // and then the run carries on with what was held back.
+        if (t.stop_seen && t.ready.empty())
+        {
+            if (stopped())
+                return 0;
+            t.stop_seen = false;
+            t.ready.splice(t.after_stop);
+        }
+
+        // Check if we need to process timers or deferred ops. The
+        // flag is nearly always clear, so it is read before it is
+        // written.
+        if (!t.stop_seen &&
+            dispatch_required_.load(std::memory_order_acquire) != 0)
+        {
+            long const why =
+                dispatch_required_.exchange(0, std::memory_order_acq_rel);
+
+            if (why & iocp::dispatch_queue)
+            {
+                std::lock_guard<win_mutex> lock(dispatch_mutex_);
+                t.ready.splice(completed_ops_);
+            }
+
+            if (why & iocp::dispatch_timers)
+            {
+                if (auto* tsvc = timers())
                 {
-                    // Re-post for other waiting threads
-                    if (auto err = post_wakeup())
-                        ::InterlockedExchange(
-                            &stop_failure_, static_cast<long>(err));
-                    return 0;
+                    tsvc->process_expired();
+                    // Posts made here have no running handler behind
+                    // them to keep the shared count above zero.
+                    publish_work(t);
                 }
-                continue;
 
-            // A key outside the closed set reaches here only if a
-            // third party posts to the port.
-            default:      // LCOV_EXCL_LINE unreachable: closed key set
-                continue; // LCOV_EXCL_LINE unreachable: closed key set
+                update_timeout();
             }
         }
 
-        // Timeout or error. Unless a timer cut the wait short, a
-        // WAIT_TIMEOUT is a finite caller timeout (wait_one/poll)
-        // elapsing with no work. run()/run_one() pass INFINITE and
-        // block until a real wake-up; they exit only once a
-        // key_shutdown is posted.
-        if (dwError != WAIT_TIMEOUT)
-            detail::throw_system_error(make_err(dwError));
-        if (wait_ms == timeout_ms)
-            return 0;
-        if (timeout_ms != INFINITE)
-            timeout_ms -= wait_ms;
+        // With its own work queued the thread only looks at the port
+        // now and then, without waiting.
+        bool const visit = t.ready.empty() ||
+            (!t.stop_seen && ++t.since_poll >= iocp::poll_every);
+        if (visit)
+        {
+            t.since_poll = 0;
+
+            auto* tsvc = timers();
+            if (tsvc && !timers_)
+            {
+                tsvc->process_expired();
+                // As above: these posts are made outside any handler.
+                publish_work(t);
+            }
+
+            bool const idle       = t.ready.empty();
+            unsigned long wait_ms = idle ? timeout_ms : 0;
+            if (idle && tsvc && !timers_)
+                wait_ms = timer_timeout_ms(*tsvc, timeout_ms);
+
+            // Nothing queued, so the shared count has to be exact
+            // before this thread can block on it.
+            if (idle)
+                publish_work(t);
+
+            // A thread that takes a batch runs it alone, so it takes
+            // one only when no other loop could run part of it.
+            ULONG const cap =
+                (!t.private_ok ||
+                 loop_threads_.load(std::memory_order_relaxed) != 1)
+                ? 1
+                : iocp::max_batch;
+
+            OVERLAPPED_ENTRY entries[iocp::max_batch];
+            ULONG count = 0;
+
+            BOOL const result = ::GetQueuedCompletionStatusEx(
+                iocp_, entries, cap, &count, wait_ms, FALSE);
+            DWORD const dwError = result ? 0 : ::GetLastError();
+
+            if (result)
+            {
+                claim(t, entries, count, took_wake);
+            }
+            else
+            {
+                // Timeout or error. Unless a timer cut the wait short, a
+                // WAIT_TIMEOUT is a finite caller timeout (wait_one/poll)
+                // elapsing with no work. run()/run_one() pass INFINITE and
+                // block until a real wake-up; they exit only once a
+                // key_shutdown is posted.
+                if (dwError != WAIT_TIMEOUT)
+                    detail::throw_system_error(make_err(dwError));
+                if (idle)
+                {
+                    if (wait_ms == timeout_ms)
+                        return 0;
+                    if (timeout_ms != INFINITE)
+                        timeout_ms -= wait_ms;
+                    continue;
+                }
+            }
+        }
+
+        void* const e = t.ready.pop();
+        if (!e)
+            continue;
+
+        // Work queued behind this handler would wait for it while
+        // another loop could run it: one that started since the work
+        // was queued, or the others when this thread drained the
+        // shared queue. Hand it over.
+        if (!t.stop_seen && !t.ready.empty() &&
+            loop_threads_.load(std::memory_order_relaxed) != 1)
+            flush_context(t);
+
+        t.inline_budget = inline_budget_max_;
+
+        // Counted when the handler leaves, by return or by exception.
+        struct finish
+        {
+            iocp::scheduler_context& t;
+            ~finish()
+            {
+                --t.work_delta;
+            }
+        } on_exit{t};
+
+        if (ready_is_continuation(e))
+            ready_as_cont(e)->h.resume();
+        else
+            ready_as_op(e)->complete(this, 0, 0);
+        return 1;
     }
 }
 
@@ -899,18 +1269,19 @@ win_scheduler::shutdown()
     // Reap every packet still owed to the port before the services
     // free the op memory those packets reference. Work-guard credits,
     // posted handlers, and queued continuations have no bearing here.
-    while (::InterlockedExchangeAdd(&pending_io_, 0) > 0)
+    while (pending_io_.load(std::memory_order_acquire) > 0)
     {
-        op_queue ops;
+        ready_queue ops;
         {
             std::lock_guard<win_mutex> lock(dispatch_mutex_);
             ops.splice(completed_ops_);
         }
 
         // Deferred-queue entries are process-owned (failed-post
-        // fallbacks and posted handlers); no packet references them.
-        while (auto* h = ops.pop())
-            h->destroy();
+        // fallbacks, posted handlers, and what a run loop handed
+        // back); no packet references them.
+        while (auto* e = ops.pop())
+            destroy_entry(e);
 
         DWORD bytes;
         ULONG_PTR key;
@@ -933,7 +1304,7 @@ win_scheduler::shutdown()
             }
             else
             {
-                ::InterlockedDecrement(&pending_io_);
+                pending_io_.fetch_sub(1, std::memory_order_acq_rel);
                 auto* op = overlapped_to_op(overlapped);
                 op->destroy();
             }
@@ -952,13 +1323,13 @@ win_scheduler::sweep_port() noexcept
 {
     for (;;)
     {
-        op_queue ops;
+        ready_queue ops;
         {
             std::lock_guard<win_mutex> lock(dispatch_mutex_);
             ops.splice(completed_ops_);
         }
-        while (auto* h = ops.pop())
-            h->destroy();
+        while (auto* e = ops.pop())
+            destroy_entry(e);
 
         DWORD bytes;
         ULONG_PTR key;

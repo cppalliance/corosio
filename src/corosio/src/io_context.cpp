@@ -163,9 +163,10 @@ make_threading_config(io_context_options const& opts)
 }
 
 // Apply runtime tuning after construction. `concurrency_hint` is the effective
-// hint (normalized to 1 for lockless tiers). Budget heuristic: with default
-// budgets and hint > 1, disable the inline-completion fast path so multi-thread
-// runs post everything for cross-thread work-stealing.
+// hint (normalized to 1 for lockless tiers). Budget heuristic, reactor
+// backends only: with default budgets and hint > 1, disable the
+// inline-completion fast path so multi-thread runs post everything for
+// cross-thread work-stealing.
 void
 apply_scheduler_options(
     [[maybe_unused]] detail::scheduler& sched,
@@ -202,6 +203,13 @@ apply_scheduler_options(
 
         reactor->configure_reactor(opts.max_events_per_poll, init, max, ua);
     }
+#endif
+
+#if BOOST_COROSIO_HAS_IOCP
+    // The completion port hands each completion to one thread, so an
+    // operation finished during its call stays inline at any hint.
+    if (auto* iocp_sched = dynamic_cast<detail::win_scheduler*>(&sched))
+        iocp_sched->configure_inline_budget(opts.inline_budget_max);
 #endif
 
 #if BOOST_COROSIO_HAS_URING

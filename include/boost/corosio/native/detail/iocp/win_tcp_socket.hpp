@@ -145,6 +145,11 @@ class win_tcp_socket final
     wait_op wt_;
     SOCKET socket_ = INVALID_SOCKET;
     int family_    = AF_UNSPEC;
+
+    // The socket is in skip-completion-port-on-success mode: a request
+    // the kernel finishes during the call queues no packet, and its
+    // result is taken from the call.
+    bool skip_ = false;
     // What local_endpoint_ holds. `cached`: it is authoritative, and
     // empty for a socket with no known endpoint. `pending`: a connect
     // left the endpoint unfetched, and the first local_endpoint() asks
@@ -241,10 +246,34 @@ public:
     void cancel() noexcept override;
 
     /// Used by the acceptor's `accept_op` to finish setting up the peer.
-    void set_socket(SOCKET s) noexcept;
+    void set_socket(SOCKET s, bool skip) noexcept;
     void set_endpoints(endpoint local, endpoint remote) noexcept;
 
     void close_socket() noexcept;
+
+private:
+    // Finish a read or write the call itself settled: resume the
+    // coroutine at once within the handler's inline budget, or send
+    // the stored result through the run loop.
+    std::coroutine_handle<> complete_now(
+        overlapped_op& op,
+        capy::continuation& cont,
+        capy::executor_ref d,
+        std::stop_token const& token,
+        std::error_code* ec,
+        std::size_t* bytes_out,
+        DWORD err,
+        DWORD bytes);
+
+    // Arm a read or write whose request is in the kernel and hand it
+    // to the scheduler to await its packet.
+    std::coroutine_handle<> pend(
+        overlapped_op& op,
+        capy::continuation& cont,
+        capy::executor_ref d,
+        std::stop_token const& token,
+        std::error_code* ec,
+        std::size_t* bytes_out);
 };
 
 } // namespace boost::corosio::detail
