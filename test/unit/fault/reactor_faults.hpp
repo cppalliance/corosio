@@ -34,10 +34,14 @@
 
 #include <array>
 #include <cerrno>
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <coroutine>
 #include <stop_token>
+#include <mutex>
 #include <system_error>
+#include <thread>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -88,8 +92,10 @@ struct reactor_common_faults
 #endif
     static constexpr sys vec_write = is_kqueue ? sys::writev : sys::sendmsg;
     static constexpr sys wait_sys  = is_select ? sys::select
-        : is_kqueue                            ? sys::kevent
+        : is_kqueue                            ? sys::kevent_wait
                                                : sys::epoll_wait;
+    // select() retries EBADF, so it fails the pass with EINVAL instead.
+    static constexpr int wait_err = is_select ? EINVAL : EBADF;
 
     static endpoint loopback()
     {
@@ -1049,8 +1055,8 @@ struct reactor_common_faults
         capy::async_waker waker;
         unsigned at_read = 0;
         unsigned at_wake = 0;
-        // Counts this thread's calls to the wait symbol (every kevent on
-        // kqueue); the one it would fail is never reached.
+        // Counts this thread's waits; the one it would fail is never
+        // reached.
         fault_scope f(wait_sys, EINTR, 1u << 30);
 
         auto waiter = [&]() -> capy::task<> {
@@ -1094,8 +1100,8 @@ struct reactor_common_faults
         ioc.run();
         ioc.restart();
 
-        // Counts this thread's calls to the wait symbol (every kevent on
-        // kqueue); the one it would fail is never reached.
+        // Counts this thread's waits; the one it would fail is never
+        // reached.
         fault_scope f(wait_sys, EINTR, 1u << 30);
         unsigned at_run = 0;
         auto probe      = [&]() -> capy::task<> {
@@ -1196,6 +1202,119 @@ struct reactor_common_faults
         }
         BOOST_TEST(read_done);
         BOOST_TEST_LT(pumps, 1000);
+    }
+
+    // A failed wait leaves run() through an exception, but the next run
+    // must still poll for I/O.
+    void testWaitFailureKeepsPolling()
+    {
+        io_context ioc(Backend);
+        auto [a, b]    = test::must(test::make_socket_pair(ioc));
+        bool read_done = false;
+        auto reader    = [&]() -> capy::task<> {
+            char buf[1];
+            auto [ec, n] = co_await b.read_some(capy::mutable_buffer(buf, 1));
+            read_done    = !ec;
+        };
+        capy::run_async(ioc.get_executor())(reader());
+        {
+            // Parking the read calls no wait symbol, so the reactor's
+            // first wait is the one that fails.
+            fault_scope f(wait_sys, wait_err);
+            expect_system_error(
+                [&] { ioc.run(); }, static_cast<std::errc>(wait_err));
+            BOOST_TEST(f.fired());
+        }
+
+        auto writer = [&]() -> capy::task<> {
+            char const c = 'x';
+            auto [ec, n] = co_await a.write_some(capy::const_buffer(&c, 1));
+            BOOST_TEST(!ec);
+        };
+        capy::run_async(ioc.get_executor())(writer());
+        // The duration only bounds a hang.
+        std::ignore = ioc.run_for(std::chrono::seconds(5));
+        BOOST_TEST(read_done);
+        if (!read_done)
+        {
+            b.close();
+            ioc.restart();
+            ioc.run();
+        }
+    }
+
+    // When one thread's wait fails, a peer parked behind that pass
+    // must be woken to take over polling instead of waiting forever.
+    void testWaitFailureLeavesPeerPolling()
+    {
+        io_context ioc(Backend, 2);
+        auto [a, b]    = test::must(test::make_socket_pair(ioc));
+        bool read_done = false;
+        auto reader    = [&]() -> capy::task<> {
+            char buf[1];
+            auto [ec, n] = co_await b.read_some(capy::mutable_buffer(buf, 1));
+            read_done    = !ec;
+        };
+        // Holds the first, real wait long enough for the second thread
+        // to park; the duration only shapes the interleaving.
+        auto holder = [&]() -> capy::task<> {
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(20));
+        };
+        capy::run_async(ioc.get_executor())(reader());
+        capy::run_async(ioc.get_executor())(holder());
+        // Parks both here, so the threads' first wait is the timer's.
+        std::ignore = ioc.poll();
+
+        // The wait after the timer's fails, on whichever thread makes it.
+        fault_scope f(wait_sys, wait_err, 2, any_thread);
+        std::mutex m;
+        std::condition_variable cv;
+        int threw    = 0;
+        int finished = 0;
+        auto runner  = [&] {
+            bool failed = false;
+            try
+            {
+                ioc.run();
+            }
+            catch (std::system_error const&)
+            {
+                failed = true;
+            }
+            std::lock_guard<std::mutex> lock(m);
+            threw += failed;
+            ++finished;
+            cv.notify_all();
+        };
+        std::thread t1(runner);
+        std::thread t2(runner);
+
+        // The durations only bound a hang.
+        bool done = false;
+        {
+            std::unique_lock<std::mutex> lock(m);
+            if (cv.wait_for(
+                    lock, std::chrono::seconds(5), [&] { return threw == 1; }))
+            {
+                // Sent only now, so just the surviving thread can see it.
+                char const c = 'x';
+                BOOST_TEST_EQ(
+                    ::send(static_cast<int>(a.native_handle()), &c, 1, 0), 1);
+                done = cv.wait_for(lock, std::chrono::seconds(5), [&] {
+                    return finished == 2;
+                });
+            }
+        }
+        BOOST_TEST(done);
+        if (!done)
+            ioc.stop();
+        t1.join();
+        t2.join();
+
+        BOOST_TEST(f.fired());
+        BOOST_TEST_EQ(threw, 1);
+        BOOST_TEST(read_done);
     }
 
     // Accepted and assigned sockets learn their family from the
@@ -1514,6 +1633,8 @@ struct reactor_common_faults
         testErrorEventOnWritableWrite();
         testErrorEventOnWritableWaitWrite();
         testSocketFamilyProbeFails();
+        testWaitFailureKeepsPolling();
+        testWaitFailureLeavesPeerPolling();
         testOpenedSocketKnowsFamily();
         testAdoptedSocketsKnowFamily();
         testPostedWakeRunsBeforeNextPoll();

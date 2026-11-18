@@ -635,7 +635,7 @@ COROSIO_FAULT_HOOK_NX(
 COROSIO_FAULT_HOOK(kqueue, int, -1, (), ())
 // Hand-written rather than COROSIO_FAULT_HOOK: a registration and a
 // wait are the same symbol, so the changelist is the only thing that
-// tells them apart. Both arms are consulted on every call so their
+// tells them apart. All arms are consulted on every call so their
 // counters stay in step whichever one fires.
 extern "C" int
 kevent(
@@ -657,11 +657,12 @@ kevent(
         if (ch[i].flags & EV_ADD)
             adds = true;
     }
-    // A call that satisfies both arms fails once: the plain kevent arm
+    // A call that satisfies several arms fails once: the plain kevent arm
     // publishes last, so its errno is the one the caller sees.
-    bool const fail_add = adds && should_fail(sys::kevent_register);
-    bool const fail_any = should_fail(sys::kevent);
-    if (fail_add || fail_any)
+    bool const fail_add  = adds && should_fail(sys::kevent_register);
+    bool const fail_wait = nch == 0 && nev > 0 && should_fail(sys::kevent_wait);
+    bool const fail_any  = should_fail(sys::kevent);
+    if (fail_add || fail_wait || fail_any)
         return -1;
     return real(kq, ch, nch, ev, nev, ts);
 }
@@ -669,7 +670,7 @@ kevent(
 
 #if defined(__APPLE__)
 // Darwin's scheduler calls kevent64 (see kqueue_call); it answers to
-// the same two arms as kevent, so tests arm `kevent` on either OS.
+// the same arms as kevent, so tests arm `kevent` on either OS.
 extern "C" int
 kevent64(
     int kq,
@@ -691,9 +692,10 @@ kevent64(
         if (ch[i].flags & EV_ADD)
             adds = true;
     }
-    bool const fail_add = adds && should_fail(sys::kevent_register);
-    bool const fail_any = should_fail(sys::kevent);
-    if (fail_add || fail_any)
+    bool const fail_add  = adds && should_fail(sys::kevent_register);
+    bool const fail_wait = nch == 0 && nev > 0 && should_fail(sys::kevent_wait);
+    bool const fail_any  = should_fail(sys::kevent);
+    if (fail_add || fail_wait || fail_any)
         return -1;
     return real(kq, ch, nch, ev, nev, flags, ts);
 }
@@ -1817,7 +1819,7 @@ hook_is_live(sys which) noexcept
     if (which == sys::uring_sqe_full || which == sys::uring_sq_fill)
         which = sys::io_uring_submit;
     // Not a symbol either: it is a slice of the kevent shadow.
-    if (which == sys::kevent_register)
+    if (which == sys::kevent_register || which == sys::kevent_wait)
         which = sys::kevent;
     for (std::size_t i = 0; i < census_count; ++i)
     {

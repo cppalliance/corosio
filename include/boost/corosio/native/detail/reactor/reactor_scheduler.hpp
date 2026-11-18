@@ -1097,7 +1097,13 @@ reactor_scheduler::do_one(lock_type& lock, long timeout_us, context_type& ctx)
             }
             catch (...)
             {
+                // Without the sentinel no later run could poll, and a peer
+                // parked behind this pass would wait for it forever.
+                if (!lock.owns_lock())
+                    lock.lock();
                 task_running_.store(false, std::memory_order_relaxed);
+                completed_ops_.push(&task_op_);
+                signal_all(lock);
                 throw;
             }
 
