@@ -388,7 +388,7 @@ win_tcp_acceptor::accept(
     // Set up the accept operation
     op.accepted_socket = accepted;
     op.accepted_skip   = svc_.enable_skip_on_success(accepted, af);
-    op.accepted_ifs    = af == AF_INET6 ? svc_.ifs_v6_ : svc_.ifs_v4_;
+    op.accepted_ifs    = svc_.ifs(af);
     op.peer_wrapper    = &peer_wrapper;
     op.listen_socket   = socket_;
 

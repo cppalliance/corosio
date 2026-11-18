@@ -239,6 +239,13 @@ private:
     // whose pending requests are marked in the OVERLAPPED.
     static bool provider_is_ifs(int family) noexcept;
 
+    // What provider_is_ifs() found for the family when the service
+    // was built.
+    bool ifs(int family) const noexcept
+    {
+        return family == AF_INET6 ? ifs_v6_ : ifs_v4_;
+    }
+
     win_scheduler& sched_;
     void* iocp_;
     bool ifs_v4_               = false;
@@ -1159,15 +1166,14 @@ win_tcp_service::open_socket(
     impl.socket_ = sock;
     impl.family_ = family;
     impl.skip_   = enable_skip_on_success(sock, family);
-    impl.ifs_    = family == AF_INET6 ? ifs_v6_ : ifs_v4_;
+    impl.ifs_    = ifs(family);
     return {};
 }
 
 inline bool
 win_tcp_service::enable_skip_on_success(SOCKET s, int family) const noexcept
 {
-    if (!iocp_skip_on_success_enabled() ||
-        !(family == AF_INET6 ? ifs_v6_ : ifs_v4_))
+    if (!iocp_skip_on_success_enabled() || !ifs(family))
         return false;
     // FILE_SKIP_SET_EVENT_ON_HANDLE is left alone: it is as permanent
     // as this mode, and a socket released from here may go to a
@@ -1385,7 +1391,7 @@ win_tcp_service::open_acceptor_socket(
 
     impl.socket_ = sock;
     impl.family_ = family;
-    impl.ifs_    = family == AF_INET6 ? ifs_v6_ : ifs_v4_;
+    impl.ifs_    = ifs(family);
     return {};
 }
 
