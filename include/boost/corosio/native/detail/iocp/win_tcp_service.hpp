@@ -39,6 +39,17 @@ class win_scheduler;
 class win_tcp_acceptor;
 class win_tcp_acceptor_service;
 
+/** Return whether the library puts sockets in skip-on-success mode.
+
+    False when the library itself was built with
+    `BOOST_COROSIO_IOCP_NO_SKIP_ON_SUCCESS` defined, which leaves every
+    socket out of the mode: that is how the tests are run over the path
+    a socket takes when the mode cannot be set. The macro is read only
+    where the library is compiled; defining it for any other
+    translation unit changes nothing, so no two of them can disagree.
+*/
+BOOST_COROSIO_DECL bool iocp_skip_on_success_enabled() noexcept;
+
 /** Windows IOCP socket management service.
 
     This service owns all socket and acceptor implementations and
@@ -224,13 +235,14 @@ private:
     void load_extension_functions();
 
     // Whether TCP sockets of the family are installable-file-system
-    // handles, which skip-on-success mode needs.
+    // handles: kernel handles, which skip-on-success mode needs and
+    // whose pending requests are marked in the OVERLAPPED.
     static bool provider_is_ifs(int family) noexcept;
 
     win_scheduler& sched_;
     void* iocp_;
-    bool skip_ok_v4_           = false;
-    bool skip_ok_v6_           = false;
+    bool ifs_v4_               = false;
+    bool ifs_v6_               = false;
     LPFN_CONNECTEX connect_ex_ = nullptr;
     LPFN_ACCEPTEX accept_ex_   = nullptr;
     // Optional: an accept parses its endpoints out of the AcceptEx
@@ -465,10 +477,11 @@ win_tcp_socket::reuse() noexcept
 }
 
 inline void
-win_tcp_socket::set_socket(SOCKET s, bool skip) noexcept
+win_tcp_socket::set_socket(SOCKET s, bool skip, bool ifs) noexcept
 {
     socket_ = s;
     skip_   = skip;
+    ifs_    = ifs;
 }
 
 inline void
@@ -633,19 +646,11 @@ win_tcp_socket::read_some(
 
             op.flags = 0;
 
-            if (::WSARecv(
+            queued = queued_after(
+                ::WSARecv(
                     socket_, op.wsabufs, op.wsabuf_count, &bytes, &op.flags,
-                    &op, nullptr) == SOCKET_ERROR)
-            {
-                err    = ::WSAGetLastError();
-                queued = err == WSA_IO_PENDING;
-            }
-            else
-            {
-                // An immediate success still queues its packet unless
-                // the socket skips it.
-                queued = !skip_;
-            }
+                    &op, nullptr),
+                err);
         }
     }
 
@@ -653,6 +658,32 @@ win_tcp_socket::read_some(
         return complete_now(op, cont, d, token, ec, bytes_out, err, bytes);
 
     return pend(op, cont, d, token, ec, bytes_out);
+}
+
+inline void
+win_tcp_socket::fill(
+    overlapped_op& op,
+    capy::continuation& cont,
+    capy::executor_ref d,
+    std::error_code* ec,
+    std::size_t* bytes_out) noexcept
+{
+    op.object_ref_ = detail::object_ref(this);
+    op.cont        = &cont;
+    op.ex          = d;
+    op.ec_out      = ec;
+    op.bytes_out   = bytes_out;
+}
+
+inline bool
+win_tcp_socket::queued_after(int rc, DWORD& err) const noexcept
+{
+    // An immediate success still queues its packet unless the socket
+    // skips it.
+    if (rc != SOCKET_ERROR)
+        return !skip_;
+    err = ::WSAGetLastError();
+    return err == WSA_IO_PENDING;
 }
 
 inline std::coroutine_handle<>
@@ -697,11 +728,7 @@ win_tcp_socket::complete_now(
 
     // Off the loop, or the handler has used its inline budget: the
     // result goes through the run loop so other work gets its turn.
-    op.object_ref_ = detail::object_ref(this);
-    op.cont        = &cont;
-    op.ex          = d;
-    op.ec_out      = ec;
-    op.bytes_out   = bytes_out;
+    fill(op, cont, d, ec, bytes_out);
     if (cancelled)
         op.request_cancel();
     // A stop that arrives before the loop gets to the result still
@@ -727,11 +754,7 @@ win_tcp_socket::pend(
     // dispatches the op before on_pending below, so it is filled in
     // here, after the call, where an operation that completed inline
     // never pays for it.
-    op.object_ref_ = detail::object_ref(this);
-    op.cont        = &cont;
-    op.ex          = d;
-    op.ec_out      = ec;
-    op.bytes_out   = bytes_out;
+    fill(op, cont, d, ec, bytes_out);
 
     // A stop already requested runs the callback here, which cancels
     // the request just issued.
@@ -790,17 +813,11 @@ win_tcp_socket::write_some(
                     (std::min)(bufs[i].size(), std::size_t(0x7fffffff)));
             }
 
-            if (::WSASend(
+            queued = queued_after(
+                ::WSASend(
                     socket_, op.wsabufs, op.wsabuf_count, &bytes, 0, &op,
-                    nullptr) == SOCKET_ERROR)
-            {
-                err    = ::WSAGetLastError();
-                queued = err == WSA_IO_PENDING;
-            }
-            else
-            {
-                queued = !skip_;
-            }
+                    nullptr),
+                err);
         }
     }
 
@@ -930,9 +947,12 @@ win_tcp_socket::close_socket() noexcept
         // handle to the socket; with an inherited or duplicated handle
         // still open, an op left in the kernel would never complete. So
         // cancel explicitly, but only when an op is in the kernel: the
-        // call costs every close otherwise. wt_'s write and error waits
+        // call costs every close otherwise. That test reads what the
+        // provider wrote in the OVERLAPPED, which only a provider of
+        // kernel handles is known to write; behind any other the
+        // socket is always cancelled. wt_'s write and error waits
         // live in the wait reactor, released above.
-        if (kernel_pending(conn_) || kernel_pending(rd_) ||
+        if (!ifs_ || kernel_pending(conn_) || kernel_pending(rd_) ||
             kernel_pending(wr_) || kernel_pending(wt_))
             ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
         ::closesocket(socket_);
@@ -941,6 +961,7 @@ win_tcp_socket::close_socket() noexcept
 
     family_ = AF_UNSPEC;
     skip_   = false;
+    ifs_    = false;
 
     // Clear cached endpoints
     local_endpoint_  = endpoint{};
@@ -991,6 +1012,7 @@ win_tcp_socket::release_socket() noexcept
         socket_          = INVALID_SOCKET;
         family_          = AF_UNSPEC;
         skip_            = false;
+        ifs_             = false;
         local_endpoint_  = endpoint{};
         remote_endpoint_ = endpoint{};
         local_state_.store(local_state::cached, std::memory_order_release);
@@ -1063,8 +1085,8 @@ inline win_tcp_service::win_tcp_service(capy::execution_context& ctx)
     , iocp_(sched_.native_handle())
 {
     load_extension_functions();
-    skip_ok_v4_ = provider_is_ifs(AF_INET);
-    skip_ok_v6_ = provider_is_ifs(AF_INET6);
+    ifs_v4_ = provider_is_ifs(AF_INET);
+    ifs_v6_ = provider_is_ifs(AF_INET6);
 }
 
 inline void
@@ -1137,21 +1159,15 @@ win_tcp_service::open_socket(
     impl.socket_ = sock;
     impl.family_ = family;
     impl.skip_   = enable_skip_on_success(sock, family);
+    impl.ifs_    = family == AF_INET6 ? ifs_v6_ : ifs_v4_;
     return {};
 }
 
-// Defining BOOST_COROSIO_IOCP_NO_SKIP_ON_SUCCESS when building the
-// library leaves every socket out of the mode, which is how the tests
-// are run over the path a socket takes when the mode cannot be set.
 inline bool
 win_tcp_service::enable_skip_on_success(SOCKET s, int family) const noexcept
 {
-#if defined(BOOST_COROSIO_IOCP_NO_SKIP_ON_SUCCESS)
-    (void)s;
-    (void)family;
-    return false;
-#else
-    if (!(family == AF_INET6 ? skip_ok_v6_ : skip_ok_v4_))
+    if (!iocp_skip_on_success_enabled() ||
+        !(family == AF_INET6 ? ifs_v6_ : ifs_v4_))
         return false;
     // FILE_SKIP_SET_EVENT_ON_HANDLE is left alone: it is as permanent
     // as this mode, and a socket released from here may go to a
@@ -1159,7 +1175,6 @@ win_tcp_service::enable_skip_on_success(SOCKET s, int family) const noexcept
     return ::SetFileCompletionNotificationModes(
                reinterpret_cast<HANDLE>(s),
                FILE_SKIP_COMPLETION_PORT_ON_SUCCESS) != 0;
-#endif
 }
 
 inline bool
@@ -1220,6 +1235,7 @@ win_tcp_service::assign_socket(win_tcp_socket& impl, native_handle_type fd)
     impl.socket_ = sock;
     impl.family_ = proto_info.iAddressFamily;
     impl.skip_   = skip;
+    impl.ifs_    = (proto_info.dwServiceFlags1 & XP1_IFS_HANDLES) != 0;
 
     endpoint local_ep, remote_ep;
     sockaddr_storage local_storage{};
@@ -1369,6 +1385,7 @@ win_tcp_service::open_acceptor_socket(
 
     impl.socket_ = sock;
     impl.family_ = family;
+    impl.ifs_    = family == AF_INET6 ? ifs_v6_ : ifs_v4_;
     return {};
 }
 
@@ -1404,6 +1421,7 @@ win_tcp_service::assign_acceptor_socket(
 
     impl.socket_ = sock;
     impl.family_ = proto_info.iAddressFamily;
+    impl.ifs_    = (proto_info.dwServiceFlags1 & XP1_IFS_HANDLES) != 0;
 
     // AcceptEx sizes its address buffers from this cache, so an
     // unseeded endpoint breaks accepts on an adopted v6 listener.

@@ -150,6 +150,10 @@ class win_tcp_socket final
     // the kernel finishes during the call queues no packet, and its
     // result is taken from the call.
     bool skip_ = false;
+
+    // The socket's provider hands out kernel handles, so a request it
+    // takes is marked pending in the OVERLAPPED (see kernel_pending).
+    bool ifs_ = false;
     // What local_endpoint_ holds. `cached`: it is authoritative, and
     // empty for a socket with no known endpoint. `pending`: a connect
     // left the endpoint unfetched, and the first local_endpoint() asks
@@ -246,12 +250,25 @@ public:
     void cancel() noexcept override;
 
     /// Used by the acceptor's `accept_op` to finish setting up the peer.
-    void set_socket(SOCKET s, bool skip) noexcept;
+    void set_socket(SOCKET s, bool skip, bool ifs) noexcept;
     void set_endpoints(endpoint local, endpoint remote) noexcept;
 
     void close_socket() noexcept;
 
 private:
+    // Give an op what its completion needs to resume the coroutine.
+    void fill(
+        overlapped_op& op,
+        capy::continuation& cont,
+        capy::executor_ref d,
+        std::error_code* ec,
+        std::size_t* bytes_out) noexcept;
+
+    // Say whether a packet will carry the outcome of a WSARecv or
+    // WSASend that returned `rc`; if not, `err` is what the call
+    // settled, left alone on success.
+    bool queued_after(int rc, DWORD& err) const noexcept;
+
     // Finish a read or write the call itself settled: resume the
     // coroutine at once within the handler's inline budget, or send
     // the stored result through the run loop.
