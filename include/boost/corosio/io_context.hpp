@@ -119,10 +119,10 @@ struct io_context_options
         platforms with a reactor backend, whichever backend is
         active.
 
-        The IOCP backend uses this field alone, as a fixed budget: it
-        is the number of TCP reads and writes a handler may complete
-        during the initiating call before the next one goes through
-        the run loop. Zero sends every completion through the loop.
+        The IOCP backend uses this field alone, as a fixed budget. A
+        handler may complete that many TCP reads and writes during
+        the initiating call. The next one goes through the run loop.
+        Zero sends every completion through the loop.
     */
     unsigned inline_budget_max = 16;
 
