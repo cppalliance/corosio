@@ -478,6 +478,36 @@ struct iocp_paths_test
         }
     }
 
+    // Work a handler posts while the context is stopped waits behind
+    // the stop, and runs ahead of what the handler posts once it has
+    // restarted the context.
+    void testPostsAcrossRestartKeepTheirOrder()
+    {
+        io_context ioc(iocp);
+        auto ex = ioc.get_executor();
+        capy::continuation ca{};
+        capy::continuation cb{};
+        std::vector<int> order;
+        auto a = [&]() -> capy::task<> {
+            co_await post_awaitable{&ca};
+            order.push_back(1);
+        };
+        auto b = [&]() -> capy::task<> {
+            co_await post_awaitable{&cb};
+            order.push_back(2);
+        };
+        auto body = [&]() -> capy::task<> {
+            ioc.stop();
+            capy::run_async(ex)(a());
+            ioc.restart();
+            capy::run_async(ex)(b());
+            co_return;
+        };
+        capy::run_async(ex)(body());
+        ioc.run();
+        BOOST_TEST(order == (std::vector<int>{1, 2}));
+    }
+
     // Sockets this library opens or accepts are in skip-on-success
     // mode, and the mode outlives release(): the released socket must
     // come back in through assign().
@@ -1068,6 +1098,7 @@ struct iocp_paths_test
         testPostAfterTimerKeepsRunning();
         testRestartAfterStopKeepsRunning();
         testSecondLoopRunsWorkBehindBlockedHandler();
+        testPostsAcrossRestartKeepTheirOrder();
         testStopRacingWaitRegistration();
         testShutdownReceiveVariants();
         testZeroLengthUdpReceive();
