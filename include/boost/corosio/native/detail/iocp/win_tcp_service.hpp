@@ -208,11 +208,29 @@ public:
         return sched_;
     }
 
+    /** Put a socket just bound to the port in skip-on-success mode.
+
+        In that mode a request the kernel finishes during the call
+        queues no completion packet, and the caller takes the result
+        from the call. The mode cannot be cleared again. It is only
+        safe when the socket's provider hands out real kernel handles,
+        which is checked once per address family.
+
+        @return True if the mode is now set on the socket.
+    */
+    bool enable_skip_on_success(SOCKET s, int family) const noexcept;
+
 private:
     void load_extension_functions();
 
+    // Whether TCP sockets of the family are installable-file-system
+    // handles, which skip-on-success mode needs.
+    static bool provider_is_ifs(int family) noexcept;
+
     win_scheduler& sched_;
     void* iocp_;
+    bool skip_ok_v4_           = false;
+    bool skip_ok_v6_           = false;
     LPFN_CONNECTEX connect_ex_ = nullptr;
     LPFN_ACCEPTEX accept_ex_   = nullptr;
     // Optional: an accept parses its endpoints out of the AcceptEx
@@ -447,9 +465,10 @@ win_tcp_socket::reuse() noexcept
 }
 
 inline void
-win_tcp_socket::set_socket(SOCKET s) noexcept
+win_tcp_socket::set_socket(SOCKET s, bool skip) noexcept
 {
     socket_ = s;
+    skip_   = skip;
 }
 
 inline void
@@ -548,6 +567,13 @@ win_tcp_socket::connect(
             return std::noop_coroutine();
         }
     }
+    else if (skip_)
+    {
+        // Connected during the call, and this socket queues no packet
+        // for that.
+        svc_.on_completion(&op, 0, 0);
+        return std::noop_coroutine();
+    }
 
     // A stop before ConnectEx was issued found nothing to cancel. Must
     // precede on_pending: once it runs another thread may complete the
@@ -568,65 +594,154 @@ win_tcp_socket::read_some(
     std::error_code* ec,
     std::size_t* bytes_out)
 {
-    // Keep this socket alive during I/O
-    rd_.object_ref_ = detail::object_ref(this);
-
     auto& op = rd_;
     op.reset();
-    op.is_read   = true;
-    op.cont      = &cont;
-    op.ex        = d;
-    op.ec_out    = ec;
-    op.bytes_out = bytes_out;
-    op.start(token);
+    op.is_read = true;
 
-    svc_.work_started();
+    // What the call itself settled. `queued` says a packet will carry
+    // the outcome instead.
+    DWORD err   = 0;
+    DWORD bytes = 0;
+    bool queued = false;
 
     // Closed-object contract: complete with bad_file_descriptor
     // without touching the kernel.
     if (socket_ == INVALID_SOCKET)
     {
-        svc_.on_completion(&op, WSAEBADF, 0);
-        return std::noop_coroutine();
+        err = WSAEBADF;
     }
-
-    // Prepare buffers
-    capy::mutable_buffer bufs[read_op::max_buffers];
-    op.wsabuf_count =
-        static_cast<DWORD>(param.copy_to(bufs, read_op::max_buffers));
-
-    // Handle empty buffer: complete with 0 bytes
-    if (op.wsabuf_count == 0)
+    else
     {
-        op.empty_buffer = true;
-        svc_.on_completion(&op, 0, 0);
-        return std::noop_coroutine();
-    }
+        // Prepare buffers
+        capy::mutable_buffer bufs[read_op::max_buffers];
+        op.wsabuf_count =
+            static_cast<DWORD>(param.copy_to(bufs, read_op::max_buffers));
 
-    for (DWORD i = 0; i < op.wsabuf_count; ++i)
-    {
-        op.wsabufs[i].buf = static_cast<char*>(bufs[i].data());
-        op.wsabufs[i].len = static_cast<ULONG>(
-            (std::min)(bufs[i].size(), std::size_t(0x7fffffff)));
-    }
-
-    op.flags = 0;
-
-    int result = ::WSARecv(
-        socket_, op.wsabufs, op.wsabuf_count, nullptr, &op.flags, &op, nullptr);
-
-    if (result == SOCKET_ERROR)
-    {
-        DWORD err = ::WSAGetLastError();
-        if (err != WSA_IO_PENDING)
+        if (op.wsabuf_count == 0)
         {
-            svc_.on_completion(&op, err, 0);
-            return std::noop_coroutine();
+            // Empty buffer: complete with 0 bytes
+            op.empty_buffer = true;
+        }
+        else
+        {
+            for (DWORD i = 0; i < op.wsabuf_count; ++i)
+            {
+                op.wsabufs[i].buf = static_cast<char*>(bufs[i].data());
+                op.wsabufs[i].len = static_cast<ULONG>(
+                    (std::min)(bufs[i].size(), std::size_t(0x7fffffff)));
+            }
+
+            op.flags = 0;
+
+            if (::WSARecv(
+                    socket_, op.wsabufs, op.wsabuf_count, &bytes, &op.flags,
+                    &op, nullptr) == SOCKET_ERROR)
+            {
+                err    = ::WSAGetLastError();
+                queued = err == WSA_IO_PENDING;
+            }
+            else
+            {
+                // An immediate success still queues its packet unless
+                // the socket skips it.
+                queued = !skip_;
+            }
         }
     }
 
-    // Must precede on_pending: once it runs another thread may
-    // complete the op and recycle this impl.
+    if (!queued)
+        return complete_now(op, cont, d, token, ec, bytes_out, err, bytes);
+
+    return pend(op, cont, d, token, ec, bytes_out);
+}
+
+inline std::coroutine_handle<>
+win_tcp_socket::complete_now(
+    overlapped_op& op,
+    capy::continuation& cont,
+    capy::executor_ref d,
+    std::stop_token const& token,
+    std::error_code* ec,
+    std::size_t* bytes_out,
+    DWORD err,
+    DWORD bytes)
+{
+    // A transfer is reported as it is. With nothing transferred a
+    // stop or cancel that was already requested names the outcome, as
+    // it does for an operation that went through the port.
+    bool const cancelled = bytes == 0 &&
+        (op.cancelled.load(std::memory_order_acquire) ||
+         token.stop_requested());
+
+    // A large transfer goes through the loop, behind whatever the
+    // port already holds, which lets the peer's side run before the
+    // next one: left to run on, a writer piles far more into the
+    // kernel's buffers than the cache holds, and the reader then
+    // takes it all cold.
+    constexpr DWORD inline_transfer_max = 64 * 1024;
+    bool const large                    = bytes > inline_transfer_max;
+
+    auto& sched = svc_.scheduler();
+    if (!large && sched.try_consume_inline_budget())
+    {
+        // The kernel is done with the request and no packet refers to
+        // the op, so the coroutine carries on from here. Nothing was
+        // armed and no work was counted.
+        decode_results(
+            ec, bytes_out, cancelled,
+            err != 0 ? iocp_make_err(err, /*accept_path=*/false)
+                     : std::error_code{},
+            op.is_read, static_cast<std::size_t>(bytes), op.empty_buffer);
+        return dispatch_coro(d, cont);
+    }
+
+    // Off the loop, or the handler has used its inline budget: the
+    // result goes through the run loop so other work gets its turn.
+    op.object_ref_ = detail::object_ref(this);
+    op.cont        = &cont;
+    op.ex          = d;
+    op.ec_out      = ec;
+    op.bytes_out   = bytes_out;
+    if (cancelled)
+        op.request_cancel();
+    // A stop that arrives before the loop gets to the result still
+    // names the outcome of an operation that transferred nothing.
+    op.arm_stop(token);
+    svc_.work_started();
+    if (large)
+        sched.request_port_visit();
+    svc_.on_completion(&op, err, bytes);
+    return std::noop_coroutine();
+}
+
+inline std::coroutine_handle<>
+win_tcp_socket::pend(
+    overlapped_op& op,
+    capy::continuation& cont,
+    capy::executor_ref d,
+    std::stop_token const& token,
+    std::error_code* ec,
+    std::size_t* bytes_out)
+{
+    // The request is in the kernel and its packet is owed. No thread
+    // dispatches the op before on_pending below, so it is filled in
+    // here, after the call, where an operation that completed inline
+    // never pays for it.
+    op.object_ref_ = detail::object_ref(this);
+    op.cont        = &cont;
+    op.ex          = d;
+    op.ec_out      = ec;
+    op.bytes_out   = bytes_out;
+
+    // A stop already requested runs the callback here, which cancels
+    // the request just issued.
+    op.arm_stop(token);
+
+    svc_.work_started();
+
+    // A cancel that raced the call found nothing to cancel. Must
+    // precede on_pending: once it runs another thread may complete
+    // the op and recycle this impl.
     if (op.cancelled.load(std::memory_order_acquire))
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
 
@@ -644,67 +759,55 @@ win_tcp_socket::write_some(
     std::error_code* ec,
     std::size_t* bytes_out)
 {
-    // Keep this socket alive during I/O
-    wr_.object_ref_ = detail::object_ref(this);
-
     auto& op = wr_;
     op.reset();
-    op.cont      = &cont;
-    op.ex        = d;
-    op.ec_out    = ec;
-    op.bytes_out = bytes_out;
-    op.start(token);
 
-    svc_.work_started();
+    // As in read_some.
+    DWORD err   = 0;
+    DWORD bytes = 0;
+    bool queued = false;
 
     // Closed-object contract: complete with bad_file_descriptor
     // without touching the kernel.
     if (socket_ == INVALID_SOCKET)
     {
-        svc_.on_completion(&op, WSAEBADF, 0);
-        return std::noop_coroutine();
+        err = WSAEBADF;
     }
-
-    // Prepare buffers
-    capy::mutable_buffer bufs[write_op::max_buffers];
-    op.wsabuf_count =
-        static_cast<DWORD>(param.copy_to(bufs, write_op::max_buffers));
-
-    // Handle empty buffer: complete immediately with 0 bytes
-    if (op.wsabuf_count == 0)
+    else
     {
-        svc_.on_completion(&op, 0, 0);
-        return std::noop_coroutine();
-    }
+        // Prepare buffers
+        capy::mutable_buffer bufs[write_op::max_buffers];
+        op.wsabuf_count =
+            static_cast<DWORD>(param.copy_to(bufs, write_op::max_buffers));
 
-    for (DWORD i = 0; i < op.wsabuf_count; ++i)
-    {
-        op.wsabufs[i].buf = static_cast<char*>(bufs[i].data());
-        op.wsabufs[i].len = static_cast<ULONG>(
-            (std::min)(bufs[i].size(), std::size_t(0x7fffffff)));
-    }
-
-    int result = ::WSASend(
-        socket_, op.wsabufs, op.wsabuf_count, nullptr, 0, &op, nullptr);
-
-    if (result == SOCKET_ERROR)
-    {
-        DWORD err = ::WSAGetLastError();
-        if (err != WSA_IO_PENDING)
+        // An empty buffer completes immediately with 0 bytes.
+        if (op.wsabuf_count != 0)
         {
-            svc_.on_completion(&op, err, 0);
-            return std::noop_coroutine();
+            for (DWORD i = 0; i < op.wsabuf_count; ++i)
+            {
+                op.wsabufs[i].buf = static_cast<char*>(bufs[i].data());
+                op.wsabufs[i].len = static_cast<ULONG>(
+                    (std::min)(bufs[i].size(), std::size_t(0x7fffffff)));
+            }
+
+            if (::WSASend(
+                    socket_, op.wsabufs, op.wsabuf_count, &bytes, 0, &op,
+                    nullptr) == SOCKET_ERROR)
+            {
+                err    = ::WSAGetLastError();
+                queued = err == WSA_IO_PENDING;
+            }
+            else
+            {
+                queued = !skip_;
+            }
         }
     }
 
-    // Must precede on_pending: once it runs another thread may
-    // complete the op and recycle this impl.
-    if (op.cancelled.load(std::memory_order_acquire))
-        ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
+    if (!queued)
+        return complete_now(op, cont, d, token, ec, bytes_out, err, bytes);
 
-    svc_.on_pending(&op);
-
-    return std::noop_coroutine();
+    return pend(op, cont, d, token, ec, bytes_out);
 }
 
 inline std::coroutine_handle<>
@@ -757,6 +860,13 @@ win_tcp_socket::wait(
                 svc_.on_completion(&op, err, 0);
                 return std::noop_coroutine();
             }
+        }
+        else if (skip_)
+        {
+            // Readable already, and this socket queues no packet for
+            // a request that succeeds during the call.
+            svc_.on_completion(&op, 0, 0);
+            return std::noop_coroutine();
         }
 
         // Must precede on_pending: once it runs another thread may
@@ -830,6 +940,7 @@ win_tcp_socket::close_socket() noexcept
     }
 
     family_ = AF_UNSPEC;
+    skip_   = false;
 
     // Clear cached endpoints
     local_endpoint_  = endpoint{};
@@ -879,6 +990,7 @@ win_tcp_socket::release_socket() noexcept
         dissociate_from_iocp(s);
         socket_          = INVALID_SOCKET;
         family_          = AF_UNSPEC;
+        skip_            = false;
         local_endpoint_  = endpoint{};
         remote_endpoint_ = endpoint{};
         local_state_.store(local_state::cached, std::memory_order_release);
@@ -951,6 +1063,8 @@ inline win_tcp_service::win_tcp_service(capy::execution_context& ctx)
     , iocp_(sched_.native_handle())
 {
     load_extension_functions();
+    skip_ok_v4_ = provider_is_ifs(AF_INET);
+    skip_ok_v6_ = provider_is_ifs(AF_INET6);
 }
 
 inline void
@@ -1022,7 +1136,47 @@ win_tcp_service::open_socket(
 
     impl.socket_ = sock;
     impl.family_ = family;
+    impl.skip_   = enable_skip_on_success(sock, family);
     return {};
+}
+
+// Defining BOOST_COROSIO_IOCP_NO_SKIP_ON_SUCCESS when building the
+// library leaves every socket out of the mode, which is how the tests
+// are run over the path a socket takes when the mode cannot be set.
+inline bool
+win_tcp_service::enable_skip_on_success(SOCKET s, int family) const noexcept
+{
+#if defined(BOOST_COROSIO_IOCP_NO_SKIP_ON_SUCCESS)
+    (void)s;
+    (void)family;
+    return false;
+#else
+    if (!(family == AF_INET6 ? skip_ok_v6_ : skip_ok_v4_))
+        return false;
+    // FILE_SKIP_SET_EVENT_ON_HANDLE is left alone: it is as permanent
+    // as this mode, and a socket released from here may go to a
+    // caller who waits on the handle for its overlapped results.
+    return ::SetFileCompletionNotificationModes(
+               reinterpret_cast<HANDLE>(s),
+               FILE_SKIP_COMPLETION_PORT_ON_SUCCESS) != 0;
+#endif
+}
+
+inline bool
+win_tcp_service::provider_is_ifs(int family) noexcept
+{
+    SOCKET sock = ::WSASocketW(
+        family, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+    if (sock == INVALID_SOCKET)
+        return false;
+    WSAPROTOCOL_INFOW info{};
+    int len       = sizeof(info);
+    bool const ok = ::getsockopt(
+                        sock, SOL_SOCKET, SO_PROTOCOL_INFOW,
+                        reinterpret_cast<char*>(&info), &len) == 0 &&
+        (info.dwServiceFlags1 & XP1_IFS_HANDLES) != 0;
+    ::closesocket(sock);
+    return ok;
 }
 
 inline std::error_code
@@ -1047,7 +1201,15 @@ win_tcp_service::assign_socket(win_tcp_socket& impl, native_handle_type fd)
     if (proto_info.iSocketType != SOCK_STREAM)
         return make_err(WSAEPROTOTYPE);
 
-    if (has_skip_on_success(reinterpret_cast<HANDLE>(sock)))
+    // A socket already in skip-on-success mode is taken as it is: the
+    // mode cannot be cleared, and it is the one a socket released
+    // from this library carries. It only delivers completions when
+    // its provider hands out real kernel handles; behind any other
+    // provider the socket would hang, so that one is refused. The
+    // mode is never set on a socket adopted without it, which stays
+    // the caller's to hand elsewhere.
+    bool const skip = has_skip_on_success(reinterpret_cast<HANDLE>(sock));
+    if (skip && (proto_info.dwServiceFlags1 & XP1_IFS_HANDLES) == 0)
         return std::make_error_code(std::errc::operation_not_supported);
 
     HANDLE result = ::CreateIoCompletionPort(
@@ -1057,6 +1219,7 @@ win_tcp_service::assign_socket(win_tcp_socket& impl, native_handle_type fd)
 
     impl.socket_ = sock;
     impl.family_ = proto_info.iAddressFamily;
+    impl.skip_   = skip;
 
     endpoint local_ep, remote_ep;
     sockaddr_storage local_storage{};

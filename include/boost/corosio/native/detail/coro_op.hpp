@@ -118,6 +118,17 @@ struct coro_op : scheduler_op
     void start(std::stop_token const& token)
     {
         cancelled.store(false, std::memory_order_relaxed);
+        arm_stop(token);
+    }
+
+    /** Arm the stop-token callback, leaving the cancellation flag alone.
+
+        For a backend that submits first and arms only an operation
+        left pending: a stop already requested runs the callback here,
+        with the operation there to cancel.
+    */
+    void arm_stop(std::stop_token const& token)
+    {
         stop_cb.reset();
         if (token.stop_possible())
             stop_cb.emplace(token, canceller{this});

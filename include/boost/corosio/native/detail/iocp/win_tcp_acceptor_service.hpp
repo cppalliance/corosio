@@ -183,7 +183,7 @@ accept_op::do_complete(
             op->accepted_socket, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT,
             reinterpret_cast<char*>(&op->listen_socket), sizeof(SOCKET));
 
-        op->peer_wrapper->set_socket(op->accepted_socket);
+        op->peer_wrapper->set_socket(op->accepted_socket, op->accepted_skip);
 
         endpoint local_ep, remote_ep;
         if (auto parse =
@@ -386,6 +386,7 @@ win_tcp_acceptor::accept(
 
     // Set up the accept operation
     op.accepted_socket = accepted;
+    op.accepted_skip   = svc_.enable_skip_on_success(accepted, af);
     op.peer_wrapper    = &peer_wrapper;
     op.listen_socket   = socket_;
 

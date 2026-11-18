@@ -148,6 +148,7 @@ enum class sys
     WriteFile,
     SetFilePointerEx,
     GetFileSizeEx,
+    SetFileCompletionNotificationModes,
     SetEndOfFile,
     FlushFileBuffers,
     DeleteFileA,

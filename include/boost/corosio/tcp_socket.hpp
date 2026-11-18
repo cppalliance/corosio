@@ -499,6 +499,16 @@ public:
         outstanding, so no context, this one included, can assign it
         afterwards. Its cancelled operations still complete normally.
 
+        @note With the IOCP backend, a socket this object opened, or
+        one an acceptor produced, is in the
+        `FILE_SKIP_COMPLETION_PORT_ON_SUCCESS` mode, which Windows
+        cannot clear. The released socket queues no completion packet
+        for an overlapped operation that succeeds during the call, so
+        code that binds it to a completion port must take such a
+        result from the call. `assign()` accepts the socket back. A
+        socket adopted with `assign()` is released in the mode it
+        arrived in.
+
         @return The error code and the native handle.
 
         @post is_open() == false

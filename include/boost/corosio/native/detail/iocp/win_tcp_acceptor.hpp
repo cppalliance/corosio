@@ -41,6 +41,8 @@ class win_tcp_acceptor;
 struct accept_op : overlapped_op
 {
     SOCKET accepted_socket       = INVALID_SOCKET;
+    // Whether accepted_socket was put in skip-on-success mode.
+    bool accepted_skip           = false;
     win_tcp_socket* peer_wrapper = nullptr;
     win_tcp_acceptor& acceptor;
     SOCKET listen_socket                 = INVALID_SOCKET;
