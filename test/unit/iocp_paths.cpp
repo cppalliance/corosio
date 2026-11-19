@@ -264,8 +264,9 @@ struct iocp_paths_test
 
     // A socket in skip-on-success mode queues no packet for a
     // synchronous success, so every adopting type that waits for one
-    // must refuse it and leave it with the caller. tcp_socket takes
-    // such results from the call and is covered below.
+    // must refuse it and leave it with the caller. tcp_socket and
+    // tcp_acceptor take such results from the call and are covered
+    // below.
     void testAssignRejectsSkipOnSuccessSockets()
     {
         io_context ioc(iocp);
@@ -287,8 +288,6 @@ struct iocp_paths_test
             BOOST_TEST(::closesocket(s) == 0);
         };
 
-        tcp_acceptor ta(ioc);
-        refused(ta, skipping(AF_INET, SOCK_STREAM, IPPROTO_TCP));
         udp_socket u(ioc);
         refused(u, skipping(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
         local_stream_socket l(ioc);
@@ -532,6 +531,76 @@ struct iocp_paths_test
         BOOST_TEST(!a2.assign(afd));
         BOOST_TEST(!b2.assign(bfd));
         BOOST_TEST(exchanges(ioc, a2, b2));
+    }
+
+    // A TCP socket this library opened is in skip-on-success mode for
+    // good, and may be released to become a listener. The acceptor
+    // adopts it, and accepts whether the connection was already
+    // queued, which AcceptEx settles during the call with no packet,
+    // or arrives later.
+    void testReleasedTcpSocketIsAdoptedAsListener()
+    {
+        io_context ioc(iocp);
+        tcp_socket opened(ioc);
+        BOOST_TEST(!opened.open(family::v4));
+        auto [rec, lfd] = opened.release();
+        BOOST_TEST(!rec);
+        SOCKET const ls = static_cast<SOCKET>(lfd);
+
+        sockaddr_in sa{};
+        sa.sin_family      = AF_INET;
+        sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        BOOST_TEST(
+            ::bind(ls, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)) == 0);
+        BOOST_TEST(::listen(ls, SOMAXCONN) == 0);
+
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.assign(lfd));
+        BOOST_TEST(acc.is_open());
+        sa.sin_port = htons(acc.local_endpoint().port());
+        BOOST_TEST(sa.sin_port != 0);
+
+        for (bool queued_first : {true, false})
+        {
+            SOCKET raw = ::WSASocketW(
+                AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0,
+                WSA_FLAG_OVERLAPPED);
+            BOOST_TEST(raw != INVALID_SOCKET);
+            // The listen backlog completes the handshake, so this
+            // returns before anything accepts.
+            auto connect_raw = [&] {
+                BOOST_TEST(
+                    ::connect(
+                        raw, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)) ==
+                    0);
+            };
+
+            tcp_socket server(ioc);
+            std::error_code aec = std::make_error_code(std::errc::io_error);
+            auto accept_t       = [&]() -> capy::task<> {
+                auto [e] = co_await acc.accept(server);
+                aec      = e;
+            };
+
+            if (queued_first)
+                connect_raw();
+            capy::run_async(ioc.get_executor())(accept_t());
+            if (!queued_first)
+            {
+                // Issue the AcceptEx with nothing to accept yet.
+                std::ignore = ioc.poll();
+                ioc.restart();
+                connect_raw();
+            }
+            ioc.run();
+            ioc.restart();
+            BOOST_TEST(!aec);
+            BOOST_TEST(server.is_open());
+
+            tcp_socket client(ioc);
+            BOOST_TEST(!client.assign(static_cast<native_handle_type>(raw)));
+            BOOST_TEST(exchanges(ioc, client, server));
+        }
     }
 
     // A stop that lands while a wait is being registered with the wait
@@ -1099,6 +1168,7 @@ struct iocp_paths_test
         testAssignValidation();
         testAssignRejectsSkipOnSuccessSockets();
         testAssignAdoptsSkipOnSuccessTcpSocket();
+        testReleasedTcpSocketIsAdoptedAsListener();
         testReleasedTcpSocketIsAdoptedAgain();
         testPostAfterTimerKeepsRunning();
         testRestartAfterStopKeepsRunning();

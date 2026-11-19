@@ -105,6 +105,10 @@ class win_tcp_acceptor final
     SOCKET socket_ = INVALID_SOCKET;
     int family_    = AF_UNSPEC;
 
+    // The socket was adopted in skip-on-success mode: an AcceptEx that
+    // succeeds during the call queues no completion packet.
+    bool skip_ = false;
+
     // The socket's provider hands out kernel handles, so a request it
     // takes is marked pending in the OVERLAPPED (see kernel_pending).
     bool ifs_ = false;
