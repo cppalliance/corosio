@@ -426,6 +426,13 @@ win_tcp_acceptor::accept(
             return std::noop_coroutine();
         }
     }
+    else if (skip_)
+    {
+        // Accepted during the call, and this socket queues no packet
+        // for that.
+        svc_.on_completion(&op, 0, 0);
+        return std::noop_coroutine();
+    }
 
     // Must precede on_pending: once it runs another thread may
     // complete the op and recycle this impl.
@@ -518,6 +525,7 @@ win_tcp_acceptor::close_socket() noexcept
     }
 
     family_ = AF_UNSPEC;
+    skip_   = false;
     ifs_    = false;
 
     // Clear cached endpoint
@@ -534,6 +542,7 @@ win_tcp_acceptor::release_socket() noexcept
         dissociate_from_iocp(s);
         socket_          = INVALID_SOCKET;
         family_          = AF_UNSPEC;
+        skip_            = false;
         ifs_             = false;
         local_endpoint_  = endpoint{};
     }

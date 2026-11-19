@@ -391,9 +391,10 @@ set, which suppresses the packet. Connect a pipe server before
 `assign()`. A successful `release()` detaches the handle, which lifts
 the restriction. cpp:win_object_handle[] never binds to the completion port.
 
-cpp:tcp_socket[] is the exception to the skip-on-success rule below.
-A TCP socket the library opens or accepts is put in that mode, and
-`tcp_socket::assign()` adopts one that is already in it. The mode
+cpp:tcp_socket[] and cpp:tcp_acceptor[] are the exceptions to the
+skip-on-success rule below. A TCP socket the library opens or accepts
+is put in that mode, and `tcp_socket::assign()` and
+`tcp_acceptor::assign()` adopt one that is already in it. The mode
 cannot be cleared, so `release()` hands such a socket back still in
 it. An overlapped operation on it that succeeds during the call
 queues no completion packet. A socket adopted without the mode is

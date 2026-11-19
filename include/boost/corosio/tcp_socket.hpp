@@ -505,9 +505,9 @@ public:
         cannot clear. The released socket queues no completion packet
         for an overlapped operation that succeeds during the call.
         Code that binds it to a completion port must take such a
-        result from the call. `assign()` accepts the socket back. A
-        socket adopted with `assign()` is released in the mode it
-        arrived in.
+        result from the call. `assign()` accepts the socket back, and
+        so does `tcp_acceptor::assign()`. A socket adopted with
+        `assign()` is released in the mode it arrived in.
 
         @return The error code and the native handle.
 

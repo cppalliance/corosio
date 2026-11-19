@@ -1418,7 +1418,12 @@ win_tcp_service::assign_acceptor_socket(
     if (proto_info.iSocketType != SOCK_STREAM)
         return make_err(WSAEPROTOTYPE);
 
-    if (has_skip_on_success(reinterpret_cast<HANDLE>(sock)))
+    // A socket already in skip-on-success mode is taken as it is, on
+    // the terms assign_socket() takes one: a TCP socket this library
+    // opened and released carries the mode, and may come back as a
+    // listener. The mode is never set on a socket adopted without it.
+    bool const skip = has_skip_on_success(reinterpret_cast<HANDLE>(sock));
+    if (skip && (proto_info.dwServiceFlags1 & XP1_IFS_HANDLES) == 0)
         return std::make_error_code(std::errc::operation_not_supported);
 
     HANDLE result = ::CreateIoCompletionPort(
@@ -1428,6 +1433,7 @@ win_tcp_service::assign_acceptor_socket(
 
     impl.socket_ = sock;
     impl.family_ = proto_info.iAddressFamily;
+    impl.skip_   = skip;
     impl.ifs_    = (proto_info.dwServiceFlags1 & XP1_IFS_HANDLES) != 0;
 
     // AcceptEx sizes its address buffers from this cache, so an
