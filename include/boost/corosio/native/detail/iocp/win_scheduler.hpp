@@ -162,15 +162,18 @@ private:
     // single-handler call.
     iocp::scheduler_context* local_context() const noexcept;
 
-    // Queue work a loop thread produced without a packet: on the
-    // thread's own queue when a single run thread is guaranteed, on
-    // the shared queue otherwise.
+    // Queue work a loop thread produced without a packet: behind
+    // the stop while the scheduler is stopped, else on the thread's
+    // own queue when a single run thread is guaranteed, and on the
+    // shared queue otherwise. `count` adds it to the work count; the
+    // caller of a completion has counted it already.
     template<class Entry>
-    void keep(iocp::scheduler_context& t, Entry&& e) const noexcept;
+    void keep(
+        iocp::scheduler_context& t, Entry&& e, bool count) const noexcept;
 
-    // The same for a completion whose work the caller counted.
-    void
-    keep_counted(iocp::scheduler_context& t, overlapped_op* op) const noexcept;
+    // Single-thread tier: move the shared queue behind what the
+    // thread's own holds.
+    void take_shared(iocp::scheduler_context& t) const noexcept;
 
     // Add the frame's unpublished work count to the shared one,
     // stopping the scheduler if that leaves no work.
@@ -187,10 +190,10 @@ private:
     void share_entry(Entry&& e) const noexcept;
     void share_all(ready_queue& q) const noexcept;
 
-    // Put an entry on the queue of work held behind a stop, or on the
-    // shared queue if the scheduler has been restarted meanwhile.
-    template<class Entry>
-    void hold(Entry&& e) const noexcept;
+    // Put a queue's entries on the queue of work held behind a stop,
+    // or on the shared queue if the scheduler has been restarted
+    // meanwhile.
+    void hold_all(ready_queue& q) const noexcept;
 
     // Wake a loop blocked in the port for the shared queue, if there
     // is one. Call after share_entry() or share_all().
@@ -200,6 +203,7 @@ private:
     void claim(
         iocp::scheduler_context& t,
         ready_queue& into,
+        ready_queue& behind,
         void const* entries,
         unsigned long count,
         bool& took_wake);
@@ -369,7 +373,7 @@ inline constexpr unsigned poll_every = 32;
     the thread is about to run: a packet dequeued on its own.
 
     Work queued behind a stop waits for the next run on a queue of its
-    own, which restart() puts back at the head of the shared one.
+    own, which restart() appends to the shared one.
 
     `work_delta` is the part of the scheduler's work count this thread
     has not published: +1 for each post to `ready`, -1 for each
@@ -392,11 +396,6 @@ struct BOOST_COROSIO_SYMBOL_VISIBLE scheduler_context
 
     // Runnable work owned by this thread.
     ready_queue ready;
-
-    // Single-thread tier only: what this thread queued while the
-    // scheduler was stopped. It follows `ready` once the scheduler
-    // is restarted, ahead of what the thread queues after that.
-    ready_queue held;
 
     long work_delta     = 0;
     int inline_budget   = 0;
@@ -538,7 +537,7 @@ win_scheduler::post(scheduler_op* h) const
 {
     if (auto* t = local_context())
     {
-        keep(*t, h);
+        keep(*t, h, true);
         return;
     }
 
@@ -554,7 +553,7 @@ win_scheduler::post(capy::continuation& c) const
 {
     if (auto* t = local_context())
     {
-        keep(*t, c);
+        keep(*t, c, true);
         return;
     }
 
@@ -567,54 +566,47 @@ win_scheduler::post(capy::continuation& c) const
 
 template<class Entry>
 void
-win_scheduler::keep(iocp::scheduler_context& t, Entry&& e) const noexcept
+win_scheduler::keep(
+    iocp::scheduler_context& t, Entry&& e, bool count) const noexcept
 {
-    // Queued behind the stop, so it waits for the next run, and in
-    // the order it was posted in whatever a restart then lets
-    // through.
+    // Queued behind the stop, so it waits for the next run, in the
+    // order it was queued in.
     if (stopped_.load(std::memory_order_relaxed) != 0)
     {
-        outstanding_work_.fetch_add(1, std::memory_order_acq_rel);
-        if (one_thread_)
-            t.held.push(e);
-        else
-            hold(e);
+        if (count)
+            outstanding_work_.fetch_add(1, std::memory_order_acq_rel);
+        ready_queue q;
+        q.push(e);
+        hold_all(q);
         return;
     }
     if (one_thread_)
     {
-        t.ready.splice(t.held);
-        ++t.work_delta;
+        // What a restart has released was queued before this entry.
+        take_shared(t);
+        if (count)
+            ++t.work_delta;
         t.ready.push(e);
         return;
     }
     // Counted at once: another loop may run the entry and publish
     // its -1 before this thread publishes anything.
-    outstanding_work_.fetch_add(1, std::memory_order_acq_rel);
+    if (count)
+        outstanding_work_.fetch_add(1, std::memory_order_acq_rel);
     share_entry(e);
     share_queue_wake();
 }
 
 inline void
-win_scheduler::keep_counted(
-    iocp::scheduler_context& t, overlapped_op* op) const noexcept
+win_scheduler::take_shared(iocp::scheduler_context& t) const noexcept
 {
-    if (stopped_.load(std::memory_order_relaxed) != 0)
-    {
-        if (one_thread_)
-            t.held.push(op);
-        else
-            hold(op);
+    if ((dispatch_required_.load(std::memory_order_seq_cst) &
+         iocp::dispatch_queue) == 0)
         return;
-    }
-    if (one_thread_)
-    {
-        t.ready.splice(t.held);
-        t.ready.push(op);
-        return;
-    }
-    share_entry(op);
-    share_queue_wake();
+    std::lock_guard<win_mutex> lock(dispatch_mutex_);
+    t.ready.splice(completed_ops_);
+    dispatch_required_.fetch_and(
+        ~iocp::dispatch_queue, std::memory_order_seq_cst);
 }
 
 inline iocp::scheduler_context*
@@ -634,7 +626,10 @@ inline bool
 win_scheduler::try_consume_inline_budget() const noexcept
 {
     auto* t = iocp::context_stack.get();
-    if (t == nullptr || t->key != this || t->inline_budget <= 0)
+    // A stopped scheduler queues every result behind the stop, so a
+    // handler's operations do not carry it on past the stop.
+    if (t == nullptr || t->key != this || t->inline_budget <= 0 ||
+        stopped_.load(std::memory_order_relaxed) != 0)
         return false;
     --t->inline_budget;
     // Work done without a look at the port, the same as a handler run
@@ -674,28 +669,6 @@ win_scheduler::flush_context(iocp::scheduler_context& t) const noexcept
         share_all(t.ready);
         share_queue_wake();
     }
-    if (!t.held.empty())
-    {
-        // Still behind the stop for the next run, unless a restart
-        // has been by: then it is next in line.
-        bool shared = false;
-        {
-            std::lock_guard<win_mutex> lock(dispatch_mutex_);
-            if (stopped_.load(std::memory_order_seq_cst) != 0)
-            {
-                held_.splice(t.held);
-            }
-            else
-            {
-                completed_ops_.splice(t.held);
-                dispatch_required_.fetch_or(
-                    iocp::dispatch_queue, std::memory_order_seq_cst);
-                shared = true;
-            }
-        }
-        if (shared)
-            share_queue_wake();
-    }
     publish_work(t);
 }
 
@@ -709,20 +682,21 @@ win_scheduler::share_entry(Entry&& e) const noexcept
         iocp::dispatch_queue, std::memory_order_seq_cst);
 }
 
-template<class Entry>
-void
-win_scheduler::hold(Entry&& e) const noexcept
+inline void
+win_scheduler::hold_all(ready_queue& q) const noexcept
 {
+    if (q.empty())
+        return;
     {
         std::lock_guard<win_mutex> lock(dispatch_mutex_);
         if (stopped_.load(std::memory_order_seq_cst) != 0)
         {
-            held_.push(e);
+            held_.splice(q);
             return;
         }
         // Restarted since the caller looked: restart() has been by,
-        // or will find nothing of this entry on the held queue.
-        completed_ops_.push(e);
+        // or will find nothing of these entries on the held queue.
+        completed_ops_.splice(q);
         dispatch_required_.fetch_or(
             iocp::dispatch_queue, std::memory_order_seq_cst);
     }
@@ -834,7 +808,7 @@ win_scheduler::on_pending(overlapped_op* op) const
     if (auto* t = local_context())
     {
         pending_io_.fetch_sub(1, std::memory_order_acq_rel);
-        keep_counted(*t, op);
+        keep(*t, op, false);
         return;
     }
     if (::PostQueuedCompletionStatus(
@@ -860,7 +834,7 @@ win_scheduler::on_completion(overlapped_op* op, DWORD error, DWORD bytes) const
     // The caller counted the work already.
     if (auto* t = local_context())
     {
-        keep_counted(*t, op);
+        keep(*t, op, false);
         return;
     }
 
@@ -1108,14 +1082,16 @@ inline void
 win_scheduler::claim(
     iocp::scheduler_context& t,
     ready_queue& into,
+    ready_queue& behind,
     void const* entries_v,
     unsigned long count,
     bool& took_wake)
 {
     auto const* entries = static_cast<OVERLAPPED_ENTRY const*>(entries_v);
     // What a stop packet leaves behind it in the batch was queued
-    // after the stop, and waits for the next run.
-    ready_queue behind;
+    // after the stop, and waits for the next run: it goes to
+    // `behind`, for the caller to hold once the part ahead of the
+    // stop is queued.
     for (unsigned long i = 0; i < count; ++i)
     {
         auto const& e           = entries[i];
@@ -1204,28 +1180,6 @@ win_scheduler::claim(
             break; // LCOV_EXCL_LINE unreachable: closed key set
         }
     }
-
-    if (!behind.empty())
-    {
-        bool shared = false;
-        {
-            std::lock_guard<win_mutex> lock(dispatch_mutex_);
-            if (stopped_.load(std::memory_order_seq_cst) != 0)
-            {
-                held_.splice(behind);
-            }
-            else
-            {
-                // Restarted since the stop was dequeued, as in hold().
-                completed_ops_.splice(behind);
-                dispatch_required_.fetch_or(
-                    iocp::dispatch_queue, std::memory_order_seq_cst);
-                shared = true;
-            }
-        }
-        if (shared)
-            share_queue_wake();
-    }
 }
 
 inline std::size_t
@@ -1235,13 +1189,9 @@ win_scheduler::do_one_wait(
     for (;;)
     {
         // A restart ends the stop for this thread too, whatever it
-        // still has queued: it looks at the port and the timers
-        // again, and what it queued while stopped is next in line.
-        if ((t.stop_seen || !t.held.empty()) && !stopped())
-        {
+        // still has queued: it looks at the port and the timers again.
+        if (t.stop_seen && !stopped())
             t.stop_seen = false;
-            t.ready.splice(t.held);
-        }
 
         // The one entry this pass takes from the shared queue, and
         // whether the queue was left alone because the port is due a
@@ -1398,7 +1348,8 @@ win_scheduler::do_one_wait(
             if (result)
             {
                 ready_queue batch;
-                claim(t, batch, entries, count, took_wake);
+                ready_queue behind;
+                claim(t, batch, behind, entries, count, took_wake);
                 // A second loop may start while the first handler of
                 // a batch runs, and has to be able to run the rest:
                 // the batch goes where it can be reached, the part
@@ -1411,11 +1362,15 @@ win_scheduler::do_one_wait(
                       iocp::dispatch_queue) == 0))
                 {
                     t.ready.splice(batch);
+                    hold_all(behind);
                 }
                 else
                 {
+                    // The part behind a stop follows the part ahead
+                    // of it wherever a restart sends it.
                     share_all(batch);
                     share_queue_wake();
+                    hold_all(behind);
                     continue;
                 }
             }
