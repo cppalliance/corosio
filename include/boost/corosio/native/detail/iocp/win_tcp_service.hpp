@@ -50,6 +50,27 @@ class win_tcp_acceptor_service;
 */
 BOOST_COROSIO_DECL bool iocp_skip_on_success_enabled() noexcept;
 
+/** Return whether a packet will carry an overlapped request's outcome.
+
+    A request that succeeds during the call still queues its packet
+    unless the socket is in skip-on-success mode. One that fails
+    queues a packet only when the failure says it is pending.
+
+    @param ok Whether the call reported success.
+    @param skip Whether the socket is in skip-on-success mode.
+    @param err Set to the call's error when it failed, and left alone
+        when it succeeded. It is what the call settled when no packet
+        is queued.
+*/
+inline bool
+overlapped_queued(bool ok, bool skip, DWORD& err) noexcept
+{
+    if (ok)
+        return !skip;
+    err = ::WSAGetLastError();
+    return err == WSA_IO_PENDING;
+}
+
 /** Windows IOCP socket management service.
 
     This service owns all socket and acceptor implementations and
@@ -233,6 +254,12 @@ public:
 
 private:
     void load_extension_functions();
+
+    // Take a caller's TCP socket for a socket or acceptor impl: check
+    // that it is one, bind it to the port, and record its family and
+    // modes. On failure the impl is untouched.
+    template<class Impl>
+    std::error_code adopt(Impl& impl, SOCKET sock);
 
     // Whether TCP sockets of the family are installable-file-system
     // handles: kernel handles, which skip-on-success mode needs and
@@ -578,20 +605,12 @@ win_tcp_socket::connect(
         socket_, reinterpret_cast<sockaddr*>(&storage),
         static_cast<int>(addrlen), nullptr, 0, nullptr, &op);
 
-    if (!result)
+    DWORD err = 0;
+    if (!overlapped_queued(result != FALSE, skip_, err))
     {
-        DWORD err = ::WSAGetLastError();
-        if (err != ERROR_IO_PENDING)
-        {
-            svc_.on_completion(&op, err, 0);
-            return std::noop_coroutine();
-        }
-    }
-    else if (skip_)
-    {
-        // Connected during the call, and this socket queues no packet
-        // for that.
-        svc_.on_completion(&op, 0, 0);
+        // Failed, or connected during the call on a socket that
+        // queues no packet for that.
+        svc_.on_completion(&op, err, 0);
         return std::noop_coroutine();
     }
 
@@ -653,11 +672,11 @@ win_tcp_socket::read_some(
 
             op.flags = 0;
 
-            queued = queued_after(
+            queued = overlapped_queued(
                 ::WSARecv(
                     socket_, op.wsabufs, op.wsabuf_count, &bytes, &op.flags,
-                    &op, nullptr),
-                err);
+                    &op, nullptr) != SOCKET_ERROR,
+                skip_, err);
         }
     }
 
@@ -680,17 +699,6 @@ win_tcp_socket::fill(
     op.ex          = d;
     op.ec_out      = ec;
     op.bytes_out   = bytes_out;
-}
-
-inline bool
-win_tcp_socket::queued_after(int rc, DWORD& err) const noexcept
-{
-    // An immediate success still queues its packet unless the socket
-    // skips it.
-    if (rc != SOCKET_ERROR)
-        return !skip_;
-    err = ::WSAGetLastError();
-    return err == WSA_IO_PENDING;
 }
 
 inline std::coroutine_handle<>
@@ -740,8 +748,10 @@ win_tcp_socket::complete_now(
     if (cancelled)
         op.request_cancel();
     // A stop that arrives before the loop gets to the result still
-    // names the outcome of an operation that transferred nothing.
-    op.arm_stop(token);
+    // names the outcome of an operation that transferred nothing. A
+    // transfer is reported as it is, so nothing is armed for one.
+    if (bytes == 0)
+        op.arm_stop(token);
     svc_.work_started();
     if (large)
         sched.request_port_visit();
@@ -821,11 +831,11 @@ win_tcp_socket::write_some(
                     (std::min)(bufs[i].size(), std::size_t(0x7fffffff)));
             }
 
-            queued = queued_after(
+            queued = overlapped_queued(
                 ::WSASend(
                     socket_, op.wsabufs, op.wsabuf_count, &bytes, 0, &op,
-                    nullptr),
-                err);
+                    nullptr) != SOCKET_ERROR,
+                skip_, err);
         }
     }
 
@@ -877,20 +887,12 @@ win_tcp_socket::wait(
         int result =
             ::WSARecv(socket_, &op.wsabuf, 1, nullptr, &op.flags, &op, nullptr);
 
-        if (result == SOCKET_ERROR)
+        DWORD err = 0;
+        if (!overlapped_queued(result != SOCKET_ERROR, skip_, err))
         {
-            DWORD err = ::WSAGetLastError();
-            if (err != WSA_IO_PENDING)
-            {
-                svc_.on_completion(&op, err, 0);
-                return std::noop_coroutine();
-            }
-        }
-        else if (skip_)
-        {
-            // Readable already, and this socket queues no packet for
-            // a request that succeeds during the call.
-            svc_.on_completion(&op, 0, 0);
+            // Failed, or readable already on a socket that queues no
+            // packet for a request that succeeds during the call.
+            svc_.on_completion(&op, err, 0);
             return std::noop_coroutine();
         }
 
@@ -1201,10 +1203,10 @@ win_tcp_service::provider_is_ifs(int family) noexcept
     return ok;
 }
 
-inline std::error_code
-win_tcp_service::assign_socket(win_tcp_socket& impl, native_handle_type fd)
+template<class Impl>
+std::error_code
+win_tcp_service::adopt(Impl& impl, SOCKET sock)
 {
-    SOCKET sock = static_cast<SOCKET>(fd);
     if (sock == INVALID_SOCKET)
         return make_err(WSAENOTSOCK);
 
@@ -1225,13 +1227,15 @@ win_tcp_service::assign_socket(win_tcp_socket& impl, native_handle_type fd)
 
     // A socket already in skip-on-success mode is taken as it is: the
     // mode cannot be cleared, and it is the one a socket released
-    // from this library carries. It only delivers completions when
-    // its provider hands out real kernel handles; behind any other
-    // provider the socket would hang, so that one is refused. The
-    // mode is never set on a socket adopted without it, which stays
-    // the caller's to hand elsewhere.
+    // from this library carries, which may come back as a socket or
+    // as a listener. It only delivers completions when its provider
+    // hands out real kernel handles; behind any other provider the
+    // socket would hang, so that one is refused. The mode is never
+    // set on a socket adopted without it, which stays the caller's to
+    // hand elsewhere.
     bool const skip = has_skip_on_success(reinterpret_cast<HANDLE>(sock));
-    if (skip && (proto_info.dwServiceFlags1 & XP1_IFS_HANDLES) == 0)
+    bool const ifs  = (proto_info.dwServiceFlags1 & XP1_IFS_HANDLES) != 0;
+    if (skip && !ifs)
         return std::make_error_code(std::errc::operation_not_supported);
 
     HANDLE result = ::CreateIoCompletionPort(
@@ -1242,7 +1246,16 @@ win_tcp_service::assign_socket(win_tcp_socket& impl, native_handle_type fd)
     impl.socket_ = sock;
     impl.family_ = proto_info.iAddressFamily;
     impl.skip_   = skip;
-    impl.ifs_    = (proto_info.dwServiceFlags1 & XP1_IFS_HANDLES) != 0;
+    impl.ifs_    = ifs;
+    return {};
+}
+
+inline std::error_code
+win_tcp_service::assign_socket(win_tcp_socket& impl, native_handle_type fd)
+{
+    SOCKET sock = static_cast<SOCKET>(fd);
+    if (auto ec = adopt(impl, sock))
+        return ec;
 
     endpoint local_ep, remote_ep;
     sockaddr_storage local_storage{};
@@ -1401,40 +1414,8 @@ win_tcp_service::assign_acceptor_socket(
     win_tcp_acceptor& impl, native_handle_type fd)
 {
     SOCKET sock = static_cast<SOCKET>(fd);
-    if (sock == INVALID_SOCKET)
-        return make_err(WSAENOTSOCK);
-
-    // SO_PROTOCOL_INFOW works on an unbound socket, unlike getsockname
-    // (WSAEINVAL until bind names it).
-    WSAPROTOCOL_INFOW proto_info{};
-    int proto_len = sizeof(proto_info);
-    if (::getsockopt(
-            sock, SOL_SOCKET, SO_PROTOCOL_INFOW,
-            reinterpret_cast<char*>(&proto_info), &proto_len) != 0)
-        return make_err(::WSAGetLastError());
-    if (proto_info.iAddressFamily != AF_INET &&
-        proto_info.iAddressFamily != AF_INET6)
-        return make_err(WSAEAFNOSUPPORT);
-    if (proto_info.iSocketType != SOCK_STREAM)
-        return make_err(WSAEPROTOTYPE);
-
-    // A socket already in skip-on-success mode is taken as it is, on
-    // the terms assign_socket() takes one: a TCP socket this library
-    // opened and released carries the mode, and may come back as a
-    // listener. The mode is never set on a socket adopted without it.
-    bool const skip = has_skip_on_success(reinterpret_cast<HANDLE>(sock));
-    if (skip && (proto_info.dwServiceFlags1 & XP1_IFS_HANDLES) == 0)
-        return std::make_error_code(std::errc::operation_not_supported);
-
-    HANDLE result = ::CreateIoCompletionPort(
-        reinterpret_cast<HANDLE>(sock), static_cast<HANDLE>(iocp_), key_io, 0);
-    if (result == nullptr)
-        return make_err(::GetLastError());
-
-    impl.socket_ = sock;
-    impl.family_ = proto_info.iAddressFamily;
-    impl.skip_   = skip;
-    impl.ifs_    = (proto_info.dwServiceFlags1 & XP1_IFS_HANDLES) != 0;
+    if (auto ec = adopt(impl, sock))
+        return ec;
 
     // AcceptEx sizes its address buffers from this cache, so an
     // unseeded endpoint breaks accepts on an adopted v6 listener.

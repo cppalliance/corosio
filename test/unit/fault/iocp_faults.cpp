@@ -930,23 +930,35 @@ struct iocp_faults
         BOOST_TEST(compec == std::errc::connection_aborted);
     }
 
-    // An accept reads both endpoints out of the buffer AcceptEx filled,
-    // so it asks the kernel for neither.
-    void testAcceptReadsAcceptExAddresses()
+    // Accept one connection and check both of its endpoints, counting
+    // the getsockname and getpeername calls the accept makes on the
+    // way: none with GetAcceptExSockaddrs to read them out of the
+    // buffer AcceptEx filled, one of each without it.
+    void acceptLearnsEndpoints(bool with_parser)
     {
         if (!hook_is_live(sys::getsockname) || !hook_is_live(sys::getpeername))
         {
             skip_dead_hook("getsockname/getpeername");
             return;
         }
+        // The tcp service looks up ConnectEx, AcceptEx and then
+        // GetAcceptExSockaddrs when the first tcp object is created, so
+        // the arm precedes the acceptor and fails the third lookup.
+        std::optional<fault_scope> f;
+        if (!with_parser)
+            f.emplace(sys::WSAIoctl, WSAEOPNOTSUPP, 3);
         io_context ioc(iocp);
         tcp_acceptor acc(ioc, loopback());
+        if (f)
+            BOOST_TEST(f->fired());
         auto const ep =
             endpoint(ipv4_address::loopback(), acc.local_endpoint().port());
         tcp_socket client(ioc);
         tcp_socket server(ioc);
         std::error_code cec, aec;
-        unsigned names = 1, peers = 1;
+        unsigned const expected = with_parser ? 0u : 1u;
+        // Start from the count the test must not find.
+        unsigned names = 1u - expected, peers = 1u - expected;
         endpoint client_local, local, remote;
         bool expired = false;
         auto body    = [&]() -> capy::task<> {
@@ -975,64 +987,25 @@ struct iocp_faults
         BOOST_TEST(!expired);
         BOOST_TEST(!cec);
         BOOST_TEST(!aec);
-        BOOST_TEST_EQ(names, 0u);
-        BOOST_TEST_EQ(peers, 0u);
+        BOOST_TEST_EQ(names, expected);
+        BOOST_TEST_EQ(peers, expected);
         BOOST_TEST(local == ep);
         BOOST_TEST(remote == client_local);
         BOOST_TEST(remote.port() != 0);
+    }
+
+    // An accept reads both endpoints out of the buffer AcceptEx filled,
+    // so it asks the kernel for neither.
+    void testAcceptReadsAcceptExAddresses()
+    {
+        acceptLearnsEndpoints(true);
     }
 
     // Without GetAcceptExSockaddrs an accept still learns both endpoints,
     // by asking the kernel for them.
     void testAcceptWithoutSockaddrsParser()
     {
-        if (!hook_is_live(sys::getsockname) || !hook_is_live(sys::getpeername))
-        {
-            skip_dead_hook("getsockname/getpeername");
-            return;
-        }
-        // The tcp service looks up ConnectEx, AcceptEx and then
-        // GetAcceptExSockaddrs when the first tcp object is created, so
-        // the arm precedes the acceptor and fails the third lookup.
-        fault_scope f(sys::WSAIoctl, WSAEOPNOTSUPP, 3);
-        io_context ioc(iocp);
-        tcp_acceptor acc(ioc, loopback());
-        BOOST_TEST(f.fired());
-        auto const ep =
-            endpoint(ipv4_address::loopback(), acc.local_endpoint().port());
-        tcp_socket client(ioc);
-        tcp_socket server(ioc);
-        std::error_code cec, aec;
-        unsigned names = 0, peers = 0;
-        endpoint client_local, local, remote;
-        bool expired = false;
-        auto body    = [&]() -> capy::task<> {
-            auto [ec]    = co_await client.connect(ep);
-            cec          = ec;
-            client_local = client.local_endpoint();
-            // Count this thread's calls, which show the fallback ran;
-            // the ones they would fail are never reached.
-            fault_scope n(sys::getsockname, WSAEFAULT, 1u << 30);
-            fault_scope p(sys::getpeername, WSAEFAULT, 1u << 30);
-            auto [aec2] = co_await acc.accept(server);
-            aec         = aec2;
-            names       = n.count();
-            peers       = p.count();
-            local       = server.local_endpoint();
-            remote      = server.remote_endpoint();
-            ioc.stop();
-        };
-        capy::run_async(ioc.get_executor())(body());
-        capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
-        ioc.run();
-        BOOST_TEST(!expired);
-        BOOST_TEST(!cec);
-        BOOST_TEST(!aec);
-        BOOST_TEST_EQ(names, 1u);
-        BOOST_TEST_EQ(peers, 1u);
-        BOOST_TEST(local == ep);
-        BOOST_TEST(remote == client_local);
-        BOOST_TEST(remote.port() != 0);
+        acceptLearnsEndpoints(false);
     }
 
     // A connect leaves the local endpoint for the first read of it, so

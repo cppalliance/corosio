@@ -264,11 +264,6 @@ private:
         std::error_code* ec,
         std::size_t* bytes_out) noexcept;
 
-    // Say whether a packet will carry the outcome of a WSARecv or
-    // WSASend that returned `rc`; if not, `err` is what the call
-    // settled, left alone on success.
-    bool queued_after(int rc, DWORD& err) const noexcept;
-
     // Finish a read or write the call itself settled: resume the
     // coroutine at once within the handler's inline budget, or send
     // the stored result through the run loop.
