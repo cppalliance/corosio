@@ -360,7 +360,12 @@ epoll_scheduler::update_timerfd() const
     }
 
     if (::timerfd_settime(timer_fd_, flags, &ts, nullptr) < 0)
-        detail::throw_system_error(make_err(errno), "timerfd_settime");
+    {
+        // Nothing else would rearm it, so the next pass retries.
+        int const err = errno;
+        timerfd_stale_.store(true, std::memory_order_release);
+        detail::throw_system_error(make_err(err), "timerfd_settime");
+    }
 }
 
 // Rounded up, so the wait never wakes before the timer is due.
@@ -482,6 +487,10 @@ epoll_scheduler::run_task(lock_type& lock, context_type& ctx, long timeout_us)
         }
     }
 
+    // Each is already marked enqueued, so a throw below must still
+    // hand them over or they never queue again.
+    ctx.private_queue.splice(local_ops);
+
     if (check_timers)
     {
         if (auto* svc = timers())
@@ -490,8 +499,6 @@ epoll_scheduler::run_task(lock_type& lock, context_type& ctx, long timeout_us)
     }
 
     lock.lock();
-
-    completed_ops_.splice(local_ops);
 }
 
 } // namespace boost::corosio::detail

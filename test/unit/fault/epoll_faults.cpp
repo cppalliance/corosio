@@ -10,6 +10,7 @@
 #include "fault.hpp"
 #include "fault_test_utils.hpp"
 #include "context.hpp"
+#include "must.hpp"
 #include "test_suite.hpp"
 #include "test_utils.hpp"
 
@@ -18,6 +19,7 @@
 #include <boost/corosio/signal_set.hpp>
 #include <boost/corosio/tcp_acceptor.hpp>
 #include <boost/corosio/tcp_socket.hpp>
+#include <boost/corosio/test/socket_pair.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -26,9 +28,11 @@
 #include <csignal>
 #include <stop_token>
 #include <system_error>
+#include <thread>
 #include <tuple>
 
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 
 #if BOOST_COROSIO_HAS_EPOLL
@@ -220,16 +224,73 @@ struct epoll_faults
             BOOST_TEST(f.fired());
         }
         {
+            // The failed update must not lose the timer: the next run
+            // retries it instead of waiting with the timerfd unarmed.
             io_context ioc(epoll);
-            fault_scope f(sys::timerfd_settime, EINVAL);
+            bool done = false;
             auto body = [&]() -> capy::task<> {
                 std::ignore =
                     co_await corosio::delay(std::chrono::milliseconds(1));
+                done = true;
             };
             capy::run_async(ioc.get_executor())(body());
+            {
+                fault_scope f(sys::timerfd_settime, EINVAL);
+                expect_system_error(
+                    [&] { ioc.run(); }, std::errc::invalid_argument);
+                BOOST_TEST(f.fired());
+            }
+            ioc.restart();
+            // The duration only bounds a hang.
+            std::ignore = ioc.run_for(std::chrono::seconds(5));
+            BOOST_TEST(done);
+        }
+    }
+
+    // Events the wait collected stay queued when the timer update
+    // after it fails, so their operations still complete.
+    void testTimerUpdateFailureKeepsEvents()
+    {
+        io_context ioc(epoll);
+        auto [a, b]    = test::must(test::make_socket_pair(ioc));
+        bool read_done = false;
+        auto reader    = [&]() -> capy::task<> {
+            char buf[1];
+            auto [ec, n] = co_await b.read_some(capy::mutable_buffer(buf, 1));
+            read_done    = !ec;
+        };
+        // Long enough that the first poll can't find it due already.
+        auto holder = [&]() -> capy::task<> {
+            std::ignore =
+                co_await corosio::delay(std::chrono::milliseconds(50));
+        };
+        capy::run_async(ioc.get_executor())(reader());
+        capy::run_async(ioc.get_executor())(holder());
+        std::ignore = ioc.poll();
+
+        // Both the byte and the timer are due before the faulted pass,
+        // which checks timers against the clock since it doesn't block.
+        char const c = 'x';
+        BOOST_TEST_EQ(::send(static_cast<int>(a.native_handle()), &c, 1, 0), 1);
+        pollfd pfd{static_cast<int>(b.native_handle()), POLLIN, 0};
+        BOOST_TEST_EQ(::poll(&pfd, 1, -1), 1);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        {
+            fault_scope f(sys::timerfd_settime, EINVAL);
             expect_system_error(
-                [&] { ioc.run(); }, std::errc::invalid_argument);
+                [&] { ioc.poll(); }, std::errc::invalid_argument);
             BOOST_TEST(f.fired());
+        }
+
+        ioc.restart();
+        // The duration only bounds a hang.
+        std::ignore = ioc.run_for(std::chrono::seconds(5));
+        BOOST_TEST(read_done);
+        if (!read_done)
+        {
+            b.close();
+            ioc.restart();
+            ioc.run();
         }
     }
 
@@ -403,6 +464,7 @@ struct epoll_faults
         testAcceptorRegisterFails();
         testAcceptFails();
         testRunLoopFaults();
+        testTimerUpdateFailureKeepsEvents();
         testInterruptWriteFails();
         testAcceptorAssignRegisterFails();
         testPostedAcceptFails();
