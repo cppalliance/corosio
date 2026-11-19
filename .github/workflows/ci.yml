@@ -123,10 +123,18 @@ jobs:
           out=$(cmd //c "$(cygpath -w "$check")" 2>&1 || true)
           banner=$(printf '%s\n' "$out" | tr -d '\r' | grep -m1 'Compiler Version' || true)
           echo "$banner"
-          case "$banner" in
-            *"Version 19.${MSVC_VERSION#14.}."*" for $target") ;;
-            *) echo "::error::Expected MSVC $MSVC_VERSION for $target, got: $banner"; exit 1 ;;
-          esac
+          want=${MSVC_VERSION#14.}
+          got=$(printf '%s\n' "$banner" | sed -n "s/.*Version 19\.\([0-9]*\)\..* for $target\$/\1/p")
+          # Unpinned jobs test the image's newest toolset, which moves
+          # between runners during an image rollout; the version is a floor.
+          if [ -z "$got" ] || [ "$got" -lt "$want" ] ||
+             { [ -n "$MSVC_TOOLSET" ] && [ "$got" != "$want" ]; }; then
+            echo "::error::Expected MSVC $MSVC_VERSION for $target, got: $banner"
+            exit 1
+          fi
+          if [ "$got" != "$want" ]; then
+            echo "::notice::MSVC 14.$got (label $MSVC_VERSION)"
+          fi
 
       - name: Install packages
         uses: alandefreitas/cpp-actions/package-install@v1.9.0
