@@ -48,7 +48,10 @@ file(GLOB_RECURSE BOOST_COROSIO_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/corosio/src/*.cpp")
 
 source_group("" FILES "include/boost/corosio.hpp")
-source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio" PREFIX "include" FILES ${BOOST_COROSIO_HEADERS})
+# TREE rejects files outside its root, and the umbrella header is grouped above.
+set(BOOST_COROSIO_TREE_HEADERS ${BOOST_COROSIO_HEADERS})
+list(REMOVE_ITEM BOOST_COROSIO_TREE_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio.hpp")
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/include/boost/corosio" PREFIX "include" FILES ${BOOST_COROSIO_TREE_HEADERS})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src/corosio/src" PREFIX "src" FILES ${BOOST_COROSIO_SOURCES})
 
 add_library(boost_corosio ${BOOST_COROSIO_HEADERS} ${BOOST_COROSIO_SOURCES})
