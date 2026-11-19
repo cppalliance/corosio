@@ -413,24 +413,19 @@ win_tcp_acceptor::accept(
         socket_, accepted, op.addr_buf, 0, addr_size, addr_size,
         &bytes_received, &op);
 
-    if (!ok)
+    DWORD err = 0;
+    if (!overlapped_queued(ok != FALSE, skip_, err))
     {
-        DWORD err = ::WSAGetLastError();
-        if (err != ERROR_IO_PENDING)
+        // Failed, or accepted during the call on a socket that queues
+        // no packet for that.
+        if (!ok)
         {
             ::closesocket(accepted);
             svc_.destroy(&peer_wrapper);
             op.peer_wrapper    = nullptr;
             op.accepted_socket = INVALID_SOCKET;
-            svc_.on_completion(&op, err, 0);
-            return std::noop_coroutine();
         }
-    }
-    else if (skip_)
-    {
-        // Accepted during the call, and this socket queues no packet
-        // for that.
-        svc_.on_completion(&op, 0, 0);
+        svc_.on_completion(&op, err, 0);
         return std::noop_coroutine();
     }
 

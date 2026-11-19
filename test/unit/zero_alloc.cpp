@@ -33,6 +33,7 @@
 #include <boost/corosio/delay.hpp>
 #include <boost/corosio/wait_type.hpp>
 #include <boost/corosio/detail/platform.hpp>
+#include <boost/corosio/test/socket_pair.hpp>
 #if BOOST_COROSIO_POSIX
 #include <boost/corosio/posix_stream_descriptor.hpp>
 #include <unistd.h>
@@ -348,32 +349,7 @@ struct zero_alloc_test
         io_context ioc(Backend);
         auto ex = ioc.get_executor();
 
-        tcp_acceptor acc(ioc);
-        BOOST_TEST(!acc.open());
-        test::must_ok(acc.set_option(socket_option::reuse_address(true)));
-        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
-        BOOST_TEST(!acc.listen());
-        endpoint ep(ipv4_address::loopback(), acc.local_endpoint().port());
-
-        tcp_socket reader(ioc);
-        tcp_socket writer(ioc);
-        bool accepted = false, connected = false;
-        capy::run_async(ex)(
-            [](tcp_acceptor& a, tcp_socket& s, bool& ok) -> capy::task<> {
-                auto [ec] = co_await a.accept(s);
-                ok        = !ec;
-            }(acc, reader, accepted));
-        capy::run_async(ex)(
-            [](tcp_socket& s, endpoint ep_, bool& ok) -> capy::task<> {
-                auto [ec] = co_await s.connect(ep_);
-                ok        = !ec;
-            }(writer, ep, connected));
-        ioc.run();
-        ioc.restart();
-        BOOST_TEST(accepted);
-        BOOST_TEST(connected);
-        if (!accepted || !connected)
-            return;
+        auto [reader, writer] = test::must(test::make_socket_pair(ioc));
 
         for (int i = 0; i < warmup_cycles; ++i)
             waitCycle(ioc, ex, reader, writer);

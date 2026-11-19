@@ -31,6 +31,7 @@
 
 #include <boost/corosio/native/detail/iocp/win_overlapped_op.hpp>
 #include <boost/corosio/native/detail/iocp/win_timers.hpp>
+#include <boost/corosio/native/detail/iocp/win_validate_handle.hpp>
 #include <boost/corosio/detail/timer_service.hpp>
 #include <boost/corosio/native/detail/make_err.hpp>
 #include <boost/corosio/detail/except.hpp>
@@ -190,6 +191,9 @@ private:
     void share_entry(Entry&& e) const noexcept;
     void share_all(ready_queue& q) const noexcept;
 
+    // share_all() for a caller that holds the lock.
+    void share_locked(ready_queue& q) const noexcept;
+
     // Put a queue's entries on the queue of work held behind a stop,
     // or on the shared queue if the scheduler has been restarted
     // meanwhile.
@@ -210,6 +214,12 @@ private:
 
     // Destroy a queue entry without running it.
     static void destroy_entry(void* e) noexcept;
+
+    // Destroy what the shared and held queues hold, without running
+    // it. The entries are process-owned (failed-post fallbacks,
+    // posted handlers, and what a run loop handed back); no packet
+    // references them.
+    void destroy_queued() noexcept;
 
     void on_timer_service_attached(timer_service& svc) override;
 
@@ -451,13 +461,8 @@ completion_error(ULONG_PTR internal) noexcept
     if (status >= 0)
         return 0;
     using fn_type = ULONG(NTAPI*)(LONG);
-    // The two-step cast is the sanctioned FARPROC conversion.
-    static fn_type const fn = [] {
-        HMODULE h = ::GetModuleHandleW(L"ntdll.dll");
-        return h ? reinterpret_cast<fn_type>(reinterpret_cast<void (*)()>(
-                       ::GetProcAddress(h, "RtlNtStatusToDosError")))
-                 : nullptr;
-    }();
+    static fn_type const fn =
+        win_nt::ntdll_proc<fn_type>("RtlNtStatusToDosError");
     return fn ? fn(status) : static_cast<DWORD>(ERROR_GEN_FAILURE);
 }
 
@@ -701,9 +706,7 @@ win_scheduler::hold_all(ready_queue& q) const noexcept
         }
         // Restarted since the caller looked: restart() has been by,
         // or will find nothing of these entries on the held queue.
-        completed_ops_.splice(q);
-        dispatch_required_.fetch_or(
-            iocp::dispatch_queue, std::memory_order_seq_cst);
+        share_locked(q);
     }
     share_queue_wake();
 }
@@ -712,6 +715,12 @@ inline void
 win_scheduler::share_all(ready_queue& q) const noexcept
 {
     std::lock_guard<win_mutex> lock(dispatch_mutex_);
+    share_locked(q);
+}
+
+inline void
+win_scheduler::share_locked(ready_queue& q) const noexcept
+{
     completed_ops_.splice(q);
     dispatch_required_.fetch_or(
         iocp::dispatch_queue, std::memory_order_seq_cst);
@@ -788,8 +797,8 @@ inline void
 win_scheduler::on_pending(overlapped_op* op) const
 {
     // If the CAS fails (ready_ was already 1), the completer got here first
-    // and stored the results — queue the op, on this thread's own queue or
-    // by a re-post, so the loop can dispatch it. The acquire
+    // and stored the results — queue the op, through keep() on a loop
+    // thread or by a re-post, so the loop can dispatch it. The acquire
     // on failure makes those payload writes visible, so the re-posted op
     // carries valid dwError / bytes_transferred.
     //
@@ -928,19 +937,13 @@ win_scheduler::restart()
 
     // What was queued behind the stop comes after what was queued
     // ahead of it and before anything queued from now on.
-    bool released = false;
     {
         std::lock_guard<win_mutex> lock(dispatch_mutex_);
-        if (!held_.empty())
-        {
-            completed_ops_.splice(held_);
-            dispatch_required_.fetch_or(
-                iocp::dispatch_queue, std::memory_order_seq_cst);
-            released = true;
-        }
+        if (held_.empty())
+            return;
+        share_locked(held_);
     }
-    if (released)
-        share_queue_wake();
+    share_queue_wake();
 }
 
 inline std::size_t
@@ -1093,6 +1096,9 @@ win_scheduler::claim(
     bool& took_wake)
 {
     auto const* entries = static_cast<OVERLAPPED_ENTRY const*>(entries_v);
+    // Packets that dispatch their op, uncounted together below: the
+    // ops stay in the caller's queues until this returns.
+    long dispatched = 0;
     // What a stop packet leaves behind it in the batch was queued
     // after the stop, and waits for the next run: it goes to
     // `behind`, for the caller to hold once the part ahead of the
@@ -1133,7 +1139,7 @@ win_scheduler::claim(
                         expected, 1, std::memory_order_acq_rel,
                         std::memory_order_acquire))
                 {
-                    pending_io_.fetch_sub(1, std::memory_order_acq_rel);
+                    ++dispatched;
                     q.push(ov_op);
                 }
                 break;
@@ -1185,6 +1191,8 @@ win_scheduler::claim(
             break; // LCOV_EXCL_LINE unreachable: closed key set
         }
     }
+    if (dispatched != 0)
+        pending_io_.fetch_sub(dispatched, std::memory_order_acq_rel);
 }
 
 inline std::size_t
@@ -1236,8 +1244,11 @@ win_scheduler::do_one_wait(
             // next run.
             if ((why & iocp::dispatch_queue) && !(one_thread_ && t.stop_seen))
             {
-                if (!one_thread_ && !t.stop_seen &&
-                    ++t.since_poll >= iocp::poll_every)
+                if (one_thread_)
+                {
+                    take_shared(t);
+                }
+                else if (!t.stop_seen && ++t.since_poll >= iocp::poll_every)
                 {
                     // A chain of posts must not keep the thread from
                     // the port: the queue waits for the visit below.
@@ -1245,20 +1256,13 @@ win_scheduler::do_one_wait(
                 }
                 else
                 {
-                    bool more = false;
+                    bool more;
                     {
                         std::lock_guard<win_mutex> lock(dispatch_mutex_);
-                        if (one_thread_)
-                        {
-                            t.ready.splice(completed_ops_);
-                        }
-                        else
-                        {
-                            // The rest stays where another loop can
-                            // take it while this one runs its handler.
-                            shared = completed_ops_.pop();
-                            more   = !completed_ops_.empty();
-                        }
+                        // The rest stays where another loop can take
+                        // it while this one runs its handler.
+                        shared = completed_ops_.pop();
+                        more   = !completed_ops_.empty();
                         // The bit stands while the queue holds work.
                         // It is set and cleared under the lock only.
                         if (!more)
@@ -1319,8 +1323,7 @@ win_scheduler::do_one_wait(
                     idle = false;
                 }
             }
-            bool const counted_blocked = idle;
-            unsigned long wait_ms      = idle ? timeout_ms : 0;
+            unsigned long wait_ms = idle ? timeout_ms : 0;
             if (idle && tsvc && !timers_)
                 wait_ms = timer_timeout_ms(*tsvc, timeout_ms);
 
@@ -1347,7 +1350,7 @@ win_scheduler::do_one_wait(
             BOOL const result = ::GetQueuedCompletionStatusEx(
                 iocp_, entries, cap, &count, wait_ms, FALSE);
             DWORD const dwError = result ? 0 : ::GetLastError();
-            if (counted_blocked)
+            if (idle)
                 blocked_.fetch_sub(1, std::memory_order_acq_rel);
 
             if (result)
@@ -1361,23 +1364,24 @@ win_scheduler::do_one_wait(
                 // ahead of a stop included. A packet dequeued on its
                 // own is run at once, unless the shared queue holds
                 // work, which is older.
-                if (one_thread_ || batch.empty() ||
+                bool const run_here = one_thread_ || batch.empty() ||
                     (count == 1 && !poll_due &&
                      (dispatch_required_.load(std::memory_order_seq_cst) &
-                      iocp::dispatch_queue) == 0))
+                      iocp::dispatch_queue) == 0);
+                if (run_here)
                 {
                     t.ready.splice(batch);
-                    hold_all(behind);
                 }
                 else
                 {
-                    // The part behind a stop follows the part ahead
-                    // of it wherever a restart sends it.
                     share_all(batch);
                     share_queue_wake();
-                    hold_all(behind);
-                    continue;
                 }
+                // The part behind a stop follows the part ahead of it
+                // wherever a restart sends it.
+                hold_all(behind);
+                if (!run_here)
+                    continue;
             }
             else
             {
@@ -1553,18 +1557,7 @@ win_scheduler::shutdown()
     // posted handlers, and queued continuations have no bearing here.
     while (pending_io_.load(std::memory_order_acquire) > 0)
     {
-        ready_queue ops;
-        {
-            std::lock_guard<win_mutex> lock(dispatch_mutex_);
-            ops.splice(completed_ops_);
-            ops.splice(held_);
-        }
-
-        // Deferred-queue entries are process-owned (failed-post
-        // fallbacks, posted handlers, and what a run loop handed
-        // back); no packet references them.
-        while (auto* e = ops.pop())
-            destroy_entry(e);
+        destroy_queued();
 
         DWORD bytes;
         ULONG_PTR key;
@@ -1602,18 +1595,24 @@ win_scheduler::shutdown()
 }
 
 inline void
+win_scheduler::destroy_queued() noexcept
+{
+    ready_queue ops;
+    {
+        std::lock_guard<win_mutex> lock(dispatch_mutex_);
+        ops.splice(completed_ops_);
+        ops.splice(held_);
+    }
+    while (auto* e = ops.pop())
+        destroy_entry(e);
+}
+
+inline void
 win_scheduler::sweep_port() noexcept
 {
     for (;;)
     {
-        ready_queue ops;
-        {
-            std::lock_guard<win_mutex> lock(dispatch_mutex_);
-            ops.splice(completed_ops_);
-            ops.splice(held_);
-        }
-        while (auto* e = ops.pop())
-            destroy_entry(e);
+        destroy_queued();
 
         DWORD bytes;
         ULONG_PTR key;
