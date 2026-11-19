@@ -432,17 +432,22 @@ struct thread_context_guard
 
 } // namespace iocp
 
-/** Return the Win32 error of a completed overlapped request.
+/** Return the Win32 error of a dequeued completion packet.
 
     A batched dequeue reports only that packets were taken, so each
-    operation's outcome is read from the status the kernel left in its
-    `OVERLAPPED`. The conversion is the one `GetQueuedCompletionStatus`
-    applies, so the codes are the ones it reports.
+    operation's outcome is read from the status its packet carries,
+    which `OVERLAPPED_ENTRY::Internal` holds. That is the status
+    `GetQueuedCompletionStatus` reports from, and the conversion is
+    the one it applies, so the codes are the ones it reports. The
+    `OVERLAPPED` is not consulted: only a provider of kernel handles
+    is known to write the status there.
+
+    @param internal The packet's `OVERLAPPED_ENTRY::Internal`.
 */
 inline DWORD
-overlapped_error(OVERLAPPED const& ov) noexcept
+completion_error(ULONG_PTR internal) noexcept
 {
-    auto const status = static_cast<LONG>(ov.Internal);
+    auto const status = static_cast<LONG>(internal);
     if (status >= 0)
         return 0;
     using fn_type = ULONG(NTAPI*)(LONG);
@@ -1116,7 +1121,7 @@ win_scheduler::claim(
                 if (e.lpCompletionKey == key_io)
                     ov_op->store_result(
                         e.dwNumberOfBytesTransferred,
-                        overlapped_error(*overlapped));
+                        completion_error(e.Internal));
 
                 // If old value was 1 the initiator already returned — dispatch.
                 // The acquire pairs with the publisher's release so the payload

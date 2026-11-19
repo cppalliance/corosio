@@ -639,11 +639,11 @@ completion_status(unsigned long err) noexcept
 
 // The run loop dequeues in batches, and a batch reports no per-packet
 // outcome: the scheduler reads each operation's status from its
-// OVERLAPPED. Rewriting that status is what puts an error on a
+// packet's entry. Rewriting that status is what puts an error on a
 // completed operation. Only a packet queued for a handle, which
-// carries key 0, points at a real OVERLAPPED; the scheduler's own
-// packets carry other objects there. The scheduler-wide failure
-// shares the single-dequeue call's arm.
+// carries key 0, is a completed request; the scheduler's own packets
+// carry other keys. The scheduler-wide failure shares the
+// single-dequeue call's arm.
 BOOL WINAPI
 hooked_GetQueuedCompletionStatusEx(
     HANDLE port,
@@ -670,7 +670,7 @@ hooked_GetQueuedCompletionStatusEx(
         unsigned long err = 0;
         if (entries[i].lpOverlapped && entries[i].lpCompletionKey == 0 &&
             completion_should_fail(err))
-            entries[i].lpOverlapped->Internal =
+            entries[i].Internal =
                 static_cast<ULONG_PTR>(completion_status(err));
     }
     return r;
