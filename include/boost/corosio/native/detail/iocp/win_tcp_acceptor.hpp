@@ -41,11 +41,18 @@ class win_tcp_acceptor;
 struct accept_op : overlapped_op
 {
     SOCKET accepted_socket       = INVALID_SOCKET;
+    // Whether accepted_socket was put in skip-on-success mode.
+    bool accepted_skip           = false;
+    // Whether its provider hands out kernel handles.
+    bool accepted_ifs            = false;
     win_tcp_socket* peer_wrapper = nullptr;
     win_tcp_acceptor& acceptor;
     SOCKET listen_socket                 = INVALID_SOCKET;
     io_object::implementation** impl_out = nullptr;
     char addr_buf[2 * (sizeof(sockaddr_in6) + 16)];
+    // The size AcceptEx was given for each address in addr_buf, which
+    // GetAcceptExSockaddrs needs to find them again.
+    DWORD addr_len = 0;
 
     static void do_complete(
         void* owner,
@@ -97,6 +104,14 @@ class win_tcp_acceptor final
     acceptor_wait_op wt_;
     SOCKET socket_ = INVALID_SOCKET;
     int family_    = AF_UNSPEC;
+
+    // The socket was adopted in skip-on-success mode: an AcceptEx that
+    // succeeds during the call queues no completion packet.
+    bool skip_ = false;
+
+    // The socket's provider hands out kernel handles, so a request it
+    // takes is marked pending in the OVERLAPPED (see kernel_pending).
+    bool ifs_ = false;
     endpoint local_endpoint_;
 
 public:

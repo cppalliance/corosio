@@ -178,6 +178,8 @@ using proc_t = void (*)();
       (h, dist, out, method))                                                  \
     X(GetFileSizeEx, BOOL, FALSE, WINAPI, (HANDLE h, PLARGE_INTEGER size),     \
       (h, size))                                                               \
+    X(SetFileCompletionNotificationModes, BOOL, FALSE, WINAPI,                 \
+      (HANDLE h, UCHAR flags), (h, flags))                                     \
     X(SetEndOfFile, BOOL, FALSE, WINAPI, (HANDLE h), (h))                      \
     X(FlushFileBuffers, BOOL, FALSE, WINAPI, (HANDLE h), (h))                  \
     X(DeleteFileA, BOOL, FALSE, WINAPI, (LPCSTR name), (name))                 \
@@ -250,6 +252,7 @@ enum hook_id
     COROSIO_FAULT_WIN_SIMPLE(COROSIO_FAULT_WIN_ID)
         COROSIO_FAULT_WIN_OPENSSL(COROSIO_FAULT_WIN_ID)
             COROSIO_FAULT_WIN_MANUAL(COROSIO_FAULT_WIN_ID1) h_beginthreadex,
+    h_GetQueuedCompletionStatusEx,
     hook_count
 };
 
@@ -612,6 +615,67 @@ hooked_GetQueuedCompletionStatus(
     return r;
 }
 
+// The NTSTATUS the kernel would have left for a Win32 completion
+// error, limited to the errors the tests inject.
+LONG
+completion_status(unsigned long err) noexcept
+{
+    switch (err)
+    {
+    case ERROR_NETNAME_DELETED:
+        return static_cast<LONG>(0xC00000C9); // STATUS_NETWORK_NAME_DELETED
+    case ERROR_CONNECTION_REFUSED:
+        return static_cast<LONG>(0xC0000236); // STATUS_CONNECTION_REFUSED
+    case ERROR_CONNECTION_ABORTED:
+        return static_cast<LONG>(0xC0000241); // STATUS_CONNECTION_ABORTED
+    case ERROR_LOCK_VIOLATION:
+        return static_cast<LONG>(0xC0000054); // STATUS_FILE_LOCK_CONFLICT
+    case ERROR_OPERATION_ABORTED:
+        return static_cast<LONG>(0xC0000120); // STATUS_CANCELLED
+    default:
+        die("fault harness: no NTSTATUS known for this completion error");
+    }
+}
+
+// The run loop dequeues in batches, and a batch reports no per-packet
+// outcome: the scheduler reads each operation's status from its
+// packet's entry. Rewriting that status is what puts an error on a
+// completed operation. Only a packet queued for a handle, which
+// carries key 0, is a completed request; the scheduler's own packets
+// carry other keys. The scheduler-wide failure shares the
+// single-dequeue call's arm.
+BOOL WINAPI
+hooked_GetQueuedCompletionStatusEx(
+    HANDLE port,
+    LPOVERLAPPED_ENTRY entries,
+    ULONG count,
+    PULONG removed,
+    DWORD ms,
+    BOOL alertable)
+{
+    if (should_fail(sys::GetQueuedCompletionStatus))
+    {
+        if (removed)
+            *removed = 0;
+        return FALSE;
+    }
+    BOOL const r = reinterpret_cast<BOOL(WINAPI*)(
+        HANDLE, LPOVERLAPPED_ENTRY, ULONG, PULONG, DWORD, BOOL)>(
+        reals[h_GetQueuedCompletionStatusEx])(
+        port, entries, count, removed, ms, alertable);
+    if (!r || !entries || !removed)
+        return r;
+    for (ULONG i = 0; i < *removed; ++i)
+    {
+        unsigned long err = 0;
+        if (entries[i].lpOverlapped && entries[i].lpCompletionKey == 0 &&
+            completion_should_fail(err))
+            entries[i].Internal =
+                static_cast<ULONG_PTR>(completion_status(err));
+    }
+    return r;
+}
+
 // MSVC's std::thread reaches _beginthreadex through msvcp's import
 // table (or, with a static msvcp, through the executable's), and the
 // CRT reports failure as a zero return with errno set.
@@ -655,6 +719,8 @@ hook_entry hooks[] = {
         COROSIO_FAULT_WIN_ROW) COROSIO_FAULT_WIN_MANUAL(COROSIO_FAULT_WIN_ROW1){
         "_beginthreadex", sys::pthread_create,
         reinterpret_cast<proc_t>(&hooked_beginthreadex), 0},
+    {"GetQueuedCompletionStatusEx", sys::GetQueuedCompletionStatus,
+     reinterpret_cast<proc_t>(&hooked_GetQueuedCompletionStatusEx), 0},
 };
 
 static_assert(

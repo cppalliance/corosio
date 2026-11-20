@@ -27,6 +27,7 @@
 #include <boost/corosio/native/detail/iocp/win_overlapped_op.hpp>
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
 
+#include <atomic>
 #include <coroutine>
 
 #include <mswsock.h>
@@ -144,8 +145,32 @@ class win_tcp_socket final
     wait_op wt_;
     SOCKET socket_ = INVALID_SOCKET;
     int family_    = AF_UNSPEC;
-    endpoint local_endpoint_;
+
+    // The socket is in skip-completion-port-on-success mode: a request
+    // the kernel finishes during the call queues no packet, and its
+    // result is taken from the call.
+    bool skip_ = false;
+
+    // The socket's provider hands out kernel handles, so a request it
+    // takes is marked pending in the OVERLAPPED (see kernel_pending).
+    bool ifs_ = false;
+    // What local_endpoint_ holds. `cached`: it is authoritative, and
+    // empty for a socket with no known endpoint. `pending`: a connect
+    // left the endpoint unfetched, and the first local_endpoint() asks
+    // the kernel for it. `fetching`: the reader that claimed the fetch
+    // is writing the cache, and other readers fetch their own copy
+    // meanwhile. Whatever else writes local_endpoint_ sets `cached`.
+    enum class local_state : unsigned char
+    {
+        cached,
+        pending,
+        fetching
+    };
+
+    // Mutable so local_endpoint() can fill it on first read.
+    mutable endpoint local_endpoint_;
     endpoint remote_endpoint_;
+    mutable std::atomic<local_state> local_state_{local_state::cached};
 
 public:
     explicit win_tcp_socket(win_tcp_service& svc) noexcept;
@@ -225,10 +250,42 @@ public:
     void cancel() noexcept override;
 
     /// Used by the acceptor's `accept_op` to finish setting up the peer.
-    void set_socket(SOCKET s) noexcept;
+    void set_socket(SOCKET s, bool skip, bool ifs) noexcept;
     void set_endpoints(endpoint local, endpoint remote) noexcept;
 
     void close_socket() noexcept;
+
+private:
+    // Give an op what its completion needs to resume the coroutine.
+    void fill(
+        overlapped_op& op,
+        capy::continuation& cont,
+        capy::executor_ref d,
+        std::error_code* ec,
+        std::size_t* bytes_out) noexcept;
+
+    // Finish a read or write the call itself settled: resume the
+    // coroutine at once within the handler's inline budget, or send
+    // the stored result through the run loop.
+    std::coroutine_handle<> complete_now(
+        overlapped_op& op,
+        capy::continuation& cont,
+        capy::executor_ref d,
+        std::stop_token const& token,
+        std::error_code* ec,
+        std::size_t* bytes_out,
+        DWORD err,
+        DWORD bytes);
+
+    // Arm a read or write whose request is in the kernel and hand it
+    // to the scheduler to await its packet.
+    std::coroutine_handle<> pend(
+        overlapped_op& op,
+        capy::continuation& cont,
+        capy::executor_ref d,
+        std::stop_token const& token,
+        std::error_code* ec,
+        std::size_t* bytes_out);
 };
 
 } // namespace boost::corosio::detail

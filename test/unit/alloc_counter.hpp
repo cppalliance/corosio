@@ -62,6 +62,21 @@ extern std::atomic<long long> alloc_count;
 inline bool
 alloc_counter_is_live(char const* suite) noexcept
 {
+#if defined(_WIN32) &&                                                \
+    (defined(BOOST_COROSIO_DYN_LINK) || defined(BOOST_ALL_DYN_LINK)) && \
+    !defined(BOOST_COROSIO_STATIC_LINK)
+    // A PE module binds operator new at link time, so the replacement
+    // in this executable never sees what a corosio DLL allocates. The
+    // probe below would still count its own allocation and report the
+    // counter live, and every zero pin would then pass without looking
+    // at the library.
+    std::fprintf(
+        stderr,
+        "%s: corosio is a DLL, whose allocations this executable's "
+        "operator new cannot count; skipping this suite\n",
+        suite);
+    return false;
+#else
     // Called through a volatile pointer so the probe allocation
     // cannot be elided.
     void* (*volatile op_new)(std::size_t) = &::operator new;
@@ -77,6 +92,7 @@ alloc_counter_is_live(char const* suite) noexcept
         "so allocation counts are unobservable; skipping this suite\n",
         suite);
     return false;
+#endif
 }
 #endif
 

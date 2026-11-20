@@ -171,6 +171,13 @@ struct overlapped_op
     DWORD bytes_transferred       = 0;
     cancel_func_type cancel_func_ = nullptr;
 
+    /** Whether the wait reactor holds this op. Set under the reactor's
+        lock when a register queues the op, cleared by the reactor before
+        it completes the op, and read under that lock by a cancel, which
+        has nothing to ask the reactor for while it is clear. reset()
+        leaves it alone: only the reactor knows when it lets go. */
+    std::atomic<bool> reactor_parked_{false};
+
     explicit overlapped_op(func_type func) noexcept : coro_op(func)
     {
         reset_overlapped();
@@ -239,6 +246,21 @@ struct overlapped_op
         dispatch_coro(ex, *cont).resume();
     }
 };
+
+/** Return whether an op's overlapped I/O may still be in the kernel.
+
+    Winsock sets `Internal` to `STATUS_PENDING` when it takes an
+    overlapped request, and Windows writes the final status there
+    before the completion is dequeued (`HasOverlappedIoCompleted`).
+    `reset_overlapped()` zeroes it, so an op never issued reads as not
+    pending. A request that fails synchronously can leave
+    `STATUS_PENDING` behind, which costs only a needless cancel.
+*/
+inline bool
+kernel_pending(overlapped_op const& op) noexcept
+{
+    return !HasOverlappedIoCompleted(&op);
+}
 
 /** Cast OVERLAPPED* to overlapped_op*.
 

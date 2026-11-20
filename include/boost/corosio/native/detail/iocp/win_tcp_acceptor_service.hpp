@@ -33,6 +33,7 @@
 
 #include <ws2tcpip.h>
 
+#include <cstring>
 #include <system_error>
 
 namespace boost::corosio::detail {
@@ -120,6 +121,18 @@ acceptor_wait_op::do_cancel_impl(overlapped_op* base) noexcept
     op->acceptor.socket_service().scheduler().cancel_wait(op);
 }
 
+// An address GetAcceptExSockaddrs pointed into the AcceptEx buffer,
+// as an endpoint; one it could not find stays the default endpoint.
+inline endpoint
+accept_ex_endpoint(sockaddr const* sa, int len) noexcept
+{
+    sockaddr_storage storage{};
+    if (!sa || len <= 0 || len > static_cast<int>(sizeof(storage)))
+        return {};
+    std::memcpy(&storage, sa, static_cast<std::size_t>(len));
+    return from_sockaddr(storage);
+}
+
 // accept_op completion handler
 
 inline void
@@ -170,22 +183,44 @@ accept_op::do_complete(
             op->accepted_socket, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT,
             reinterpret_cast<char*>(&op->listen_socket), sizeof(SOCKET));
 
-        op->peer_wrapper->set_socket(op->accepted_socket);
-
-        sockaddr_storage local_storage{};
-        int local_len = sizeof(local_storage);
-        sockaddr_storage remote_storage{};
-        int remote_len = sizeof(remote_storage);
+        op->peer_wrapper->set_socket(
+            op->accepted_socket, op->accepted_skip, op->accepted_ifs);
 
         endpoint local_ep, remote_ep;
-        if (::getsockname(
-                op->accepted_socket,
-                reinterpret_cast<sockaddr*>(&local_storage), &local_len) == 0)
-            local_ep = from_sockaddr(local_storage);
-        if (::getpeername(
-                op->accepted_socket,
-                reinterpret_cast<sockaddr*>(&remote_storage), &remote_len) == 0)
-            remote_ep = from_sockaddr(remote_storage);
+        if (auto parse =
+                op->acceptor.socket_service().get_accept_ex_sockaddrs())
+        {
+            // AcceptEx already wrote both addresses into addr_buf, so
+            // reading them back costs no syscall, where getsockname and
+            // getpeername cost one each on every accept.
+            sockaddr* local_sa  = nullptr;
+            sockaddr* remote_sa = nullptr;
+            int local_len       = 0;
+            int remote_len      = 0;
+            parse(
+                op->addr_buf, 0, op->addr_len, op->addr_len, &local_sa,
+                &local_len, &remote_sa, &remote_len);
+            local_ep  = accept_ex_endpoint(local_sa, local_len);
+            remote_ep = accept_ex_endpoint(remote_sa, remote_len);
+        }
+        else
+        {
+            sockaddr_storage local_storage{};
+            int local_len = sizeof(local_storage);
+            sockaddr_storage remote_storage{};
+            int remote_len = sizeof(remote_storage);
+
+            if (::getsockname(
+                    op->accepted_socket,
+                    reinterpret_cast<sockaddr*>(&local_storage),
+                    &local_len) == 0)
+                local_ep = from_sockaddr(local_storage);
+            if (::getpeername(
+                    op->accepted_socket,
+                    reinterpret_cast<sockaddr*>(&remote_storage),
+                    &remote_len) == 0)
+                remote_ep = from_sockaddr(remote_storage);
+        }
 
         op->peer_wrapper->set_endpoints(local_ep, remote_ep);
         op->accepted_socket = INVALID_SOCKET;
@@ -352,6 +387,8 @@ win_tcp_acceptor::accept(
 
     // Set up the accept operation
     op.accepted_socket = accepted;
+    op.accepted_skip   = svc_.enable_skip_on_success(accepted, af);
+    op.accepted_ifs    = svc_.ifs(af);
     op.peer_wrapper    = &peer_wrapper;
     op.listen_socket   = socket_;
 
@@ -369,24 +406,27 @@ win_tcp_acceptor::accept(
     // AcceptEx address buffer sizes must match the socket's address family
     DWORD addr_size = static_cast<DWORD>(
         (af == AF_INET6 ? sizeof(sockaddr_in6) : sizeof(sockaddr_in)) + 16);
+    op.addr_len          = addr_size;
     DWORD bytes_received = 0;
 
     BOOL ok = accept_ex(
         socket_, accepted, op.addr_buf, 0, addr_size, addr_size,
         &bytes_received, &op);
 
-    if (!ok)
+    DWORD err = 0;
+    if (!overlapped_queued(ok != FALSE, skip_, err))
     {
-        DWORD err = ::WSAGetLastError();
-        if (err != ERROR_IO_PENDING)
+        // Failed, or accepted during the call on a socket that queues
+        // no packet for that.
+        if (!ok)
         {
             ::closesocket(accepted);
             svc_.destroy(&peer_wrapper);
             op.peer_wrapper    = nullptr;
             op.accepted_socket = INVALID_SOCKET;
-            svc_.on_completion(&op, err, 0);
-            return std::noop_coroutine();
         }
+        svc_.on_completion(&op, err, 0);
+        return std::noop_coroutine();
     }
 
     // Must precede on_pending: once it runs another thread may
@@ -468,12 +508,20 @@ win_tcp_acceptor::close_socket() noexcept
 
     if (socket_ != INVALID_SOCKET)
     {
-        ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
+        // closesocket() leaves a pending AcceptEx in the kernel while an
+        // inherited or duplicated handle keeps the socket open, so cancel
+        // it explicitly, but only when it is there to cancel (see
+        // win_tcp_socket::close_socket); behind a provider not known to
+        // mark the request, always. wt_ waits in the reactor only.
+        if (!ifs_ || kernel_pending(acc_))
+            ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
         ::closesocket(socket_);
         socket_ = INVALID_SOCKET;
     }
 
     family_ = AF_UNSPEC;
+    skip_   = false;
+    ifs_    = false;
 
     // Clear cached endpoint
     local_endpoint_ = endpoint{};
@@ -489,6 +537,8 @@ win_tcp_acceptor::release_socket() noexcept
         dissociate_from_iocp(s);
         socket_          = INVALID_SOCKET;
         family_          = AF_UNSPEC;
+        skip_            = false;
+        ifs_             = false;
         local_endpoint_  = endpoint{};
     }
     return static_cast<native_handle_type>(s);

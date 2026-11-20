@@ -18,6 +18,7 @@
 #include <boost/corosio/native/detail/iocp/win_completion_key.hpp>
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 
@@ -30,12 +31,12 @@ namespace boost::corosio::detail {
 class win_timers
 {
 protected:
-    long* dispatch_required_;
+    std::atomic<long>* dispatch_required_;
 
 public:
     using time_point = std::chrono::steady_clock::time_point;
 
-    explicit win_timers(long* dispatch_required) noexcept
+    explicit win_timers(std::atomic<long>* dispatch_required) noexcept
         : dispatch_required_(dispatch_required)
     {
     }
@@ -50,7 +51,7 @@ public:
 };
 
 std::unique_ptr<win_timers>
-make_win_timers(void* iocp_handle, long* dispatch_required);
+make_win_timers(void* iocp_handle, std::atomic<long>* dispatch_required);
 
 } // namespace boost::corosio::detail
 
@@ -60,7 +61,7 @@ make_win_timers(void* iocp_handle, long* dispatch_required);
 namespace boost::corosio::detail {
 
 inline std::unique_ptr<win_timers>
-make_win_timers(void* iocp_handle, long* dispatch_required)
+make_win_timers(void* iocp_handle, std::atomic<long>* dispatch_required)
 {
     // Thread-based over NtAssociateWaitCompletionPacket: the NT wait
     // packet is one-shot, so it must be re-associated (SetWaitableTimer

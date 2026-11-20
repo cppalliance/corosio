@@ -34,7 +34,8 @@ enum completion_key : ULONG_PTR
     /** I/O operation completed. OVERLAPPED* points to overlapped_op. */
     key_io = 0,
 
-    /** Timer or deferred operation wakeup signal. */
+    /** Wakeup signal: timers are due, or work sits on the scheduler's
+        shared queue. */
     key_wake_dispatch = 1,
 
     /** Scheduler stop/shutdown signal. */
@@ -51,6 +52,15 @@ enum completion_key : ULONG_PTR
         capy::continuation*; resume its handle. */
     key_continuation = 5
 };
+
+namespace iocp {
+
+// Why the scheduler's dispatch_required_ flag is raised: work sits on
+// the shared queue, or the timer thread saw the earliest timer expire.
+inline constexpr long dispatch_queue  = 1;
+inline constexpr long dispatch_timers = 2;
+
+} // namespace iocp
 
 } // namespace boost::corosio::detail
 

@@ -26,7 +26,9 @@ still at their struct defaults, that constructor overrides them to `(0, 0, 0)`. 
 disables the inline fast path; see the note under
 <<inline-completion-budget>>. Pass an explicit
 cpp:io_context_options[] with non-default budgets to keep the fast path
-enabled in multi-threaded mode.
+enabled in multi-threaded mode. The override applies to the reactor
+backends only; the IOCP backend uses `inline_budget_max` as given at
+any `concurrency_hint`.
 ====
 
 [source,cpp]
@@ -67,9 +69,12 @@ include::example$snippets/4c2_configuration.cpp[tag=options_native,indent=0]
 
 | cpp:io_context_options::inline_budget_max[inline_budget_max]
 | 16
-| epoll, kqueue, select
+| epoll, kqueue, select, IOCP
 | Hard ceiling on adaptive inline budget ramp-up.  The budget
-  doubles each cycle it is fully consumed, up to this limit.
+  doubles each cycle it is fully consumed, up to this limit.  On
+  IOCP it is a fixed budget.  A handler may complete that many TCP
+  reads and writes during the initiating call.  The next one goes
+  through the run loop.
 
 | cpp:io_context_options::unassisted_budget[unassisted_budget]
 | 4
@@ -159,6 +164,12 @@ a re-queue through the scheduler.
 * *Disable the fast path entirely*: set all three options to 0 to force
   a re-queue on every completion. This is useful as a baseline, or when
   a workload is dominated by cross-thread work-stealing.
+
+The IOCP backend reads `inline_budget_max` alone. A TCP read or write
+that Windows finishes during the call resumes its coroutine at once,
+up to that many times per handler. A transfer larger than 64 KiB
+always goes through the run loop. Setting it to 0 sends every
+completion through the loop.
 
 [NOTE]
 ====
