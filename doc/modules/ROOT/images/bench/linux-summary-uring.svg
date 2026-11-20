@@ -5,41 +5,39 @@
 <text x='12' y='20' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='11' class='bch-ink2' fill='#5f5e58'>&#8592; slower &#183; within noise &#183; faster &#8594; per benchmark, vs Boost.Asio (callbacks)</text>
 <line x1='465.0' y1='36' x2='465.0' y2='180' class='bch-zero' stroke='#5f5e58' stroke-width='1.5'/>
 <text x='222' y='46.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='11' class='bch-ink' fill='#1f1f1e' text-anchor='end'>local_socket_latency</text>
-<rect x='467.0' y='36.0' width='88.0' height='12' rx='2' class='bch-div-pos' fill='#2a78d6'><title>12 benchmarks faster than asio (callbacks)</title></rect>
-<text x='511.0' y='46.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-seg-label' fill='#ffffff'>12</text>
-<text x='559.0' y='46.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='start'>+30.8%</text>
+<rect x='467.0' y='36.0' width='86.1' height='12' rx='2' class='bch-div-pos' fill='#2a78d6'><title>12 benchmarks faster than asio (callbacks)</title></rect>
+<text x='510.0' y='46.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-seg-label' fill='#ffffff'>12</text>
+<text x='557.1' y='46.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='start'>+35.6%</text>
 <text x='222' y='68.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='11' class='bch-ink' fill='#1f1f1e' text-anchor='end'>socket_latency</text>
-<rect x='467.0' y='58.0' width='88.0' height='12' rx='2' class='bch-div-pos' fill='#2a78d6'><title>12 benchmarks faster than asio (callbacks)</title></rect>
-<text x='511.0' y='68.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-seg-label' fill='#ffffff'>12</text>
-<text x='559.0' y='68.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='start'>+16.7%</text>
+<rect x='467.0' y='58.0' width='86.1' height='12' rx='2' class='bch-div-pos' fill='#2a78d6'><title>12 benchmarks faster than asio (callbacks)</title></rect>
+<text x='510.0' y='68.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-seg-label' fill='#ffffff'>12</text>
+<text x='557.1' y='68.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='start'>+17.7%</text>
 <text x='222' y='90.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='11' class='bch-ink' fill='#1f1f1e' text-anchor='end'>socket_throughput</text>
-<rect x='430.0' y='80.0' width='7.3' height='12' rx='2' class='bch-div-neg' fill='#e34948'><title>1 benchmark slower than asio (callbacks)</title></rect>
-<rect x='439.3' y='80.0' width='51.3' height='12' rx='2' class='bch-div-mid' fill='#f0efec'><title>7 benchmarks within noise than asio (callbacks)</title></rect>
-<text x='465.0' y='90.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-ink' fill='#1f1f1e'>7</text>
-<rect x='492.7' y='80.0' width='139.3' height='12' rx='2' class='bch-div-pos' fill='#2a78d6'><title>19 benchmarks faster than asio (callbacks)</title></rect>
-<text x='562.3' y='90.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-seg-label' fill='#ffffff'>19</text>
-<text x='636.0' y='90.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='start'>+8.5%</text>
+<rect x='434.3' y='80.0' width='14.3' height='12' rx='2' class='bch-div-neg' fill='#e34948'><title>2 benchmarks slower than asio (callbacks)</title></rect>
+<rect x='450.7' y='80.0' width='28.7' height='12' rx='2' class='bch-div-mid' fill='#f0efec'><title>4 benchmarks within noise than asio (callbacks)</title></rect>
+<text x='465.0' y='90.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-ink' fill='#1f1f1e'>4</text>
+<rect x='481.3' y='80.0' width='150.7' height='12' rx='2' class='bch-div-pos' fill='#2a78d6'><title>21 benchmarks faster than asio (callbacks)</title></rect>
+<text x='556.7' y='90.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-seg-label' fill='#ffffff'>21</text>
+<text x='636.0' y='90.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='start'>+7.3%</text>
 <text x='222' y='112.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='11' class='bch-ink' fill='#1f1f1e' text-anchor='end'>http_server</text>
-<rect x='457.7' y='102.0' width='14.7' height='12' rx='2' class='bch-div-mid' fill='#f0efec'><title>2 benchmarks within noise than asio (callbacks)</title></rect>
-<rect x='474.3' y='102.0' width='66.0' height='12' rx='2' class='bch-div-pos' fill='#2a78d6'><title>9 benchmarks faster than asio (callbacks)</title></rect>
-<text x='507.3' y='112.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-seg-label' fill='#ffffff'>9</text>
-<text x='544.3' y='112.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='start'>+3.0%</text>
-<text x='222' y='134.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='11' class='bch-ink' fill='#1f1f1e' text-anchor='end'>local_socket_throughput</text>
-<rect x='406.3' y='124.0' width='117.3' height='12' rx='2' class='bch-div-mid' fill='#f0efec'><title>16 benchmarks within noise than asio (callbacks)</title></rect>
-<text x='465.0' y='134.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-ink' fill='#1f1f1e'>16</text>
-<rect x='525.7' y='124.0' width='58.7' height='12' rx='2' class='bch-div-pos' fill='#2a78d6'><title>8 benchmarks faster than asio (callbacks)</title></rect>
-<text x='555.0' y='134.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-seg-label' fill='#ffffff'>8</text>
-<text x='588.3' y='134.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='start'>+2.3%</text>
-<text x='222' y='156.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='11' class='bch-ink' fill='#1f1f1e' text-anchor='end'>fan_out</text>
-<rect x='441.0' y='146.0' width='7.3' height='12' rx='2' class='bch-div-neg' fill='#e34948'><title>1 benchmark slower than asio (callbacks)</title></rect>
-<rect x='450.3' y='146.0' width='29.3' height='12' rx='2' class='bch-div-mid' fill='#f0efec'><title>4 benchmarks within noise than asio (callbacks)</title></rect>
-<text x='465.0' y='156.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-ink' fill='#1f1f1e'>4</text>
-<rect x='481.7' y='146.0' width='95.3' height='12' rx='2' class='bch-div-pos' fill='#2a78d6'><title>13 benchmarks faster than asio (callbacks)</title></rect>
-<text x='529.3' y='156.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-seg-label' fill='#ffffff'>13</text>
-<text x='581.0' y='156.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='start'>+2.0%</text>
-<text x='222' y='178.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='11' class='bch-ink' fill='#1f1f1e' text-anchor='end'>accept_churn</text>
-<rect x='426.3' y='168.0' width='7.3' height='12' rx='2' class='bch-div-neg' fill='#e34948'><title>1 benchmark slower than asio (callbacks)</title></rect>
-<rect x='435.7' y='168.0' width='58.7' height='12' rx='2' class='bch-div-mid' fill='#f0efec'><title>8 benchmarks within noise than asio (callbacks)</title></rect>
-<text x='465.0' y='178.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-ink' fill='#1f1f1e'>8</text>
-<text x='500.3' y='178.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='start'>-0.6%</text>
+<rect x='467.0' y='102.0' width='78.9' height='12' rx='2' class='bch-div-pos' fill='#2a78d6'><title>11 benchmarks faster than asio (callbacks)</title></rect>
+<text x='506.5' y='112.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-seg-label' fill='#ffffff'>11</text>
+<text x='549.9' y='112.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='start'>+4.7%</text>
+<text x='222' y='134.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='11' class='bch-ink' fill='#1f1f1e' text-anchor='end'>fan_out</text>
+<rect x='454.2' y='124.0' width='21.5' height='12' rx='2' class='bch-div-mid' fill='#f0efec'><title>3 benchmarks within noise than asio (callbacks)</title></rect>
+<text x='465.0' y='134.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-ink' fill='#1f1f1e'>3</text>
+<rect x='477.8' y='124.0' width='107.6' height='12' rx='2' class='bch-div-pos' fill='#2a78d6'><title>15 benchmarks faster than asio (callbacks)</title></rect>
+<text x='531.6' y='134.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-seg-label' fill='#ffffff'>15</text>
+<text x='589.4' y='134.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='start'>+3.0%</text>
+<text x='222' y='156.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='11' class='bch-ink' fill='#1f1f1e' text-anchor='end'>accept_churn</text>
+<rect x='427.1' y='146.0' width='7.2' height='12' rx='2' class='bch-div-neg' fill='#e34948'><title>1 benchmark slower than asio (callbacks)</title></rect>
+<rect x='436.3' y='146.0' width='57.4' height='12' rx='2' class='bch-div-mid' fill='#f0efec'><title>8 benchmarks within noise than asio (callbacks)</title></rect>
+<text x='465.0' y='156.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-ink' fill='#1f1f1e'>8</text>
+<text x='499.7' y='156.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='start'>-0.1%</text>
+<text x='222' y='178.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='11' class='bch-ink' fill='#1f1f1e' text-anchor='end'>local_socket_throughput</text>
+<rect x='407.6' y='168.0' width='114.8' height='12' rx='2' class='bch-div-mid' fill='#f0efec'><title>16 benchmarks within noise than asio (callbacks)</title></rect>
+<text x='465.0' y='178.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-ink' fill='#1f1f1e'>16</text>
+<rect x='524.4' y='168.0' width='57.4' height='12' rx='2' class='bch-div-pos' fill='#2a78d6'><title>8 benchmarks faster than asio (callbacks)</title></rect>
+<text x='553.1' y='178.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' text-anchor='middle' class='bch-seg-label' fill='#ffffff'>8</text>
+<text x='585.8' y='178.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='start'>-0.6%</text>
 </svg>

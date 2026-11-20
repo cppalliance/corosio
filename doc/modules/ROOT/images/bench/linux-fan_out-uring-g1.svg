@@ -16,35 +16,35 @@
 <line x1='52' y1='58.0' x2='704' y2='58.0' class='bch-grid' stroke='#e3e2dc' stroke-width='1'/>
 <text x='46' y='61.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='end'>+5%</text>
 <text x='46' y='171.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='end'>0%</text>
-<rect x='74.3' y='126.4' width='26.0' height='151.6' rx='2' class='bch-s-uring' fill='#eb6834'><title>concurrent_parents/1 — N independent parents each fan out to 16 sub-requests at once; N is the number of parents.</title></rect>
-<text x='87.3' y='122.4' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+2%</text>
-<rect x='102.3' y='241.5' width='26.0' height='36.5' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent_parents/1 — N independent parents each fan out to 16 sub-requests at once; N is the number of parents.</title></rect>
-<text x='115.3' y='237.5' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-3%</text>
+<rect x='74.3' y='102.6' width='26.0' height='175.4' rx='2' class='bch-s-uring' fill='#eb6834'><title>concurrent_parents/1 — N independent parents each fan out to 16 sub-requests at once; N is the number of parents.</title></rect>
+<text x='87.3' y='98.6' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+3%</text>
+<rect x='102.3' y='241.0' width='26.0' height='37.0' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent_parents/1 — N independent parents each fan out to 16 sub-requests at once; N is the number of parents.</title></rect>
+<text x='115.3' y='237.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-3%</text>
 <text x='101.3' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 101.3 292.0)'>concurrent_parents/1</text>
-<rect x='185.0' y='110.2' width='26.0' height='167.8' rx='2' class='bch-s-uring' fill='#eb6834'><title>concurrent_parents/16 — N independent parents each fan out to 16 sub-requests at once; N is the number of parents.</title></rect>
-<text x='198.0' y='106.2' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+3%</text>
-<rect x='213.0' y='231.1' width='26.0' height='46.9' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent_parents/16 — N independent parents each fan out to 16 sub-requests at once; N is the number of parents.</title></rect>
-<text x='226.0' y='227.1' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-3%</text>
+<rect x='185.0' y='85.3' width='26.0' height='192.7' rx='2' class='bch-s-uring' fill='#eb6834'><title>concurrent_parents/16 — N independent parents each fan out to 16 sub-requests at once; N is the number of parents.</title></rect>
+<text x='198.0' y='81.3' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+4%</text>
+<rect x='213.0' y='228.3' width='26.0' height='49.7' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent_parents/16 — N independent parents each fan out to 16 sub-requests at once; N is the number of parents.</title></rect>
+<text x='226.0' y='224.3' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-3%</text>
 <text x='212.0' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 212.0 292.0)'>concurrent_parents/16</text>
-<rect x='295.7' y='103.0' width='26.0' height='175.0' rx='2' class='bch-s-uring' fill='#eb6834'><title>concurrent_parents/4 — N independent parents each fan out to 16 sub-requests at once; N is the number of parents.</title></rect>
-<text x='308.7' y='99.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+3%</text>
-<rect x='323.7' y='222.8' width='26.0' height='55.2' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent_parents/4 — N independent parents each fan out to 16 sub-requests at once; N is the number of parents.</title></rect>
-<text x='336.7' y='218.8' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-2%</text>
+<rect x='295.7' y='85.7' width='26.0' height='192.3' rx='2' class='bch-s-uring' fill='#eb6834'><title>concurrent_parents/4 — N independent parents each fan out to 16 sub-requests at once; N is the number of parents.</title></rect>
+<text x='308.7' y='81.7' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+4%</text>
+<rect x='323.7' y='229.5' width='26.0' height='48.5' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent_parents/4 — N independent parents each fan out to 16 sub-requests at once; N is the number of parents.</title></rect>
+<text x='336.7' y='225.5' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-3%</text>
 <text x='322.7' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 322.7 292.0)'>concurrent_parents/4</text>
-<rect x='406.3' y='128.6' width='26.0' height='149.4' rx='2' class='bch-s-uring' fill='#eb6834'><title>concurrent_parents_lockless/1 — Same as concurrent_parents, with the context in single-threaded lockless mode; N is the number of parents.</title></rect>
-<text x='419.3' y='124.6' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+2%</text>
-<rect x='434.3' y='245.8' width='26.0' height='32.2' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent_parents_lockless/1 — Same as concurrent_parents, with the context in single-threaded lockless mode; N is the number of parents.</title></rect>
-<text x='447.3' y='241.8' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-4%</text>
+<rect x='406.3' y='107.9' width='26.0' height='170.1' rx='2' class='bch-s-uring' fill='#eb6834'><title>concurrent_parents_lockless/1 — Same as concurrent_parents, with the context in single-threaded lockless mode; N is the number of parents.</title></rect>
+<text x='419.3' y='103.9' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+3%</text>
+<rect x='434.3' y='240.8' width='26.0' height='37.2' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent_parents_lockless/1 — Same as concurrent_parents, with the context in single-threaded lockless mode; N is the number of parents.</title></rect>
+<text x='447.3' y='236.8' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-3%</text>
 <text x='433.3' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 433.3 292.0)'>concurrent_parents_lockless/1</text>
-<rect x='517.0' y='116.7' width='26.0' height='161.3' rx='2' class='bch-s-uring' fill='#eb6834'><title>concurrent_parents_lockless/16 — Same as concurrent_parents, with the context in single-threaded lockless mode; N is the number of parents.</title></rect>
-<text x='530.0' y='112.7' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+2%</text>
-<rect x='545.0' y='226.9' width='26.0' height='51.1' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent_parents_lockless/16 — Same as concurrent_parents, with the context in single-threaded lockless mode; N is the number of parents.</title></rect>
-<text x='558.0' y='222.9' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-3%</text>
+<rect x='517.0' y='92.5' width='26.0' height='185.5' rx='2' class='bch-s-uring' fill='#eb6834'><title>concurrent_parents_lockless/16 — Same as concurrent_parents, with the context in single-threaded lockless mode; N is the number of parents.</title></rect>
+<text x='530.0' y='88.5' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+3%</text>
+<rect x='545.0' y='226.8' width='26.0' height='51.2' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent_parents_lockless/16 — Same as concurrent_parents, with the context in single-threaded lockless mode; N is the number of parents.</title></rect>
+<text x='558.0' y='222.8' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-3%</text>
 <text x='544.0' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 544.0 292.0)'>concurrent_parents_lockless/16</text>
-<rect x='627.7' y='110.2' width='26.0' height='167.8' rx='2' class='bch-s-uring' fill='#eb6834'><title>concurrent_parents_lockless/4 — Same as concurrent_parents, with the context in single-threaded lockless mode; N is the number of parents.</title></rect>
-<text x='640.7' y='106.2' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+3%</text>
-<rect x='655.7' y='228.1' width='26.0' height='49.9' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent_parents_lockless/4 — Same as concurrent_parents, with the context in single-threaded lockless mode; N is the number of parents.</title></rect>
-<text x='668.7' y='224.1' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-3%</text>
+<rect x='627.7' y='83.7' width='26.0' height='194.3' rx='2' class='bch-s-uring' fill='#eb6834'><title>concurrent_parents_lockless/4 — Same as concurrent_parents, with the context in single-threaded lockless mode; N is the number of parents.</title></rect>
+<text x='640.7' y='79.7' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>+4%</text>
+<rect x='655.7' y='224.0' width='26.0' height='54.0' rx='2' class='bch-s-cb' fill='#1baf7a'><title>concurrent_parents_lockless/4 — Same as concurrent_parents, with the context in single-threaded lockless mode; N is the number of parents.</title></rect>
+<text x='668.7' y='220.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink2' fill='#5f5e58' text-anchor='middle'>-3%</text>
 <text x='654.7' y='292.0' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' font-size='10' class='bch-ink' fill='#1f1f1e' text-anchor='end' transform='rotate(-38 654.7 292.0)'>concurrent_parents_lockless/4</text>
 <line x1='52' y1='168.0' x2='704' y2='168.0' class='bch-zero' stroke='#5f5e58' stroke-width='1.5' stroke-dasharray='5 4'/>
 </svg>
