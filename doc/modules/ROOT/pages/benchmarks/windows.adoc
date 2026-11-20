@@ -2,13 +2,13 @@
 :page-mode: explanation
 :toc: left
 
-_Generated 2026-11-16 from corosio `13bcf933adf8` — https://github.com/cppalliance/corosio/actions/runs/43810023573[benchmark run]. This page is fully generated; do not edit by hand (see the xref:benchmarks/index.adoc[Benchmarks landing page])._
+_Generated 2026-11-20 from corosio `893a69602155` — https://github.com/cppalliance/corosio/actions/runs/44629554895[benchmark run]. This page is fully generated; do not edit by hand (see the xref:benchmarks/index.adoc[Benchmarks landing page])._
 
 == Summary
 
 _Within noise_ means the relative difference is within twice the combined run-to-run noise (the root-sum-square of each side's CV). Differences that small are indistinguishable from measurement jitter. See xref:benchmarks/index.adoc[Methodology] for how these figures are computed.
 
-**0 faster &#183; 17 within noise &#183; 60 slower** of 77 benchmarks &#8212; median **-4.7%** vs Boost.Asio (callbacks) on the same reactor.
+**0 faster &#183; 17 within noise &#183; 60 slower** of 77 benchmarks &#8212; median **-4.8%** vs Boost.Asio (callbacks) on the same reactor.
 
 image::bench/windows-summary.svg[summary,role=bch-block,opts=inline]
 
@@ -24,13 +24,13 @@ image::bench/windows-summary.svg[summary,role=bch-block,opts=inline]
 | Compiler | c++.exe (x86_64-posix-seh-rev2, Built by MinGW-W64 project) 12.2.0
 | CMake | `cmake version 3.26.3`
 | liburing | n/a
-| Boost commit | 644b3c38a6c52972a1678677951307194ccb04e2
+| Boost commit | b43db5cedbe534c2659c002fdee9e2e8040f1265
 | Asio commit | e99d9da6d9b76a222e29dcaf3d2df51c788b7527
 | Asio reactor | IOCP
-| Capy commit | 25299eb4fd17423b761cc35d47008df7b68976d1
-| Corosio commit | 13bcf933adf8c5ce8576bd3349ae58d2e46e5c53
+| Capy commit | 6a9569060f999453e1f7b59cc9ae31c808c0778b
+| Corosio commit | 893a69602155fb98b1b9340bb1e467502d0837e5
 | Corosio branch | develop
-| Date (UTC) | 2026-11-16
+| Date (UTC) | 2026-11-19
 | Iterations | 7
 | Duration per benchmark (s) | 2.0
 |===
@@ -51,33 +51,33 @@ image::bench/windows-accept_churn.svg[accept churn comparison,role=bch-block,opt
 [%autowidth.stretch,options="header"]
 |===
 | Benchmark | Implementation | Median | CV | vs asio
-| `burst/10` | corosio (IOCP) | 1.55K ops/s | 0.94% | -6.0%
-| `burst/10` | asio (coroutines) | 1.69K ops/s | 0.65% | +2.2%
-| `burst/10` | asio (callbacks) | 1.65K ops/s | 0.64% | baseline
-| `burst/100` | corosio (IOCP) | 156.7 ops/s | 1.41% | -4.3%
-| `burst/100` | asio (coroutines) | 170.8 ops/s | 0.46% | +4.2%
-| `burst/100` | asio (callbacks) | 163.8 ops/s | 0.61% | baseline
-| `burst_lockless/10` | corosio (IOCP) | 1.57K ops/s | 0.16% | -6.1%
-| `burst_lockless/10` | asio (coroutines) | 1.71K ops/s | 0.22% | +2.3%
-| `burst_lockless/10` | asio (callbacks) | 1.67K ops/s | 0.43% | baseline
-| `burst_lockless/100` | corosio (IOCP) | 159.3 ops/s | 0.86% | -4.1%
-| `burst_lockless/100` | asio (coroutines) | 176.2 ops/s | 0.76% | +6.0%
-| `burst_lockless/100` | asio (callbacks) | 166.2 ops/s | 0.60% | baseline
-| `concurrent/1` | corosio (IOCP) | 12.56K ops/s | 0.20% | -8.6%
-| `concurrent/1` | asio (coroutines) | 13.22K ops/s | 0.20% | -3.8%
-| `concurrent/1` | asio (callbacks) | 13.74K ops/s | 0.20% | baseline
-| `concurrent/16` | corosio (IOCP) | 13.47K ops/s | 0.36% | -6.7%
-| `concurrent/16` | asio (coroutines) | 14.04K ops/s | 0.24% | -2.8%
-| `concurrent/16` | asio (callbacks) | 14.44K ops/s | 0.30% | baseline
-| `concurrent/4` | corosio (IOCP) | 13.18K ops/s | 0.19% | -7.6%
-| `concurrent/4` | asio (coroutines) | 13.76K ops/s | 0.38% | -3.4%
-| `concurrent/4` | asio (callbacks) | 14.25K ops/s | 0.20% | baseline
-| `sequential` | corosio (IOCP) | 12.51K ops/s | 0.28% | -8.8%
-| `sequential` | asio (coroutines) | 13.22K ops/s | 1.59% | -3.7%
-| `sequential` | asio (callbacks) | 13.72K ops/s | 0.29% | baseline
-| `sequential_lockless` | corosio (IOCP) | 12.55K ops/s | 0.19% | -8.8%
-| `sequential_lockless` | asio (coroutines) | 13.25K ops/s | 0.26% | -3.7%
-| `sequential_lockless` | asio (callbacks) | 13.75K ops/s | 0.20% | baseline
+| `burst/10` | corosio (IOCP) | 1.55K ops/s | 0.42% | -6.1%
+| `burst/10` | asio (coroutines) | 1.69K ops/s | 0.75% | +2.6%
+| `burst/10` | asio (callbacks) | 1.65K ops/s | 0.46% | baseline
+| `burst/100` | corosio (IOCP) | 156.3 ops/s | 0.82% | -4.3%
+| `burst/100` | asio (coroutines) | 170.0 ops/s | 0.88% | +4.1%
+| `burst/100` | asio (callbacks) | 163.3 ops/s | 0.48% | baseline
+| `burst_lockless/10` | corosio (IOCP) | 1.57K ops/s | 0.23% | -5.8%
+| `burst_lockless/10` | asio (coroutines) | 1.70K ops/s | 0.19% | +2.5%
+| `burst_lockless/10` | asio (callbacks) | 1.66K ops/s | 0.20% | baseline
+| `burst_lockless/100` | corosio (IOCP) | 159.1 ops/s | 0.64% | -4.2%
+| `burst_lockless/100` | asio (coroutines) | 175.5 ops/s | 0.86% | +5.7%
+| `burst_lockless/100` | asio (callbacks) | 166.1 ops/s | 0.98% | baseline
+| `concurrent/1` | corosio (IOCP) | 12.53K ops/s | 0.26% | -8.4%
+| `concurrent/1` | asio (coroutines) | 13.16K ops/s | 0.29% | -3.8%
+| `concurrent/1` | asio (callbacks) | 13.68K ops/s | 9.63% | baseline
+| `concurrent/16` | corosio (IOCP) | 13.43K ops/s | 0.37% | -6.8%
+| `concurrent/16` | asio (coroutines) | 14.01K ops/s | 0.51% | -2.7%
+| `concurrent/16` | asio (callbacks) | 14.41K ops/s | 0.45% | baseline
+| `concurrent/4` | corosio (IOCP) | 13.17K ops/s | 0.32% | -7.2%
+| `concurrent/4` | asio (coroutines) | 13.68K ops/s | 0.20% | -3.6%
+| `concurrent/4` | asio (callbacks) | 14.20K ops/s | 0.26% | baseline
+| `sequential` | corosio (IOCP) | 12.46K ops/s | 0.39% | -8.4%
+| `sequential` | asio (coroutines) | 13.11K ops/s | 0.33% | -3.7%
+| `sequential` | asio (callbacks) | 13.61K ops/s | 0.41% | baseline
+| `sequential_lockless` | corosio (IOCP) | 12.55K ops/s | 0.36% | -8.4%
+| `sequential_lockless` | asio (coroutines) | 13.15K ops/s | 0.26% | -4.1%
+| `sequential_lockless` | asio (callbacks) | 13.70K ops/s | 0.25% | baseline
 |===
 ====
 
@@ -101,24 +101,24 @@ image::bench/windows-fan_out-g1.svg[fan out comparison, part 1,role=bch-block,op
 [%autowidth.stretch,options="header"]
 |===
 | Benchmark | Implementation | Median | CV | vs asio
-| `concurrent_parents/1` | corosio (IOCP) | 7.36K ops/s | 0.16% | -5.7%
-| `concurrent_parents/1` | asio (coroutines) | 6.97K ops/s | 0.86% | -10.8%
-| `concurrent_parents/1` | asio (callbacks) | 7.81K ops/s | 0.29% | baseline
-| `concurrent_parents/16` | corosio (IOCP) | 6.79K ops/s | 0.79% | -7.7%
-| `concurrent_parents/16` | asio (coroutines) | 6.52K ops/s | 0.85% | -11.4%
-| `concurrent_parents/16` | asio (callbacks) | 7.36K ops/s | 0.62% | baseline
-| `concurrent_parents/4` | corosio (IOCP) | 7.29K ops/s | 0.59% | -5.1%
-| `concurrent_parents/4` | asio (coroutines) | 6.92K ops/s | 0.66% | -10.0%
-| `concurrent_parents/4` | asio (callbacks) | 7.68K ops/s | 0.29% | baseline
-| `concurrent_parents_lockless/1` | corosio (IOCP) | 7.38K ops/s | 0.30% | -5.5%
-| `concurrent_parents_lockless/1` | asio (coroutines) | 7.06K ops/s | 0.30% | -9.7%
-| `concurrent_parents_lockless/1` | asio (callbacks) | 7.81K ops/s | 0.27% | baseline
-| `concurrent_parents_lockless/16` | corosio (IOCP) | 6.87K ops/s | 1.05% | -6.9%
-| `concurrent_parents_lockless/16` | asio (coroutines) | 6.58K ops/s | 0.59% | -10.9%
-| `concurrent_parents_lockless/16` | asio (callbacks) | 7.38K ops/s | 0.51% | baseline
-| `concurrent_parents_lockless/4` | corosio (IOCP) | 7.29K ops/s | 0.58% | -5.1%
-| `concurrent_parents_lockless/4` | asio (coroutines) | 6.93K ops/s | 0.36% | -9.9%
-| `concurrent_parents_lockless/4` | asio (callbacks) | 7.68K ops/s | 0.33% | baseline
+| `concurrent_parents/1` | corosio (IOCP) | 7.33K ops/s | 0.11% | -5.7%
+| `concurrent_parents/1` | asio (coroutines) | 6.94K ops/s | 0.80% | -10.7%
+| `concurrent_parents/1` | asio (callbacks) | 7.77K ops/s | 0.33% | baseline
+| `concurrent_parents/16` | corosio (IOCP) | 6.77K ops/s | 0.92% | -7.8%
+| `concurrent_parents/16` | asio (coroutines) | 6.50K ops/s | 0.74% | -11.5%
+| `concurrent_parents/16` | asio (callbacks) | 7.34K ops/s | 0.46% | baseline
+| `concurrent_parents/4` | corosio (IOCP) | 7.27K ops/s | 0.58% | -5.1%
+| `concurrent_parents/4` | asio (coroutines) | 6.93K ops/s | 0.51% | -9.4%
+| `concurrent_parents/4` | asio (callbacks) | 7.66K ops/s | 0.15% | baseline
+| `concurrent_parents_lockless/1` | corosio (IOCP) | 7.33K ops/s | 0.27% | -6.0%
+| `concurrent_parents_lockless/1` | asio (coroutines) | 7.03K ops/s | 0.22% | -9.8%
+| `concurrent_parents_lockless/1` | asio (callbacks) | 7.79K ops/s | 0.24% | baseline
+| `concurrent_parents_lockless/16` | corosio (IOCP) | 6.84K ops/s | 0.80% | -7.5%
+| `concurrent_parents_lockless/16` | asio (coroutines) | 6.54K ops/s | 0.52% | -11.5%
+| `concurrent_parents_lockless/16` | asio (callbacks) | 7.39K ops/s | 0.44% | baseline
+| `concurrent_parents_lockless/4` | corosio (IOCP) | 7.27K ops/s | 0.43% | -5.0%
+| `concurrent_parents_lockless/4` | asio (coroutines) | 6.93K ops/s | 0.33% | -9.5%
+| `concurrent_parents_lockless/4` | asio (callbacks) | 7.66K ops/s | 0.16% | baseline
 |===
 ====
 
@@ -134,42 +134,42 @@ image::bench/windows-fan_out-g2.svg[fan out comparison, part 2,role=bch-block,op
 [%autowidth.stretch,options="header"]
 |===
 | Benchmark | Implementation | Median | CV | vs asio
-| `fork_join/1` | corosio (IOCP) | 112.5K ops/s | 0.19% | -10.4%
-| `fork_join/1` | asio (coroutines) | 111.5K ops/s | 0.47% | -11.2%
-| `fork_join/1` | asio (callbacks) | 125.6K ops/s | 0.45% | baseline
-| `fork_join/16` | corosio (IOCP) | 7.37K ops/s | 0.22% | -5.7%
-| `fork_join/16` | asio (coroutines) | 6.98K ops/s | 0.39% | -10.6%
-| `fork_join/16` | asio (callbacks) | 7.81K ops/s | 0.19% | baseline
-| `fork_join/4` | corosio (IOCP) | 29.16K ops/s | 0.34% | -6.7%
-| `fork_join/4` | asio (coroutines) | 28.14K ops/s | 0.44% | -9.9%
-| `fork_join/4` | asio (callbacks) | 31.24K ops/s | 0.32% | baseline
-| `fork_join/64` | corosio (IOCP) | 1.83K ops/s | 1.17% | -4.8%
-| `fork_join/64` | asio (coroutines) | 1.73K ops/s | 1.14% | -9.9%
-| `fork_join/64` | asio (callbacks) | 1.92K ops/s | 0.30% | baseline
-| `fork_join_lockless/1` | corosio (IOCP) | 112.1K ops/s | 0.52% | -10.6%
-| `fork_join_lockless/1` | asio (coroutines) | 111.7K ops/s | 0.27% | -11.0%
-| `fork_join_lockless/1` | asio (callbacks) | 125.5K ops/s | 0.24% | baseline
-| `fork_join_lockless/16` | corosio (IOCP) | 7.36K ops/s | 0.56% | -5.8%
-| `fork_join_lockless/16` | asio (coroutines) | 6.99K ops/s | 0.88% | -10.5%
-| `fork_join_lockless/16` | asio (callbacks) | 7.81K ops/s | 0.21% | baseline
-| `fork_join_lockless/4` | corosio (IOCP) | 29.21K ops/s | 0.24% | -6.4%
-| `fork_join_lockless/4` | asio (coroutines) | 28.24K ops/s | 0.52% | -9.6%
-| `fork_join_lockless/4` | asio (callbacks) | 31.23K ops/s | 0.19% | baseline
-| `fork_join_lockless/64` | corosio (IOCP) | 1.83K ops/s | 1.15% | -4.7%
-| `fork_join_lockless/64` | asio (coroutines) | 1.73K ops/s | 0.80% | -9.8%
-| `fork_join_lockless/64` | asio (callbacks) | 1.92K ops/s | 0.18% | baseline
-| `nested/16` | corosio (IOCP) | 1.80K ops/s | 0.94% | -5.9%
-| `nested/16` | asio (coroutines) | 1.67K ops/s | 0.63% | -12.5%
-| `nested/16` | asio (callbacks) | 1.91K ops/s | 0.33% | baseline
-| `nested/4` | corosio (IOCP) | 7.23K ops/s | 0.21% | -7.1%
-| `nested/4` | asio (coroutines) | 6.70K ops/s | 0.50% | -13.9%
-| `nested/4` | asio (callbacks) | 7.78K ops/s | 0.35% | baseline
-| `nested_lockless/16` | corosio (IOCP) | 1.80K ops/s | 0.72% | -5.9%
-| `nested_lockless/16` | asio (coroutines) | 1.69K ops/s | 0.68% | -11.9%
-| `nested_lockless/16` | asio (callbacks) | 1.91K ops/s | 0.28% | baseline
-| `nested_lockless/4` | corosio (IOCP) | 7.23K ops/s | 0.34% | -7.1%
-| `nested_lockless/4` | asio (coroutines) | 6.68K ops/s | 0.86% | -14.1%
-| `nested_lockless/4` | asio (callbacks) | 7.78K ops/s | 0.49% | baseline
+| `fork_join/1` | corosio (IOCP) | 111.7K ops/s | 0.32% | -10.5%
+| `fork_join/1` | asio (coroutines) | 111.7K ops/s | 0.58% | -10.4%
+| `fork_join/1` | asio (callbacks) | 124.8K ops/s | 0.86% | baseline
+| `fork_join/16` | corosio (IOCP) | 7.34K ops/s | 0.18% | -5.8%
+| `fork_join/16` | asio (coroutines) | 6.95K ops/s | 0.41% | -10.8%
+| `fork_join/16` | asio (callbacks) | 7.79K ops/s | 0.30% | baseline
+| `fork_join/4` | corosio (IOCP) | 29.08K ops/s | 0.30% | -6.7%
+| `fork_join/4` | asio (coroutines) | 28.07K ops/s | 0.42% | -9.9%
+| `fork_join/4` | asio (callbacks) | 31.17K ops/s | 0.26% | baseline
+| `fork_join/64` | corosio (IOCP) | 1.82K ops/s | 1.35% | -4.5%
+| `fork_join/64` | asio (coroutines) | 1.73K ops/s | 0.64% | -9.3%
+| `fork_join/64` | asio (callbacks) | 1.91K ops/s | 0.49% | baseline
+| `fork_join_lockless/1` | corosio (IOCP) | 111.9K ops/s | 0.30% | -10.6%
+| `fork_join_lockless/1` | asio (coroutines) | 111.5K ops/s | 0.62% | -10.9%
+| `fork_join_lockless/1` | asio (callbacks) | 125.1K ops/s | 0.41% | baseline
+| `fork_join_lockless/16` | corosio (IOCP) | 7.34K ops/s | 0.23% | -5.8%
+| `fork_join_lockless/16` | asio (coroutines) | 6.99K ops/s | 0.26% | -10.3%
+| `fork_join_lockless/16` | asio (callbacks) | 7.79K ops/s | 0.16% | baseline
+| `fork_join_lockless/4` | corosio (IOCP) | 29.06K ops/s | 0.25% | -6.8%
+| `fork_join_lockless/4` | asio (coroutines) | 28.21K ops/s | 0.38% | -9.6%
+| `fork_join_lockless/4` | asio (callbacks) | 31.19K ops/s | 0.30% | baseline
+| `fork_join_lockless/64` | corosio (IOCP) | 1.83K ops/s | 0.81% | -4.8%
+| `fork_join_lockless/64` | asio (coroutines) | 1.73K ops/s | 0.55% | -9.7%
+| `fork_join_lockless/64` | asio (callbacks) | 1.92K ops/s | 0.28% | baseline
+| `nested/16` | corosio (IOCP) | 1.80K ops/s | 0.72% | -6.1%
+| `nested/16` | asio (coroutines) | 1.68K ops/s | 0.50% | -12.0%
+| `nested/16` | asio (callbacks) | 1.91K ops/s | 0.16% | baseline
+| `nested/4` | corosio (IOCP) | 7.20K ops/s | 0.25% | -7.2%
+| `nested/4` | asio (coroutines) | 6.66K ops/s | 0.53% | -14.2%
+| `nested/4` | asio (callbacks) | 7.77K ops/s | 0.20% | baseline
+| `nested_lockless/16` | corosio (IOCP) | 1.79K ops/s | 0.52% | -6.0%
+| `nested_lockless/16` | asio (coroutines) | 1.68K ops/s | 0.18% | -12.0%
+| `nested_lockless/16` | asio (callbacks) | 1.91K ops/s | 0.23% | baseline
+| `nested_lockless/4` | corosio (IOCP) | 7.21K ops/s | 0.20% | -7.0%
+| `nested_lockless/4` | asio (coroutines) | 6.67K ops/s | 0.57% | -14.0%
+| `nested_lockless/4` | asio (callbacks) | 7.76K ops/s | 0.28% | baseline
 |===
 ====
 
@@ -193,39 +193,39 @@ image::bench/windows-http_server.svg[http server comparison,role=bch-block,opts=
 [%autowidth.stretch,options="header"]
 |===
 | Benchmark | Implementation | Median | CV | vs asio
-| `concurrent/1` | corosio (IOCP) | 111.8K ops/s | 0.33% | -2.3%
-| `concurrent/1` | asio (coroutines) | 109.1K ops/s | 0.26% | -4.6%
-| `concurrent/1` | asio (callbacks) | 114.4K ops/s | 0.33% | baseline
-| `concurrent/16` | corosio (IOCP) | 108.9K ops/s | 0.29% | -3.1%
-| `concurrent/16` | asio (coroutines) | 107.2K ops/s | 0.27% | -4.6%
-| `concurrent/16` | asio (callbacks) | 112.4K ops/s | 0.24% | baseline
-| `concurrent/32` | corosio (IOCP) | 108.1K ops/s | 1.58% | -3.4%
-| `concurrent/32` | asio (coroutines) | 106.8K ops/s | 0.23% | -4.6%
-| `concurrent/32` | asio (callbacks) | 111.9K ops/s | 0.24% | baseline
-| `concurrent/4` | corosio (IOCP) | 109.6K ops/s | 0.32% | -2.7%
-| `concurrent/4` | asio (coroutines) | 107.2K ops/s | 0.47% | -4.8%
-| `concurrent/4` | asio (callbacks) | 112.6K ops/s | 0.26% | baseline
-| `multithread/1` | corosio (IOCP) | 108.3K ops/s | 1.56% | -3.1%
-| `multithread/1` | asio (coroutines) | 106.7K ops/s | 0.21% | -4.5%
-| `multithread/1` | asio (callbacks) | 111.7K ops/s | 0.37% | baseline
-| `multithread/16` | corosio (IOCP) | 264.4K ops/s | 0.44% | -6.5%
-| `multithread/16` | asio (coroutines) | 274.3K ops/s | 0.33% | -3.0%
-| `multithread/16` | asio (callbacks) | 282.7K ops/s | 0.45% | baseline
-| `multithread/2` | corosio (IOCP) | 181.3K ops/s | 0.47% | -3.3%
-| `multithread/2` | asio (coroutines) | 180.9K ops/s | 0.40% | -3.6%
-| `multithread/2` | asio (callbacks) | 187.6K ops/s | 0.44% | baseline
-| `multithread/4` | corosio (IOCP) | 223.3K ops/s | 0.78% | -4.2%
-| `multithread/4` | asio (coroutines) | 226.8K ops/s | 0.38% | -2.8%
-| `multithread/4` | asio (callbacks) | 233.2K ops/s | 0.29% | baseline
-| `multithread/8` | corosio (IOCP) | 264.2K ops/s | 0.65% | -5.8%
-| `multithread/8` | asio (coroutines) | 270.8K ops/s | 0.74% | -3.4%
-| `multithread/8` | asio (callbacks) | 280.3K ops/s | 0.34% | baseline
-| `single_conn` | corosio (IOCP) | 111.9K ops/s | 0.28% | -2.6%
-| `single_conn` | asio (coroutines) | 108.9K ops/s | 0.44% | -5.1%
-| `single_conn` | asio (callbacks) | 114.8K ops/s | 0.49% | baseline
-| `single_conn_lockless` | corosio (IOCP) | 111.9K ops/s | 0.49% | -2.2%
-| `single_conn_lockless` | asio (coroutines) | 109.1K ops/s | 0.42% | -4.6%
-| `single_conn_lockless` | asio (callbacks) | 114.4K ops/s | 0.38% | baseline
+| `concurrent/1` | corosio (IOCP) | 111.5K ops/s | 0.60% | -1.6%
+| `concurrent/1` | asio (coroutines) | 109.3K ops/s | 0.44% | -3.6%
+| `concurrent/1` | asio (callbacks) | 113.4K ops/s | 0.42% | baseline
+| `concurrent/16` | corosio (IOCP) | 108.2K ops/s | 0.23% | -3.3%
+| `concurrent/16` | asio (coroutines) | 107.8K ops/s | 0.36% | -3.6%
+| `concurrent/16` | asio (callbacks) | 111.8K ops/s | 0.32% | baseline
+| `concurrent/32` | corosio (IOCP) | 107.4K ops/s | 0.86% | -3.4%
+| `concurrent/32` | asio (coroutines) | 107.1K ops/s | 0.40% | -3.7%
+| `concurrent/32` | asio (callbacks) | 111.2K ops/s | 0.17% | baseline
+| `concurrent/4` | corosio (IOCP) | 108.8K ops/s | 0.28% | -2.3%
+| `concurrent/4` | asio (coroutines) | 107.7K ops/s | 0.21% | -3.3%
+| `concurrent/4` | asio (callbacks) | 111.4K ops/s | 0.26% | baseline
+| `multithread/1` | corosio (IOCP) | 107.5K ops/s | 0.82% | -3.4%
+| `multithread/1` | asio (coroutines) | 107.1K ops/s | 0.45% | -3.8%
+| `multithread/1` | asio (callbacks) | 111.3K ops/s | 0.20% | baseline
+| `multithread/16` | corosio (IOCP) | 264.7K ops/s | 0.58% | -6.5%
+| `multithread/16` | asio (coroutines) | 275.5K ops/s | 0.50% | -2.7%
+| `multithread/16` | asio (callbacks) | 283.1K ops/s | 0.74% | baseline
+| `multithread/2` | corosio (IOCP) | 179.2K ops/s | 0.43% | -4.0%
+| `multithread/2` | asio (coroutines) | 181.3K ops/s | 0.16% | -2.9%
+| `multithread/2` | asio (callbacks) | 186.7K ops/s | 0.41% | baseline
+| `multithread/4` | corosio (IOCP) | 223.7K ops/s | 0.34% | -4.2%
+| `multithread/4` | asio (coroutines) | 228.1K ops/s | 0.81% | -2.4%
+| `multithread/4` | asio (callbacks) | 233.6K ops/s | 0.56% | baseline
+| `multithread/8` | corosio (IOCP) | 263.6K ops/s | 0.40% | -5.8%
+| `multithread/8` | asio (coroutines) | 273.6K ops/s | 0.74% | -2.2%
+| `multithread/8` | asio (callbacks) | 279.8K ops/s | 0.44% | baseline
+| `single_conn` | corosio (IOCP) | 111.2K ops/s | 0.57% | -1.9%
+| `single_conn` | asio (coroutines) | 108.7K ops/s | 0.44% | -4.0%
+| `single_conn` | asio (callbacks) | 113.3K ops/s | 0.48% | baseline
+| `single_conn_lockless` | corosio (IOCP) | 111.4K ops/s | 0.83% | -2.0%
+| `single_conn_lockless` | asio (coroutines) | 109.0K ops/s | 0.43% | -4.2%
+| `single_conn_lockless` | asio (callbacks) | 113.7K ops/s | 0.35% | baseline
 |===
 ====
 
@@ -249,42 +249,42 @@ image::bench/windows-socket_latency.svg[socket latency comparison,role=bch-block
 [%autowidth.stretch,options="header"]
 |===
 | Benchmark | Implementation | Median | CV | vs asio
-| `concurrent/1` | corosio (IOCP) | 7.59 µs | 0.37% | -9.3%
-| `concurrent/1` | asio (coroutines) | 7.37 µs | 0.73% | -6.0%
-| `concurrent/1` | asio (callbacks) | 6.95 µs | 0.38% | baseline
-| `concurrent/16` | corosio (IOCP) | 125.43 µs | 5.94% | -10.7%
-| `concurrent/16` | asio (coroutines) | 123.54 µs | 2.36% | -9.0%
-| `concurrent/16` | asio (callbacks) | 113.34 µs | 4.32% | baseline
-| `concurrent/4` | corosio (IOCP) | 30.54 µs | 0.38% | -9.6%
-| `concurrent/4` | asio (coroutines) | 29.67 µs | 0.38% | -6.5%
-| `concurrent/4` | asio (callbacks) | 27.86 µs | 0.39% | baseline
-| `concurrent_lockless/1` | corosio (IOCP) | 7.61 µs | 0.13% | -9.7%
-| `concurrent_lockless/1` | asio (coroutines) | 7.35 µs | 0.50% | -6.0%
-| `concurrent_lockless/1` | asio (callbacks) | 6.93 µs | 0.34% | baseline
-| `concurrent_lockless/16` | corosio (IOCP) | 121.62 µs | 0.40% | -9.8%
-| `concurrent_lockless/16` | asio (coroutines) | 118.41 µs | 4.37% | -6.9%
-| `concurrent_lockless/16` | asio (callbacks) | 110.79 µs | 0.61% | baseline
-| `concurrent_lockless/4` | corosio (IOCP) | 30.51 µs | 0.16% | -9.7%
-| `concurrent_lockless/4` | asio (coroutines) | 29.54 µs | 0.33% | -6.2%
-| `concurrent_lockless/4` | asio (callbacks) | 27.82 µs | 0.39% | baseline
-| `pingpong/1` | corosio (IOCP) | 7.60 µs | 0.58% | -9.4%
-| `pingpong/1` | asio (coroutines) | 7.33 µs | 0.56% | -5.6%
-| `pingpong/1` | asio (callbacks) | 6.94 µs | 0.46% | baseline
-| `pingpong/1024` | corosio (IOCP) | 7.74 µs | 0.76% | -10.1%
-| `pingpong/1024` | asio (coroutines) | 7.46 µs | 0.48% | -6.1%
-| `pingpong/1024` | asio (callbacks) | 7.03 µs | 0.29% | baseline
-| `pingpong/64` | corosio (IOCP) | 7.60 µs | 0.33% | -9.2%
-| `pingpong/64` | asio (coroutines) | 7.34 µs | 0.51% | -5.5%
-| `pingpong/64` | asio (callbacks) | 6.96 µs | 0.21% | baseline
-| `pingpong_lockless/1` | corosio (IOCP) | 7.56 µs | 0.28% | -9.5%
-| `pingpong_lockless/1` | asio (coroutines) | 7.33 µs | 0.53% | -6.2%
-| `pingpong_lockless/1` | asio (callbacks) | 6.90 µs | 0.48% | baseline
-| `pingpong_lockless/1024` | corosio (IOCP) | 7.71 µs | 0.33% | -9.6%
-| `pingpong_lockless/1024` | asio (coroutines) | 7.45 µs | 0.68% | -5.9%
-| `pingpong_lockless/1024` | asio (callbacks) | 7.04 µs | 0.33% | baseline
-| `pingpong_lockless/64` | corosio (IOCP) | 7.60 µs | 0.30% | -9.3%
-| `pingpong_lockless/64` | asio (coroutines) | 7.37 µs | 0.41% | -5.9%
-| `pingpong_lockless/64` | asio (callbacks) | 6.96 µs | 0.38% | baseline
+| `concurrent/1` | corosio (IOCP) | 7.68 µs | 0.33% | -10.5%
+| `concurrent/1` | asio (coroutines) | 7.40 µs | 0.59% | -6.6%
+| `concurrent/1` | asio (callbacks) | 6.94 µs | 0.43% | baseline
+| `concurrent/16` | corosio (IOCP) | 129.73 µs | 5.22% | -14.1%
+| `concurrent/16` | asio (coroutines) | 129.79 µs | 5.72% | -14.2%
+| `concurrent/16` | asio (callbacks) | 113.68 µs | 2.88% | baseline
+| `concurrent/4` | corosio (IOCP) | 30.69 µs | 0.44% | -9.9%
+| `concurrent/4` | asio (coroutines) | 29.64 µs | 0.36% | -6.2%
+| `concurrent/4` | asio (callbacks) | 27.91 µs | 0.36% | baseline
+| `concurrent_lockless/1` | corosio (IOCP) | 7.67 µs | 0.22% | -10.6%
+| `concurrent_lockless/1` | asio (coroutines) | 7.41 µs | 0.46% | -6.8%
+| `concurrent_lockless/1` | asio (callbacks) | 6.93 µs | 0.46% | baseline
+| `concurrent_lockless/16` | corosio (IOCP) | 122.61 µs | 1.17% | -10.5%
+| `concurrent_lockless/16` | asio (coroutines) | 119.58 µs | 0.77% | -7.8%
+| `concurrent_lockless/16` | asio (callbacks) | 110.95 µs | 0.88% | baseline
+| `concurrent_lockless/4` | corosio (IOCP) | 30.70 µs | 0.47% | -9.8%
+| `concurrent_lockless/4` | asio (coroutines) | 29.73 µs | 0.44% | -6.3%
+| `concurrent_lockless/4` | asio (callbacks) | 27.96 µs | 0.40% | baseline
+| `pingpong/1` | corosio (IOCP) | 7.65 µs | 0.21% | -10.1%
+| `pingpong/1` | asio (coroutines) | 7.39 µs | 0.37% | -6.4%
+| `pingpong/1` | asio (callbacks) | 6.95 µs | 0.33% | baseline
+| `pingpong/1024` | corosio (IOCP) | 7.77 µs | 0.33% | -10.0%
+| `pingpong/1024` | asio (coroutines) | 7.50 µs | 0.47% | -6.1%
+| `pingpong/1024` | asio (callbacks) | 7.06 µs | 0.34% | baseline
+| `pingpong/64` | corosio (IOCP) | 7.65 µs | 0.50% | -10.2%
+| `pingpong/64` | asio (coroutines) | 7.40 µs | 0.27% | -6.7%
+| `pingpong/64` | asio (callbacks) | 6.94 µs | 0.48% | baseline
+| `pingpong_lockless/1` | corosio (IOCP) | 7.64 µs | 0.26% | -10.4%
+| `pingpong_lockless/1` | asio (coroutines) | 7.37 µs | 0.40% | -6.5%
+| `pingpong_lockless/1` | asio (callbacks) | 6.92 µs | 0.18% | baseline
+| `pingpong_lockless/1024` | corosio (IOCP) | 7.79 µs | 0.32% | -10.3%
+| `pingpong_lockless/1024` | asio (coroutines) | 7.51 µs | 0.49% | -6.4%
+| `pingpong_lockless/1024` | asio (callbacks) | 7.06 µs | 0.19% | baseline
+| `pingpong_lockless/64` | corosio (IOCP) | 7.63 µs | 0.23% | -9.9%
+| `pingpong_lockless/64` | asio (coroutines) | 7.38 µs | 0.25% | -6.2%
+| `pingpong_lockless/64` | asio (callbacks) | 6.95 µs | 0.47% | baseline
 |===
 ====
 
@@ -308,42 +308,42 @@ image::bench/windows-socket_throughput-g1.svg[socket throughput comparison, part
 [%autowidth.stretch,options="header"]
 |===
 | Benchmark | Implementation | Median | CV | vs asio
-| `bidirectional/1024` | corosio (IOCP) | 283.6 MB/s | 0.42% | -3.3%
-| `bidirectional/1024` | asio (coroutines) | 279.3 MB/s | 0.54% | -4.8%
-| `bidirectional/1024` | asio (callbacks) | 293.4 MB/s | 0.44% | baseline
-| `bidirectional/1048576` | corosio (IOCP) | 5.01 GB/s | 14.71% | +0.5%
-| `bidirectional/1048576` | asio (coroutines) | 4.56 GB/s | 9.69% | -8.6%
-| `bidirectional/1048576` | asio (callbacks) | 4.99 GB/s | 10.56% | baseline
-| `bidirectional/16384` | corosio (IOCP) | 3.77 GB/s | 0.71% | -2.7%
-| `bidirectional/16384` | asio (coroutines) | 3.73 GB/s | 1.12% | -3.9%
-| `bidirectional/16384` | asio (callbacks) | 3.88 GB/s | 0.73% | baseline
-| `bidirectional/262144` | corosio (IOCP) | 9.65 GB/s | 0.71% | +1.7%
-| `bidirectional/262144` | asio (coroutines) | 9.44 GB/s | 1.69% | -0.4%
-| `bidirectional/262144` | asio (callbacks) | 9.48 GB/s | 6.74% | baseline
-| `bidirectional/4096` | corosio (IOCP) | 1.09 GB/s | 0.49% | -2.9%
-| `bidirectional/4096` | asio (coroutines) | 1.07 GB/s | 0.33% | -4.0%
-| `bidirectional/4096` | asio (callbacks) | 1.12 GB/s | 0.61% | baseline
-| `bidirectional/65536` | corosio (IOCP) | 9.16 GB/s | 1.14% | -1.6%
-| `bidirectional/65536` | asio (coroutines) | 9.08 GB/s | 2.01% | -2.5%
-| `bidirectional/65536` | asio (callbacks) | 9.31 GB/s | 1.47% | baseline
-| `bidirectional_lockless/1024` | corosio (IOCP) | 283.5 MB/s | 0.51% | -3.0%
-| `bidirectional_lockless/1024` | asio (coroutines) | 278.6 MB/s | 0.47% | -4.7%
-| `bidirectional_lockless/1024` | asio (callbacks) | 292.2 MB/s | 0.32% | baseline
-| `bidirectional_lockless/1048576` | corosio (IOCP) | 5.37 GB/s | 13.09% | +3.5%
-| `bidirectional_lockless/1048576` | asio (coroutines) | 5.29 GB/s | 10.08% | +1.9%
-| `bidirectional_lockless/1048576` | asio (callbacks) | 5.19 GB/s | 11.01% | baseline
-| `bidirectional_lockless/16384` | corosio (IOCP) | 3.73 GB/s | 0.51% | -2.9%
-| `bidirectional_lockless/16384` | asio (coroutines) | 3.67 GB/s | 0.23% | -4.4%
-| `bidirectional_lockless/16384` | asio (callbacks) | 3.85 GB/s | 0.30% | baseline
-| `bidirectional_lockless/262144` | corosio (IOCP) | 9.76 GB/s | 1.66% | -1.2%
-| `bidirectional_lockless/262144` | asio (coroutines) | 9.78 GB/s | 1.24% | -1.0%
-| `bidirectional_lockless/262144` | asio (callbacks) | 9.88 GB/s | 1.09% | baseline
-| `bidirectional_lockless/4096` | corosio (IOCP) | 1.08 GB/s | 0.36% | -3.2%
-| `bidirectional_lockless/4096` | asio (coroutines) | 1.07 GB/s | 0.47% | -4.5%
-| `bidirectional_lockless/4096` | asio (callbacks) | 1.12 GB/s | 0.38% | baseline
-| `bidirectional_lockless/65536` | corosio (IOCP) | 8.97 GB/s | 0.70% | -2.3%
-| `bidirectional_lockless/65536` | asio (coroutines) | 8.88 GB/s | 0.45% | -3.3%
-| `bidirectional_lockless/65536` | asio (callbacks) | 9.18 GB/s | 0.72% | baseline
+| `bidirectional/1024` | corosio (IOCP) | 280.3 MB/s | 0.54% | -3.7%
+| `bidirectional/1024` | asio (coroutines) | 276.3 MB/s | 0.40% | -5.1%
+| `bidirectional/1024` | asio (callbacks) | 291.1 MB/s | 0.42% | baseline
+| `bidirectional/1048576` | corosio (IOCP) | 4.79 GB/s | 8.63% | -2.4%
+| `bidirectional/1048576` | asio (coroutines) | 4.70 GB/s | 7.69% | -4.3%
+| `bidirectional/1048576` | asio (callbacks) | 4.91 GB/s | 15.51% | baseline
+| `bidirectional/16384` | corosio (IOCP) | 3.75 GB/s | 0.64% | -3.5%
+| `bidirectional/16384` | asio (coroutines) | 3.72 GB/s | 3.94% | -4.1%
+| `bidirectional/16384` | asio (callbacks) | 3.88 GB/s | 0.31% | baseline
+| `bidirectional/262144` | corosio (IOCP) | 9.62 GB/s | 0.76% | +0.7%
+| `bidirectional/262144` | asio (coroutines) | 9.46 GB/s | 8.09% | -1.0%
+| `bidirectional/262144` | asio (callbacks) | 9.56 GB/s | 0.31% | baseline
+| `bidirectional/4096` | corosio (IOCP) | 1.08 GB/s | 0.20% | -4.0%
+| `bidirectional/4096` | asio (coroutines) | 1.07 GB/s | 0.94% | -4.9%
+| `bidirectional/4096` | asio (callbacks) | 1.12 GB/s | 0.25% | baseline
+| `bidirectional/65536` | corosio (IOCP) | 9.10 GB/s | 1.67% | -2.8%
+| `bidirectional/65536` | asio (coroutines) | 8.95 GB/s | 9.04% | -4.3%
+| `bidirectional/65536` | asio (callbacks) | 9.36 GB/s | 0.30% | baseline
+| `bidirectional_lockless/1024` | corosio (IOCP) | 279.8 MB/s | 0.31% | -3.7%
+| `bidirectional_lockless/1024` | asio (coroutines) | 277.3 MB/s | 0.28% | -4.6%
+| `bidirectional_lockless/1024` | asio (callbacks) | 290.6 MB/s | 0.35% | baseline
+| `bidirectional_lockless/1048576` | corosio (IOCP) | 5.17 GB/s | 10.52% | +4.0%
+| `bidirectional_lockless/1048576` | asio (coroutines) | 5.11 GB/s | 10.91% | +2.8%
+| `bidirectional_lockless/1048576` | asio (callbacks) | 4.98 GB/s | 14.14% | baseline
+| `bidirectional_lockless/16384` | corosio (IOCP) | 3.71 GB/s | 0.65% | -3.4%
+| `bidirectional_lockless/16384` | asio (coroutines) | 3.66 GB/s | 1.07% | -4.6%
+| `bidirectional_lockless/16384` | asio (callbacks) | 3.84 GB/s | 0.39% | baseline
+| `bidirectional_lockless/262144` | corosio (IOCP) | 9.78 GB/s | 1.25% | -0.6%
+| `bidirectional_lockless/262144` | asio (coroutines) | 9.77 GB/s | 1.03% | -0.7%
+| `bidirectional_lockless/262144` | asio (callbacks) | 9.84 GB/s | 0.80% | baseline
+| `bidirectional_lockless/4096` | corosio (IOCP) | 1.07 GB/s | 0.39% | -3.7%
+| `bidirectional_lockless/4096` | asio (coroutines) | 1.07 GB/s | 0.26% | -4.1%
+| `bidirectional_lockless/4096` | asio (callbacks) | 1.12 GB/s | 0.40% | baseline
+| `bidirectional_lockless/65536` | corosio (IOCP) | 8.95 GB/s | 1.09% | -2.2%
+| `bidirectional_lockless/65536` | asio (coroutines) | 8.83 GB/s | 0.26% | -3.4%
+| `bidirectional_lockless/65536` | asio (callbacks) | 9.14 GB/s | 0.38% | baseline
 |===
 ====
 
@@ -359,15 +359,15 @@ image::bench/windows-socket_throughput-g2.svg[socket throughput comparison, part
 [%autowidth.stretch,options="header"]
 |===
 | Benchmark | Implementation | Median | CV | vs asio
-| `multithread/2` | corosio (IOCP) | 12.64 GB/s | 0.32% | -1.4%
-| `multithread/2` | asio (coroutines) | 12.67 GB/s | 1.12% | -1.2%
-| `multithread/2` | asio (callbacks) | 12.83 GB/s | 0.50% | baseline
-| `multithread/4` | corosio (IOCP) | 16.84 GB/s | 0.65% | -2.5%
-| `multithread/4` | asio (coroutines) | 16.73 GB/s | 0.57% | -3.2%
-| `multithread/4` | asio (callbacks) | 17.28 GB/s | 0.38% | baseline
-| `multithread/8` | corosio (IOCP) | 18.45 GB/s | 0.99% | -0.7%
-| `multithread/8` | asio (coroutines) | 18.43 GB/s | 0.49% | -0.8%
-| `multithread/8` | asio (callbacks) | 18.58 GB/s | 1.17% | baseline
+| `multithread/2` | corosio (IOCP) | 12.62 GB/s | 0.49% | -1.6%
+| `multithread/2` | asio (coroutines) | 12.61 GB/s | 0.52% | -1.6%
+| `multithread/2` | asio (callbacks) | 12.82 GB/s | 0.48% | baseline
+| `multithread/4` | corosio (IOCP) | 16.90 GB/s | 0.95% | -1.8%
+| `multithread/4` | asio (coroutines) | 16.96 GB/s | 0.62% | -1.5%
+| `multithread/4` | asio (callbacks) | 17.21 GB/s | 0.81% | baseline
+| `multithread/8` | corosio (IOCP) | 18.48 GB/s | 0.89% | -1.4%
+| `multithread/8` | asio (coroutines) | 18.56 GB/s | 0.79% | -1.0%
+| `multithread/8` | asio (callbacks) | 18.74 GB/s | 1.02% | baseline
 |===
 ====
 
@@ -383,42 +383,42 @@ image::bench/windows-socket_throughput-g3.svg[socket throughput comparison, part
 [%autowidth.stretch,options="header"]
 |===
 | Benchmark | Implementation | Median | CV | vs asio
-| `unidirectional/1024` | corosio (IOCP) | 286.3 MB/s | 0.35% | -3.4%
-| `unidirectional/1024` | asio (coroutines) | 281.8 MB/s | 0.40% | -4.9%
-| `unidirectional/1024` | asio (callbacks) | 296.4 MB/s | 0.49% | baseline
-| `unidirectional/1048576` | corosio (IOCP) | 4.18 GB/s | 3.73% | +0.6%
-| `unidirectional/1048576` | asio (coroutines) | 4.27 GB/s | 3.87% | +2.9%
-| `unidirectional/1048576` | asio (callbacks) | 4.15 GB/s | 4.79% | baseline
-| `unidirectional/16384` | corosio (IOCP) | 3.82 GB/s | 0.76% | -1.3%
-| `unidirectional/16384` | asio (coroutines) | 3.75 GB/s | 1.23% | -3.1%
-| `unidirectional/16384` | asio (callbacks) | 3.86 GB/s | 4.53% | baseline
-| `unidirectional/262144` | corosio (IOCP) | 8.94 GB/s | 5.14% | +4.1%
-| `unidirectional/262144` | asio (coroutines) | 8.91 GB/s | 4.94% | +3.8%
-| `unidirectional/262144` | asio (callbacks) | 8.59 GB/s | 10.55% | baseline
-| `unidirectional/4096` | corosio (IOCP) | 1.10 GB/s | 0.52% | -2.5%
-| `unidirectional/4096` | asio (coroutines) | 1.08 GB/s | 0.66% | -4.2%
-| `unidirectional/4096` | asio (callbacks) | 1.13 GB/s | 1.39% | baseline
-| `unidirectional/65536` | corosio (IOCP) | 9.35 GB/s | 1.55% | +1.8%
-| `unidirectional/65536` | asio (coroutines) | 9.12 GB/s | 3.50% | -0.7%
-| `unidirectional/65536` | asio (callbacks) | 9.18 GB/s | 9.84% | baseline
-| `unidirectional_lockless/1024` | corosio (IOCP) | 286.1 MB/s | 0.57% | -3.3%
-| `unidirectional_lockless/1024` | asio (coroutines) | 281.6 MB/s | 0.33% | -4.8%
-| `unidirectional_lockless/1024` | asio (callbacks) | 295.9 MB/s | 0.56% | baseline
-| `unidirectional_lockless/1048576` | corosio (IOCP) | 4.71 GB/s | 8.16% | +2.4%
-| `unidirectional_lockless/1048576` | asio (coroutines) | 4.49 GB/s | 6.02% | -2.3%
-| `unidirectional_lockless/1048576` | asio (callbacks) | 4.60 GB/s | 3.24% | baseline
-| `unidirectional_lockless/16384` | corosio (IOCP) | 3.80 GB/s | 0.93% | -1.7%
-| `unidirectional_lockless/16384` | asio (coroutines) | 3.75 GB/s | 1.31% | -3.0%
-| `unidirectional_lockless/16384` | asio (callbacks) | 3.87 GB/s | 4.52% | baseline
-| `unidirectional_lockless/262144` | corosio (IOCP) | 9.84 GB/s | 1.25% | -0.8%
-| `unidirectional_lockless/262144` | asio (coroutines) | 9.73 GB/s | 1.03% | -1.8%
-| `unidirectional_lockless/262144` | asio (callbacks) | 9.91 GB/s | 7.29% | baseline
-| `unidirectional_lockless/4096` | corosio (IOCP) | 1.09 GB/s | 0.38% | -2.8%
-| `unidirectional_lockless/4096` | asio (coroutines) | 1.08 GB/s | 0.72% | -4.4%
-| `unidirectional_lockless/4096` | asio (callbacks) | 1.13 GB/s | 1.24% | baseline
-| `unidirectional_lockless/65536` | corosio (IOCP) | 9.41 GB/s | 2.12% | -1.3%
-| `unidirectional_lockless/65536` | asio (coroutines) | 9.26 GB/s | 3.68% | -2.8%
-| `unidirectional_lockless/65536` | asio (callbacks) | 9.53 GB/s | 10.33% | baseline
+| `unidirectional/1024` | corosio (IOCP) | 282.5 MB/s | 0.55% | -4.0%
+| `unidirectional/1024` | asio (coroutines) | 280.7 MB/s | 0.55% | -4.6%
+| `unidirectional/1024` | asio (callbacks) | 294.2 MB/s | 0.48% | baseline
+| `unidirectional/1048576` | corosio (IOCP) | 3.89 GB/s | 5.98% | -4.9%
+| `unidirectional/1048576` | asio (coroutines) | 3.92 GB/s | 0.98% | -4.3%
+| `unidirectional/1048576` | asio (callbacks) | 4.09 GB/s | 4.53% | baseline
+| `unidirectional/16384` | corosio (IOCP) | 3.78 GB/s | 2.00% | -3.0%
+| `unidirectional/16384` | asio (coroutines) | 3.74 GB/s | 3.96% | -4.2%
+| `unidirectional/16384` | asio (callbacks) | 3.90 GB/s | 0.70% | baseline
+| `unidirectional/262144` | corosio (IOCP) | 8.86 GB/s | 4.84% | -1.7%
+| `unidirectional/262144` | asio (coroutines) | 8.70 GB/s | 6.80% | -3.5%
+| `unidirectional/262144` | asio (callbacks) | 9.01 GB/s | 2.72% | baseline
+| `unidirectional/4096` | corosio (IOCP) | 1.09 GB/s | 0.78% | -4.0%
+| `unidirectional/4096` | asio (coroutines) | 1.08 GB/s | 1.11% | -4.7%
+| `unidirectional/4096` | asio (callbacks) | 1.13 GB/s | 0.56% | baseline
+| `unidirectional/65536` | corosio (IOCP) | 9.37 GB/s | 0.89% | -0.5%
+| `unidirectional/65536` | asio (coroutines) | 9.12 GB/s | 9.16% | -3.1%
+| `unidirectional/65536` | asio (callbacks) | 9.42 GB/s | 1.79% | baseline
+| `unidirectional_lockless/1024` | corosio (IOCP) | 283.8 MB/s | 0.57% | -3.7%
+| `unidirectional_lockless/1024` | asio (coroutines) | 281.2 MB/s | 0.60% | -4.5%
+| `unidirectional_lockless/1024` | asio (callbacks) | 294.6 MB/s | 0.43% | baseline
+| `unidirectional_lockless/1048576` | corosio (IOCP) | 4.46 GB/s | 9.21% | +4.3%
+| `unidirectional_lockless/1048576` | asio (coroutines) | 4.37 GB/s | 7.57% | +2.1%
+| `unidirectional_lockless/1048576` | asio (callbacks) | 4.28 GB/s | 9.80% | baseline
+| `unidirectional_lockless/16384` | corosio (IOCP) | 3.79 GB/s | 0.59% | -2.9%
+| `unidirectional_lockless/16384` | asio (coroutines) | 3.76 GB/s | 4.30% | -3.7%
+| `unidirectional_lockless/16384` | asio (callbacks) | 3.91 GB/s | 4.68% | baseline
+| `unidirectional_lockless/262144` | corosio (IOCP) | 9.84 GB/s | 3.98% | -0.6%
+| `unidirectional_lockless/262144` | asio (coroutines) | 9.63 GB/s | 3.75% | -2.7%
+| `unidirectional_lockless/262144` | asio (callbacks) | 9.90 GB/s | 1.35% | baseline
+| `unidirectional_lockless/4096` | corosio (IOCP) | 1.09 GB/s | 0.34% | -4.0%
+| `unidirectional_lockless/4096` | asio (coroutines) | 1.07 GB/s | 1.20% | -5.0%
+| `unidirectional_lockless/4096` | asio (callbacks) | 1.13 GB/s | 0.45% | baseline
+| `unidirectional_lockless/65536` | corosio (IOCP) | 9.39 GB/s | 0.94% | -1.0%
+| `unidirectional_lockless/65536` | asio (coroutines) | 9.29 GB/s | 1.22% | -2.0%
+| `unidirectional_lockless/65536` | asio (callbacks) | 9.49 GB/s | 1.72% | baseline
 |===
 ====
 
