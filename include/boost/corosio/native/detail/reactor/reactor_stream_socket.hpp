@@ -513,10 +513,12 @@ reactor_stream_socket<
         return std::noop_coroutine();
     }
 
+    std::size_t requested = 0;
     for (int i = 0; i < op.iovec_count; ++i)
     {
         op.iovecs[i].iov_base = bufs[i].data();
         op.iovecs[i].iov_len  = bufs[i].size();
+        requested += bufs[i].size();
     }
 
     // Speculative read; for the single-buffer case use recv() so the
@@ -544,7 +546,10 @@ reactor_stream_socket<
         int err    = (n < 0) ? errno : 0;
         auto bytes = (n > 0) ? static_cast<std::size_t>(n) : std::size_t(0);
 
-        if (this->svc_.scheduler().try_consume_inline_budget())
+        // A short read drained the socket, so the next one would fail
+        // with EAGAIN; posting lets the reactor run the writer first.
+        if ((n <= 0 || bytes == requested) &&
+            this->svc_.scheduler().try_consume_inline_budget())
         {
             if (err)
                 *ec = make_err(err);
@@ -644,10 +649,12 @@ reactor_stream_socket<
         return std::noop_coroutine();
     }
 
+    std::size_t requested = 0;
     for (int i = 0; i < op.iovec_count; ++i)
     {
         op.iovecs[i].iov_base = bufs[i].data();
         op.iovecs[i].iov_len  = bufs[i].size();
+        requested += bufs[i].size();
     }
 
     // Speculative write; the single-buffer case dispatches to a
@@ -669,7 +676,10 @@ reactor_stream_socket<
         int err    = (n < 0) ? errno : 0;
         auto bytes = (n > 0) ? static_cast<std::size_t>(n) : std::size_t(0);
 
-        if (this->svc_.scheduler().try_consume_inline_budget())
+        // A partial write filled the socket buffer, so the next one would
+        // fail with EAGAIN; posting lets the reactor run the reader first.
+        if ((n < 0 || bytes == requested) &&
+            this->svc_.scheduler().try_consume_inline_budget())
         {
             *ec        = err ? make_err(err) : std::error_code{};
             *bytes_out = bytes;
