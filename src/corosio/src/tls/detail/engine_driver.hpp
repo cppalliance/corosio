@@ -16,7 +16,6 @@
 #include "src/tls/detail/engine_types.hpp"
 
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/detail/buffer_array.hpp>
 #include <boost/capy/ex/async_mutex.hpp>
 #include <boost/capy/io/any_stream.hpp>
 #include <boost/capy/results.hpp>
@@ -94,11 +93,15 @@
 
     A read or write that fully satisfies the caller's buffer still owes
     a trailing flush (queued handshake or session-ticket output must
-    reach the peer before the call can report success). If that flush
-    fails, the transfer already succeeded and the stream contract
-    forbids reporting both a full count and an error in the same
-    result, so the error is stashed in pending_flush_ec_ and surfaced
-    by the next read, write, or shutdown call instead.
+    reach the peer before the call can report success). The caller's
+    buffer is the first non-empty buffer of its sequence, the only one
+    a call transfers. If that flush fails, the transfer already
+    succeeded, so the error is stashed in pending_flush_ec_ and surfaced
+    by the next read, write, or shutdown call instead. When the buffer
+    is the whole sequence the stream contract requires this, since it
+    forbids a full count with an error. When later buffers hold bytes
+    the contract would allow reporting the error now; deferring anyway
+    keeps one rule for every sequence.
 */
 
 namespace boost::corosio {
@@ -562,189 +565,179 @@ public:
     }
 
     capy::task<capy::results<std::size_t>> do_read_some(
-        capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers)
+        capy::mutable_buffer buf)
     {
         if (auto ec = take_pending_flush_ec())
             co_return {ec, 0};
 
+        if (buf.size() == 0)
+            co_return {std::error_code{}, 0};
+
         std::error_code ec;
-        std::size_t total_read      = 0;
-        std::size_t const bufs_size = capy::buffer_size(buffers);
+        std::size_t total_read = 0;
 
-        for (auto& buf : buffers)
+        char* const dest = static_cast<char*>(buf.data());
+        // Clamp for the engines' int-sized transfer API: a >=2 GiB
+        // buffer becomes a partial read, never a truncated length.
+        int const remaining = static_cast<int>(
+            (std::min)(buf.size(),
+                       std::size_t((std::numeric_limits<int>::max)())));
+
+        // Exits by co_return: success after the first transferred
+        // chunk, or any terminal error.
+        while (true)
         {
-            char* const dest = static_cast<char*>(buf.data());
-            // Clamp for the engines' int-sized transfer API: a >=2 GiB
-            // buffer becomes a partial read, never a truncated length.
-            int const remaining = static_cast<int>(
-                (std::min)(buf.size(),
-                           std::size_t((std::numeric_limits<int>::max)())));
-            if (remaining == 0)
-                continue;
+            auto const gen = read_gen_;
+            auto r         = eng_.perform(
+                engine_op::read, dest, static_cast<std::size_t>(remaining));
 
-            // Exits by co_return: success after the first transferred
-            // chunk, or any terminal error.
-            while (true)
+            if (r.ec)
             {
-                auto const gen = read_gen_;
-                auto r         = eng_.perform(
-                    engine_op::read, dest, static_cast<std::size_t>(remaining));
+                // Terminal, already mapped by the engine. eof (a
+                // received close_notify) arrives as a plain done:
+                // it queues no output, so no flush is needed.
+                if (r.want == engine_want::output_then_done)
+                    co_await best_effort_flush();
+                co_return {r.ec, total_read};
+            }
 
-                if (r.ec)
-                {
-                    // Terminal, already mapped by the engine. eof (a
-                    // received close_notify) arrives as a plain done:
-                    // it queues no output, so no flush is needed.
-                    if (r.want == engine_want::output_then_done)
-                        co_await best_effort_flush();
-                    co_return {r.ec, total_read};
-                }
+            if (r.want == engine_want::done ||
+                r.want == engine_want::output_then_done)
+            {
+                total_read += r.bytes;
 
-                if (r.want == engine_want::done ||
-                    r.want == engine_want::output_then_done)
-                {
-                    total_read += r.bytes;
-
-                    // r.bytes > 0 already satisfies ReadStream's "at
-                    // least one byte transferred" success condition;
-                    // report now rather than loop for more (another
-                    // engine call could park on input). out_len_ > 0
-                    // covers a retained tail the engine cannot see.
-                    if (r.want == engine_want::output_then_done || out_len_ > 0)
-                        ec = co_await flush_output();
-                    if (ec && total_read == bufs_size)
-                    {
-                        // First failure wins: concurrent directions share
-                        // one transport failure domain; the earliest
-                        // error is the meaningful one.
-                        if (!pending_flush_ec_)
-                            pending_flush_ec_ = ec;
-                        ec = {};
-                    }
-                    co_return {ec, total_read};
-                }
-
-                if (r.want == engine_want::output_then_retry)
-                {
+                // r.bytes > 0 already satisfies ReadStream's "at
+                // least one byte transferred" success condition;
+                // report now rather than loop for more (another
+                // engine call could park on input). out_len_ > 0
+                // covers a retained tail the engine cannot see.
+                if (r.want == engine_want::output_then_done || out_len_ > 0)
                     ec = co_await flush_output();
-                    if (ec)
-                        co_return {ec, total_read};
-                    continue;
+                if (ec && total_read == buf.size())
+                {
+                    // First failure wins: concurrent directions share
+                    // one transport failure domain; the earliest
+                    // error is the meaningful one.
+                    if (!pending_flush_ec_)
+                        pending_flush_ec_ = ec;
+                    ec = {};
                 }
+                co_return {ec, total_read};
+            }
 
-                // want == input. Flush first: a retained tail (an
-                // earlier failed write) may hold bytes the peer needs
-                // before it will send more; no-op when nothing pends.
+            if (r.want == engine_want::output_then_retry)
+            {
                 ec = co_await flush_output();
                 if (ec)
                     co_return {ec, total_read};
+                continue;
+            }
 
-                ec = co_await fill_input(gen);
-                if (ec)
-                {
-                    ec = map_fill_error(
-                        engine_op::read, ec, eng_.received_shutdown());
-                    co_return {ec, total_read};
-                }
+            // want == input. Flush first: a retained tail (an
+            // earlier failed write) may hold bytes the peer needs
+            // before it will send more; no-op when nothing pends.
+            ec = co_await flush_output();
+            if (ec)
+                co_return {ec, total_read};
+
+            ec = co_await fill_input(gen);
+            if (ec)
+            {
+                ec = map_fill_error(
+                    engine_op::read, ec, eng_.received_shutdown());
+                co_return {ec, total_read};
             }
         }
-
-        co_return {std::error_code{}, total_read};
     }
 
     capy::task<capy::results<std::size_t>> do_write_some(
-        capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers)
+        capy::const_buffer buf)
     {
         if (auto ec = take_pending_flush_ec())
             co_return {ec, 0};
 
+        if (buf.size() == 0)
+            co_return {std::error_code{}, 0};
+
         std::error_code ec;
-        std::size_t total_written   = 0;
-        std::size_t const bufs_size = capy::buffer_size(buffers);
+        std::size_t total_written = 0;
 
-        for (auto const& buf : buffers)
+        // The engine only reads through this pointer for a write
+        // op; the cast satisfies perform's single transfer
+        // signature.
+        void* const src = const_cast<void*>(buf.data());
+        // Clamp for the engines' int-sized transfer API: a >=2 GiB
+        // buffer becomes a partial write, never a truncated length.
+        int const remaining = static_cast<int>(
+            (std::min)(buf.size(),
+                       std::size_t((std::numeric_limits<int>::max)())));
+
+        // Exits by co_return: success after the first transferred
+        // chunk, or any terminal error.
+        while (true)
         {
-            // The engine only reads through this pointer for a write
-            // op; the cast satisfies perform's single transfer
-            // signature.
-            void* const src = const_cast<void*>(buf.data());
-            // Clamp for the engines' int-sized transfer API: a >=2 GiB
-            // buffer becomes a partial write, never a truncated length.
-            int const remaining = static_cast<int>(
-                (std::min)(buf.size(),
-                           std::size_t((std::numeric_limits<int>::max)())));
-            if (remaining == 0)
-                continue;
+            auto const gen = read_gen_;
+            auto r         = eng_.perform(
+                engine_op::write, src, static_cast<std::size_t>(remaining));
 
-            // Exits by co_return: success after the first transferred
-            // chunk, or any terminal error.
-            while (true)
+            if (r.ec)
             {
-                auto const gen = read_gen_;
-                auto r         = eng_.perform(
-                    engine_op::write, src, static_cast<std::size_t>(remaining));
+                // Terminal, already mapped. eof means the peer's
+                // close_notify WAS received (an announced close);
+                // it arrives as a plain done and needs no flush.
+                if (r.want == engine_want::output_then_done)
+                    co_await best_effort_flush();
+                co_return {r.ec, total_written};
+            }
 
-                if (r.ec)
-                {
-                    // Terminal, already mapped. eof means the peer's
-                    // close_notify WAS received (an announced close);
-                    // it arrives as a plain done and needs no flush.
-                    if (r.want == engine_want::output_then_done)
-                        co_await best_effort_flush();
-                    co_return {r.ec, total_written};
-                }
+            if (r.want == engine_want::done ||
+                r.want == engine_want::output_then_done)
+            {
+                total_written += r.bytes;
 
-                if (r.want == engine_want::done ||
-                    r.want == engine_want::output_then_done)
-                {
-                    total_written += r.bytes;
-
-                    // r.bytes > 0 already satisfies WriteStream's "at
-                    // least one byte transferred" success condition;
-                    // report now rather than loop for more. out_len_ > 0
-                    // covers a retained tail the engine cannot see.
-                    if (r.want == engine_want::output_then_done || out_len_ > 0)
-                        ec = co_await flush_output();
-                    if (ec && total_written == bufs_size)
-                    {
-                        // First failure wins: concurrent directions share
-                        // one transport failure domain; the earliest
-                        // error is the meaningful one.
-                        if (!pending_flush_ec_)
-                            pending_flush_ec_ = ec;
-                        ec = {};
-                    }
-                    co_return {ec, total_written};
-                }
-
-                if (r.want == engine_want::output_then_retry)
-                {
+                // r.bytes > 0 already satisfies WriteStream's "at
+                // least one byte transferred" success condition;
+                // report now rather than loop for more. out_len_ > 0
+                // covers a retained tail the engine cannot see.
+                if (r.want == engine_want::output_then_done || out_len_ > 0)
                     ec = co_await flush_output();
-                    if (ec)
-                        co_return {ec, total_written};
-                    continue;
+                if (ec && total_written == buf.size())
+                {
+                    // First failure wins: concurrent directions share
+                    // one transport failure domain; the earliest
+                    // error is the meaningful one.
+                    if (!pending_flush_ec_)
+                        pending_flush_ec_ = ec;
+                    ec = {};
                 }
+                co_return {ec, total_written};
+            }
 
-                // want == input: a write can need a read mid-rekey; the
-                // transport eof this surfaces means the same thing it
-                // means on the read path, so map it the same way. Flush
-                // first for the same retained-tail reason as the read
-                // path.
+            if (r.want == engine_want::output_then_retry)
+            {
                 ec = co_await flush_output();
                 if (ec)
                     co_return {ec, total_written};
+                continue;
+            }
 
-                ec = co_await fill_input(gen);
-                if (ec)
-                {
-                    ec = map_fill_error(
-                        engine_op::write, ec, eng_.received_shutdown());
-                    co_return {ec, total_written};
-                }
+            // want == input: a write can need a read mid-rekey; the
+            // transport eof this surfaces means the same thing it
+            // means on the read path, so map it the same way. Flush
+            // first for the same retained-tail reason as the read
+            // path.
+            ec = co_await flush_output();
+            if (ec)
+                co_return {ec, total_written};
+
+            ec = co_await fill_input(gen);
+            if (ec)
+            {
+                ec = map_fill_error(
+                    engine_op::write, ec, eng_.received_shutdown());
+                co_return {ec, total_written};
             }
         }
-
-        co_return {std::error_code{}, total_written};
     }
 
     capy::task<capy::results<>> do_handshake(tls_role role)
@@ -928,9 +921,9 @@ template<class Impl>
 capy::task<capy::results<std::size_t>>
 driver_read_some(
     driver_ref<Impl> d,
-    capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers)
+    capy::mutable_buffer buffer)
 {
-    co_return co_await d->do_read_some(buffers);
+    co_return co_await d->do_read_some(buffer);
 }
 
 /// Write through a driver an operation keeps alive.
@@ -938,9 +931,9 @@ template<class Impl>
 capy::task<capy::results<std::size_t>>
 driver_write_some(
     driver_ref<Impl> d,
-    capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers)
+    capy::const_buffer buffer)
 {
-    co_return co_await d->do_write_some(buffers);
+    co_return co_await d->do_write_some(buffer);
 }
 
 /// Handshake through a driver an operation keeps alive.

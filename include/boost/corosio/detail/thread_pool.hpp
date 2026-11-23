@@ -14,7 +14,7 @@
 #include <boost/corosio/detail/intrusive.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/test/thread_name.hpp>
+#include <boost/capy/ex/thread_name.hpp>
 
 #include <atomic>
 #include <condition_variable>

@@ -19,15 +19,12 @@
 #include <boost/corosio/endpoint.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/concept/execution_context.hpp>
-#include <boost/capy/concept/context_awaitable.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/ex/any_executor.hpp>
-#include <boost/capy/detail/abandonable.hpp>
-#include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/ex/abandon.hpp>
-#include <boost/capy/ex/frame_alloc_mixin.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/ex/context_awaitable_promise_base.hpp>
 #include <boost/capy/ex/recycling_memory_resource.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/work_guard.hpp>
@@ -297,10 +294,11 @@ private:
     template<capy::Executor Ex>
     struct launch_wrapper
     {
-        // frame_alloc_mixin routes the frame through the thread-local
-        // recycling allocator, so a warmed per-connection launch does
-        // not hit the global allocator.
-        struct promise_type : capy::frame_alloc_mixin
+        // The base routes the frame through the thread-local recycling
+        // allocator, so a warmed per-connection launch does not hit the
+        // global allocator, and hands env_ to each awaited operation.
+        struct promise_type
+            : capy::context_awaitable_promise_base<promise_type>
         {
             Ex ex; // Executor stored directly in frame (outlives child tasks)
             // Owns the connection's chain: abandoning it resumes, or has
@@ -320,6 +318,7 @@ private:
                       capy::executor_ref(ex), std::move(s),
                       capy::get_current_frame_allocator(), &owner_}
             {
+                this->set_environment(&env_);
             }
 
             // For lambda coroutines: first arg is closure, second is executor, third is stop token
@@ -332,6 +331,7 @@ private:
                       capy::executor_ref(ex), std::move(s),
                       capy::get_current_frame_allocator(), &owner_}
             {
+                this->set_environment(&env_);
             }
 
             launch_wrapper get_return_object() noexcept
@@ -354,37 +354,6 @@ private:
                 // coverable outcome.
                 std::terminate();
                 // LCOV_EXCL_STOP
-            }
-
-            // Inject await_context for ContextAwaitable
-            template<capy::ContextAwaitable Awaitable>
-            auto await_transform(Awaitable&& a)
-            {
-                using AwaitableT = std::decay_t<Awaitable>;
-                struct adapter
-                {
-                    AwaitableT aw;
-                    capy::await_context const* env;
-
-                    bool await_ready()
-                    {
-                        return aw.await_ready();
-                    }
-                    decltype(auto) await_resume()
-                    {
-                        return aw.await_resume();
-                    }
-
-                    // Where the returned handle would be stored in a frame
-                    // another thread may already have resumed and freed,
-                    // it is resumed here instead, as a task does.
-                    auto await_suspend(std::coroutine_handle<promise_type> h)
-                    {
-                        return capy::detail::symmetric_transfer(
-                            capy::detail::call_await_suspend(&aw, h, env));
-                    }
-                };
-                return adapter{std::forward<Awaitable>(a), &env_};
             }
         };
 
@@ -471,7 +440,7 @@ private:
             auto s = std::move(in);
             // Resumed with the task unfinished: the chain was abandoned,
             // and leaving destroys the task, which unwinds it.
-            if (!co_await capy::detail::abandonable<capy::task<void>>{s.t})
+            if (!co_await capy::abandonable(s.t))
                 co_return;
             // The connection's work ends with its task: the hop below is
             // the server's, and its context may no longer be running.

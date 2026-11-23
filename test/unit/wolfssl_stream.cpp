@@ -184,6 +184,7 @@ struct wolfssl_stream_test
         test::testFullDuplex(make_stream);
         test::testFullDuplexBulk(make_stream);
         test::testRecordBoundaryTransfer(make_stream);
+        test::testBufferSequences(make_stream);
         test::testShutdownOverRead(make_stream);
         test::testShutdownSimultaneousClose(make_stream);
         test::testShutdownWithUnreadRecordAhead(make_stream);

@@ -14,7 +14,6 @@
 
 #include <boost/corosio/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/detail/buffer_array.hpp>
 #include <boost/capy/io/any_stream.hpp>
 #include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
@@ -119,6 +118,24 @@ enum class tls_role
 */
 class BOOST_COROSIO_DECL tls_stream
 {
+    // Return the buffer one engine call transfers through: the first
+    // that holds any bytes, since a TLS engine moves one contiguous
+    // range per call.
+    template<class Buffer, class Buffers>
+    static Buffer
+    transfer_buffer(Buffers const& buffers) noexcept
+    {
+        auto it        = capy::buffer_sequence_begin(buffers);
+        auto const end = capy::buffer_sequence_end(buffers);
+        for (; it != end; ++it)
+        {
+            Buffer b(*it);
+            if (b.size() != 0)
+                return b;
+        }
+        return {};
+    }
+
 public:
     /// Destroy the TLS stream.
     virtual ~tls_stream() = default;
@@ -132,7 +149,9 @@ public:
 
         Reads decrypted data into the provided buffer sequence. The
         operation completes when it reads at least one byte,
-        or an error occurs.
+        or an error occurs. A sequence with no bytes completes at
+        once with no bytes read; the only error it can report is one
+        deferred from an earlier operation.
 
         This non-virtual template wrapper satisfies the `capy::Stream`
         concept by delegating to the virtual `do_read_some`.
@@ -150,14 +169,17 @@ public:
     template<capy::MutableBufferSequence Buffers>
     [[nodiscard]] auto read_some(Buffers const& buffers)
     {
-        return do_read_some(buffers);
+        return do_read_some(
+            transfer_buffer<capy::mutable_buffer>(buffers));
     }
 
     /** Initiate an asynchronous write operation.
 
         Encrypts and writes data from the provided buffer sequence.
         The operation completes when it writes at least one byte,
-        or an error occurs.
+        or an error occurs. A sequence with no bytes completes at
+        once with no bytes written; the only error it can report is one
+        deferred from an earlier operation.
 
         This non-virtual template wrapper satisfies the `capy::Stream`
         concept by delegating to the virtual `do_write_some`.
@@ -175,7 +197,8 @@ public:
     template<capy::ConstBufferSequence Buffers>
     [[nodiscard]] auto write_some(Buffers const& buffers)
     {
-        return do_write_some(buffers);
+        return do_write_some(
+            transfer_buffer<capy::const_buffer>(buffers));
     }
 
     /** Asynchronously perform the TLS handshake.
@@ -346,28 +369,37 @@ protected:
 
     /** Perform the backend-specific decrypted read.
 
-        Derived classes override this to perform TLS decryption
-        and read operations.
+        Derived classes override this to perform TLS decryption and
+        read operations. A TLS engine transfers one contiguous range
+        per call. The caller's sequence therefore arrives as its first
+        non-empty buffer, which the read treats as the whole request.
+        A read that fills it reports no error. An error found after
+        such a read is deferred to the next operation.
 
-        @param buffers Buffer sequence to read into.
+        @param buffer The first non-empty buffer of the caller's
+        sequence, or an empty buffer if it has none.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
     */
     virtual capy::task<capy::results<std::size_t>> do_read_some(
-        capy::detail::mutable_buffer_array<capy::detail::max_iovec_>
-            buffers) = 0;
+        capy::mutable_buffer buffer) = 0;
 
     /** Perform the backend-specific encrypted write.
 
-        Derived classes override this to perform TLS encryption
-        and write operations.
+        Derived classes override this to perform TLS encryption and
+        write operations. A TLS engine transfers one contiguous range
+        per call. The caller's sequence therefore arrives as its first
+        non-empty buffer, which the write treats as the whole request.
+        A write that consumes it reports no error. An error found after
+        such a write is deferred to the next operation.
 
-        @param buffers Buffer sequence to write from.
+        @param buffer The first non-empty buffer of the caller's
+        sequence, or an empty buffer if it has none.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
     */
     virtual capy::task<capy::results<std::size_t>> do_write_some(
-        capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers) = 0;
+        capy::const_buffer buffer) = 0;
 };
 
 } // namespace boost::corosio
