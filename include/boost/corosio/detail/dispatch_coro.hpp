@@ -14,7 +14,6 @@
 #include <boost/corosio/io_context.hpp>
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/detail/type_id.hpp>
 #include <coroutine>
 
 namespace boost::corosio::detail {

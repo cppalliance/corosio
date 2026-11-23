@@ -38,8 +38,9 @@
 
    Parent cancellation is forwarded through a stop_callback
    stored in a placement-new buffer (stop_callback is not
-   movable, but the awaitable must be movable for
-   transform_awaiter). The buffer is inert during moves
+   movable, but the awaitable must be movable, since the
+   awaiting promise moves it into the awaiter it awaits
+   through). The buffer is inert during moves
    (before await_suspend) and constructed in-place once the
    awaitable is pinned on the coroutine frame.
 

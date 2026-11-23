@@ -373,6 +373,162 @@ struct openssl_stream_test
             });
     }
 
+    void testWriteFlushErrorLatchedWhenSequenceRemains()
+    {
+        flush_fail_stream w{};
+        w.inject_ec_ = std::make_error_code(std::errc::connection_reset);
+        runWrappedSession(
+            w, [&w](io_context& ioc, auto& client, auto&, auto&, auto&) {
+                // Only the first buffer is written, and the write treats
+                // it as the whole request, so the failed flush is deferred
+                // even though later buffers remain.
+                bool first_ok = false;
+                std::error_code second_ec;
+                auto writer = [&]() -> capy::task<> {
+                    w.fail_writes_ = true;
+                    std::array<capy::const_buffer, 2> bufs = {
+                        capy::const_buffer("hello", 5),
+                        capy::const_buffer("world", 5)};
+                    auto [ec, n] = co_await client.write_some(bufs);
+                    first_ok     = !ec && n == 5;
+                    auto [ec2, n2] =
+                        co_await client.write_some(capy::const_buffer("x", 1));
+                    std::ignore = n2;
+                    second_ec   = ec2;
+                };
+                capy::run_async(ioc.get_executor())(writer());
+                ioc.run();
+                BOOST_TEST(first_ok);
+                BOOST_TEST(
+                    second_ec ==
+                    std::make_error_code(std::errc::connection_reset));
+            });
+    }
+
+    void testWriteFlushErrorLatchedAfterEmptyLeadingBuffer()
+    {
+        flush_fail_stream w{};
+        w.inject_ec_ = std::make_error_code(std::errc::connection_reset);
+        runWrappedSession(
+            w, [&w](io_context& ioc, auto& client, auto&, auto&, auto&) {
+                // An empty buffer ahead of the payload carries no bytes,
+                // so writing the payload consumes the whole sequence and
+                // the failed flush is still deferred.
+                bool first_ok = false;
+                std::error_code second_ec;
+                auto writer = [&]() -> capy::task<> {
+                    w.fail_writes_ = true;
+                    std::array<capy::const_buffer, 2> bufs = {
+                        capy::const_buffer("", 0),
+                        capy::const_buffer("hello", 5)};
+                    auto [ec, n] = co_await client.write_some(bufs);
+                    first_ok     = !ec && n == 5;
+                    auto [ec2, n2] =
+                        co_await client.write_some(capy::const_buffer("x", 1));
+                    std::ignore = n2;
+                    second_ec   = ec2;
+                };
+                capy::run_async(ioc.get_executor())(writer());
+                ioc.run();
+                BOOST_TEST(first_ok);
+                BOOST_TEST(
+                    second_ec ==
+                    std::make_error_code(std::errc::connection_reset));
+            });
+    }
+
+    void testWriteFlushErrorLatchedBeforeEmptyTrailingBuffer()
+    {
+        flush_fail_stream w{};
+        w.inject_ec_ = std::make_error_code(std::errc::connection_reset);
+        runWrappedSession(
+            w, [&w](io_context& ioc, auto& client, auto&, auto&, auto&) {
+                // An empty buffer after the payload carries no bytes, so
+                // writing the payload consumes the whole sequence and the
+                // failed flush is deferred.
+                bool first_ok = false;
+                std::error_code second_ec;
+                auto writer = [&]() -> capy::task<> {
+                    w.fail_writes_ = true;
+                    std::array<capy::const_buffer, 2> bufs = {
+                        capy::const_buffer("hello", 5),
+                        capy::const_buffer("", 0)};
+                    auto [ec, n] = co_await client.write_some(bufs);
+                    first_ok     = !ec && n == 5;
+                    auto [ec2, n2] =
+                        co_await client.write_some(capy::const_buffer("x", 1));
+                    std::ignore = n2;
+                    second_ec   = ec2;
+                };
+                capy::run_async(ioc.get_executor())(writer());
+                ioc.run();
+                BOOST_TEST(first_ok);
+                BOOST_TEST(
+                    second_ec ==
+                    std::make_error_code(std::errc::connection_reset));
+            });
+    }
+
+    void testWriteFlushErrorLatchedPastEmptyBuffer()
+    {
+        flush_fail_stream w{};
+        w.inject_ec_ = std::make_error_code(std::errc::connection_reset);
+        runWrappedSession(
+            w, [&w](io_context& ioc, auto& client, auto&, auto&, auto&) {
+                // A non-empty buffer beyond an empty one is not part of
+                // this write, so consuming the first buffer still defers
+                // the failed flush.
+                bool first_ok = false;
+                std::error_code second_ec;
+                auto writer = [&]() -> capy::task<> {
+                    w.fail_writes_ = true;
+                    std::array<capy::const_buffer, 3> bufs = {
+                        capy::const_buffer("hello", 5),
+                        capy::const_buffer("", 0),
+                        capy::const_buffer("x", 1)};
+                    auto [ec, n] = co_await client.write_some(bufs);
+                    first_ok     = !ec && n == 5;
+                    auto [ec2, n2] =
+                        co_await client.write_some(capy::const_buffer("x", 1));
+                    std::ignore = n2;
+                    second_ec   = ec2;
+                };
+                capy::run_async(ioc.get_executor())(writer());
+                ioc.run();
+                BOOST_TEST(first_ok);
+                BOOST_TEST(
+                    second_ec ==
+                    std::make_error_code(std::errc::connection_reset));
+            });
+    }
+
+    void testWriteFlushErrorReportedAfterPartialBuffer()
+    {
+        flush_fail_stream w{};
+        w.inject_ec_ = std::make_error_code(std::errc::connection_reset);
+        runWrappedSession(
+            w, [&w](io_context& ioc, auto& client, auto&, auto&, auto&) {
+                // Larger than one record: the engine takes only part of
+                // the buffer, so the failed flush is reported with the
+                // count rather than deferred.
+                std::string const payload(64 * 1024, 'q');
+                std::error_code ec1;
+                std::size_t n1 = payload.size();
+                auto writer = [&]() -> capy::task<> {
+                    w.fail_writes_ = true;
+                    auto [ec, n] = co_await client.write_some(
+                        capy::const_buffer(payload.data(), payload.size()));
+                    ec1          = ec;
+                    n1           = n;
+                };
+                capy::run_async(ioc.get_executor())(writer());
+                ioc.run();
+                BOOST_TEST(
+                    ec1 == std::make_error_code(std::errc::connection_reset));
+                BOOST_TEST(n1 < payload.size());
+            });
+    }
+
     void testCorruptRecordFailsReadAndShutdown()
     {
         flush_fail_stream w{};
@@ -493,6 +649,7 @@ struct openssl_stream_test
         test::testFullDuplex(make_stream);
         test::testFullDuplexBulk(make_stream);
         test::testRecordBoundaryTransfer(make_stream);
+        test::testBufferSequences(make_stream);
         test::testShutdownOverRead(make_stream);
         test::testShutdownSimultaneousClose(make_stream);
         test::testShutdownWithUnreadRecordAhead(make_stream);
@@ -537,6 +694,11 @@ struct openssl_stream_test
         testDuplicateCaTolerated();
         testZeroLengthBufferInSequence();
         testWriteFlushErrorIsLatched();
+        testWriteFlushErrorLatchedWhenSequenceRemains();
+        testWriteFlushErrorLatchedAfterEmptyLeadingBuffer();
+        testWriteFlushErrorLatchedBeforeEmptyTrailingBuffer();
+        testWriteFlushErrorLatchedPastEmptyBuffer();
+        testWriteFlushErrorReportedAfterPartialBuffer();
         testCorruptRecordFailsReadAndShutdown();
         testOversizedWriteRoundTrips();
         testShutdownOnDeadTransportReportsTruncation();

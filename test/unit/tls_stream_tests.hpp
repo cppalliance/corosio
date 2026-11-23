@@ -2886,6 +2886,96 @@ testFullDuplexBulk(StreamFactory make_stream)
         m2.close();
 }
 
+/** Multi-buffer sequences: a TLS engine moves one contiguous range
+    per call, so read_some and write_some transfer through the first
+    non-empty buffer only, and a sequence with no bytes completes at
+    once with no error.
+*/
+template<typename StreamFactory>
+void
+testBufferSequences(StreamFactory make_stream)
+{
+    io_context ioc;
+    auto [m1, m2] = must(corosio::test::make_mocket_pair(ioc));
+
+    auto client_ctx = make_client_context();
+    auto server_ctx = make_server_context();
+
+    auto client = make_stream(m1, client_ctx);
+    auto server = make_stream(m2, server_ctx);
+
+    {
+        auto hs_client = [&]() -> capy::task<> {
+            auto [ec] = co_await client.handshake(tls_role::client);
+            BOOST_TEST(!ec);
+        };
+        auto hs_server = [&]() -> capy::task<> {
+            auto [ec] = co_await server.handshake(tls_role::server);
+            BOOST_TEST(!ec);
+        };
+        capy::run_async(ioc.get_executor())(hs_client());
+        capy::run_async(ioc.get_executor())(hs_server());
+        ioc.run();
+        ioc.restart();
+    }
+
+    char rx1[2]  = {};
+    char rx2[16] = {};
+    std::size_t empty_read = 1, empty_write = 1;
+    std::size_t wrote = 0, first = 0, second = 0;
+    bool ok = true;
+
+    auto writer = [&]() -> capy::task<> {
+        std::array<capy::const_buffer, 2> none = {
+            capy::const_buffer("", 0), capy::const_buffer("", 0)};
+        auto [ec0, n0] = co_await client.write_some(none);
+        ok          = ok && !ec0;
+        empty_write = n0;
+
+        std::array<capy::const_buffer, 2> bufs = {
+            capy::const_buffer("abc", 3), capy::const_buffer("defgh", 5)};
+        auto [ec, n] = co_await client.write_some(bufs);
+        ok    = ok && !ec;
+        wrote = n;
+    };
+    auto reader = [&]() -> capy::task<> {
+        std::array<capy::mutable_buffer, 2> none = {
+            capy::mutable_buffer(rx1, 0), capy::mutable_buffer(rx2, 0)};
+        auto [ec0, n0] = co_await server.read_some(none);
+        ok         = ok && !ec0;
+        empty_read = n0;
+
+        std::array<capy::mutable_buffer, 2> bufs = {
+            capy::mutable_buffer(rx1, sizeof(rx1)),
+            capy::mutable_buffer(rx2, sizeof(rx2))};
+        auto [ec1, n1] = co_await server.read_some(bufs);
+        ok    = ok && !ec1;
+        first = n1;
+        BOOST_TEST_EQ(std::string_view(rx1, 2), "ab");
+
+        auto [ec2, n2] = co_await server.read_some(bufs);
+        ok     = ok && !ec2;
+        second = n2;
+        BOOST_TEST_EQ(rx1[0], 'c');
+    };
+    capy::run_async(ioc.get_executor())(writer());
+    capy::run_async(ioc.get_executor())(reader());
+    ioc.run();
+
+    BOOST_TEST(ok);
+    BOOST_TEST_EQ(empty_write, 0u);
+    BOOST_TEST_EQ(empty_read, 0u);
+    // Only the first buffer of each sequence carries bytes.
+    BOOST_TEST_EQ(wrote, 3u);
+    BOOST_TEST_EQ(first, 2u);
+    BOOST_TEST_EQ(second, 1u);
+
+    if (m1.is_open())
+        m1.close();
+    if (m2.is_open())
+        m2.close();
+}
+
 /** Exact TLS record-boundary payloads: one transfer of exactly 16384
     bytes (the maximum plaintext record size) and one of 16385 (the
     first size that must split across two records), in both

@@ -92,18 +92,18 @@ wolfssl_stream::next_layer() const noexcept
 
 capy::task<capy::results<std::size_t>>
 wolfssl_stream::do_read_some(
-    capy::detail::mutable_buffer_array<capy::detail::max_iovec_> buffers)
+    capy::mutable_buffer buffer)
 {
     return detail::driver_read_some(
-        detail::driver_ref<implementation>(impl_), buffers);
+        detail::driver_ref<implementation>(impl_), buffer);
 }
 
 capy::task<capy::results<std::size_t>>
 wolfssl_stream::do_write_some(
-    capy::detail::const_buffer_array<capy::detail::max_iovec_> buffers)
+    capy::const_buffer buffer)
 {
     return detail::driver_write_some(
-        detail::driver_ref<implementation>(impl_), buffers);
+        detail::driver_ref<implementation>(impl_), buffer);
 }
 
 capy::task<capy::results<>>

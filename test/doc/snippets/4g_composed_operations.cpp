@@ -47,7 +47,6 @@ namespace corosio = boost::corosio;
 namespace capy    = boost::capy;
 // end::assume[]
 
-#include <boost/capy/detail/except.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -170,12 +169,12 @@ error_exceptions_frag(corosio::tcp_socket& stream, capy::mutable_buffer buf)
     // For write (EOF doesn't apply)
     auto [wec, n] = co_await capy::write(stream, buf);
     if (wec)
-        capy::detail::throw_system_error(wec);
+        throw std::system_error(wec);
 
     // For read (need to handle EOF)
     auto [rec, rn] = co_await capy::read(stream, buf);
     if (rec && rec != capy::cond::eof)
-        capy::detail::throw_system_error(rec);
+        throw std::system_error(rec);
     // end::error_exceptions[]
     BOOST_TEST_EQ(rn, buf.size());
 }

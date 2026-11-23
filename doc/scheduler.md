@@ -107,17 +107,13 @@ This creates a closed type system where only `asio::awaitable<T>` coroutines can
 Corosio uses the `ContextAwaitable` concept, allowing any conforming type to participate:
 
 ```cpp
-template<class Awaitable>
-auto transform_awaitable(Awaitable&& a)
+// A promise built on capy::context_awaitable_promise_base: its default
+// transform_awaitable hands the coroutine's environment to each
+// ContextAwaitable it awaits.
+struct promise_type : capy::context_awaitable_promise_base<promise_type>
 {
-    using A = std::decay_t<Awaitable>;
-    if constexpr (ContextAwaitable<A>)
-    {
-        return transform_awaiter<Awaitable>{
-            std::forward<Awaitable>(a), this};
-    }
     // ...
-}
+};
 ```
 
 The `await_suspend` signature accepts the execution environment:

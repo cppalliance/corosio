@@ -12,7 +12,6 @@
 
 #include <boost/corosio/io_context.hpp>
 #include <boost/capy/concept/context_awaitable.hpp>
-#include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/context_awaitable_promise_base.hpp>
 #include <boost/capy/ex/await_context.hpp>
 
@@ -32,9 +31,8 @@
    still suspended at shutdown, the timer service drains it via
    completion_op::destroy().
 
-   The promise reuses task<>'s transform_awaiter pattern (including
-   the MSVC symmetric-transfer workaround) to inject await_context into
-   ContextAwaitable co_await expressions.
+   The promise base's default transform injects the owned
+   await_context into each ContextAwaitable co_await expression.
 
    The detached frame can outlive the awaiting chain, so it never
    allocates from that chain's frame allocator: timeout_awaitable
@@ -95,52 +93,16 @@ struct timeout_coro
         void return_void() noexcept {}
         void unhandled_exception() noexcept {}
 
+        // Only ContextAwaitables are awaited here; the base hands each
+        // one the owned environment.
         template<class Awaitable>
-        struct transform_awaiter
+        decltype(auto) transform_awaitable(Awaitable&& a)
         {
-            std::decay_t<Awaitable> a_;
-            promise_type* p_;
-
-            bool await_ready() noexcept
-            {
-                return a_.await_ready();
-            }
-
-            decltype(auto) await_resume()
-            {
-                capy::set_current_frame_allocator(
-                    p_->environment()->frame_allocator);
-                return a_.await_resume();
-            }
-
-            template<class Promise>
-            auto await_suspend(std::coroutine_handle<Promise> h) noexcept
-            {
-#ifdef _MSC_VER
-                using R = decltype(a_.await_suspend(h, p_->environment()));
-                if constexpr (std::is_same_v<R, std::coroutine_handle<>>)
-                    a_.await_suspend(h, p_->environment()).resume();
-                else
-                    return a_.await_suspend(h, p_->environment());
-#else
-                return a_.await_suspend(h, p_->environment());
-#endif
-            }
-        };
-
-        template<class Awaitable>
-        auto transform_awaitable(Awaitable&& a)
-        {
-            using A = std::decay_t<Awaitable>;
-            if constexpr (capy::ContextAwaitable<A>)
-            {
-                return transform_awaiter<Awaitable>{
-                    std::forward<Awaitable>(a), this};
-            }
-            else
-            {
-                static_assert(sizeof(A) == 0, "requires ContextAwaitable");
-            }
+            static_assert(
+                capy::ContextAwaitable<std::decay_t<Awaitable>>,
+                "requires ContextAwaitable");
+            return capy::context_awaitable_promise_base<
+                promise_type>::transform_awaitable(std::forward<Awaitable>(a));
         }
     };
 
