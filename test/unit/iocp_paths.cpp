@@ -32,7 +32,7 @@
 #include <boost/corosio/udp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
 
-#include <boost/corosio/native/detail/iocp/win_tcp_service.hpp>
+#include <boost/corosio/native/detail/iocp/win_tcp_acceptor_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
 
 #include <boost/corosio/test/socket_pair.hpp>

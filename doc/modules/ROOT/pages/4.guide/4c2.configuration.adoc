@@ -168,8 +168,8 @@ a re-queue through the scheduler.
 The IOCP backend reads `inline_budget_max` alone. A TCP read or write
 that Windows finishes during the call resumes its coroutine at once,
 up to that many times per handler. A large transfer goes through the
-run loop instead: a write of 8 KiB or more, and a read of 8 KiB or
-more while one thread runs the context, or of more than 64 KiB while
+run loop instead. A write is large from 8 KiB. A read is large from
+8 KiB while one thread runs the context, and above 64 KiB while
 several do. Setting it to 0 sends every completion through the loop.
 
 [NOTE]
