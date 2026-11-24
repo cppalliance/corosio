@@ -154,8 +154,7 @@ win_timers_thread::thread_func()
         if (::InterlockedExchangeAdd(&shutdown_, 0) != 0)
             break;
 
-        dispatch_required_->fetch_or(
-            iocp::dispatch_timers, std::memory_order_acq_rel);
+        dispatch_required_->store(1, std::memory_order_release);
         ::PostQueuedCompletionStatus(
             static_cast<HANDLE>(iocp_), 0, key_wake_dispatch, nullptr);
     }

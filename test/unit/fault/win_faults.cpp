@@ -781,6 +781,11 @@ struct win_common_faults
         std::error_code fec;
         bool fired = false;
         auto t     = [&]() -> capy::task<> {
+            // A running scheduler queues this completion without a
+            // packet, so there is none to fail. A stopped one sends
+            // it through the port, behind the stop's own. Stopped
+            // before the fault is armed: the stop posts too.
+            ioc.stop();
             fault_scope g(sys::GetAddrInfoExW, WSAEAFNOSUPPORT);
             fault_scope p(
                 sys::PostQueuedCompletionStatus, ERROR_NO_SYSTEM_RESOURCES);
@@ -788,13 +793,12 @@ struct win_common_faults
             std::ignore        = results;
             fec                = ec;
             fired              = g.fired() && p.fired();
-            ioc.stop();
         };
         bool expired = false;
         capy::run_async(ioc.get_executor())(t());
         capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));
-        // run() keeps this completion on its own thread, with no
-        // packet to fail; run_one() sends it through the port.
+        // A stopped run() holds the completion for the next run, with
+        // no packet either; run_one() takes what is queued.
         while (ioc.run_one() != 0)
         {
         }

@@ -405,6 +405,12 @@ connect_op::do_complete(
             win_tcp_socket::local_state::pending, std::memory_order_release);
     }
 
+    // The kernel is still finishing the connection when its packet
+    // is dequeued, and a transfer issued at once waits on that. One
+    // issued after the work already waiting has had its turn finds
+    // it done.
+    op->internal.svc_.scheduler().give_way();
+
     auto prevent_premature_destruction = std::move(op->object_ref_);
     op->invoke_handler();
 }
@@ -423,6 +429,12 @@ read_op::do_complete(
     if (!owner)
     {
         op->destroy_awaiting();
+        return;
+    }
+
+    if (op->late.load(std::memory_order_acquire) != read_op::none)
+    {
+        op->internal.start_read();
         return;
     }
 
@@ -504,6 +516,8 @@ win_tcp_socket::reuse() noexcept
     local_endpoint_  = endpoint{};
     remote_endpoint_ = endpoint{};
     local_state_.store(local_state::cached, std::memory_order_relaxed);
+    late_skip_    = 0;
+    late_backoff_ = 0;
     BOOST_COROSIO_ASSERT(!conn_.stop_cb);
     BOOST_COROSIO_ASSERT(!rd_.stop_cb);
     BOOST_COROSIO_ASSERT(!wr_.stop_cb);
@@ -672,6 +686,23 @@ win_tcp_socket::read_some(
 
             op.flags = 0;
 
+            // A read that follows a write on the same socket waits
+            // for the answer to what was written. The peer's side
+            // has not run yet, so a request issued now is left
+            // pending in the kernel, the dearer way to get the
+            // answer. If the port holds completions, the peer's may
+            // be among them: they run first, and the request is
+            // issued after them, when the answer is often there to
+            // take during the call. Not behind a stop, though, which
+            // would hold the request back until the next run.
+            auto& sched = svc_.scheduler();
+            if (sched.took_inline_write(this) && late_start_due())
+            {
+                if (sched.let_port_go_first() && !sched.stopped())
+                    return start_later(op, cont, d, token, ec, bytes_out);
+                late_start_missed();
+            }
+
             queued = overlapped_queued(
                 ::WSARecv(
                     socket_, op.wsabufs, op.wsabuf_count, &bytes, &op.flags,
@@ -684,6 +715,123 @@ win_tcp_socket::read_some(
         return complete_now(op, cont, d, token, ec, bytes_out, err, bytes);
 
     return pend(op, cont, d, token, ec, bytes_out);
+}
+
+inline std::coroutine_handle<>
+win_tcp_socket::start_later(
+    read_op& op,
+    capy::continuation& cont,
+    capy::executor_ref d,
+    std::stop_token const& token,
+    std::error_code* ec,
+    std::size_t* bytes_out)
+{
+    fill(op, cont, d, ec, bytes_out);
+
+    // A stop or cancel that comes before the request is issued finds
+    // nothing in the kernel to cancel. It sets the flag, which
+    // start_read() looks at first.
+    op.arm_stop(token);
+    op.late.store(read_op::waiting, std::memory_order_release);
+
+    svc_.work_started();
+    svc_.on_completion(&op, 0, 0);
+    return std::noop_coroutine();
+}
+
+inline void
+win_tcp_socket::settle_late_read() noexcept
+{
+    for (unsigned spins = 0;;)
+    {
+        read_op::late_state s = rd_.late.load(std::memory_order_acquire);
+        if (s == read_op::none)
+            return;
+        if (s == read_op::waiting &&
+            rd_.late.compare_exchange_weak(
+                s, read_op::none, std::memory_order_acq_rel,
+                std::memory_order_acquire))
+            return;
+        // Being issued on a loop thread, one call's length away.
+        iocp::spin_wait(spins);
+    }
+}
+
+inline void
+win_tcp_socket::start_read()
+{
+    auto& op    = rd_;
+    DWORD err   = 0;
+    DWORD bytes = 0;
+    bool queued = false;
+
+    read_op::late_state state = read_op::waiting;
+    if (!op.late.compare_exchange_strong(
+            state, read_op::issuing, std::memory_order_acq_rel,
+            std::memory_order_acquire))
+    {
+        // A close or release got here first and will issue nothing.
+        op.request_cancel();
+    }
+    else
+    {
+        // A cancel or a stop that came first names the outcome:
+        // invoke_handler() reports the flag.
+        if (!op.cancelled.load(std::memory_order_acquire))
+        {
+            // Queueing the op marked it as holding a result. A
+            // request in the kernel starts without one.
+            op.ready_.store(0, std::memory_order_relaxed);
+            op.flags = 0;
+            queued   = overlapped_queued(
+                ::WSARecv(
+                    socket_, op.wsabufs, op.wsabuf_count, &bytes, &op.flags,
+                    &op, nullptr) != SOCKET_ERROR,
+                skip_, err);
+            if (queued)
+            {
+                // The run that got here gave back the work counted
+                // for it, and the packet's run gives back this.
+                svc_.work_started();
+                // As in pend(), and before a close may go ahead.
+                if (op.cancelled.load(std::memory_order_acquire))
+                    ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), &op);
+            }
+        }
+        op.late.store(read_op::none, std::memory_order_release);
+    }
+
+    if (queued)
+    {
+        late_start_missed();
+        svc_.on_pending(&op);
+        return;
+    }
+
+    late_backoff_ = 0;
+    op.store_result(bytes, err);
+    auto prevent_premature_destruction = std::move(op.object_ref_);
+    op.invoke_handler();
+}
+
+inline bool
+win_tcp_socket::late_start_due() noexcept
+{
+    if (late_skip_ == 0)
+        return true;
+    --late_skip_;
+    return false;
+}
+
+inline void
+win_tcp_socket::late_start_missed() noexcept
+{
+    constexpr unsigned char most = 64;
+    if (late_backoff_ == 0)
+        late_backoff_ = 1;
+    else if (late_backoff_ < most)
+        late_backoff_ = static_cast<unsigned char>(late_backoff_ * 2);
+    late_skip_ = late_backoff_;
 }
 
 inline void
@@ -719,21 +867,38 @@ win_tcp_socket::complete_now(
         (op.cancelled.load(std::memory_order_acquire) ||
          token.stop_requested());
 
-    // A large transfer goes through the loop, and the loop looks at
-    // the port before it runs the result. What the peer has completed
-    // is then queued behind this result and runs before this side's
-    // next large transfer: left to run on, a writer piles far more
-    // into the kernel's buffers than the cache holds, and the reader
-    // then takes it all cold.
-    constexpr DWORD inline_transfer_max = 64 * 1024;
-    bool const large                    = bytes > inline_transfer_max;
+    // A large transfer goes through the loop, so that the work
+    // already queued gets its turn before this side's next one. Left
+    // to run on, a writer piles far more into the kernel's buffers
+    // than the cache holds, and the reader then takes it all cold.
+    // From an eighth of a default socket buffer on, a transfer gains
+    // more from the turn than the turn costs.
+    //
+    // With one loop, the two ends of a connection take turns that
+    // way, each queueing its result behind the other's. With several
+    // they run on two threads at once, and a reader that works
+    // through the kernel's buffer while the writer refills it has
+    // each of them waiting on the other. There the reader is kept
+    // ahead instead, so that a write finds a read waiting and lands
+    // in the reader's buffer. A read carries on at once until it
+    // takes more than the socket buffer holds, and the result of a
+    // large write is queued behind what the port holds, which is the
+    // peer's read above all, if this write completed it.
+    constexpr DWORD socket_buffer  = 64 * 1024;
+    constexpr DWORD large_transfer = socket_buffer / 8;
+    auto& sched                    = svc_.scheduler();
+    bool const several             = sched.several_loops();
+    bool const large               = (several && op.is_read)
+        ? bytes > socket_buffer
+        : bytes >= large_transfer;
 
-    auto& sched = svc_.scheduler();
     if (!large && sched.try_consume_inline_budget())
     {
         // The kernel is done with the request and no packet refers to
         // the op, so the coroutine carries on from here. Nothing was
         // armed and no work was counted.
+        if (!op.is_read)
+            sched.note_inline_write(this);
         decode_results(
             ec, bytes_out, cancelled,
             err != 0 ? iocp_make_err(err, /*accept_path=*/false)
@@ -753,8 +918,8 @@ win_tcp_socket::complete_now(
     if (bytes == 0)
         op.arm_stop(token);
     svc_.work_started();
-    if (large)
-        sched.request_port_visit();
+    if (large && !op.is_read && several)
+        sched.let_port_go_first();
     svc_.on_completion(&op, err, bytes);
     return std::noop_coroutine();
 }
@@ -917,15 +1082,20 @@ win_tcp_socket::wait(
 inline void
 win_tcp_socket::cancel() noexcept
 {
+    // The flags go first. A read still to be issued (see
+    // start_later) is issued on a loop thread, which looks at the
+    // flag once the request is in the kernel: either it sees this
+    // cancel and carries it out, or the call below finds the request.
+    conn_.request_cancel();
+    rd_.request_cancel();
+    wr_.request_cancel();
+    wt_.request_cancel();
+
     if (socket_ != INVALID_SOCKET)
     {
         ::CancelIoEx(reinterpret_cast<HANDLE>(socket_), nullptr);
     }
 
-    conn_.request_cancel();
-    rd_.request_cancel();
-    wr_.request_cancel();
-    wt_.request_cancel();
     // CancelIoEx covers overlapped I/O on the socket but cannot reach
     // a wait op parked in the auxiliary reactor (no overlapped is
     // outstanding). Route through the reactor explicitly.
@@ -950,6 +1120,11 @@ win_tcp_socket::close_socket() noexcept
     // SOCKET-id reuse the wrong fd could be polled briefly).
     wt_.request_cancel();
     svc_.scheduler().cancel_wait(&wt_);
+
+    // A read still to be issued is not issued now, or is in the
+    // kernel by the time this returns, where the cancel below
+    // reaches it.
+    settle_late_read();
 
     if (socket_ != INVALID_SOCKET)
     {
@@ -1015,6 +1190,10 @@ win_tcp_socket::release_socket() noexcept
     if (s != INVALID_SOCKET)
     {
         cancel();
+        // As in close_socket(), before the handle is the caller's: a
+        // read still to be issued is not issued now, or is in the
+        // kernel and, with the flag set, cancelled.
+        settle_late_read();
         // Sever the port association so the descriptor can be
         // adopted again; best-effort, the caller keeps a working
         // socket either way.

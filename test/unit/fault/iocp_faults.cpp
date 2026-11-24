@@ -29,8 +29,6 @@
 #include <boost/corosio/udp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
 #include <boost/capy/cond.hpp>
-#include <boost/capy/continuation.hpp>
-#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -60,26 +58,6 @@ loopback()
 {
     return endpoint(ipv4_address::loopback(), 0);
 }
-
-// Reach win_scheduler::post(continuation&) without a heap allocation.
-struct post_awaitable
-{
-    capy::continuation* cont;
-
-    bool await_ready() const noexcept
-    {
-        return false;
-    }
-
-    void
-    await_suspend(std::coroutine_handle<> h, capy::await_context const* env) noexcept
-    {
-        cont->h = h;
-        env->executor.post(*cont);
-    }
-
-    void await_resume() const noexcept {}
-};
 
 // A connected pair left out of skip-on-success mode, as on a system
 // whose socket provider rules the mode out. Every operation on such a
@@ -364,27 +342,25 @@ struct iocp_faults
     void testPostFallbackRuns()
     {
         io_context ioc(iocp);
-        capy::continuation cont{};
-        bool ran   = false;
-        bool fired = false;
-        auto body  = [&]() -> capy::task<> {
-            {
-                // A failed post leaves the work on the deferred
-                // queue, so it still runs.
-                fault_scope f(
-                    sys::PostQueuedCompletionStatus, ERROR_NO_SYSTEM_RESOURCES);
-                co_await post_awaitable{&cont};
-                fired = f.fired();
-            }
+        bool ran  = false;
+        auto body = [&]() -> capy::task<> {
             ran = true;
+            co_return;
         };
-        capy::run_async(ioc.get_executor())(body());
-        // run() keeps a handler's posts on its own thread, with no
-        // packet to fail; run_one() sends each through the port.
-        while (ioc.run_one() != 0)
+        // A running scheduler queues a post without a packet, so
+        // there is none to fail. A stopped one sends the post through
+        // the port, where it waits behind the stop's own.
+        ioc.stop();
         {
+            // A failed post leaves the work on the shared queue, so
+            // it still runs.
+            fault_scope f(
+                sys::PostQueuedCompletionStatus, ERROR_NO_SYSTEM_RESOURCES);
+            capy::run_async(ioc.get_executor())(body());
+            BOOST_TEST(f.fired());
         }
-        BOOST_TEST(fired);
+        ioc.restart();
+        ioc.run();
         BOOST_TEST(ran);
     }
 
@@ -1930,14 +1906,14 @@ struct iocp_faults
 
     /* An inline completion whose own post fails.
 
-       A synchronous failure is published through on_completion, which
-       posts a key_result_stored packet to carry it. Landing on the
-       deferred queue instead is the only fallback that path has, and
-       the run loop's next turn is what dispatches it -- the flag is
-       raised while the loop is still inside the packet that resumed
-       this coroutine, so it is seen on the way back round. run_one()
-       drives the loop because run() keeps such a completion on its
-       own thread, with no packet to fail.
+       A synchronous failure is published through on_completion. A
+       running scheduler queues it without a packet, so there is none
+       to fail. A stopped one posts a key_result_stored packet to
+       carry it, behind the stop's own. Landing on the shared queue
+       instead is the only fallback that path has, and the run loop's
+       next turn is what dispatches it. run_one() drives the loop
+       because a stopped run() holds such a completion for the next
+       run, again with no packet.
     */
     void testInlineCompletionPostFails()
     {
@@ -1952,6 +1928,8 @@ struct iocp_faults
         bool fired   = false;
         bool expired = false;
         auto body    = [&]() -> capy::task<> {
+            // Stopped before the fault is armed: the stop posts too.
+            ioc.stop();
             {
                 fault_scope r(sys::WSARecv, WSAENOTSOCK);
                 fault_scope p(
@@ -1964,7 +1942,6 @@ struct iocp_faults
             }
             a.cancel();
             b.cancel();
-            ioc.stop();
         };
         capy::run_async(ioc.get_executor())(body());
         capy::run_async(ioc.get_executor())(stop_guard(ioc, expired));

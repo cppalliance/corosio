@@ -53,15 +53,6 @@ enum completion_key : ULONG_PTR
     key_continuation = 5
 };
 
-namespace iocp {
-
-// Why the scheduler's dispatch_required_ flag is raised: work sits on
-// the shared queue, or the timer thread saw the earliest timer expire.
-inline constexpr long dispatch_queue  = 1;
-inline constexpr long dispatch_timers = 2;
-
-} // namespace iocp
-
 } // namespace boost::corosio::detail
 
 #endif // BOOST_COROSIO_HAS_IOCP
