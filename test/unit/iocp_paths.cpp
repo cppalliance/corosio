@@ -601,6 +601,36 @@ struct iocp_paths_test
                 ioc.run();
                 BOOST_TEST(order == (std::vector<int>{0, 1, 2}));
             }
+
+            // Posted by a handler of run() that has stopped the
+            // context again, with an earlier post still in the port.
+            // Held behind the stop, it would be queued again at the
+            // restart and run before the port is looked at.
+            {
+                io_context ioc(iocp, opts);
+                auto ex = ioc.get_executor();
+                capy::continuation c{};
+                std::vector<int> order;
+                auto first = [&]() -> capy::task<> {
+                    ioc.stop();
+                    co_await post_awaitable{&c};
+                    order.push_back(1);
+                };
+                auto second = [&]() -> capy::task<> {
+                    order.push_back(0);
+                    co_return;
+                };
+                capy::run_async(ex)(first());
+                ioc.stop();
+                capy::run_async(ex)(second());
+                ioc.restart();
+                // Runs `first` as far as its post, and ends on the stop.
+                ioc.run();
+                BOOST_TEST(order.empty());
+                ioc.restart();
+                ioc.run();
+                BOOST_TEST(order == (std::vector<int>{0, 1}));
+            }
         }
     }
 

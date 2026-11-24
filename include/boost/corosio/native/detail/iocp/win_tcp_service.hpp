@@ -406,9 +406,10 @@ connect_op::do_complete(
     }
 
     // The kernel is still finishing the connection when its packet
-    // is dequeued, and a transfer issued at once waits on that. One
-    // issued after the work already waiting has had its turn finds
-    // it done.
+    // is dequeued, and transfers issued one after another at once
+    // wait on that. The first one's result goes through the loop, so
+    // the next is issued after the work already waiting has had its
+    // turn, and finds it done.
     op->internal.svc_.scheduler().give_way();
 
     auto prevent_premature_destruction = std::move(op->object_ref_);

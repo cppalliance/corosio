@@ -440,10 +440,10 @@ private:
     // has to go as a packet, which the caller then sends:
     //
     // - The scheduler is stopped, and the caller is not a lone run()
-    //   or poll(), whose work is held for the next run. The port
-    //   keeps the packet behind the stop's own, in order.
-    // - A posted packet is still in the port. Work queued here would
-    //   run ahead of it.
+    //   or poll(), whose work is held for the next run. The packet
+    //   goes into the port behind the stop's own.
+    // - A posted packet is still in the port. Work queued here, or
+    //   held behind a stop, would run ahead of it.
     // - The caller is a loop thread and another loop is waiting in
     //   the port. Waking that loop takes a packet in any case, and
     //   the kernel hands this one to the thread it wakes.
@@ -488,11 +488,11 @@ private:
     // call.
     unsigned long batch_cap(iocp::scheduler_context const& t) const noexcept;
 
-    // Queue the work of one batch of dequeued packets. Returns true
-    // if it went on the thread's own queue, which only a
-    // single-thread context allows, or a packet dequeued on its own
-    // when `alone_runs` is set and the shared queue holds no older
-    // work.
+    // Queue the work of one batch of dequeued packets. Returns false
+    // if the part ahead of any stop went on the shared queue. It goes
+    // on the thread's own queue only in a single-thread context, or
+    // for a packet dequeued on its own when `alone_runs` is set and
+    // the shared queue holds no older work.
     bool queue_batch(
         iocp::scheduler_context& t,
         void const* entries,
@@ -927,7 +927,10 @@ win_scheduler::keep(
 
     if (stopped_.load(std::memory_order_relaxed) != 0)
     {
-        if (!lone)
+        // Held work is queued again at the next restart, ahead of
+        // what the port holds, so with a posted packet still in the
+        // port this entry goes there too.
+        if (!lone || posted_packets_.load(std::memory_order_seq_cst) != 0)
             return false;
         // Queued behind the stop, so it waits for the next run, in
         // the order it was queued in.

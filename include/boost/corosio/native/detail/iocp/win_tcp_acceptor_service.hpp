@@ -252,7 +252,8 @@ accept_op::do_complete(
     auto saved_ex                      = op->ex;
     auto prevent_premature_destruction = std::move(op->object_ref_);
 
-    // As after a connect: the first transfer waits its turn.
+    // As after a connect: the first transfer's result goes through
+    // the loop.
     op->acceptor.socket_service().scheduler().give_way();
 
     dispatch_coro(saved_ex, *op->cont).resume();
