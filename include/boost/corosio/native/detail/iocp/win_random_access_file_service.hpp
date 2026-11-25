@@ -32,6 +32,7 @@
 #include <boost/capy/error.hpp>
 
 #include <filesystem>
+#include <utility>
 
 namespace boost::corosio::detail {
 
@@ -189,7 +190,8 @@ win_random_access_file::read_some_at(
     std::error_code* ec,
     std::size_t* bytes)
 {
-    return internal_.read_some_at(offset, cont, d, buf, token, ec, bytes);
+    return internal_.read_some_at(
+        offset, cont, d, buf, std::move(token), ec, bytes);
 }
 
 inline std::coroutine_handle<>
@@ -202,7 +204,8 @@ win_random_access_file::write_some_at(
     std::error_code* ec,
     std::size_t* bytes)
 {
-    return internal_.write_some_at(offset, cont, d, buf, token, ec, bytes);
+    return internal_.write_some_at(
+        offset, cont, d, buf, std::move(token), ec, bytes);
 }
 
 inline native_handle_type

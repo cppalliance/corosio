@@ -117,7 +117,12 @@ struct io_context_options
         The budget doubles each cycle it is fully consumed, up to
         this limit. Must be in [ 0, `INT_MAX` ]; validated on
         platforms with a reactor backend, whichever backend is
-        active. Applies to reactor backends only.
+        active.
+
+        The IOCP backend uses this field alone, as a fixed budget. A
+        handler may complete that many TCP reads and writes during
+        the initiating call. The next one goes through the run loop.
+        Zero sends every completion through the loop.
     */
     unsigned inline_budget_max = 16;
 

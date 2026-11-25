@@ -31,7 +31,8 @@ class win_timers_thread final : public win_timers
     long shutdown_ = 0;
 
 public:
-    win_timers_thread(void* iocp_handle, long* dispatch_required) noexcept;
+    win_timers_thread(
+        void* iocp_handle, std::atomic<long>* dispatch_required) noexcept;
     ~win_timers_thread();
 
     win_timers_thread(win_timers_thread const&)            = delete;
@@ -46,7 +47,7 @@ private:
 };
 
 inline win_timers_thread::win_timers_thread(
-    void* iocp_handle, long* dispatch_required) noexcept
+    void* iocp_handle, std::atomic<long>* dispatch_required) noexcept
     : win_timers(dispatch_required)
     , iocp_(iocp_handle)
 {
@@ -153,7 +154,7 @@ win_timers_thread::thread_func()
         if (::InterlockedExchangeAdd(&shutdown_, 0) != 0)
             break;
 
-        ::InterlockedExchange(dispatch_required_, 1);
+        dispatch_required_->store(1, std::memory_order_release);
         ::PostQueuedCompletionStatus(
             static_cast<HANDLE>(iocp_), 0, key_wake_dispatch, nullptr);
     }

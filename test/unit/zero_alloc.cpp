@@ -31,7 +31,9 @@
 #include <boost/corosio/tcp_server.hpp>
 #include <boost/corosio/socket_option.hpp>
 #include <boost/corosio/delay.hpp>
+#include <boost/corosio/wait_type.hpp>
 #include <boost/corosio/detail/platform.hpp>
+#include <boost/corosio/test/socket_pair.hpp>
 #if BOOST_COROSIO_POSIX
 #include <boost/corosio/posix_stream_descriptor.hpp>
 #include <unistd.h>
@@ -287,6 +289,80 @@ struct zero_alloc_test
     }
 #endif
 
+    // Two readiness waits on a connected pair: the reader parks
+    // wait(read) before any byte is queued, the writer waits for
+    // writability and sends one byte, and the reader drains it so the
+    // next cycle parks again. Both sockets outlive every cycle; only
+    // the waits are under test.
+    void waitCycle(
+        io_context& ioc,
+        capy::executor_ref ex,
+        tcp_socket& reader,
+        tcp_socket& writer)
+    {
+        bool waited = false, read_ok = false;
+        bool write_waited = false, write_ok = false;
+        char in = 0;
+        char const out = 'w';
+
+        // Launched first, so the wait is parked with nothing to read.
+        capy::run_async(ex)(
+            [](tcp_socket& s, char* b, bool& got_wait,
+               bool& got_read) -> capy::task<> {
+                auto [ec1]     = co_await s.wait(wait_type::read);
+                got_wait       = !ec1;
+                auto [ec2, n2] = co_await s.read_some(
+                    capy::mutable_buffer(b, 1));
+                got_read = !ec2 && n2 == 1;
+            }(reader, &in, waited, read_ok));
+
+        capy::run_async(ex)(
+            [](tcp_socket& s, char const* b, bool& got_wait,
+               bool& got_write) -> capy::task<> {
+                auto [ec1]     = co_await s.wait(wait_type::write);
+                got_wait       = !ec1;
+                auto [ec2, n2] = co_await s.write_some(
+                    capy::const_buffer(b, 1));
+                got_write = !ec2 && n2 == 1;
+            }(writer, &out, write_waited, write_ok));
+
+        ioc.run();
+        ioc.restart();
+
+        BOOST_TEST(waited);
+        BOOST_TEST(write_waited);
+        BOOST_TEST(write_ok);
+        BOOST_TEST(read_ok);
+        BOOST_TEST_EQ(in, out);
+    }
+
+    // Both directions are waited on because IOCP serves them
+    // differently: wait(read) is a zero-byte WSARecv, wait(write) goes
+    // through the wait reactor, which hands each request to its
+    // polling thread in a buffer that keeps its capacity. On the
+    // reactor backends the read wait parks on the socket's existing
+    // registration and the write wait finds the socket writable at
+    // once; io_uring submits a poll from an op embedded in the socket.
+    // None of that should allocate once warmed.
+    void testWaitIsZeroAlloc()
+    {
+        io_context ioc(Backend);
+        auto ex = ioc.get_executor();
+
+        auto [reader, writer] = test::must(test::make_socket_pair(ioc));
+
+        for (int i = 0; i < warmup_cycles; ++i)
+            waitCycle(ioc, ex, reader, writer);
+
+        alloc_count.store(0, std::memory_order_relaxed);
+        alloc_armed.store(true, std::memory_order_relaxed);
+        for (int i = 0; i < measured_cycles; ++i)
+            waitCycle(ioc, ex, reader, writer);
+        alloc_armed.store(false, std::memory_order_relaxed);
+
+        BOOST_TEST_EQ(alloc_count.load(std::memory_order_relaxed), 0LL);
+    }
+
     void testReuseIdentityIsZeroAlloc()
     {
         io_context ioc(Backend);
@@ -509,6 +585,7 @@ struct zero_alloc_test
         if (!alloc_counter_is_live("boost.corosio.zero_alloc"))
             return;
         testAcceptEchoCloseIsZeroAlloc();
+        testWaitIsZeroAlloc();
         testReuseIdentityIsZeroAlloc();
 #if BOOST_COROSIO_POSIX
         testDescriptorChurnIsZeroAlloc();
@@ -520,6 +597,7 @@ struct zero_alloc_test
     }
 };
 
+COROSIO_TEST_IOCP_(zero_alloc_test, "boost.corosio.zero_alloc")
 COROSIO_TEST_EPOLL_(zero_alloc_test, "boost.corosio.zero_alloc")
 COROSIO_TEST_KQUEUE_(zero_alloc_test, "boost.corosio.zero_alloc")
 COROSIO_TEST_SELECT_(zero_alloc_test, "boost.corosio.zero_alloc")

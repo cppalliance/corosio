@@ -27,6 +27,7 @@
 #include <boost/corosio/native/detail/iocp/win_overlapped_op.hpp>
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
 
+#include <atomic>
 #include <coroutine>
 
 #include <mswsock.h>
@@ -59,6 +60,27 @@ struct read_op : overlapped_op
     WSABUF wsabufs[max_buffers];
     DWORD wsabuf_count = 0;
     DWORD flags        = 0;
+
+    /** Where a read queued through the run loop with its request
+        still to issue stands (see win_tcp_socket::start_later).
+
+        The loop thread that gets to the read takes it from `waiting`
+        to `issuing` for the length of the call that issues the
+        request, and a close or release takes it from `waiting` to
+        `none`, so that the request is never issued. Whichever comes
+        second sees what the first did: the loop thread then reports
+        the read as cancelled, and the close or release waits out the
+        call. So the handle is never closed or given away between the
+        loop thread reading it and the request being in the kernel.
+    */
+    enum late_state : unsigned char
+    {
+        none,
+        waiting,
+        issuing
+    };
+
+    std::atomic<late_state> late{none};
     win_tcp_socket& internal;
 
     static void do_complete(
@@ -144,8 +166,40 @@ class win_tcp_socket final
     wait_op wt_;
     SOCKET socket_ = INVALID_SOCKET;
     int family_    = AF_UNSPEC;
-    endpoint local_endpoint_;
+
+    // The socket is in skip-completion-port-on-success mode: a request
+    // the kernel finishes during the call queues no packet, and its
+    // result is taken from the call.
+    bool skip_ = false;
+
+    // The socket's provider hands out kernel handles, so a request it
+    // takes is marked pending in the OVERLAPPED (see kernel_pending).
+    bool ifs_ = false;
+
+    // How starting a read late has fared on this socket (see
+    // start_later). A read started late that still had to wait
+    // gained nothing, so the next `late_skip_` reads after a write
+    // are issued at once, twice as many after each further miss.
+    // Touched only by the socket's one read at a time.
+    unsigned char late_skip_    = 0;
+    unsigned char late_backoff_ = 0;
+    // What local_endpoint_ holds. `cached`: it is authoritative, and
+    // empty for a socket with no known endpoint. `pending`: a connect
+    // left the endpoint unfetched, and the first local_endpoint() asks
+    // the kernel for it. `fetching`: the reader that claimed the fetch
+    // is writing the cache, and other readers fetch their own copy
+    // meanwhile. Whatever else writes local_endpoint_ sets `cached`.
+    enum class local_state : unsigned char
+    {
+        cached,
+        pending,
+        fetching
+    };
+
+    // Mutable so local_endpoint() can fill it on first read.
+    mutable endpoint local_endpoint_;
     endpoint remote_endpoint_;
+    mutable std::atomic<local_state> local_state_{local_state::cached};
 
 public:
     explicit win_tcp_socket(win_tcp_service& svc) noexcept;
@@ -225,10 +279,68 @@ public:
     void cancel() noexcept override;
 
     /// Used by the acceptor's `accept_op` to finish setting up the peer.
-    void set_socket(SOCKET s) noexcept;
+    void set_socket(SOCKET s, bool skip, bool ifs) noexcept;
     void set_endpoints(endpoint local, endpoint remote) noexcept;
 
     void close_socket() noexcept;
+
+private:
+    // Give an op what its completion needs to resume the coroutine.
+    void fill(
+        overlapped_op& op,
+        capy::continuation& cont,
+        capy::executor_ref d,
+        std::error_code* ec,
+        std::size_t* bytes_out) noexcept;
+
+    // Finish a read or write the call itself settled: resume the
+    // coroutine at once within the handler's inline budget, or send
+    // the stored result through the run loop.
+    std::coroutine_handle<> complete_now(
+        overlapped_op& op,
+        capy::continuation& cont,
+        capy::executor_ref d,
+        std::stop_token const& token,
+        std::error_code* ec,
+        std::size_t* bytes_out,
+        DWORD err,
+        DWORD bytes);
+
+    // Arm a read or write whose request is in the kernel and hand it
+    // to the scheduler to await its packet.
+    std::coroutine_handle<> pend(
+        overlapped_op& op,
+        capy::continuation& cont,
+        capy::executor_ref d,
+        std::stop_token const& token,
+        std::error_code* ec,
+        std::size_t* bytes_out);
+
+    // Whether a read after a write is due a late start.
+    bool late_start_due() noexcept;
+
+    // Note that a late start, or the look at the port before one,
+    // found nothing to take.
+    void late_start_missed() noexcept;
+
+    // Keep a read that start_later() queued from issuing its request,
+    // or wait until the request is issued. Call before the handle is
+    // closed or given away.
+    void settle_late_read() noexcept;
+
+    // Queue a read through the run loop without issuing its request,
+    // for start_read() to issue when the loop gets to it.
+    std::coroutine_handle<> start_later(
+        read_op& op,
+        capy::continuation& cont,
+        capy::executor_ref d,
+        std::stop_token const& token,
+        std::error_code* ec,
+        std::size_t* bytes_out);
+
+    // Issue the request of a read queued by start_later(), and finish
+    // the read if the call settles it. Runs as the op's handler.
+    void start_read();
 };
 
 } // namespace boost::corosio::detail

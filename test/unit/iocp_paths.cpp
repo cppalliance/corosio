@@ -10,12 +10,14 @@
 
 // IOCP paths no other suite drives: per-op cancellation hooks for the
 // write/connect/wait directions, teardown with overlapped ops still in
-// flight, assign validation, and the receive-direction shutdowns.
+// flight, close with a second handle to the socket open, assign
+// validation, and the receive-direction shutdowns.
 
 #include <boost/corosio/detail/platform.hpp>
 
 #if BOOST_COROSIO_HAS_IOCP
 
+#include <boost/corosio/delay.hpp>
 #include <boost/corosio/error.hpp>
 #include <boost/corosio/io_context.hpp>
 #include <boost/corosio/local_endpoint.hpp>
@@ -30,6 +32,7 @@
 #include <boost/corosio/udp_socket.hpp>
 #include <boost/corosio/wait_type.hpp>
 
+#include <boost/corosio/native/detail/iocp/win_tcp_acceptor_service.hpp>
 #include <boost/corosio/native/detail/iocp/win_windows.hpp>
 
 #include <boost/corosio/test/socket_pair.hpp>
@@ -45,6 +48,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iterator>
 #include <stop_token>
 #include <string>
@@ -98,6 +102,28 @@ make_local_pair(io_context& ioc, test::temp_socket_dir const& tmp)
     ioc.restart();
     acc.close();
     return {std::move(server), std::move(client)};
+}
+
+// A second handle to the socket `h` names, as an inherited or
+// duplicated handle would be, so closing `h` no longer closes the last
+// one.
+SOCKET
+duplicate_socket(native_handle_type h)
+{
+    WSAPROTOCOL_INFOW info{};
+    if (::WSADuplicateSocketW(
+            static_cast<SOCKET>(h), ::GetCurrentProcessId(), &info) != 0)
+        return INVALID_SOCKET;
+    return ::WSASocketW(
+        FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &info, 0,
+        WSA_FLAG_OVERLAPPED);
+}
+
+// Send one byte on `s` past the library, as a peer outside it would.
+int
+send_byte(tcp_socket& s, char byte)
+{
+    return ::send(static_cast<SOCKET>(s.native_handle()), &byte, 1, 0);
 }
 
 } // namespace
@@ -245,8 +271,10 @@ struct iocp_paths_test
     }
 
     // A socket in skip-on-success mode queues no packet for a
-    // synchronous success, so every adopting type must refuse it and
-    // leave it with the caller.
+    // synchronous success, so every adopting type that waits for one
+    // must refuse it and leave it with the caller. tcp_socket and
+    // tcp_acceptor take such results from the call and are covered
+    // below.
     void testAssignRejectsSkipOnSuccessSockets()
     {
         io_context ioc(iocp);
@@ -268,16 +296,732 @@ struct iocp_paths_test
             BOOST_TEST(::closesocket(s) == 0);
         };
 
-        tcp_socket t(ioc);
-        refused(t, skipping(AF_INET, SOCK_STREAM, IPPROTO_TCP));
-        tcp_acceptor ta(ioc);
-        refused(ta, skipping(AF_INET, SOCK_STREAM, IPPROTO_TCP));
         udp_socket u(ioc);
         refused(u, skipping(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
         local_stream_socket l(ioc);
         refused(l, skipping(AF_UNIX, SOCK_STREAM, 0));
         local_stream_acceptor la(ioc);
         refused(la, skipping(AF_UNIX, SOCK_STREAM, 0));
+    }
+
+    // Exchange a few bytes each way and say whether both arrived.
+    static bool exchanges(io_context& ioc, tcp_socket& a, tcp_socket& b)
+    {
+        int done  = 0;
+        auto pass = [&](tcp_socket& from, tcp_socket& to) -> capy::task<> {
+            for (int i = 0; i < 40; ++i)
+            {
+                char out[4]    = {'p', 'i', 'n', 'g'};
+                char in[4]     = {};
+                auto [wec, wn] = co_await from.write_some(
+                    capy::const_buffer(out, sizeof(out)));
+                if (wec || wn != sizeof(out))
+                    co_return;
+                std::size_t got = 0;
+                while (got < sizeof(in))
+                {
+                    auto [rec, rn] = co_await to.read_some(
+                        capy::mutable_buffer(in + got, sizeof(in) - got));
+                    if (rec)
+                        co_return;
+                    got += rn;
+                }
+                if (std::string(in, sizeof(in)) != "ping")
+                    co_return;
+            }
+            ++done;
+        };
+        capy::run_async(ioc.get_executor())(pass(a, b));
+        capy::run_async(ioc.get_executor())(pass(b, a));
+        ioc.run();
+        ioc.restart();
+        return done == 2;
+    }
+
+    // A TCP socket already in skip-on-success mode is adopted as it
+    // is, and its operations complete whether the kernel finishes
+    // them during the call or later.
+    void testAssignAdoptsSkipOnSuccessTcpSocket()
+    {
+        io_context ioc(iocp);
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.open(family::v4));
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!acc.listen());
+
+        SOCKET raw = ::WSASocketW(
+            AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+        BOOST_TEST(raw != INVALID_SOCKET);
+        BOOST_TEST(
+            ::SetFileCompletionNotificationModes(
+                reinterpret_cast<HANDLE>(raw),
+                FILE_SKIP_COMPLETION_PORT_ON_SUCCESS));
+        sockaddr_in sa{};
+        sa.sin_family      = AF_INET;
+        sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        sa.sin_port        = htons(acc.local_endpoint().port());
+        // The listen backlog completes the handshake, so this returns
+        // before anything accepts.
+        BOOST_TEST(
+            ::connect(raw, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)) == 0);
+
+        tcp_socket client(ioc);
+        BOOST_TEST(!client.assign(static_cast<native_handle_type>(raw)));
+        BOOST_TEST(client.is_open());
+
+        tcp_socket server(ioc);
+        std::error_code aec = std::make_error_code(std::errc::io_error);
+        auto accept_t       = [&]() -> capy::task<> {
+            auto [e] = co_await acc.accept(server);
+            aec      = e;
+        };
+        capy::run_async(ioc.get_executor())(accept_t());
+        ioc.run();
+        ioc.restart();
+        BOOST_TEST(!aec);
+
+        BOOST_TEST(exchanges(ioc, client, server));
+    }
+
+    // Suspend by posting the coroutine's own continuation.
+    struct post_awaitable
+    {
+        capy::continuation* cont;
+
+        bool await_ready() const noexcept
+        {
+            return false;
+        }
+
+        void await_suspend(
+            std::coroutine_handle<> h, capy::await_context const* env) noexcept
+        {
+            cont->h = h;
+            env->executor.post(*cont);
+        }
+
+        void await_resume() const noexcept {}
+    };
+
+    // An expired timer's handler is queued by the run loop itself, not
+    // by a handler. A coroutine it resumes that then posts and gives
+    // the timer's work back leaves only the post outstanding; the
+    // loop must keep running for it and for what it starts.
+    void testPostAfterTimerKeepsRunning()
+    {
+        io_context ioc(iocp);
+        capy::continuation cont{};
+        bool done = false;
+        auto body = [&]() -> capy::task<> {
+            std::ignore = co_await delay(std::chrono::milliseconds(1));
+            co_await post_awaitable{&cont};
+            std::ignore = co_await delay(std::chrono::milliseconds(20));
+            done        = true;
+        };
+        capy::run_async(ioc.get_executor())(body());
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
+    // A handler that restarts the context after a stop keeps the run
+    // going, even when the stop was dequeued in the same batch.
+    void testRestartAfterStopKeepsRunning()
+    {
+        io_context ioc(iocp);
+        bool done = false;
+        auto body = [&]() -> capy::task<> {
+            ioc.restart();
+            std::ignore = co_await delay(std::chrono::milliseconds(20));
+            done        = true;
+        };
+        capy::run_async(ioc.get_executor())(body());
+        ioc.stop();
+        ioc.run();
+        BOOST_TEST(done);
+    }
+
+    // A handler may block its thread until other work of the context
+    // has run, as long as another loop is there to run it. A loop that
+    // starts while the first is inside such a handler must reach what
+    // the first has queued off the port: the packets dequeued in the
+    // same batch as the handler, and what the handler posted.
+    void testSecondLoopRunsWorkBehindBlockedHandler()
+    {
+        for (bool own_post : {false, true})
+        {
+            io_context ioc(iocp);
+            auto ex = ioc.get_executor();
+            capy::continuation cont{};
+            std::promise<void> started;
+            std::promise<void> ran;
+            bool reached = false;
+            auto second  = [&]() -> capy::task<> {
+                // Started from the first handler, it runs inline up
+                // to here and leaves the rest as that handler's post.
+                if (own_post)
+                    co_await post_awaitable{&cont};
+                ran.set_value();
+            };
+            auto first = [&]() -> capy::task<> {
+                if (own_post)
+                    capy::run_async(ex)(second());
+                started.set_value();
+                reached = ran.get_future().wait_for(std::chrono::seconds(
+                              30)) == std::future_status::ready;
+                co_return;
+            };
+            // A stopped context sends a post through the port, so
+            // both are there before a loop runs, and the first loop
+            // takes them in one batch.
+            ioc.stop();
+            capy::run_async(ex)(first());
+            if (!own_post)
+                capy::run_async(ex)(second());
+            ioc.restart();
+
+            std::thread a([&] { ioc.run(); });
+            started.get_future().wait();
+            std::thread b([&] { ioc.run(); });
+            a.join();
+            b.join();
+            BOOST_TEST(reached);
+        }
+    }
+
+    // Work a handler posts while the context is stopped waits behind
+    // the stop. Once the handler has restarted the context it runs
+    // after what the handler posted ahead of the stop, and ahead of
+    // what it posts after the restart.
+    void testPostsAcrossRestartKeepTheirOrder()
+    {
+        for (bool lockless : {false, true})
+        {
+            io_context_options opts;
+            if (lockless)
+                opts.locking = locking_mode::unsafe_io;
+            io_context ioc(iocp, opts);
+            auto ex = ioc.get_executor();
+            capy::continuation c0{};
+            capy::continuation c1{};
+            capy::continuation c2{};
+            std::vector<int> order;
+            auto step = [&](capy::continuation& c, int n) -> capy::task<> {
+                co_await post_awaitable{&c};
+                order.push_back(n);
+            };
+            auto body = [&]() -> capy::task<> {
+                capy::run_async(ex)(step(c0, 0));
+                ioc.stop();
+                capy::run_async(ex)(step(c1, 1));
+                ioc.restart();
+                capy::run_async(ex)(step(c2, 2));
+                co_return;
+            };
+            capy::run_async(ex)(body());
+            ioc.run();
+            BOOST_TEST(order == (std::vector<int>{0, 1, 2}));
+        }
+    }
+
+    // A post that is not a lone run()'s goes through the port while
+    // the context is stopped, and is queued without a packet once it
+    // runs again. One made after the restart must not overtake one
+    // made before it, which may still be in the port.
+    void testPostsThroughThePortKeepTheirOrder()
+    {
+        for (bool lockless : {false, true})
+        {
+            io_context_options opts;
+            if (lockless)
+                opts.locking = locking_mode::unsafe_io;
+
+            // Posted from outside the loop.
+            {
+                io_context ioc(iocp, opts);
+                auto ex = ioc.get_executor();
+                std::vector<int> order;
+                auto step = [&](int n) -> capy::task<> {
+                    order.push_back(n);
+                    co_return;
+                };
+                ioc.stop();
+                capy::run_async(ex)(step(0));
+                ioc.restart();
+                capy::run_async(ex)(step(1));
+                ioc.run();
+                BOOST_TEST(order == (std::vector<int>{0, 1}));
+            }
+
+            // Posted by a handler that a single-handler call runs.
+            {
+                io_context ioc(iocp, opts);
+                auto ex = ioc.get_executor();
+                capy::continuation c0{};
+                capy::continuation c1{};
+                std::vector<int> order;
+                auto step = [&](capy::continuation& c, int n) -> capy::task<> {
+                    co_await post_awaitable{&c};
+                    order.push_back(n);
+                };
+                auto body = [&]() -> capy::task<> {
+                    ioc.stop();
+                    capy::run_async(ex)(step(c0, 0));
+                    ioc.restart();
+                    capy::run_async(ex)(step(c1, 1));
+                    co_return;
+                };
+                capy::run_async(ex)(body());
+                while (order.size() < 2 && ioc.run_one() != 0)
+                {
+                }
+                BOOST_TEST(order == (std::vector<int>{0, 1}));
+            }
+
+            // Posted by a handler of run(), which finds its work
+            // queued without a packet and runs it before it looks at
+            // the port, where an earlier post still is.
+            {
+                io_context ioc(iocp, opts);
+                auto ex = ioc.get_executor();
+                capy::continuation c{};
+                std::vector<int> order;
+                auto first = [&]() -> capy::task<> {
+                    order.push_back(0);
+                    co_await post_awaitable{&c};
+                    order.push_back(2);
+                };
+                auto second = [&]() -> capy::task<> {
+                    order.push_back(1);
+                    co_return;
+                };
+                capy::run_async(ex)(first());
+                ioc.stop();
+                capy::run_async(ex)(second());
+                ioc.restart();
+                ioc.run();
+                BOOST_TEST(order == (std::vector<int>{0, 1, 2}));
+            }
+
+            // Posted by a handler of run() that has stopped the
+            // context again, with an earlier post still in the port.
+            // Held behind the stop, it would be queued again at the
+            // restart and run before the port is looked at.
+            {
+                io_context ioc(iocp, opts);
+                auto ex = ioc.get_executor();
+                capy::continuation c{};
+                std::vector<int> order;
+                auto first = [&]() -> capy::task<> {
+                    ioc.stop();
+                    co_await post_awaitable{&c};
+                    order.push_back(1);
+                };
+                auto second = [&]() -> capy::task<> {
+                    order.push_back(0);
+                    co_return;
+                };
+                capy::run_async(ex)(first());
+                ioc.stop();
+                capy::run_async(ex)(second());
+                ioc.restart();
+                // Runs `first` as far as its post, and ends on the stop.
+                ioc.run();
+                BOOST_TEST(order.empty());
+                ioc.restart();
+                ioc.run();
+                BOOST_TEST(order == (std::vector<int>{0, 1}));
+            }
+        }
+    }
+
+    // Work posted from a thread that is not running the loop takes no
+    // packet. It still runs in the order it was posted in.
+    void testOutsidePostsRunInOrder()
+    {
+        io_context ioc(iocp);
+        auto ex              = ioc.get_executor();
+        constexpr int count = 1000;
+        std::vector<int> order;
+        order.reserve(count);
+        auto step = [&](int i) -> capy::task<> {
+            order.push_back(i);
+            co_return;
+        };
+        for (int i = 0; i < count; ++i)
+            capy::run_async(ex)(step(i));
+        ioc.run();
+        bool in_order = order.size() == static_cast<std::size_t>(count);
+        for (int i = 0; in_order && i < count; ++i)
+            in_order = order[static_cast<std::size_t>(i)] == i;
+        BOOST_TEST(in_order);
+    }
+
+    // A loop blocked in the port learns of such a post only from a
+    // wakeup, and each post finds the loops blocked again.
+    void testOutsidePostsWakeBlockedLoops()
+    {
+        io_context ioc(iocp, 2);
+        auto ex = ioc.get_executor();
+        std::stop_source ss;
+        // Keeps the loops running, and in the port, between posts.
+        capy::run_async(ex, ss.get_token())([]() -> capy::task<> {
+            std::ignore = co_await delay(std::chrono::seconds(60));
+        }());
+        std::vector<std::thread> loops;
+        for (int i = 0; i < 2; ++i)
+            loops.emplace_back([&] { ioc.run(); });
+
+        std::atomic<int> ran{0};
+        int lost = 0;
+        for (int i = 0; i < 200 && lost == 0; ++i)
+        {
+            capy::run_async(ex)([](std::atomic<int>& n) -> capy::task<> {
+                ++n;
+                co_return;
+            }(ran));
+            // Bounded only to fail rather than hang.
+            for (int k = 0; k < 2000 && ran.load() != i + 1; ++k)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            if (ran.load() != i + 1)
+                ++lost;
+        }
+        BOOST_TEST_EQ(lost, 0);
+        ss.request_stop();
+        ioc.stop();
+        for (auto& t : loops)
+            t.join();
+    }
+
+    // A thread that runs no loop posts the work that ends the run,
+    // and the context is destroyed as soon as the run returns. That
+    // thread may still be a few instructions short of leaving its
+    // post, and the destructor waits for it.
+    void testContextDestroyedBehindOutsidePost()
+    {
+        for (int i = 0; i < 200; ++i)
+        {
+            std::atomic<bool> spinning{false};
+            std::thread poster;
+            {
+                io_context ioc(iocp);
+                auto ex   = ioc.get_executor();
+                bool quit = false;
+                capy::continuation cont{};
+                // Keeps the loop out of the port, so that it comes by
+                // the posted work with no wakeup to wait for.
+                auto spinner = [&]() -> capy::task<> {
+                    while (!quit)
+                    {
+                        spinning.store(true);
+                        co_await post_awaitable{&cont};
+                    }
+                };
+                capy::run_async(ex)(spinner());
+                poster = std::thread([&spinning, &quit, ex] {
+                    while (!spinning.load())
+                        std::this_thread::yield();
+                    capy::run_async(ex)([](bool& q) -> capy::task<> {
+                        q = true;
+                        co_return;
+                    }(quit));
+                });
+                ioc.run();
+                BOOST_TEST(quit);
+            }
+            poster.join();
+        }
+    }
+
+    // A single-handler call takes queued work one entry a call. A
+    // completion waiting in the port must get its turn all the same,
+    // although the queue never runs empty.
+    void testRunOneReachesPortBehindQueuedWork()
+    {
+        io_context ioc(iocp);
+        auto ex       = ioc.get_executor();
+        auto [a, b]   = test::must(test::make_socket_pair(ioc));
+        bool got      = false;
+        bool quit     = false;
+        char buf[1]   = {};
+        auto reader   = [&]() -> capy::task<> {
+            std::ignore =
+                co_await a.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            got = true;
+        };
+        capy::continuation cont{};
+        auto spinner = [&]() -> capy::task<> {
+            // Leaves one entry queued behind itself every time it runs.
+            while (!quit)
+                co_await post_awaitable{&cont};
+        };
+        capy::run_async(ex)(reader());
+        capy::run_async(ex)(spinner());
+        // The read reaches the kernel, and the spinner its first post.
+        BOOST_TEST_EQ(ioc.run_one(), 1u);
+        BOOST_TEST_EQ(ioc.run_one(), 1u);
+        BOOST_TEST(!got);
+
+        // Complete the read. Its packet reaches the port at once or
+        // a moment later, and from then on every call comes by it.
+        // Bounded only to fail rather than hang.
+        BOOST_TEST_EQ(send_byte(b, 'x'), 1);
+        auto const give_up =
+            std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        bool each_ran_one = true;
+        while (!got && each_ran_one &&
+               std::chrono::steady_clock::now() < give_up)
+            each_ran_one = ioc.run_one() == 1;
+        BOOST_TEST(each_ran_one);
+        BOOST_TEST(got);
+
+        quit = true;
+        ioc.run();
+    }
+
+    /* A TCP read that follows a write on its socket is queued behind
+       the completions the port holds, and its request is issued when
+       the loop gets to it. Until then nothing of it is in the kernel,
+       so a close, a cancel or a stop has to end it by other means.
+
+       The read waits only behind a packet the port holds, and `body`
+       puts one there for certain: a stop that is taken back at once
+       leaves its packet behind. The port is looked at only while the
+       kernel owes a completion, which the read of `idle` sees to.
+       `actor` was queued before the read is, so it runs first and
+       acts on it.
+
+       The peer has sent a byte by then. A read already in the kernel
+       would have taken it and reported it, so `canceled` also shows
+       that the request had not been issued.
+    */
+    template<class Act>
+    void lateReadEndsWith(Act act, std::stop_token token = {})
+    {
+        io_context ioc(iocp);
+        auto ex       = ioc.get_executor();
+        auto [a, b]   = test::must(test::make_socket_pair(ioc));
+        auto [c, d]   = test::must(test::make_socket_pair(ioc));
+        char buf[8]   = {};
+        bool resumed  = false;
+        std::size_t n = 99;
+        std::error_code rec;
+        auto idle = [&]() -> capy::task<> {
+            char x[1];
+            std::ignore =
+                co_await d.read_some(capy::mutable_buffer(x, sizeof(x)));
+        };
+        auto body = [&]() -> capy::task<> {
+            ioc.stop();
+            ioc.restart();
+            char const byte = 'x';
+            auto [wec, wn] =
+                co_await a.write_some(capy::const_buffer(&byte, 1));
+            BOOST_TEST(!wec);
+            BOOST_TEST_EQ(wn, 1u);
+            auto [ec, got] =
+                co_await a.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+            rec     = ec;
+            n       = got;
+            resumed = true;
+            // Ends `idle`, and the run with it.
+            d.cancel();
+        };
+        auto actor = [&]() -> capy::task<> {
+            BOOST_TEST_EQ(send_byte(b, 'y'), 1);
+            act(a);
+            co_return;
+        };
+        capy::run_async(ex)(idle());
+        capy::run_async(ex, token)(body());
+        capy::run_async(ex)(actor());
+        ioc.run();
+        BOOST_TEST(resumed);
+        BOOST_TEST(rec == capy::cond::canceled);
+        BOOST_TEST_EQ(n, 0u);
+    }
+
+    void testLateReadClosedBeforeItStarts()
+    {
+        lateReadEndsWith([](tcp_socket& a) { a.close(); });
+    }
+
+    void testLateReadCancelledBeforeItStarts()
+    {
+        lateReadEndsWith([](tcp_socket& a) { a.cancel(); });
+    }
+
+    void testLateReadStoppedBeforeItStarts()
+    {
+        std::stop_source ss;
+        lateReadEndsWith(
+            [&](tcp_socket&) { ss.request_stop(); }, ss.get_token());
+    }
+
+    void testLateReadReleasedBeforeItStarts()
+    {
+        SOCKET raw = INVALID_SOCKET;
+        lateReadEndsWith([&](tcp_socket& a) {
+            auto [ec, fd] = a.release();
+            BOOST_TEST(!ec);
+            raw = static_cast<SOCKET>(fd);
+            // The byte is still there: no request of the library
+            // took it. Waited for with a bound, so that a byte that
+            // is gone fails the test instead of blocking it.
+            fd_set readable;
+            FD_ZERO(&readable);
+            FD_SET(raw, &readable);
+            timeval bound{10, 0};
+            int const ready =
+                ::select(0, &readable, nullptr, nullptr, &bound);
+            BOOST_TEST_EQ(ready, 1);
+            char byte = 0;
+            if (ready == 1)
+                BOOST_TEST_EQ(::recv(raw, &byte, 1, 0), 1);
+            BOOST_TEST_EQ(byte, 'y');
+        });
+        BOOST_TEST(raw != INVALID_SOCKET);
+        ::closesocket(raw);
+    }
+
+    // The context goes away with such a read queued: the read is
+    // destroyed with the rest of the queue, and its coroutine with it.
+    void testDestroyWithLateReadQueued()
+    {
+        struct count_on_destroy
+        {
+            int* n;
+            ~count_on_destroy()
+            {
+                ++*n;
+            }
+        };
+        int destroyed = 0;
+        bool resumed  = false;
+        {
+            io_context ioc(iocp);
+            auto ex     = ioc.get_executor();
+            auto [a, b] = test::must(test::make_socket_pair(ioc));
+            auto [c, d] = test::must(test::make_socket_pair(ioc));
+            char buf[8] = {};
+            auto idle = [&]() -> capy::task<> {
+                count_on_destroy guard{&destroyed};
+                char x[1];
+                std::ignore =
+                    co_await d.read_some(capy::mutable_buffer(x, sizeof(x)));
+                resumed = true;
+            };
+            auto body = [&]() -> capy::task<> {
+                count_on_destroy guard{&destroyed};
+                // As in lateReadEndsWith.
+                ioc.stop();
+                ioc.restart();
+                char const byte = 'x';
+                std::ignore =
+                    co_await a.write_some(capy::const_buffer(&byte, 1));
+                std::ignore = co_await a.read_some(
+                    capy::mutable_buffer(buf, sizeof(buf)));
+                resumed = true;
+            };
+            capy::run_async(ex)(idle());
+            capy::run_async(ex)(body());
+            // One call each: `idle` up to its read, `body` up to the
+            // read it queues behind the packet of the stop.
+            BOOST_TEST_EQ(ioc.run_one(), 1u);
+            BOOST_TEST_EQ(ioc.run_one(), 1u);
+        }
+        BOOST_TEST(!resumed);
+        BOOST_TEST_EQ(destroyed, 2);
+    }
+
+    // Sockets this library opens or accepts are in skip-on-success
+    // mode, and the mode outlives release(): the released socket must
+    // come back in through assign().
+    void testReleasedTcpSocketIsAdoptedAgain()
+    {
+        io_context ioc(iocp);
+        auto [a, b] = test::must(test::make_socket_pair(ioc));
+        BOOST_TEST(exchanges(ioc, a, b));
+
+        auto [aec, afd] = a.release();
+        BOOST_TEST(!aec);
+        auto [bec, bfd] = b.release();
+        BOOST_TEST(!bec);
+
+        tcp_socket a2(ioc);
+        tcp_socket b2(ioc);
+        BOOST_TEST(!a2.assign(afd));
+        BOOST_TEST(!b2.assign(bfd));
+        BOOST_TEST(exchanges(ioc, a2, b2));
+    }
+
+    // A TCP socket this library opened is in skip-on-success mode for
+    // good, and may be released to become a listener. The acceptor
+    // adopts it, and accepts whether the connection was already
+    // queued, which AcceptEx settles during the call with no packet,
+    // or arrives later.
+    void testReleasedTcpSocketIsAdoptedAsListener()
+    {
+        io_context ioc(iocp);
+        tcp_socket opened(ioc);
+        BOOST_TEST(!opened.open(family::v4));
+        auto [rec, lfd] = opened.release();
+        BOOST_TEST(!rec);
+        SOCKET const ls = static_cast<SOCKET>(lfd);
+
+        sockaddr_in sa{};
+        sa.sin_family      = AF_INET;
+        sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        BOOST_TEST(
+            ::bind(ls, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)) == 0);
+        BOOST_TEST(::listen(ls, SOMAXCONN) == 0);
+
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.assign(lfd));
+        BOOST_TEST(acc.is_open());
+        sa.sin_port = htons(acc.local_endpoint().port());
+        BOOST_TEST(sa.sin_port != 0);
+
+        for (bool queued_first : {true, false})
+        {
+            SOCKET raw = ::WSASocketW(
+                AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0,
+                WSA_FLAG_OVERLAPPED);
+            BOOST_TEST(raw != INVALID_SOCKET);
+            // The listen backlog completes the handshake, so this
+            // returns before anything accepts.
+            auto connect_raw = [&] {
+                BOOST_TEST(
+                    ::connect(
+                        raw, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)) ==
+                    0);
+            };
+
+            tcp_socket server(ioc);
+            std::error_code aec = std::make_error_code(std::errc::io_error);
+            auto accept_t       = [&]() -> capy::task<> {
+                auto [e] = co_await acc.accept(server);
+                aec      = e;
+            };
+
+            if (queued_first)
+                connect_raw();
+            capy::run_async(ioc.get_executor())(accept_t());
+            if (!queued_first)
+            {
+                // Issue the AcceptEx with nothing to accept yet.
+                std::ignore = ioc.poll();
+                ioc.restart();
+                connect_raw();
+            }
+            ioc.run();
+            ioc.restart();
+            BOOST_TEST(!aec);
+            BOOST_TEST(server.is_open());
+
+            tcp_socket client(ioc);
+            BOOST_TEST(!client.assign(static_cast<native_handle_type>(raw)));
+            BOOST_TEST(exchanges(ioc, client, server));
+        }
     }
 
     // A stop that lands while a wait is being registered with the wait
@@ -446,10 +1190,13 @@ struct iocp_paths_test
         f.close();
     }
 
-    // close() asks the wait reactor to drop the object's wait op even
-    // when none was ever parked. Objects destroyed before the reactor
-    // thread exists leave those asks queued; the first wait starts the
-    // thread, which must not touch the dead ops (ASan catches it).
+    // close() used to ask the wait reactor to drop the object's wait op
+    // even when none was ever parked, so objects destroyed before the
+    // reactor thread existed left those asks queued; the first wait
+    // started the thread, which must not touch the dead ops (ASan
+    // catches it). An ask now needs both a running thread and a parked
+    // op, so these objects ask nothing, and the scenario only shows
+    // that the wait after them still completes.
     void testStaleWaitCancelsFromDestroyedObjects()
     {
         io_context ioc(iocp);
@@ -581,6 +1328,129 @@ struct iocp_paths_test
 
         for (auto h : released)
             ::closesocket(static_cast<SOCKET>(h));
+    }
+
+    // Starts `op`, then closes `obj` while a second handle keeps its
+    // socket open, and checks the op ends canceled.
+    template<class Object, class Op>
+    void
+    closeCancelsWithSecondHandle(io_context& ioc, Object& obj, Op const& op)
+    {
+        SOCKET const dup = duplicate_socket(obj.native_handle());
+        BOOST_TEST(dup != INVALID_SOCKET);
+
+        std::error_code ec;
+        bool done = false;
+        capy::run_async(ioc.get_executor())(op(ec, done));
+        std::ignore = ioc.poll();
+        ioc.restart();
+        BOOST_TEST(!done);
+
+        obj.close();
+        // Bounded only to fail rather than hang.
+        std::ignore = ioc.run_for(std::chrono::seconds(5));
+        ioc.restart();
+        BOOST_TEST(done);
+        BOOST_TEST(ec == capy::cond::canceled);
+
+        // Closing the last handle aborts whatever close() left in the
+        // kernel, so a failed check still ends the op while `ec` and
+        // `done` are alive.
+        ::closesocket(dup);
+        if (!done)
+        {
+            std::ignore = ioc.run_for(std::chrono::seconds(5));
+            ioc.restart();
+        }
+    }
+
+    // closesocket() aborts pending I/O only when it closes the last
+    // handle to the socket, so with an inherited or duplicated handle
+    // open, close() must cancel the ops it leaves in the kernel itself.
+    // Each op runs alone on its socket, so a cancel aimed at another op
+    // cannot end it.
+    void testCloseCancelsWithSecondHandle()
+    {
+        io_context ioc(iocp);
+
+        // Without SO_LINGER: a zero-linger close resets the connection
+        // even through a handle that is not the last, which would end
+        // the op with no cancel at all.
+        auto graceful_pair = [&] {
+            return test::must(
+                test::make_socket_pair<tcp_socket, tcp_acceptor, false>(ioc));
+        };
+
+        // read_some: a WSARecv on a socket nothing is sent to.
+        auto [r1, r2] = graceful_pair();
+        char rbuf[8];
+        closeCancelsWithSecondHandle(
+            ioc, r1, [&](std::error_code& ec, bool& done) -> capy::task<> {
+                auto [e, n] = co_await r1.read_some(
+                    capy::mutable_buffer(rbuf, sizeof(rbuf)));
+                std::ignore = n;
+                ec          = e;
+                done        = true;
+            });
+
+        // wait(read): the zero-byte WSARecv.
+        auto [w1, w2] = graceful_pair();
+        closeCancelsWithSecondHandle(
+            ioc, w1, [&](std::error_code& ec, bool& done) -> capy::task<> {
+                auto [e] = co_await w1.wait(wait_type::read);
+                ec       = e;
+                done     = true;
+            });
+
+        // write_some: with no send buffer, a WSASend larger than the
+        // peer's receive window stays in flight while the peer never
+        // reads.
+        auto [s1, s2] = graceful_pair();
+        test::must_ok(s1.set_option(socket_option::send_buffer_size(0)));
+        std::vector<char> big(4 * 1024 * 1024);
+        closeCancelsWithSecondHandle(
+            ioc, s1, [&](std::error_code& ec, bool& done) -> capy::task<> {
+                auto [e, n] = co_await s1.write_some(
+                    capy::const_buffer(big.data(), big.size()));
+                std::ignore = n;
+                ec          = e;
+                done        = true;
+            });
+
+        // connect: a listener in conditional-accept mode that never
+        // accepts leaves the SYN unanswered, so the connect stays in
+        // flight until it times out some 20 seconds later.
+        tcp_acceptor held(ioc);
+        BOOST_TEST(!held.open(family::v4));
+        BOOL const on = TRUE;
+        BOOST_TEST(
+            ::setsockopt(
+                static_cast<SOCKET>(held.native_handle()), SOL_SOCKET,
+                SO_CONDITIONAL_ACCEPT, reinterpret_cast<char const*>(&on),
+                sizeof(on)) == 0);
+        BOOST_TEST(!held.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!held.listen());
+        tcp_socket conn(ioc);
+        BOOST_TEST(!conn.open(family::v4));
+        closeCancelsWithSecondHandle(
+            ioc, conn, [&](std::error_code& ec, bool& done) -> capy::task<> {
+                auto [e] = co_await conn.connect(held.local_endpoint());
+                ec       = e;
+                done     = true;
+            });
+
+        // accept: an AcceptEx no client connects to.
+        tcp_acceptor acc(ioc);
+        BOOST_TEST(!acc.open(family::v4));
+        BOOST_TEST(!acc.bind(endpoint(ipv4_address::loopback(), 0)));
+        BOOST_TEST(!acc.listen());
+        tcp_socket peer(ioc);
+        closeCancelsWithSecondHandle(
+            ioc, acc, [&](std::error_code& ec, bool& done) -> capy::task<> {
+                auto [e] = co_await acc.accept(peer);
+                ec       = e;
+                done     = true;
+            });
     }
 
     void testDestroyWithParkedSocketOps()
@@ -718,6 +1588,29 @@ struct iocp_paths_test
         testStopCancelsAcceptorWaits();
         testAssignValidation();
         testAssignRejectsSkipOnSuccessSockets();
+        testAssignAdoptsSkipOnSuccessTcpSocket();
+        testReleasedTcpSocketIsAdoptedAsListener();
+        testReleasedTcpSocketIsAdoptedAgain();
+        testPostAfterTimerKeepsRunning();
+        testRestartAfterStopKeepsRunning();
+        testSecondLoopRunsWorkBehindBlockedHandler();
+        testPostsAcrossRestartKeepTheirOrder();
+        testPostsThroughThePortKeepTheirOrder();
+        testOutsidePostsRunInOrder();
+        testOutsidePostsWakeBlockedLoops();
+        testContextDestroyedBehindOutsidePost();
+        testRunOneReachesPortBehindQueuedWork();
+        // Only a write that completes during the call is followed by
+        // a read started late, and without skip-on-success mode none
+        // does.
+        if (detail::iocp_skip_on_success_enabled())
+        {
+            testLateReadClosedBeforeItStarts();
+            testLateReadCancelledBeforeItStarts();
+            testLateReadStoppedBeforeItStarts();
+            testLateReadReleasedBeforeItStarts();
+            testDestroyWithLateReadQueued();
+        }
         testStopRacingWaitRegistration();
         testShutdownReceiveVariants();
         testZeroLengthUdpReceive();
@@ -726,6 +1619,7 @@ struct iocp_paths_test
         testTruncateWithoutCreate();
         testStaleWaitCancelsFromDestroyedObjects();
         testReleaseWithKernelOpsInFlight();
+        testCloseCancelsWithSecondHandle();
         testDestroyWithParkedSocketOps();
         testDestroyWithParkedLocalOps();
         testDestroyWithParkedTcpStreamOps();

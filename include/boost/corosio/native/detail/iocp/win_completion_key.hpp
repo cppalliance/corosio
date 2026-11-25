@@ -34,7 +34,8 @@ enum completion_key : ULONG_PTR
     /** I/O operation completed. OVERLAPPED* points to overlapped_op. */
     key_io = 0,
 
-    /** Timer or deferred operation wakeup signal. */
+    /** Wakeup signal: timers are due, or work sits on the scheduler's
+        shared queue. */
     key_wake_dispatch = 1,
 
     /** Scheduler stop/shutdown signal. */

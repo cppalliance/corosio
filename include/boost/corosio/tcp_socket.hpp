@@ -499,6 +499,16 @@ public:
         outstanding, so no context, this one included, can assign it
         afterwards. Its cancelled operations still complete normally.
 
+        @note With the IOCP backend, a socket this object opened, or
+        one an acceptor produced, is in the
+        `FILE_SKIP_COMPLETION_PORT_ON_SUCCESS` mode, which Windows
+        cannot clear. The released socket queues no completion packet
+        for an overlapped operation that succeeds during the call.
+        Code that binds it to a completion port must take such a
+        result from the call. `assign()` accepts the socket back, and
+        so does `tcp_acceptor::assign()`. A socket adopted with
+        `assign()` is released in the mode it arrived in.
+
         @return The error code and the native handle.
 
         @post is_open() == false
@@ -602,16 +612,18 @@ public:
 
         Returns the local address and port to which the socket is bound.
         For a connected socket, this is the local side of the connection.
-        The endpoint is cached when the connection is established.
+        The endpoint is cached when the connection is established, or by
+        the first call after it.
 
         @return The local endpoint, or a default endpoint (0.0.0.0:0) if
             the socket is not connected.
 
         @par Thread Safety
-        The cached endpoint value is set during connect/accept completion
-        and cleared during close(). This function may be called concurrently
-        with I/O operations, but must not be called concurrently with
-        connect(), accept(), or close().
+        The cached endpoint value is set during connect/accept completion,
+        or by the first call after it, and cleared during close().
+        This function may be called concurrently with I/O operations, but
+        must not be called concurrently with connect(), accept(), or
+        close().
     */
     endpoint local_endpoint() const noexcept;
 
