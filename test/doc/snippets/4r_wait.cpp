@@ -242,14 +242,14 @@ struct wait_test
             return;
 
         // tag::wait_cancel[]
-        auto waiter = [&]() -> capy::task<> {
-            auto [ec] = co_await sock.wait(corosio::wait_type::read);
-            // ec == capy::cond::canceled if sock.cancel() was invoked
+        auto waiter = [](corosio::tcp_socket& s) -> capy::task<> {
+            auto [ec] = co_await s.wait(corosio::wait_type::read);
+            // ec == capy::cond::canceled if s.cancel() was invoked
         };
         // end::wait_cancel[]
 
         bool done = false;
-        capy::run_async(ex)(await_and_flag(waiter(), done));
+        capy::run_async(ex)(await_and_flag(waiter(sock), done));
 
         // Posted after the waiter, so the wait is in flight when the
         // cancel lands.
