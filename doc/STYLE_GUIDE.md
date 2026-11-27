@@ -100,7 +100,8 @@ The Antora pipeline provides two mechanisms; use them instead of hand-authoring:
   corpus either — roughly 30 briefs here open "A…"/"An…"/"The…", and their number is not
   an argument.)*
 - **B5. Doc code uses the namespace alias, never a using-directive.** Every file under
-  `test/doc/`, and every code block authored inline in a `.adoc` page, spells library names
+  `test/doc/`, every `example/` file a page includes, and every code block authored inline
+  in a `.adoc` page, spells library names
   against `namespace corosio = boost::corosio;` — `corosio::tcp_socket`,
   `corosio::io_context`, `corosio::tls_context` — even on a page that never declares the
   alias itself. Corosio's doc code also names Capy, which takes the same treatment via
