@@ -116,7 +116,7 @@ worker immediately. Calling it multiple times throws `std::logic_error`.
 include::example$snippets/4k_tcp_server.cpp[tag=launcher_signature]
 ----
 
-See cpp:tcp_server::launcher[] for the full contract.
+See cpp:tcp_server::launcher[] for the call operator's full contract.
 
 The executor determines where the coroutine runs. Typically you use the
 I/O context's executor:

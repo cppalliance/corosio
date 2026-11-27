@@ -242,6 +242,7 @@ struct wait_test
             return;
 
         // tag::wait_cancel[]
+        // The socket must outlive the wait; here it outlives run().
         auto waiter = [](corosio::tcp_socket& s) -> capy::task<> {
             auto [ec] = co_await s.wait(corosio::wait_type::read);
             // ec == capy::cond::canceled if s.cancel() was invoked

@@ -96,8 +96,9 @@ Corosio uses concepts from Capy:
 include::example$snippets/4n_buffers.cpp[tag=sequence_concepts]
 ----
 
-See cpp:io_write_stream::write_some[] and cpp:io_read_stream::read_some[] for the
-full declarations.
+This listing is abridged: the real functions are member templates. See
+cpp:io_write_stream::write_some[] and cpp:io_read_stream::read_some[] for the full
+declarations.
 
 A type satisfies these concepts if it's iterable and yields buffer types.
 

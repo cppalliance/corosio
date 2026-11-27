@@ -67,11 +67,12 @@ Windows. The constructor throws exactly the codes this path reports
   `opts.inline_budget_max` does not exceed `INT_MAX`
 |===
 
-An acceptor built piecewise reports each failure through the code it returns:
+A signal set built piecewise reports through the code each `add()` returns, where
+the constructor taking the signals would throw:
 
 [source,cpp]
 ----
-include::example$snippets/4e_tcp_acceptor.cpp[tag=bind_listen,indent=0]
+include::example$snippets/4i_signals.cpp[tag=construct_empty,indent=0]
 ----
 
 What cannot be spelled exception-free: root construction and the run
