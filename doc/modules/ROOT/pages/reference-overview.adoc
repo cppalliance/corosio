@@ -321,7 +321,7 @@ cpp:make_error_code[] makes a `std::error_code` from an cpp:error[] value.
 An error from the OpenSSL error queue uses the category that cpp:openssl_category[] returns.
 OpenSSL errors from the system library, `ERR_LIB_SYS`, use `std::system_category()` instead.
 An error from `wolfSSL_get_error` uses the category that cpp:wolfssl_category[] returns.
-See xref:4.guide/4m.error-handling.adoc[Error Handling].
+See xref:4.guide/4m.error-handling.adoc[Error Handling] and xref:4.guide/4m2.error-model.adoc[Error Model].
 
 [cols="1,4"]
 |===

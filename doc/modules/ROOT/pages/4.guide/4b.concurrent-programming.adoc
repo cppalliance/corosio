@@ -8,7 +8,7 @@
 //
 
 = Concurrent Programming
-:page-mode: how-to
+:page-mode: explanation
 
 Network servers often handle many clients simultaneously. This chapter explains
 how Corosio supports concurrency using C++20 coroutines and the strand pattern
