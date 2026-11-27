@@ -36,6 +36,7 @@
 ** xref:4.guide/4k.tcp-server.adoc[TCP Server]
 ** xref:4.guide/4l.tls.adoc[TLS Encryption]
 ** xref:4.guide/4m.error-handling.adoc[Error Handling]
+*** xref:4.guide/4m2.error-model.adoc[Error Model]
 ** xref:4.guide/4n.buffers.adoc[Buffer Sequences]
 ** xref:4.guide/4o.file-io.adoc[File I/O]
 ** xref:4.guide/4p.unix-sockets.adoc[Unix Domain Sockets]

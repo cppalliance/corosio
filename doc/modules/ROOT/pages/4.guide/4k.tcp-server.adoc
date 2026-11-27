@@ -55,6 +55,8 @@ pools. It exposes two pure virtuals you must override:
 include::example$snippets/4k_tcp_server.cpp[tag=worker_base]
 ----
 
+This listing is abridged. See cpp:tcp_server::worker_base[] for the full class.
+
 Your worker inherits from cpp:tcp_server::worker_base[worker_base], owns its socket, and implements the
 required methods:
 
@@ -74,6 +76,8 @@ range and reuses each worker across connections:
 ----
 include::example$snippets/4k_tcp_server.cpp[tag=set_workers_signature]
 ----
+
+See cpp:tcp_server::set_workers[] for the full contract.
 
 A small helper that builds the range keeps construction tidy:
 
@@ -111,6 +115,8 @@ worker immediately. Calling it multiple times throws `std::logic_error`.
 ----
 include::example$snippets/4k_tcp_server.cpp[tag=launcher_signature]
 ----
+
+See cpp:tcp_server::launcher[] for the call operator's full contract.
 
 The executor determines where the coroutine runs. Typically you use the
 I/O context's executor:

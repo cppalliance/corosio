@@ -83,21 +83,16 @@ worker::do_session()
     {
         buf_.resize(4096);
 
-        // Read some data
+        // Read some data; bytes can arrive along with an error
         auto [ec, n] = co_await sock_.read_some(
             capy::mutable_buffer(buf_.data(), buf_.size()));
 
-        if (ec || n == 0)
+        // Echo those bytes before checking the error
+        auto [wec, wn] =
+            co_await capy::write(sock_, capy::const_buffer(buf_.data(), n));
+
+        if (wec || ec)
             break; // Connection closed or error
-
-        buf_.resize(n);
-
-        // Echo it back
-        auto [wec, wn] = co_await capy::write(
-            sock_, capy::const_buffer(buf_.data(), buf_.size()));
-
-        if (wec)
-            break; // Write error
     }
 
     sock_.close();

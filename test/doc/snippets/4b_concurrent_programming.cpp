@@ -292,9 +292,10 @@ cross_executor(
     // tag::cross_executor[]
     // Dangerous: socket created on ctx1, used from ex2
     corosio::tcp_socket sock(ctx1);
-    capy::run_async(ex2)([&sock, ep]() -> capy::task<void> {
-        std::ignore = co_await sock.connect(ep); // Wrong executor!
-    }());
+    capy::run_async(ex2)(
+        [](corosio::tcp_socket s, corosio::endpoint to) -> capy::task<void> {
+            std::ignore = co_await s.connect(to); // Wrong executor!
+        }(std::move(sock), ep));
     // end::cross_executor[]
 }
 

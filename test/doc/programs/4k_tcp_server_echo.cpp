@@ -55,14 +55,10 @@ public:
             auto [ec, n] = co_await sock_.read_some(
                 capy::mutable_buffer(buf.data(), buf.size()));
 
-            if (ec || n == 0)
-                break;
+            auto [wec, wn] =
+                co_await capy::write(sock_, capy::const_buffer(buf.data(), n));
 
-            buf.resize(n);
-            auto [wec, wn] = co_await capy::write(
-                sock_, capy::const_buffer(buf.data(), buf.size()));
-
-            if (wec)
+            if (wec || ec)
                 break;
         }
 

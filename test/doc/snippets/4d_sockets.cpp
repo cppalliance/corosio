@@ -173,8 +173,11 @@ connect_range_fragment(corosio::io_context& ioc)
     // end::connect_range[]
 }
 
-// The page displays the library's signature; declaring it here keeps
-// the shown declaration honest against the real one.
+// The page displays connect()'s declaration from
+// <boost/corosio/connect.hpp>.
+// A stand-in declaration compiles whether or not it matches the
+// header, so compiling it does not catch drift. Keep it in step
+// with the header by hand.
 // tag::connect_signature[]
 template<class Socket, std::ranges::input_range Range>
     requires std::convertible_to<

@@ -8,7 +8,7 @@
 //
 
 = TCP/IP Networking
-:page-mode: how-to
+:page-mode: explanation
 
 This chapter introduces the networking concepts you need to understand before
 using Corosio. If you're already comfortable with TCP/IP, sockets, and the

@@ -14,84 +14,8 @@
 Corosio reports I/O errors through the `results` type, which carries an
 error code alongside any values produced by the operation.
 
-[#one-channel]
-== One Channel
-
-Every fallible operation reports through exactly one channel:
-
-* *Expected runtime conditions return the error.* Synchronous
-  operations return `std::error_code`, or `results<T>` when a
-  payload rides along. That covers `seek()`, `size()`, `available()`,
-  `release()`, `get_option()`, and the `make_*` factories, and
-  asynchronous operations complete with `results<...>`. Every
-  error-returning function is `+[[nodiscard]]+`.
-* *Contract violations throw* — for example an `io_context` options
-  constructor given a `thread_pool_size` of zero, or `to_v4()` on an
-  IPv6 address that is not v4-mapped. Using a closed object is not
-  one of them: it returns like any other runtime condition.
-* *Operations whose outcome nobody can act on report nothing.*
-  `close()` and `cancel()` are `void noexcept`. Durability reporting
-  belongs to `sync_data()`/`sync_all()`. Cancellation reports
-  through each canceled completion.
-
-Using a closed object is deterministic on every I/O backend and every
-channel: the operation returns or completes with
-`errc::bad_file_descriptor`.
-
-== Avoiding Exceptions
-
-Every throwing convenience is sugar over an exception-free spelling, or
-is guarded by a public pre-check. Code that performs the check, or uses
-the piecewise path, never sees the throw:
-
-[cols="1,1"]
-|===
-| Throwing convenience | Exception-free spelling
-
-| cpp:tcp_acceptor[] constructed with a context, endpoint, and backlog +
-  cpp:local_stream_acceptor[] constructed the same way
-| default-construct, then `open()` + `bind()` + `listen()`.
-cpp:tcp_acceptor[] also configures address reuse via `set_option()`
-between open and bind: `SO_REUSEADDR` on POSIX, `SO_EXCLUSIVEADDRUSE` on
-Windows. The constructor throws exactly the codes this path reports
-
-| cpp:signal_set[] constructed with a context and one or more signals
-| `signal_set(ctx)`, then `add()` per signal
-
-| cpp:io_context[]'s options constructor throwing `std::invalid_argument`
-  (POSIX only)
-| ensure `opts.thread_pool_size >= 1`, `opts.max_events_per_poll` is in
-  `[ 1, INT_MAX ]` (lower where epoll is available), and
-  `opts.inline_budget_max` does not exceed `INT_MAX`
-|===
-
-What cannot be spelled exception-free: root construction and the run
-loop. cpp:io_context[] itself throws if I/O backend setup fails, because
-there is no code-returning way to construct it. Any constructor can
-throw `std::bad_alloc`. `run()`, `poll()`, and their siblings throw
-`std::system_error` if waiting on the OS demultiplexer fails other than
-by interruption or another transient condition. No per-operation
-channel can carry that, and the context cannot dispatch work after it.
-On Windows `stop()` throws if it cannot queue the wakeup. `run()` and
-`poll()` also throw on Windows when a wakeup they need to stop the
-context cannot be queued.
-`set_option()`, `get_option()`, `release()`, `size()`, and `available()`
-never throw. `set_option()` and `get_option()` report a platform that
-rejects the option, such as an unsupported option on that protocol or OS,
-through the returned code. A closed object
-reports `errc::bad_file_descriptor` through the returned code. On
-cpp:win_stream_handle[], cpp:win_random_access_handle[],
-cpp:stream_file[], and cpp:random_access_file[], `release()` can also
-fail while open. It reports `errc::device_or_resource_busy` if an
-operation is still in flight on Windows. Where file I/O runs on a
-thread pool, it reports the same while a worker thread is performing
-one. Call it again
-once the canceled operations complete. It reports
-`errc::operation_not_supported` if Windows cannot detach the handle
-from the completion port. A failed
-`release()` leaves the object owning the handle and returns the invalid
-sentinel, never descriptor 0.
-Startup construction failing by exception is the intended shape.
+xref:4.guide/4m2.error-model.adoc[Error Model] lists the channel each operation
+reports through, and which calls can throw.
 
 [NOTE]
 ====

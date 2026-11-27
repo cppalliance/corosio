@@ -166,7 +166,7 @@ the same behavior everywhere.
 == Error Handling
 
 File operations follow the same
-xref:4.guide/4m.error-handling.adoc#one-channel[error model] as sockets. Reads past
+xref:4.guide/4m2.error-model.adoc#one-channel[error model] as sockets. Reads past
 end-of-file return `capy::cond::eof`:
 
 [source,cpp]
