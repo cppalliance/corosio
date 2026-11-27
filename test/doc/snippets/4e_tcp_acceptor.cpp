@@ -124,12 +124,15 @@ bind_listen(corosio::io_context& ioc)
     return {};
 }
 
-// The page displays listen()'s declaration; compiling it inside a
-// dummy struct keeps the shown signature honest.
+// The page displays listen()'s declaration from
+// <boost/corosio/tcp_acceptor.hpp>.
+// A stand-in declaration compiles whether or not it matches the
+// header, so compiling it does not catch drift. Keep it in step
+// with the header by hand.
 struct listen_signature
 {
     // tag::listen_signature[]
-    [[nodiscard]] std::error_code listen(int backlog = 128);
+    [[nodiscard]] std::error_code listen(int backlog = 128) noexcept;
     // end::listen_signature[]
 };
 

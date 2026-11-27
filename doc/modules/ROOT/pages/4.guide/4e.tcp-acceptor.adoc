@@ -95,6 +95,8 @@ The `listen()` method accepts an optional `backlog` parameter:
 include::example$snippets/4e_tcp_acceptor.cpp[tag=listen_signature,indent=0]
 ----
 
+See cpp:tcp_acceptor::listen[] for the full contract.
+
 The `backlog` parameter specifies the maximum queue length for pending
 connections. When the queue is full, the kernel may drop or refuse new
 connection attempts. The default of 128 works for most applications.

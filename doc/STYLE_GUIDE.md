@@ -37,6 +37,13 @@ Follow **[Diátaxis](https://diataxis.fr)**. Every page is exactly one of four m
 - **A2. Reference belongs in the reference.** Exposition pages never reproduce full
   signatures or concept definitions — they *link* (Part B). This is the highest-value
   structural rule.
+  *Exception:* a page may show a declaration when its prose walks through that
+  declaration's parameters or constraints, so the reader can follow without leaving the
+  page. The block is an `include::example$` of a compiled snippet, it matches the header
+  or says it is abridged, and a `cpp:` link to the symbol sits directly under it.
+  Compiling the snippet does not prove the match: a stand-in declaration compiles whether
+  or not the header still agrees, which is how `listen()` lost its `noexcept` on the
+  Acceptors page. Check the copy against the header whenever either changes.
 - **A3. Rationale belongs in Explanation.** Use interleaved admonitions (`[NOTE]`/`[TIP]`)
   for *local* rationale on a how-to/tutorial page; reserve dedicated design/explanation
   pages for *cross-cutting* rationale. Do not run multiple parallel rationale channels for

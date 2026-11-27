@@ -61,18 +61,21 @@ namespace capy    = boost::capy;
 
 namespace {
 
-// The page's sketch of the socket signatures; compiling the
-// declarations is the test.
+// The page's sketch of the stream signatures, from
+// <boost/corosio/io/io_write_stream.hpp> and io_read_stream.hpp.
+// A stand-in declaration compiles whether or not it matches the
+// header, so compiling it does not catch drift. Keep it in step
+// with the headers by hand.
 namespace concept_sketch {
 
 // tag::sequence_concepts[]
 // Readable buffers (for writing to sockets)
 template<capy::ConstBufferSequence ConstBufferSequence>
-auto write_some(ConstBufferSequence const& buffers);
+[[nodiscard]] auto write_some(ConstBufferSequence const& buffers);
 
 // Writable buffers (for reading from sockets)
 template<capy::MutableBufferSequence MutableBufferSequence>
-auto read_some(MutableBufferSequence const& buffers);
+[[nodiscard]] auto read_some(MutableBufferSequence const& buffers);
 // end::sequence_concepts[]
 
 } // namespace concept_sketch

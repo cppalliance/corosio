@@ -144,6 +144,8 @@ socket's endpoint type:
 include::example$snippets/4d_sockets.cpp[tag=connect_signature]
 ----
 
+See cpp:connect[] for every overload and its full contract.
+
 On success, returns the connected endpoint. On all-fail, returns the error
 from the last attempt. On empty range (or when a connect condition rejects
 every candidate), returns `std::errc::no_such_device_or_address`.

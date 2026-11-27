@@ -46,9 +46,12 @@ namespace capy    = boost::capy;
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/write.hpp>
 
+#include <concepts>
 #include <iostream>
 #include <memory>
+#include <ranges>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "test_suite.hpp"
@@ -112,6 +115,9 @@ echo_worker::do_echo()
 // Abridged interface listing; the real class lives in
 // <boost/corosio/tcp_server.hpp>, where `launcher` is a sibling
 // member of the enclosing tcp_server and needs no qualification.
+// A stand-in declaration compiles whether or not it matches the
+// header, so compiling it does not catch drift. Keep it in step
+// with the header by hand.
 namespace worker_base_synopsis {
 using launcher = corosio::tcp_server::launcher;
 // tag::worker_base[]
@@ -161,11 +167,20 @@ public:
 };
 // end::my_worker[]
 
-// Abridged member signature; the real declaration lives in
-// <boost/corosio/tcp_server.hpp>.
+// The page displays set_workers()'s declaration from
+// <boost/corosio/tcp_server.hpp>, where `worker_base` needs no
+// qualification.
+// A stand-in declaration compiles whether or not it matches the
+// header, so compiling it does not catch drift. Keep it in step
+// with the header by hand.
 namespace set_workers_synopsis {
+using worker_base = corosio::tcp_server::worker_base;
 // tag::set_workers_signature[]
-template<class Range>
+template<std::ranges::forward_range Range>
+    requires std::convertible_to<
+        decltype(std::to_address(
+            std::declval<std::ranges::range_value_t<Range>&>())),
+        worker_base*>
 void set_workers(Range&& workers);
 // end::set_workers_signature[]
 } // namespace set_workers_synopsis
@@ -223,7 +238,11 @@ public:
     // end::launcher_run[]
 };
 
-// Abridged member signature of tcp_server::launcher's call operator.
+// The call operator of tcp_server::launcher, from
+// <boost/corosio/tcp_server.hpp>.
+// A stand-in declaration compiles whether or not it matches the
+// header, so compiling it does not catch drift. Keep it in step
+// with the header by hand.
 namespace launcher_synopsis {
 struct launcher
 {
