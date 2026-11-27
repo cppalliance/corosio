@@ -62,7 +62,8 @@ include::example$programs/quick_start_echo.cpp[tag=session]
 
 Key points:
 
-* `read_some()` returns when _any_ data is available
+* `read_some()` returns when _any_ data is available, and it can deliver bytes along with an error
+* The session echoes those bytes before it checks the error; writing zero bytes does nothing
 * `capy::write()` (the free function) writes _all_ data or fails
 * Structured bindings extract the error code and byte count
 * When the coroutine ends, the worker automatically returns to the pool
